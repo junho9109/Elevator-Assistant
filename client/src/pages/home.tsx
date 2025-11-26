@@ -15,7 +15,9 @@ import {
   Trash2,
   Settings2,
   MapPin,
-  X
+  X,
+  Image as ImageIcon,
+  Upload
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -94,12 +96,14 @@ export default function Home() {
     title: "",
     std: "",
     body: "",
-    sectionId: "machine"
+    sectionId: "machine",
+    imageUrl: ""
   });
   const [newHotspotLabel, setNewHotspotLabel] = useState("");
   const [newHotspotSection, setNewHotspotSection] = useState("machine");
 
   const imageRef = useRef<HTMLImageElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle section change
   const handleSectionChange = (sectionId: string) => {
@@ -127,6 +131,18 @@ export default function Home() {
     });
   };
 
+  // Handle File Upload
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewItem(prev => ({ ...prev, imageUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Handle Adding New Standard
   const handleAddStandard = () => {
     if (!newItem.title || !newItem.body) return;
@@ -138,7 +154,8 @@ export default function Home() {
       const updatedItems = [{
         title: newItem.title,
         std: newItem.std,
-        body: newItem.body
+        body: newItem.body,
+        imageUrl: newItem.imageUrl
       }, ...targetSection.items];
 
       newData[newItem.sectionId] = {
@@ -150,7 +167,7 @@ export default function Home() {
     });
 
     setIsAddStandardOpen(false);
-    setNewItem({ title: "", std: "", body: "", sectionId: "machine" });
+    setNewItem({ title: "", std: "", body: "", sectionId: "machine", imageUrl: "" });
     
     // Switch to the section where item was added
     setActiveSection(newItem.sectionId);
@@ -391,7 +408,7 @@ export default function Home() {
                   <DialogHeader>
                     <DialogTitle>새 검사 기준 추가</DialogTitle>
                     <DialogDescription>
-                      새로운 검사 기준 항목을 추가합니다. 모든 필드를 입력해주세요.
+                      새로운 검사 기준 항목을 추가합니다. 사진을 첨부할 수 있습니다.
                     </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
@@ -440,6 +457,43 @@ export default function Home() {
                         value={newItem.body}
                         onChange={(e) => setNewItem({...newItem, body: e.target.value})}
                       />
+                    </div>
+                    
+                    {/* Image Upload Field */}
+                    <div className="grid gap-2">
+                      <Label htmlFor="image">사진 첨부 (선택사항)</Label>
+                      <div className="flex items-center gap-3">
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full border-dashed border-2 h-12 text-slate-500 hover:text-primary hover:border-primary hover:bg-blue-50"
+                        >
+                          <Upload className="w-4 h-4 mr-2" />
+                          {newItem.imageUrl ? "사진 변경하기" : "이미지 업로드"}
+                        </Button>
+                        <input 
+                          ref={fileInputRef}
+                          id="image" 
+                          type="file" 
+                          accept="image/*" 
+                          className="hidden"
+                          onChange={handleFileChange}
+                        />
+                      </div>
+                      {newItem.imageUrl && (
+                        <div className="mt-2 relative w-full h-32 bg-slate-100 rounded-md overflow-hidden border border-slate-200">
+                          <img src={newItem.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                          <Button
+                            size="icon"
+                            variant="destructive"
+                            className="absolute top-2 right-2 h-6 w-6 rounded-full"
+                            onClick={() => setNewItem(prev => ({ ...prev, imageUrl: "" }))}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <DialogFooter>
@@ -492,9 +546,18 @@ export default function Home() {
                         </div>
                       </div>
                       
-                      <p className="text-slate-600 text-sm leading-relaxed pl-8 border-l-2 border-slate-200 group-hover:border-blue-200 transition-colors">
-                        {item.body}
-                      </p>
+                      <div className="pl-8 border-l-2 border-slate-200 group-hover:border-blue-200 transition-colors">
+                        <p className="text-slate-600 text-sm leading-relaxed mb-3">
+                          {item.body}
+                        </p>
+                        
+                        {/* Display Image if exists */}
+                        {item.imageUrl && (
+                          <div className="mt-3 rounded-lg overflow-hidden border border-slate-200 max-w-xs shadow-sm">
+                            <img src={item.imageUrl} alt={item.title} className="w-full h-auto object-cover" />
+                          </div>
+                        )}
+                      </div>
 
                       {/* Move Item Dropdown */}
                       <div className="absolute top-4 right-3 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -9,6 +9,7 @@ export interface InspectionItem {
   title: string;
   std: string;
   body: string;
+  imageUrl?: string;
 }
 
 export interface SectionData {
