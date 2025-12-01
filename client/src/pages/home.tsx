@@ -90,6 +90,7 @@ export default function Home() {
   
   // Dialog States
   const [isAddStandardOpen, setIsAddStandardOpen] = useState(false);
+  const [isEditStandardOpen, setIsEditStandardOpen] = useState(false);
   const [isHotspotDialogOpen, setIsHotspotDialogOpen] = useState(false);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [isEditCategoryDialogOpen, setIsEditCategoryDialogOpen] = useState(false);
@@ -106,6 +107,18 @@ export default function Home() {
     imageUrl: "",
     inspectionDate: "",
     permitDate: ""
+  });
+
+  // Editing Item State (includes original item reference to find it)
+  const [editingItem, setEditingItem] = useState<InspectionItem & { sectionId: string, originalTitle: string }>({
+    title: "",
+    std: "",
+    body: "",
+    sectionId: "machine",
+    imageUrl: "",
+    inspectionDate: "",
+    permitDate: "",
+    originalTitle: ""
   });
   
   const [hotspotForm, setHotspotForm] = useState({
@@ -124,6 +137,7 @@ export default function Home() {
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle section change
   const handleSectionChange = (sectionId: string) => {
@@ -154,12 +168,16 @@ export default function Home() {
   };
 
   // Handle File Upload
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean = false) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setNewItem(prev => ({ ...prev, imageUrl: reader.result as string }));
+        if (isEdit) {
+            setEditingItem(prev => ({ ...prev, imageUrl: reader.result as string }));
+        } else {
+            setNewItem(prev => ({ ...prev, imageUrl: reader.result as string }));
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -206,6 +224,72 @@ export default function Home() {
     
     setActiveSection(targetSectionId);
   };
+
+  // Handle Edit Standard
+  const handleOpenEditStandard = (item: InspectionItem, sectionId: string) => {
+      setEditingItem({
+          ...item,
+          sectionId,
+          originalTitle: item.title
+      });
+      setIsEditStandardOpen(true);
+  };
+
+  const handleUpdateStandard = () => {
+      if (!editingItem.title || !editingItem.body) return;
+
+      setData(prev => {
+          const newData = { ...prev };
+          const section = newData[editingItem.sectionId];
+          
+          // Map items and update the matching one
+          const updatedItems = section.items.map(item => {
+              if (item.title === editingItem.originalTitle) {
+                  return {
+                      title: editingItem.title,
+                      std: editingItem.std,
+                      body: editingItem.body,
+                      imageUrl: editingItem.imageUrl,
+                      inspectionDate: editingItem.inspectionDate,
+                      permitDate: editingItem.permitDate
+                  };
+              }
+              return item;
+          });
+
+          newData[editingItem.sectionId] = {
+              ...section,
+              items: updatedItems
+          };
+
+          return newData;
+      });
+
+      setIsEditStandardOpen(false);
+  };
+
+  const handleDeleteStandard = () => {
+      const confirmDelete = window.confirm("정말 이 항목을 삭제하시겠습니까?");
+      if (!confirmDelete) return;
+
+      setData(prev => {
+          const newData = { ...prev };
+          const section = newData[editingItem.sectionId];
+          
+          // Filter out the item
+          const updatedItems = section.items.filter(item => item.title !== editingItem.originalTitle);
+
+          newData[editingItem.sectionId] = {
+              ...section,
+              items: updatedItems
+          };
+
+          return newData;
+      });
+
+      setIsEditStandardOpen(false);
+  };
+
 
   // Handle Category Management
   const handleAddCategory = () => {
@@ -265,9 +349,6 @@ export default function Home() {
         }
     }
     
-    // Cleanup hotspots linking to this category?
-    // For now, we will just let them point to nothing or maybe we should filter them.
-    // Let's filter hotspots that point to invalid sections in the render or here.
     setHotspots(prev => prev.filter(h => h.sectionId !== catId));
   };
 
@@ -760,7 +841,7 @@ export default function Home() {
                           type="file" 
                           accept="image/*" 
                           className="hidden"
-                          onChange={handleFileChange}
+                          onChange={(e) => handleFileChange(e, false)}
                         />
                       </div>
                       {newItem.imageUrl && (
@@ -805,7 +886,8 @@ export default function Home() {
                       variants={cardVariants}
                       custom={index}
                       layout
-                      className="group p-5 rounded-xl bg-slate-50 border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all duration-300 relative"
+                      onClick={() => handleOpenEditStandard(item, sectionId)}
+                      className="group p-5 rounded-xl bg-slate-50 border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all duration-300 relative cursor-pointer hover:shadow-md"
                     >
                       <div className="flex items-start justify-between gap-4 mb-3 pr-8">
                         <div className="flex items-center gap-2">
@@ -860,7 +942,7 @@ export default function Home() {
                       </div>
 
                       {/* Move Item Dropdown */}
-                      <div className="absolute top-4 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute top-4 right-3 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white">
@@ -993,6 +1075,110 @@ export default function Home() {
                     <Button variant="outline" onClick={() => setIsEditCategoryDialogOpen(false)}>취소</Button>
                     <Button onClick={handleUpdateCategory}>저장</Button>
                 </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Edit Standard Dialog (NEW) */}
+          <Dialog open={isEditStandardOpen} onOpenChange={setIsEditStandardOpen}>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>표준화 기준 수정</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-title">항목명 (Title)</Label>
+                  <Input 
+                    id="edit-title" 
+                    value={editingItem.title}
+                    onChange={(e) => setEditingItem({...editingItem, title: e.target.value})}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-std">기준 번호</Label>
+                    <Input 
+                      id="edit-std" 
+                      value={editingItem.std}
+                      onChange={(e) => setEditingItem({...editingItem, std: e.target.value})}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="edit-permitDate">건축허가일</Label>
+                    <Input 
+                      id="edit-permitDate" 
+                      type="date"
+                      value={editingItem.permitDate}
+                      onChange={(e) => setEditingItem({...editingItem, permitDate: e.target.value})}
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-inspectionDate">검사기준적용일</Label>
+                  <Input 
+                    id="edit-inspectionDate" 
+                    type="date"
+                    value={editingItem.inspectionDate}
+                    onChange={(e) => setEditingItem({...editingItem, inspectionDate: e.target.value})}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-body">세부 내용</Label>
+                  <Textarea 
+                    id="edit-body" 
+                    className="h-24 resize-none"
+                    value={editingItem.body}
+                    onChange={(e) => setEditingItem({...editingItem, body: e.target.value})}
+                  />
+                </div>
+                
+                {/* Image Upload Field for Edit */}
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-image">사진 첨부</Label>
+                  <div className="flex items-center gap-3">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => editFileInputRef.current?.click()}
+                      className="w-full border-dashed border-2 h-12 text-slate-500 hover:text-primary hover:border-primary hover:bg-blue-50"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      {editingItem.imageUrl ? "사진 변경하기" : "이미지 업로드"}
+                    </Button>
+                    <input 
+                      ref={editFileInputRef}
+                      id="edit-image" 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden"
+                      onChange={(e) => handleFileChange(e, true)}
+                    />
+                  </div>
+                  {editingItem.imageUrl && (
+                    <div className="mt-2 relative w-full h-32 bg-slate-100 rounded-md overflow-hidden border border-slate-200">
+                      <img src={editingItem.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <Button
+                        size="icon"
+                        variant="destructive"
+                        className="absolute top-2 right-2 h-6 w-6 rounded-full"
+                        onClick={() => setEditingItem(prev => ({ ...prev, imageUrl: "" }))}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <div className="flex-1 flex justify-start">
+                    <Button variant="destructive" onClick={handleDeleteStandard}>
+                        삭제
+                    </Button>
+                </div>
+                <Button variant="outline" onClick={() => setIsEditStandardOpen(false)}>취소</Button>
+                <Button onClick={handleUpdateStandard}>수정 완료</Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
 
