@@ -65,9 +65,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/standards", async (req, res) => {
     try {
       const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : null;
-      const standards = categoryId 
-        ? await storage.getStandardsByCategory(categoryId)
-        : await storage.getAllStandards();
+      const hotspotId = req.query.hotspotId ? parseInt(req.query.hotspotId as string) : null;
+      
+      let standards;
+      if (hotspotId) {
+        standards = await storage.getStandardsByHotspot(hotspotId);
+      } else if (categoryId) {
+        standards = await storage.getStandardsByCategory(categoryId);
+      } else {
+        standards = await storage.getAllStandards();
+      }
       res.json(standards);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch standards" });
