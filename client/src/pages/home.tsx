@@ -213,7 +213,11 @@ export default function Home() {
   };
 
   const handleSaveButton = () => {
-    if (!buttonForm.label) return;
+    console.log("handleSaveButton called", { buttonForm, editingButtonId, pendingButtonPos });
+    if (!buttonForm.label) {
+      console.log("No label provided, returning early");
+      return;
+    }
 
     if (editingButtonId) {
       updateHotspot.mutate({
@@ -229,6 +233,12 @@ export default function Home() {
         }
       });
     } else if (pendingButtonPos) {
+      console.log("Creating new button with:", {
+        label: buttonForm.label,
+        top: pendingButtonPos.top,
+        left: pendingButtonPos.left,
+        categoryId: null
+      });
       createHotspot.mutate({
         label: buttonForm.label,
         top: pendingButtonPos.top,
@@ -236,11 +246,18 @@ export default function Home() {
         categoryId: null
       }, {
         onSuccess: () => {
+          console.log("Button created successfully");
           setIsButtonDialogOpen(false);
           setButtonForm({ label: "" });
           setPendingButtonPos(null);
+        },
+        onError: (error) => {
+          console.error("Failed to create button:", error);
+          alert("버튼 생성에 실패했습니다.");
         }
       });
+    } else {
+      console.log("Neither editingButtonId nor pendingButtonPos is set");
     }
   };
 
@@ -330,6 +347,21 @@ export default function Home() {
                   data-testid="switch-edit-mode"
                 />
               </div>
+              {isEditMode && (
+                <Button
+                  onClick={() => {
+                    setPendingButtonPos({ top: "50%", left: "50%" });
+                    setEditingButtonId(null);
+                    setButtonForm({ label: "" });
+                    setIsButtonDialogOpen(true);
+                  }}
+                  className="w-full"
+                  data-testid="button-add-new"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  새 버튼 추가
+                </Button>
+              )}
             </div>
 
             {/* Interactive Structure Diagram */}
