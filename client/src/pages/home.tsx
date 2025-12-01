@@ -20,6 +20,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -86,7 +93,8 @@ export default function Home() {
     body: "",
     imageUrl: "",
     inspectionDate: "",
-    permitDate: ""
+    permitDate: "",
+    hotspotId: null as number | null
   });
 
   const [editingItem, setEditingItem] = useState<Standard | null>(null);
@@ -126,7 +134,7 @@ export default function Home() {
   };
 
   const handleAddStandard = () => {
-    if (!newItem.title || !newItem.body) return;
+    if (!newItem.title || !newItem.body || !newItem.hotspotId) return;
 
     createStandard.mutate({
       title: newItem.title,
@@ -136,6 +144,7 @@ export default function Home() {
       permitDate: newItem.permitDate || null,
       inspectionDate: newItem.inspectionDate || null,
       categoryId: null,
+      hotspotId: newItem.hotspotId,
     }, {
       onSuccess: () => {
         setIsAddStandardOpen(false);
@@ -145,7 +154,8 @@ export default function Home() {
           body: "", 
           imageUrl: "",
           inspectionDate: "",
-          permitDate: ""
+          permitDate: "",
+          hotspotId: null
         });
       }
     });
@@ -162,7 +172,7 @@ export default function Home() {
   };
 
   const handleUpdateStandard = () => {
-    if (!editingItem || !editingItem.title || !editingItem.body) return;
+    if (!editingItem || !editingItem.title || !editingItem.body || !editingItem.hotspotId) return;
 
     updateStandard.mutate({
       id: editingItem.id,
@@ -173,6 +183,7 @@ export default function Home() {
         imageUrl: editingItem.imageUrl || null,
         permitDate: editingItem.permitDate || null,
         inspectionDate: editingItem.inspectionDate || null,
+        hotspotId: editingItem.hotspotId,
       }
     }, {
       onSuccess: () => {
@@ -277,10 +288,12 @@ export default function Home() {
         standard.body.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (standard.standardNumber && standard.standardNumber.includes(searchTerm))
       );
+    } else if (activeButtonId) {
+      return standards.filter(standard => standard.hotspotId === activeButtonId);
     } else {
       return standards;
     }
-  }, [standards, searchTerm, isSearching]);
+  }, [standards, searchTerm, isSearching, activeButtonId]);
 
   const activeButton = hotspots.find(h => h.id === activeButtonId);
 
@@ -488,7 +501,12 @@ export default function Home() {
               </div>
 
               {/* Add Standard Button */}
-              <Dialog open={isAddStandardOpen} onOpenChange={setIsAddStandardOpen}>
+              <Dialog open={isAddStandardOpen} onOpenChange={(open) => {
+                if (open && activeButtonId) {
+                  setNewItem(prev => ({ ...prev, hotspotId: activeButtonId }));
+                }
+                setIsAddStandardOpen(open);
+              }}>
                   <DialogTrigger asChild>
                     <Button className="shrink-0 gap-2 shadow-md hover:shadow-lg transition-all" data-testid="button-add-standard">
                       <Plus className="w-4 h-4" />
@@ -500,6 +518,24 @@ export default function Home() {
                     <DialogTitle>새 표준화 기준 추가</DialogTitle>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="hotspot">분류 (버튼 선택)</Label>
+                      <Select
+                        value={newItem.hotspotId?.toString() || ""}
+                        onValueChange={(value) => setNewItem({...newItem, hotspotId: value ? parseInt(value) : null})}
+                      >
+                        <SelectTrigger data-testid="select-hotspot">
+                          <SelectValue placeholder="버튼을 선택하세요..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {hotspots.map((hotspot) => (
+                            <SelectItem key={hotspot.id} value={hotspot.id.toString()}>
+                              {hotspot.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="grid gap-2">
                       <Label htmlFor="title">항목명 (Title)</Label>
                       <Input 
@@ -596,7 +632,13 @@ export default function Home() {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setIsAddStandardOpen(false)}>취소</Button>
-                    <Button onClick={handleAddStandard} data-testid="button-submit-standard">추가하기</Button>
+                    <Button 
+                      onClick={handleAddStandard} 
+                      disabled={!newItem.title || !newItem.body || !newItem.hotspotId}
+                      data-testid="button-submit-standard"
+                    >
+                      추가하기
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -714,6 +756,24 @@ export default function Home() {
           {editingItem && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
+                <Label htmlFor="edit-hotspot">분류 (버튼 선택)</Label>
+                <Select
+                  value={editingItem.hotspotId?.toString() || ""}
+                  onValueChange={(value) => setEditingItem({...editingItem, hotspotId: value ? parseInt(value) : null})}
+                >
+                  <SelectTrigger data-testid="select-edit-hotspot">
+                    <SelectValue placeholder="버튼을 선택하세요..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {hotspots.map((hotspot) => (
+                      <SelectItem key={hotspot.id} value={hotspot.id.toString()}>
+                        {hotspot.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="edit-title">항목명</Label>
                 <Input 
                   id="edit-title"
@@ -805,7 +865,13 @@ export default function Home() {
               삭제
             </Button>
             <Button variant="outline" onClick={() => setIsEditStandardOpen(false)}>취소</Button>
-            <Button onClick={handleUpdateStandard} data-testid="button-update-standard">저장</Button>
+            <Button 
+              onClick={handleUpdateStandard} 
+              disabled={!editingItem?.title || !editingItem?.body || !editingItem?.hotspotId}
+              data-testid="button-update-standard"
+            >
+              저장
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
