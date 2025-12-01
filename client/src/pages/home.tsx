@@ -88,8 +88,9 @@ export default function Home() {
   
   // Dialog States
   const [isAddStandardOpen, setIsAddStandardOpen] = useState(false);
-  const [isAddHotspotOpen, setIsAddHotspotOpen] = useState(false);
-  const [pendingHotspot, setPendingHotspot] = useState<{top: string, left: string} | null>(null);
+  const [isHotspotDialogOpen, setIsHotspotDialogOpen] = useState(false);
+  const [editingHotspotId, setEditingHotspotId] = useState<string | null>(null);
+  const [pendingHotspotPos, setPendingHotspotPos] = useState<{top: string, left: string} | null>(null);
   
   // Form States
   const [newItem, setNewItem] = useState<InspectionItem & { sectionId: string }>({
@@ -99,10 +100,14 @@ export default function Home() {
     sectionId: "machine",
     imageUrl: ""
   });
-  const [newHotspotLabel, setNewHotspotLabel] = useState("");
-  const [newHotspotSection, setNewHotspotSection] = useState("machine");
+  
+  const [hotspotForm, setHotspotForm] = useState({
+    label: "",
+    sectionId: "machine"
+  });
 
   const imageRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle section change
@@ -173,37 +178,87 @@ export default function Home() {
     setActiveSection(newItem.sectionId);
   };
 
-  // Handle Image Click for New Hotspot
+  // Handle Image Click (Add Hotspot)
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isEditMode || !imageRef.current) return;
+    if (!isEditMode || !containerRef.current) return;
+    // Only proceed if directly clicking the container (not a button)
+    if ((e.target as HTMLElement).tagName === 'BUTTON') return;
 
-    const rect = imageRef.current.getBoundingClientRect();
+    const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     
     const left = `${(x / rect.width) * 100}%`;
     const top = `${(y / rect.height) * 100}%`;
 
-    setPendingHotspot({ top, left });
-    setIsAddHotspotOpen(true);
+    setPendingHotspotPos({ top, left });
+    setEditingHotspotId(null); // New mode
+    setHotspotForm({ label: "", sectionId: "machine" });
+    setIsHotspotDialogOpen(true);
   };
 
-  // Handle Confirm Add Hotspot
-  const handleAddHotspot = () => {
-    if (!pendingHotspot || !newHotspotLabel) return;
+  // Handle Edit Click
+  const handleEditHotspotClick = (hotspot: HotspotItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingHotspotId(hotspot.id);
+    setHotspotForm({ label: hotspot.label, sectionId: hotspot.sectionId });
+    setPendingHotspotPos(null);
+    setIsHotspotDialogOpen(true);
+  };
 
-    const newHotspot: HotspotItem = {
-      id: `h-${Date.now()}`,
-      label: newHotspotLabel,
-      top: pendingHotspot.top,
-      left: pendingHotspot.left,
-      sectionId: newHotspotSection
-    };
+  // Handle Save Hotspot (Add or Update)
+  const handleSaveHotspot = () => {
+    if (!hotspotForm.label) return;
 
-    setHotspots(prev => [...prev, newHotspot]);
-    setIsAddHotspotOpen(false);
-    setNewHotspotLabel("");
-    setPendingHotspot(null);
+    if (editingHotspotId) {
+      // Update existing
+      setHotspots(prev => prev.map(h => 
+        h.id === editingHotspotId 
+          ? { ...h, label: hotspotForm.label, sectionId: hotspotForm.sectionId }
+          : h
+      ));
+    } else if (pendingHotspotPos) {
+      // Add new
+      const newHotspot: HotspotItem = {
+        id: `h-${Date.now()}`,
+        label: hotspotForm.label,
+        top: pendingHotspotPos.top,
+        left: pendingHotspotPos.left,
+        sectionId: hotspotForm.sectionId
+      };
+      setHotspots(prev => [...prev, newHotspot]);
+    }
+
+    setIsHotspotDialogOpen(false);
+    setHotspotForm({ label: "", sectionId: "machine" });
+    setPendingHotspotPos(null);
+    setEditingHotspotId(null);
+  };
+
+  // Handle Drag End
+  const handleDragEnd = (id: string, info: any) => {
+    if (!containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    
+    // Calculate new position relative to container
+    // info.point is absolute, so subtract container offset
+    const x = info.point.x - rect.left;
+    const y = info.point.y - rect.top;
+
+    // Convert to percentage
+    const leftVal = (x / rect.width) * 100;
+    const topVal = (y / rect.height) * 100;
+    
+    // Clamp values to 0-100
+    const clampedLeft = Math.max(0, Math.min(100, leftVal));
+    const clampedTop = Math.max(0, Math.min(100, topVal));
+
+    setHotspots(prev => prev.map(h => 
+      h.id === id 
+        ? { ...h, left: `${clampedLeft}%`, top: `${clampedTop}%` }
+        : h
+    ));
   };
 
   // Handle Delete Hotspot
@@ -270,6 +325,7 @@ export default function Home() {
 
             {/* Interactive Structure Diagram */}
             <div 
+              ref={containerRef}
               className={cn(
                 "relative w-full aspect-[3/4] bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 shadow-inner mb-6 group select-none",
                 isEditMode && "cursor-crosshair ring-2 ring-offset-2 ring-primary/50"
@@ -285,21 +341,25 @@ export default function Home() {
               
               {/* Hotspots */}
               {hotspots.map(hotspot => (
-                <div
-                  key={hotspot.id}
+                <motion.div
+                  key={`${hotspot.id}-${hotspot.top}-${hotspot.left}`} // Force remount on position change to reset drag transform
+                  drag={isEditMode} // Enable drag only in edit mode
+                  dragMomentum={false}
+                  dragElastic={0}
+                  onDragEnd={(e, info) => handleDragEnd(hotspot.id, info)}
                   className={cn(
-                    "absolute transform -translate-x-1/2 -translate-y-1/2 z-10",
-                    isEditMode ? "pointer-events-auto" : ""
+                    "absolute z-10",
+                    isEditMode ? "cursor-grab active:cursor-grabbing" : ""
                   )}
-                  style={{ top: hotspot.top, left: hotspot.left }}
+                  style={{ top: hotspot.top, left: hotspot.left, x: "-50%", y: "-50%" }}
                 >
                   <button
                     onClick={(e) => {
-                      e.stopPropagation();
+                      if (isEditMode) return; // Disable nav in edit mode
                       handleSectionChange(hotspot.sectionId);
                     }}
                     className={cn(
-                      "px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border transition-all duration-300 shadow-lg flex items-center gap-1.5 group/hotspot",
+                      "px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border transition-all duration-300 shadow-lg flex items-center gap-1.5 group/hotspot whitespace-nowrap",
                       (activeSection === hotspot.sectionId && !isSearching)
                         ? "bg-primary text-white border-primary scale-110 z-20 ring-4 ring-primary/20" 
                         : "bg-white/90 text-slate-700 border-white/50 hover:bg-primary hover:text-white hover:scale-105"
@@ -312,20 +372,28 @@ export default function Home() {
                     {hotspot.label}
                     
                     {isEditMode && (
-                      <div 
-                        onClick={(e) => handleDeleteHotspot(hotspot.id, e)}
-                        className="ml-1 p-0.5 rounded-full hover:bg-red-100 text-slate-400 hover:text-red-500 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
+                      <div className="flex items-center gap-1 ml-1 pl-1 border-l border-slate-300/50">
+                        <div 
+                          onClick={(e) => handleEditHotspotClick(hotspot, e)}
+                          className="p-1 rounded-full hover:bg-blue-100 text-slate-400 hover:text-blue-500 transition-colors cursor-pointer"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </div>
+                        <div 
+                          onClick={(e) => handleDeleteHotspot(hotspot.id, e)}
+                          className="p-1 rounded-full hover:bg-red-100 text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                        >
+                          <X className="w-3 h-3" />
+                        </div>
                       </div>
                     )}
                   </button>
-                </div>
+                </motion.div>
               ))}
 
               {isEditMode && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/75 text-white text-xs px-3 py-1 rounded-full backdrop-blur pointer-events-none">
-                  이미지를 클릭하여 버튼 추가
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/75 text-white text-xs px-3 py-1 rounded-full backdrop-blur pointer-events-none whitespace-nowrap">
+                  드래그하여 이동 • 클릭하여 추가
                 </div>
               )}
             </div>
@@ -609,13 +677,17 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Add Hotspot Dialog */}
-          <Dialog open={isAddHotspotOpen} onOpenChange={setIsAddHotspotOpen}>
+          {/* Shared Hotspot Dialog (Add / Edit) */}
+          <Dialog open={isHotspotDialogOpen} onOpenChange={setIsHotspotDialogOpen}>
             <DialogContent className="sm:max-w-[400px]">
               <DialogHeader>
-                <DialogTitle>새 버튼 추가</DialogTitle>
+                <DialogTitle>
+                  {editingHotspotId ? "버튼 편집" : "새 버튼 추가"}
+                </DialogTitle>
                 <DialogDescription>
-                  구조도에 새로운 바로가기 버튼을 추가합니다.
+                  {editingHotspotId 
+                    ? "버튼의 이름이나 연결할 카테고리를 수정합니다." 
+                    : "구조도에 새로운 바로가기 버튼을 추가합니다."}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -624,15 +696,15 @@ export default function Home() {
                   <Input 
                     id="hotspot-label" 
                     placeholder="예: 제어반" 
-                    value={newHotspotLabel}
-                    onChange={(e) => setNewHotspotLabel(e.target.value)}
+                    value={hotspotForm.label}
+                    onChange={(e) => setHotspotForm({...hotspotForm, label: e.target.value})}
                   />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="hotspot-section">연결할 카테고리</Label>
                   <Select 
-                    value={newHotspotSection} 
-                    onValueChange={setNewHotspotSection}
+                    value={hotspotForm.sectionId} 
+                    onValueChange={(val) => setHotspotForm({...hotspotForm, sectionId: val})}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="카테고리 선택" />
@@ -648,8 +720,10 @@ export default function Home() {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddHotspotOpen(false)}>취소</Button>
-                <Button onClick={handleAddHotspot}>추가하기</Button>
+                <Button variant="outline" onClick={() => setIsHotspotDialogOpen(false)}>취소</Button>
+                <Button onClick={handleSaveHotspot}>
+                  {editingHotspotId ? "수정 저장" : "추가하기"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
