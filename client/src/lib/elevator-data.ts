@@ -10,6 +10,8 @@ export interface InspectionItem {
   std: string;
   body: string;
   imageUrl?: string;
+  inspectionDate?: string;
+  permitDate?: string;
 }
 
 export interface SectionData {
@@ -115,7 +117,7 @@ export const ELEVATOR_DATA: Record<string, SectionData> = {
       {
         title: "문 이탈방지장치(비상가이드)",
         std: "7.5.3.2",
-        body: "가이드롤러 스틸프레임+리벳 구조 불가. 문과 문틀이 겹쳐 이탈방지 기능 시 인정. 행거 제외 별도 장치 확인."
+        body: "가이드롤러 스틸프레임+리벳 구조 불가. 문과 문틀이겹쳐 이탈방지 기능 시 인정. 행거 제외 별도 장치 확인."
       },
       {
         title: "문닫힘 안전장치",

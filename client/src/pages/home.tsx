@@ -17,7 +17,8 @@ import {
   MapPin,
   X,
   Image as ImageIcon,
-  Upload
+  Upload,
+  Calendar
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -98,7 +99,9 @@ export default function Home() {
     std: "",
     body: "",
     sectionId: "machine",
-    imageUrl: ""
+    imageUrl: "",
+    inspectionDate: "",
+    permitDate: ""
   });
   
   const [hotspotForm, setHotspotForm] = useState({
@@ -160,7 +163,9 @@ export default function Home() {
         title: newItem.title,
         std: newItem.std,
         body: newItem.body,
-        imageUrl: newItem.imageUrl
+        imageUrl: newItem.imageUrl,
+        inspectionDate: newItem.inspectionDate,
+        permitDate: newItem.permitDate
       }, ...targetSection.items];
 
       newData[newItem.sectionId] = {
@@ -172,7 +177,15 @@ export default function Home() {
     });
 
     setIsAddStandardOpen(false);
-    setNewItem({ title: "", std: "", body: "", sectionId: "machine", imageUrl: "" });
+    setNewItem({ 
+      title: "", 
+      std: "", 
+      body: "", 
+      sectionId: "machine", 
+      imageUrl: "",
+      inspectionDate: "",
+      permitDate: ""
+    });
     
     // Switch to the section where item was added
     setActiveSection(newItem.sectionId);
@@ -464,17 +477,17 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Add Standard Button */}
+              {/* Add Standardization Button */}
               <Dialog open={isAddStandardOpen} onOpenChange={setIsAddStandardOpen}>
                 <DialogTrigger asChild>
                   <Button className="shrink-0 gap-2 shadow-md hover:shadow-lg transition-all">
                     <Plus className="w-4 h-4" />
-                    기준 추가
+                    표준화 추가
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[500px]">
                   <DialogHeader>
-                    <DialogTitle>새 검사 기준 추가</DialogTitle>
+                    <DialogTitle>새 표준화 기준 추가</DialogTitle>
                     <DialogDescription>
                       새로운 검사 기준 항목을 추가합니다. 사진을 첨부할 수 있습니다.
                     </DialogDescription>
@@ -507,15 +520,37 @@ export default function Home() {
                         onChange={(e) => setNewItem({...newItem, title: e.target.value})}
                       />
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="std">기준 번호</Label>
+                        <Input 
+                          id="std" 
+                          placeholder="예: 14.2.3" 
+                          value={newItem.std}
+                          onChange={(e) => setNewItem({...newItem, std: e.target.value})}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="permitDate">건축허가일 (선택)</Label>
+                        <Input 
+                          id="permitDate" 
+                          type="date"
+                          value={newItem.permitDate}
+                          onChange={(e) => setNewItem({...newItem, permitDate: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    
                     <div className="grid gap-2">
-                      <Label htmlFor="std">기준 번호 (Standard No.)</Label>
+                      <Label htmlFor="inspectionDate">검사기준적용일 (선택)</Label>
                       <Input 
-                        id="std" 
-                        placeholder="예: 14.2.3" 
-                        value={newItem.std}
-                        onChange={(e) => setNewItem({...newItem, std: e.target.value})}
+                        id="inspectionDate" 
+                        type="date"
+                        value={newItem.inspectionDate}
+                        onChange={(e) => setNewItem({...newItem, inspectionDate: e.target.value})}
                       />
                     </div>
+
                     <div className="grid gap-2">
                       <Label htmlFor="body">세부 내용</Label>
                       <Textarea 
@@ -619,6 +654,24 @@ export default function Home() {
                           {item.body}
                         </p>
                         
+                        {/* Dates Display */}
+                        {(item.inspectionDate || item.permitDate) && (
+                          <div className="flex gap-3 mb-3 text-xs text-slate-500 font-mono">
+                            {item.permitDate && (
+                              <div className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded">
+                                <Calendar className="w-3 h-3" />
+                                <span>건축허가: {item.permitDate}</span>
+                              </div>
+                            )}
+                            {item.inspectionDate && (
+                              <div className="flex items-center gap-1 bg-blue-50 text-blue-600 px-2 py-1 rounded">
+                                <Calendar className="w-3 h-3" />
+                                <span>검사기준: {item.inspectionDate}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {/* Display Image if exists */}
                         {item.imageUrl && (
                           <div className="mt-3 rounded-lg overflow-hidden border border-slate-200 max-w-xs shadow-sm">
