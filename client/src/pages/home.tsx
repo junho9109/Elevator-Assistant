@@ -438,9 +438,6 @@ export default function Home() {
                     <DialogContent className="sm:max-w-[600px]">
                         <DialogHeader>
                             <DialogTitle>카테고리 관리</DialogTitle>
-                            <DialogDescription>
-                                검사 기준 카테고리를 생성, 수정, 삭제할 수 있습니다.
-                            </DialogDescription>
                         </DialogHeader>
 
                         <div className="py-4 space-y-6">
@@ -673,9 +670,6 @@ export default function Home() {
                 <DialogContent className="sm:max-w-[500px]">
                   <DialogHeader>
                     <DialogTitle>새 표준화 기준 추가</DialogTitle>
-                    <DialogDescription>
-                      새로운 검사 기준 항목을 추가합니다. 사진을 첨부할 수 있습니다.
-                    </DialogDescription>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
