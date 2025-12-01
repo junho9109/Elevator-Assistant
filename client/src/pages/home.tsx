@@ -90,6 +90,7 @@ export default function Home() {
   
   // Dialog States
   const [isAddStandardOpen, setIsAddStandardOpen] = useState(false);
+  const [isViewStandardOpen, setIsViewStandardOpen] = useState(false);
   const [isEditStandardOpen, setIsEditStandardOpen] = useState(false);
   const [isHotspotDialogOpen, setIsHotspotDialogOpen] = useState(false);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
@@ -109,7 +110,7 @@ export default function Home() {
     permitDate: ""
   });
 
-  // Editing Item State (includes original item reference to find it)
+  // Viewing/Editing Item State
   const [editingItem, setEditingItem] = useState<InspectionItem & { sectionId: string, originalTitle: string }>({
     title: "",
     std: "",
@@ -225,16 +226,23 @@ export default function Home() {
     setActiveSection(targetSectionId);
   };
 
-  // Handle Edit Standard
-  const handleOpenEditStandard = (item: InspectionItem, sectionId: string) => {
-      setEditingItem({
-          ...item,
-          sectionId,
-          originalTitle: item.title
-      });
+  // Handle View Standard
+  const handleOpenViewStandard = (item: InspectionItem, sectionId: string) => {
+    setEditingItem({
+        ...item,
+        sectionId,
+        originalTitle: item.title
+    });
+    setIsViewStandardOpen(true);
+  };
+
+  // Switch to Edit Mode from View Mode
+  const handleSwitchToEditMode = () => {
+      setIsViewStandardOpen(false);
       setIsEditStandardOpen(true);
   };
 
+  // Handle Update Standard
   const handleUpdateStandard = () => {
       if (!editingItem.title || !editingItem.body) return;
 
@@ -886,7 +894,7 @@ export default function Home() {
                       variants={cardVariants}
                       custom={index}
                       layout
-                      onClick={() => handleOpenEditStandard(item, sectionId)}
+                      onClick={() => handleOpenViewStandard(item, sectionId)}
                       className="group p-5 rounded-xl bg-slate-50 border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all duration-300 relative cursor-pointer hover:shadow-md"
                     >
                       <div className="flex items-start justify-between gap-4 mb-3 pr-8">
@@ -1078,7 +1086,73 @@ export default function Home() {
             </DialogContent>
           </Dialog>
 
-          {/* Edit Standard Dialog (NEW) */}
+          {/* View Standard Dialog (NEW) */}
+          <Dialog open={isViewStandardOpen} onOpenChange={setIsViewStandardOpen}>
+            <DialogContent className="sm:max-w-[600px] overflow-hidden">
+                <DialogHeader>
+                    <div className="flex items-center gap-2 mt-2">
+                         <Badge variant="outline" className="text-slate-500 font-mono text-xs">
+                            {editingItem.std}
+                         </Badge>
+                         <span className="text-xs text-slate-400">
+                             {data[editingItem.sectionId]?.title}
+                         </span>
+                    </div>
+                    <DialogTitle className="text-2xl font-bold mt-2 leading-tight">
+                        {editingItem.title}
+                    </DialogTitle>
+                </DialogHeader>
+                
+                <div className="py-4 space-y-6 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                    {/* Dates */}
+                    {(editingItem.inspectionDate || editingItem.permitDate) && (
+                        <div className="flex flex-wrap gap-3 text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            {editingItem.permitDate && (
+                                <div className="flex items-center gap-2">
+                                    <Calendar className="w-4 h-4 text-slate-400" />
+                                    <span className="font-medium">건축허가일:</span>
+                                    <span className="font-mono">{editingItem.permitDate}</span>
+                                </div>
+                            )}
+                            {editingItem.inspectionDate && (
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="w-4 h-4 text-blue-500" />
+                                    <span className="font-medium">검사기준적용일:</span>
+                                    <span className="font-mono text-blue-600">{editingItem.inspectionDate}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Body Content */}
+                    <div className="prose prose-slate max-w-none">
+                        <p className="whitespace-pre-wrap leading-relaxed text-slate-700">
+                            {editingItem.body}
+                        </p>
+                    </div>
+
+                    {/* Image */}
+                    {editingItem.imageUrl && (
+                        <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                            <img 
+                                src={editingItem.imageUrl} 
+                                alt={editingItem.title} 
+                                className="w-full h-auto object-contain bg-slate-50" 
+                            />
+                        </div>
+                    )}
+                </div>
+
+                <DialogFooter className="gap-2 sm:gap-0 border-t pt-4">
+                    <Button variant="outline" onClick={() => setIsViewStandardOpen(false)}>닫기</Button>
+                    <Button onClick={handleSwitchToEditMode} className="gap-2">
+                        <Pencil className="w-4 h-4" /> 수정
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Edit Standard Dialog */}
           <Dialog open={isEditStandardOpen} onOpenChange={setIsEditStandardOpen}>
             <DialogContent className="sm:max-w-[500px]">
               <DialogHeader>
