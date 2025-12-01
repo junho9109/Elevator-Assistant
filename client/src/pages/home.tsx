@@ -187,23 +187,6 @@ export default function Home() {
     });
   };
 
-  const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isEditMode || !containerRef.current) return;
-    if ((e.target as HTMLElement).tagName === 'BUTTON') return;
-
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    
-    const left = `${(x / rect.width) * 100}%`;
-    const top = `${(y / rect.height) * 100}%`;
-
-    setPendingButtonPos({ top, left });
-    setEditingButtonId(null);
-    setButtonForm({ label: "" });
-    setIsButtonDialogOpen(true);
-  };
-
   const handleEditButtonClick = (hotspot: Hotspot, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingButtonId(hotspot.id);
@@ -369,9 +352,8 @@ export default function Home() {
               ref={containerRef}
               className={cn(
                 "relative w-full aspect-[3/4] bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 shadow-inner mb-6 group select-none",
-                isEditMode && "cursor-crosshair ring-2 ring-offset-2 ring-primary/50"
+                isEditMode && "ring-2 ring-offset-2 ring-primary/50"
               )}
-              onClick={handleImageClick}
             >
               <img 
                 src={structureImg} 
@@ -425,11 +407,6 @@ export default function Home() {
                 </motion.div>
               ))}
               
-              {isEditMode && (
-                <div className="absolute top-4 right-4 bg-primary/90 backdrop-blur-sm text-primary-foreground px-3 py-1.5 rounded-full text-xs font-medium shadow-lg border border-white/20">
-                  클릭하여 새 버튼 추가
-                </div>
-              )}
             </div>
 
             {/* Search Input */}
