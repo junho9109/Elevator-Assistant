@@ -77,19 +77,8 @@ export default function Home() {
 
   const handleSave = async () => {
     try {
-      const standardsResult = await queryClient.refetchQueries({ queryKey: ["standards"], throwOnError: true });
-      const hotspotsResult = await queryClient.refetchQueries({ queryKey: ["hotspots"], throwOnError: true });
-      
-      const hasError = [...standardsResult, ...hotspotsResult].some(r => r.status === 'error');
-      
-      if (hasError) {
-        toast({
-          title: "저장 상태 확인 실패",
-          description: "서버와 연결할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
+      await queryClient.refetchQueries({ queryKey: ["standards"] });
+      await queryClient.refetchQueries({ queryKey: ["hotspots"] });
       
       const currentStandards = queryClient.getQueryData(["standards"]) as Standard[] || [];
       const currentHotspots = queryClient.getQueryData(["hotspots"]) as Hotspot[] || [];
