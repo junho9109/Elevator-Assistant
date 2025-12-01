@@ -31,6 +31,7 @@ export interface IStorage {
   // Standard methods
   getAllStandards(): Promise<Standard[]>;
   getStandardsByCategory(categoryId: number): Promise<Standard[]>;
+  getStandardsByHotspot(hotspotId: number): Promise<Standard[]>;
   getStandard(id: number): Promise<Standard | undefined>;
   createStandard(standard: InsertStandard): Promise<Standard>;
   updateStandard(id: number, standard: Partial<InsertStandard>): Promise<Standard | undefined>;
@@ -96,6 +97,10 @@ export class DatabaseStorage implements IStorage {
 
   async getStandardsByCategory(categoryId: number): Promise<Standard[]> {
     return await db.select().from(standards).where(eq(standards.categoryId, categoryId));
+  }
+
+  async getStandardsByHotspot(hotspotId: number): Promise<Standard[]> {
+    return await db.select().from(standards).where(eq(standards.hotspotId, hotspotId));
   }
 
   async getStandard(id: number): Promise<Standard | undefined> {
