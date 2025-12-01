@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertCategorySchema, insertStandardSchema, insertHotspotSchema } from "@shared/schema";
+import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Category routes
@@ -89,7 +89,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/standards", async (req, res) => {
     try {
-      const validatedData = insertStandardSchema.parse(req.body);
+      const validatedData = insertStandardSchemaExt.parse(req.body);
       const standard = await storage.createStandard(validatedData);
       res.status(201).json(standard);
     } catch (error) {
@@ -100,7 +100,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/standards/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const validatedData = insertStandardSchema.partial().parse(req.body);
+      const validatedData = insertStandardSchemaExt.partial().parse(req.body);
       const standard = await storage.updateStandard(id, validatedData);
       if (!standard) {
         return res.status(404).json({ error: "Standard not found" });

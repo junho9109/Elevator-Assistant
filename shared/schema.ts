@@ -57,6 +57,15 @@ export const insertStandardSchema = createInsertSchema(standards).omit({
 export const insertHotspotSchema = createInsertSchema(hotspots).omit({
   id: true,
   createdAt: true,
+}).extend({
+  categoryId: z.number().nullable().optional(),
+});
+
+export const insertStandardSchemaExt = createInsertSchema(standards).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  categoryId: z.number().nullable().optional(),
 });
 
 // Types

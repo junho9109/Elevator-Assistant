@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import structureImg from "@assets/structure_1764142259144.png";
 import { cn } from "@/lib/utils";
@@ -11,20 +11,13 @@ import {
   Trash2,
   Settings2,
   X,
-  Upload,
-  List
+  Upload
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -33,21 +26,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { 
-  useCategories, 
   useStandards, 
   useHotspots,
-  useCreateCategory,
-  useUpdateCategory,
-  useDeleteCategory,
   useCreateStandard,
   useUpdateStandard,
   useDeleteStandard,
@@ -55,9 +37,8 @@ import {
   useUpdateHotspot,
   useDeleteHotspot
 } from "@/lib/api";
-import type { Standard, Category, Hotspot } from "@shared/schema";
+import type { Standard, Hotspot } from "@shared/schema";
 
-// Animation variants
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
   visible: (i: number) => ({
@@ -68,15 +49,9 @@ const cardVariants = {
 };
 
 export default function Home() {
-  // Fetch data from API
-  const { data: categories = [], isLoading: categoriesLoading } = useCategories();
   const { data: standards = [], isLoading: standardsLoading } = useStandards();
   const { data: hotspots = [], isLoading: hotspotsLoading } = useHotspots();
 
-  // Mutations
-  const createCategory = useCreateCategory();
-  const updateCategory = useUpdateCategory();
-  const deleteCategory = useDeleteCategory();
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
   const deleteStandard = useDeleteStandard();
@@ -84,71 +59,48 @@ export default function Home() {
   const updateHotspot = useUpdateHotspot();
   const deleteHotspot = useDeleteHotspot();
 
-  const [activeSection, setActiveSection] = useState<number | null>(null);
+  const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
   
-  // Dialog States
   const [isAddStandardOpen, setIsAddStandardOpen] = useState(false);
   const [isViewStandardOpen, setIsViewStandardOpen] = useState(false);
   const [isEditStandardOpen, setIsEditStandardOpen] = useState(false);
-  const [isHotspotDialogOpen, setIsHotspotDialogOpen] = useState(false);
-  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
-  const [isEditCategoryDialogOpen, setIsEditCategoryDialogOpen] = useState(false);
+  const [isButtonDialogOpen, setIsButtonDialogOpen] = useState(false);
   
-  const [editingHotspotId, setEditingHotspotId] = useState<number | null>(null);
-  const [pendingHotspotPos, setPendingHotspotPos] = useState<{top: string, left: string} | null>(null);
+  const [editingButtonId, setEditingButtonId] = useState<number | null>(null);
+  const [pendingButtonPos, setPendingButtonPos] = useState<{top: string, left: string} | null>(null);
   
-  // Form States
   const [newItem, setNewItem] = useState({
     title: "",
     standardNumber: "",
     body: "",
-    categoryId: categories[0]?.id || 1,
     imageUrl: "",
     inspectionDate: "",
     permitDate: ""
   });
 
-  const [editingItem, setEditingItem] = useState<Standard & { categoryId: number } | null>(null);
+  const [editingItem, setEditingItem] = useState<Standard | null>(null);
   
-  const [hotspotForm, setHotspotForm] = useState({
-    label: "",
-    categoryId: categories[0]?.id || 1
+  const [buttonForm, setButtonForm] = useState({
+    label: ""
   });
 
-  const [newCategoryForm, setNewCategoryForm] = useState({
-    key: "",
-    title: "",
-    description: ""
-  });
-
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-
-  const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Set initial active section when categories load
-  useState(() => {
-    if (categories.length > 0 && activeSection === null) {
-      setActiveSection(categories[0].id);
+  useEffect(() => {
+    if (hotspots.length > 0 && activeButtonId === null) {
+      setActiveButtonId(hotspots[0].id);
     }
-  });
+  }, [hotspots, activeButtonId]);
 
-  // Handle section change
-  const handleSectionChange = (categoryId: number) => {
-    setActiveSection(categoryId);
+  const handleButtonClick = (buttonId: number) => {
+    setActiveButtonId(buttonId);
     setSearchTerm(""); 
   };
 
-  // Handle moving an item
-  const handleMoveItem = (standardId: number, toCategoryId: number) => {
-    updateStandard.mutate({ id: standardId, standard: { categoryId: toCategoryId } });
-  };
-
-  // Handle File Upload
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean = false) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -164,18 +116,17 @@ export default function Home() {
     }
   };
 
-  // Handle Adding New Standard
   const handleAddStandard = () => {
     if (!newItem.title || !newItem.body) return;
 
     createStandard.mutate({
-      categoryId: newItem.categoryId,
       title: newItem.title,
       standardNumber: newItem.standardNumber || null,
       body: newItem.body,
       imageUrl: newItem.imageUrl || null,
       permitDate: newItem.permitDate || null,
       inspectionDate: newItem.inspectionDate || null,
+      categoryId: null,
     }, {
       onSuccess: () => {
         setIsAddStandardOpen(false);
@@ -183,29 +134,24 @@ export default function Home() {
           title: "", 
           standardNumber: "", 
           body: "", 
-          categoryId: newItem.categoryId, 
           imageUrl: "",
           inspectionDate: "",
           permitDate: ""
         });
-        setActiveSection(newItem.categoryId);
       }
     });
   };
 
-  // Handle View Standard
   const handleOpenViewStandard = (standard: Standard) => {
-    setEditingItem({ ...standard, categoryId: standard.categoryId });
+    setEditingItem({ ...standard });
     setIsViewStandardOpen(true);
   };
 
-  // Switch to Edit Mode from View Mode
   const handleSwitchToEditMode = () => {
     setIsViewStandardOpen(false);
     setIsEditStandardOpen(true);
   };
 
-  // Handle Update Standard
   const handleUpdateStandard = () => {
     if (!editingItem || !editingItem.title || !editingItem.body) return;
 
@@ -218,7 +164,6 @@ export default function Home() {
         imageUrl: editingItem.imageUrl || null,
         permitDate: editingItem.permitDate || null,
         inspectionDate: editingItem.inspectionDate || null,
-        categoryId: editingItem.categoryId
       }
     }, {
       onSuccess: () => {
@@ -242,67 +187,6 @@ export default function Home() {
     });
   };
 
-  // Handle Category Management
-  const handleAddCategory = () => {
-    if (!newCategoryForm.title) return;
-    
-    const key = newCategoryForm.key || `cat_${Date.now()}`;
-    
-    createCategory.mutate({
-      key,
-      title: newCategoryForm.title,
-      description: newCategoryForm.description || "설명이 없습니다.",
-    }, {
-      onSuccess: () => {
-        setNewCategoryForm({ key: "", title: "", description: "" });
-      }
-    });
-  };
-
-  const handleUpdateCategory = () => {
-    if (!editingCategory || !editingCategory.title) return;
-
-    updateCategory.mutate({
-      id: editingCategory.id,
-      category: {
-        title: editingCategory.title,
-        description: editingCategory.description
-      }
-    }, {
-      onSuccess: () => {
-        setIsEditCategoryDialogOpen(false);
-        setEditingCategory(null);
-      }
-    });
-  };
-
-  const handleDeleteCategory = (catId: number) => {
-    if (categories.length <= 1) {
-      alert("최소 하나의 카테고리는 존재해야 합니다.");
-      return;
-    }
-    
-    const confirmDelete = window.confirm("정말 이 카테고리를 삭제하시겠습니까? 포함된 모든 기준 항목이 삭제됩니다.");
-    if (!confirmDelete) return;
-
-    deleteCategory.mutate(catId, {
-      onSuccess: () => {
-        if (activeSection === catId) {
-          const remainingCategories = categories.filter(c => c.id !== catId);
-          if (remainingCategories.length > 0) {
-            setActiveSection(remainingCategories[0].id);
-          }
-        }
-      }
-    });
-  };
-
-  const openEditCategory = (cat: Category) => {
-    setEditingCategory({ ...cat });
-    setIsEditCategoryDialogOpen(true);
-  };
-
-  // Handle Image Click (Add Hotspot)
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isEditMode || !containerRef.current) return;
     if ((e.target as HTMLElement).tagName === 'BUTTON') return;
@@ -314,56 +198,52 @@ export default function Home() {
     const left = `${(x / rect.width) * 100}%`;
     const top = `${(y / rect.height) * 100}%`;
 
-    setPendingHotspotPos({ top, left });
-    setEditingHotspotId(null);
-    setHotspotForm({ label: "", categoryId: activeSection || categories[0]?.id || 1 });
-    setIsHotspotDialogOpen(true);
+    setPendingButtonPos({ top, left });
+    setEditingButtonId(null);
+    setButtonForm({ label: "" });
+    setIsButtonDialogOpen(true);
   };
 
-  // Handle Edit Hotspot Click
-  const handleEditHotspotClick = (hotspot: Hotspot, e: React.MouseEvent) => {
+  const handleEditButtonClick = (hotspot: Hotspot, e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditingHotspotId(hotspot.id);
-    setHotspotForm({ label: hotspot.label, categoryId: hotspot.categoryId });
-    setPendingHotspotPos(null);
-    setIsHotspotDialogOpen(true);
+    setEditingButtonId(hotspot.id);
+    setButtonForm({ label: hotspot.label });
+    setPendingButtonPos(null);
+    setIsButtonDialogOpen(true);
   };
 
-  // Handle Save Hotspot (Add or Update)
-  const handleSaveHotspot = () => {
-    if (!hotspotForm.label) return;
+  const handleSaveButton = () => {
+    if (!buttonForm.label) return;
 
-    if (editingHotspotId) {
+    if (editingButtonId) {
       updateHotspot.mutate({
-        id: editingHotspotId,
+        id: editingButtonId,
         hotspot: {
-          label: hotspotForm.label,
-          categoryId: hotspotForm.categoryId
+          label: buttonForm.label
         }
       }, {
         onSuccess: () => {
-          setIsHotspotDialogOpen(false);
-          setHotspotForm({ label: "", categoryId: activeSection || categories[0]?.id || 1 });
-          setEditingHotspotId(null);
+          setIsButtonDialogOpen(false);
+          setButtonForm({ label: "" });
+          setEditingButtonId(null);
         }
       });
-    } else if (pendingHotspotPos) {
+    } else if (pendingButtonPos) {
       createHotspot.mutate({
-        label: hotspotForm.label,
-        top: pendingHotspotPos.top,
-        left: pendingHotspotPos.left,
-        categoryId: hotspotForm.categoryId
+        label: buttonForm.label,
+        top: pendingButtonPos.top,
+        left: pendingButtonPos.left,
+        categoryId: null
       }, {
         onSuccess: () => {
-          setIsHotspotDialogOpen(false);
-          setHotspotForm({ label: "", categoryId: activeSection || categories[0]?.id || 1 });
-          setPendingHotspotPos(null);
+          setIsButtonDialogOpen(false);
+          setButtonForm({ label: "" });
+          setPendingButtonPos(null);
         }
       });
     }
   };
 
-  // Handle Drag End
   const handleDragEnd = (id: number, info: any) => {
     if (!containerRef.current) return;
 
@@ -386,13 +266,11 @@ export default function Home() {
     });
   };
 
-  // Handle Delete Hotspot
-  const handleDeleteHotspot = (id: number, e: React.MouseEvent) => {
+  const handleDeleteButton = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     deleteHotspot.mutate(id);
   };
 
-  // Derived state for display
   const isSearching = searchTerm.length > 0;
 
   const displayItems = useMemo(() => {
@@ -403,21 +281,13 @@ export default function Home() {
         (standard.standardNumber && standard.standardNumber.includes(searchTerm))
       );
     } else {
-      if (!activeSection) return [];
-      return standards.filter(s => s.categoryId === activeSection);
+      return standards;
     }
-  }, [standards, activeSection, searchTerm, isSearching]);
+  }, [standards, searchTerm, isSearching]);
 
-  const currentCategory = categories.find(c => c.id === activeSection);
-  const standardsByCategoryCount = useMemo(() => {
-    const counts: Record<number, number> = {};
-    standards.forEach(s => {
-      counts[s.categoryId] = (counts[s.categoryId] || 0) + 1;
-    });
-    return counts;
-  }, [standards]);
+  const activeButton = hotspots.find(h => h.id === activeButtonId);
 
-  if (categoriesLoading || standardsLoading || hotspotsLoading) {
+  if (standardsLoading || hotspotsLoading) {
     return (
       <div className="min-h-screen bg-background p-4 md:p-8 flex items-center justify-center">
         <div className="text-center">
@@ -447,7 +317,7 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Edit Mode Toggle & Category Manager */}
+            {/* Edit Mode Toggle */}
             <div className="flex flex-col gap-3 mb-4">
               <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                 <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
@@ -457,100 +327,9 @@ export default function Home() {
                 <Switch 
                   checked={isEditMode}
                   onCheckedChange={setIsEditMode}
+                  data-testid="switch-edit-mode"
                 />
               </div>
-
-              <Dialog open={isCategoryManagerOpen} onOpenChange={setIsCategoryManagerOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between bg-white border-slate-200 hover:bg-slate-50" data-testid="button-category-manager">
-                    <span className="flex items-center gap-2 text-slate-600">
-                      <List className="w-4 h-4" />
-                      카테고리 관리
-                    </span>
-                    <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full font-mono">
-                      {categories.length}
-                    </span>
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[600px]">
-                  <DialogHeader>
-                    <DialogTitle>카테고리 관리</DialogTitle>
-                  </DialogHeader>
-
-                  <div className="py-4 space-y-6">
-                    {/* Create New */}
-                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-3">
-                      <h4 className="text-sm font-medium text-slate-700">새 카테고리 생성</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <Input 
-                          placeholder="카테고리명 (예: 로프)" 
-                          className="sm:col-span-1 bg-white"
-                          value={newCategoryForm.title}
-                          onChange={(e) => setNewCategoryForm({...newCategoryForm, title: e.target.value})}
-                          data-testid="input-new-category-title"
-                        />
-                        <Input 
-                          placeholder="설명 (선택사항)" 
-                          className="sm:col-span-2 bg-white"
-                          value={newCategoryForm.description}
-                          onChange={(e) => setNewCategoryForm({...newCategoryForm, description: e.target.value})}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleAddCategory();
-                          }}
-                          data-testid="input-new-category-description"
-                        />
-                      </div>
-                      <Button size="sm" onClick={handleAddCategory} className="w-full sm:w-auto" data-testid="button-add-category">
-                        <Plus className="w-4 h-4 mr-1" /> 추가하기
-                      </Button>
-                    </div>
-
-                    {/* List */}
-                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                      {categories.map(category => (
-                        <div key={category.id} className="flex items-center justify-between p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors" data-testid={`category-item-${category.id}`}>
-                          <div className="min-w-0 flex-1 mr-4">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-slate-900 truncate">
-                                {category.title}
-                              </span>
-                              <Badge variant="secondary" className="text-[10px] h-5 font-mono text-slate-400">
-                                Items: {standardsByCategoryCount[category.id] || 0}
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-slate-500 truncate mt-0.5">
-                              {category.description}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button 
-                              size="icon" 
-                              variant="ghost" 
-                              className="h-8 w-8 text-slate-400 hover:text-blue-600"
-                              onClick={() => openEditCategory(category)}
-                              data-testid={`button-edit-category-${category.id}`}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              size="icon" 
-                              variant="ghost" 
-                              className="h-8 w-8 text-slate-400 hover:text-red-600"
-                              onClick={() => handleDeleteCategory(category.id)}
-                              data-testid={`button-delete-category-${category.id}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button onClick={() => setIsCategoryManagerOpen(false)}>닫기</Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
             </div>
 
             {/* Interactive Structure Diagram */}
@@ -563,13 +342,12 @@ export default function Home() {
               onClick={handleImageClick}
             >
               <img 
-                ref={imageRef}
                 src={structureImg} 
                 alt="Elevator Structure" 
                 className="w-full h-full object-contain opacity-90 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
               />
               
-              {/* Hotspots */}
+              {/* Buttons (formerly Hotspots) */}
               {hotspots.map(hotspot => (
                 <motion.div
                   key={`${hotspot.id}-${hotspot.top}-${hotspot.left}`}
@@ -581,14 +359,14 @@ export default function Home() {
                     isEditMode ? "cursor-move" : "cursor-pointer"
                   )}
                   style={{ top: hotspot.top, left: hotspot.left }}
-                  onClick={() => !isEditMode && handleSectionChange(hotspot.categoryId)}
+                  onClick={() => !isEditMode && handleButtonClick(hotspot.id)}
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
-                  data-testid={`hotspot-${hotspot.id}`}
+                  data-testid={`button-${hotspot.id}`}
                 >
                   <div className={cn(
                     "relative px-3 py-2 rounded-full text-xs font-semibold shadow-lg backdrop-blur-sm border-2 transition-all duration-300",
-                    activeSection === hotspot.categoryId
+                    activeButtonId === hotspot.id
                       ? "bg-primary text-primary-foreground border-white scale-110"
                       : "bg-slate-900/70 text-white border-slate-700 hover:bg-primary/90 hover:border-white"
                   )}>
@@ -596,16 +374,16 @@ export default function Home() {
                     {isEditMode && (
                       <div className="absolute -top-2 -right-2 flex gap-1">
                         <button
-                          onClick={(e) => handleEditHotspotClick(hotspot, e)}
+                          onClick={(e) => handleEditButtonClick(hotspot, e)}
                           className="w-5 h-5 rounded-full bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center shadow-md"
-                          data-testid={`button-edit-hotspot-${hotspot.id}`}
+                          data-testid={`edit-button-${hotspot.id}`}
                         >
                           <Pencil className="w-3 h-3" />
                         </button>
                         <button
-                          onClick={(e) => handleDeleteHotspot(hotspot.id, e)}
+                          onClick={(e) => handleDeleteButton(hotspot.id, e)}
                           className="w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md"
-                          data-testid={`button-delete-hotspot-${hotspot.id}`}
+                          data-testid={`delete-button-${hotspot.id}`}
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -617,7 +395,7 @@ export default function Home() {
               
               {isEditMode && (
                 <div className="absolute top-4 right-4 bg-primary/90 backdrop-blur-sm text-primary-foreground px-3 py-1.5 rounded-full text-xs font-medium shadow-lg border border-white/20">
-                  클릭하여 핫스팟 추가
+                  클릭하여 새 버튼 추가
                 </div>
               )}
             </div>
@@ -660,36 +438,32 @@ export default function Home() {
                       </span>
                     </h2>
                     <p className="text-slate-500 mt-2">
-                       전체 섹션에서 "{searchTerm}" 검색 결과입니다.
+                       "{searchTerm}" 검색 결과입니다.
                     </p>
                   </motion.div>
                 ) : (
                   <div>
-                    {currentCategory ? (
+                    {activeButton ? (
                       <>
                         <motion.h2 
-                          key={currentCategory.title}
+                          key={activeButton.label}
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           className="text-3xl font-bold text-slate-900 flex items-center gap-3"
                         >
-                          {currentCategory.title}
-                          <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-mono font-medium tracking-wide">
-                            {currentCategory.key.toUpperCase()}
-                          </span>
+                          {activeButton.label}
                         </motion.h2>
                         <motion.p 
-                          key={currentCategory.description}
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ delay: 0.1 }}
                           className="text-slate-500 mt-2 leading-relaxed max-w-2xl"
                         >
-                          {currentCategory.description}
+                          표준화 기준 목록
                         </motion.p>
                       </>
                     ) : (
-                      <div className="text-slate-400 italic">카테고리를 선택하세요</div>
+                      <div className="text-slate-400 italic">버튼을 선택하세요</div>
                     )}
                   </div>
                 )}
@@ -708,24 +482,6 @@ export default function Home() {
                     <DialogTitle>새 표준화 기준 추가</DialogTitle>
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="section">카테고리</Label>
-                      <Select 
-                        value={String(newItem.categoryId)} 
-                        onValueChange={(val) => setNewItem({...newItem, categoryId: parseInt(val)})}
-                      >
-                        <SelectTrigger data-testid="select-category">
-                          <SelectValue placeholder="카테고리 선택" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map(category => (
-                            <SelectItem key={category.id} value={String(category.id)}>
-                              {category.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <div className="grid gap-2">
                       <Label htmlFor="title">항목명 (Title)</Label>
                       <Input 
@@ -832,7 +588,7 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto pr-2 -mr-2 space-y-4 custom-scrollbar">
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={isSearching ? "search" : activeSection}
+                  key={isSearching ? "search" : activeButtonId}
                   initial="hidden"
                   animate="visible"
                   exit="exit"
@@ -864,11 +620,6 @@ export default function Home() {
                           <span className="px-2.5 py-1 rounded bg-white border border-slate-200 text-slate-500 text-xs font-mono font-bold shadow-sm group-hover:border-blue-200 group-hover:text-blue-600 transition-colors">
                             {standard.standardNumber || "N/A"}
                           </span>
-                          {isSearching && (
-                            <Badge variant="outline" className="text-[10px] font-normal text-slate-400">
-                              {categories.find(c => c.id === standard.categoryId)?.title}
-                            </Badge>
-                          )}
                         </div>
                       </div>
                       
@@ -876,37 +627,6 @@ export default function Home() {
                         <p className="text-slate-600 text-sm leading-relaxed mb-3">
                           {standard.body}
                         </p>
-                        
-                        <div className="flex items-center justify-between">
-                          {!isSearching && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={(e) => e.stopPropagation()}
-                                  data-testid={`button-move-standard-${standard.id}`}
-                                >
-                                  다른 카테고리로 이동
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent>
-                                {categories.filter(c => c.id !== standard.categoryId).map(cat => (
-                                  <DropdownMenuItem 
-                                    key={cat.id}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleMoveItem(standard.id, cat.id);
-                                    }}
-                                  >
-                                    {cat.title}
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </div>
                       </div>
                     </motion.div>
                   ))}
@@ -1072,76 +792,26 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* Hotspot Dialog */}
-      <Dialog open={isHotspotDialogOpen} onOpenChange={setIsHotspotDialogOpen}>
+      {/* Button Dialog (formerly Hotspot Dialog) */}
+      <Dialog open={isButtonDialogOpen} onOpenChange={setIsButtonDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingHotspotId ? "핫스팟 수정" : "새 핫스팟 추가"}</DialogTitle>
+            <DialogTitle>{editingButtonId ? "버튼 수정" : "새 버튼 추가"}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>라벨</Label>
+              <Label>버튼 이름</Label>
               <Input 
                 placeholder="예: 기계실"
-                value={hotspotForm.label}
-                onChange={(e) => setHotspotForm({...hotspotForm, label: e.target.value})}
-                data-testid="input-hotspot-label"
+                value={buttonForm.label}
+                onChange={(e) => setButtonForm({...buttonForm, label: e.target.value})}
+                data-testid="input-button-label"
               />
-            </div>
-            <div className="grid gap-2">
-              <Label>연결된 카테고리</Label>
-              <Select 
-                value={String(hotspotForm.categoryId)} 
-                onValueChange={(val) => setHotspotForm({...hotspotForm, categoryId: parseInt(val)})}
-              >
-                <SelectTrigger data-testid="select-hotspot-category">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map(cat => (
-                    <SelectItem key={cat.id} value={String(cat.id)}>{cat.title}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsHotspotDialogOpen(false)}>취소</Button>
-            <Button onClick={handleSaveHotspot} data-testid="button-save-hotspot">저장</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Category Dialog */}
-      <Dialog open={isEditCategoryDialogOpen} onOpenChange={setIsEditCategoryDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>카테고리 수정</DialogTitle>
-          </DialogHeader>
-          {editingCategory && (
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label>카테고리명</Label>
-                <Input 
-                  value={editingCategory.title}
-                  onChange={(e) => setEditingCategory({...editingCategory, title: e.target.value})}
-                  data-testid="input-edit-category-title"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>설명</Label>
-                <Textarea 
-                  className="h-20 resize-none"
-                  value={editingCategory.description}
-                  onChange={(e) => setEditingCategory({...editingCategory, description: e.target.value})}
-                  data-testid="input-edit-category-description"
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditCategoryDialogOpen(false)}>취소</Button>
-            <Button onClick={handleUpdateCategory} data-testid="button-update-category">저장</Button>
+            <Button variant="outline" onClick={() => setIsButtonDialogOpen(false)}>취소</Button>
+            <Button onClick={handleSaveButton} data-testid="button-save-button">저장</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
