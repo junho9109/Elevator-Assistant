@@ -303,11 +303,23 @@ export default function Home() {
           {/* Left Panel: Structure & Navigation */}
           <div className="lg:col-span-5 bg-slate-50/50 p-6 lg:p-8 border-b lg:border-b-0 lg:border-r border-border flex flex-col">
             <div className="mb-6">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
-                  E
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
+                    E
+                  </div>
+                  <h1 className="text-2xl font-bold tracking-tight">기술자료조회</h1>
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight">기술자료조회</h1>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                  data-testid="button-refresh"
+                >
+                  <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
+                </Button>
               </div>
               <p className="text-muted-foreground text-sm pl-[52px]">
                 버튼을 눌러 관련 표준화를 확인하세요
@@ -475,22 +487,8 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2">
-                {/* Update Button */}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing}
-                  className="shrink-0 shadow-sm hover:shadow-md transition-all"
-                  data-testid="button-refresh"
-                >
-                  <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
-                </Button>
-
-                {/* Add Standard Button */}
-                <Dialog open={isAddStandardOpen} onOpenChange={setIsAddStandardOpen}>
+              {/* Add Standard Button */}
+              <Dialog open={isAddStandardOpen} onOpenChange={setIsAddStandardOpen}>
                   <DialogTrigger asChild>
                     <Button className="shrink-0 gap-2 shadow-md hover:shadow-lg transition-all" data-testid="button-add-standard">
                       <Plus className="w-4 h-4" />
@@ -602,7 +600,6 @@ export default function Home() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
-            </div>
             </div>
 
             {/* Scrollable Content Area */}
