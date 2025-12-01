@@ -340,8 +340,8 @@ export default function Home() {
     const leftVal = (x / rect.width) * 100;
     const topVal = (y / rect.height) * 100;
     
-    const clampedLeft = Math.max(0, Math.min(100, leftVal));
-    const clampedTop = Math.max(0, Math.min(100, topVal));
+    const clampedLeft = Math.max(0, Math.min(100, leftVal)).toFixed(1);
+    const clampedTop = Math.max(0, Math.min(100, topVal)).toFixed(1);
 
     updateHotspot.mutate({
       id,
@@ -354,6 +354,13 @@ export default function Home() {
         toast({
           title: "버튼 위치 저장됨",
           description: "버튼 위치가 서버에 저장되었습니다.",
+        });
+      },
+      onError: () => {
+        toast({
+          title: "위치 저장 실패",
+          description: "버튼 위치를 저장하지 못했습니다.",
+          variant: "destructive",
         });
       }
     });
