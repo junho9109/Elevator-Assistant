@@ -18,7 +18,8 @@ import {
   X,
   Image as ImageIcon,
   Upload,
-  Calendar
+  Calendar,
+  List
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -90,6 +91,9 @@ export default function Home() {
   // Dialog States
   const [isAddStandardOpen, setIsAddStandardOpen] = useState(false);
   const [isHotspotDialogOpen, setIsHotspotDialogOpen] = useState(false);
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+  const [isEditCategoryDialogOpen, setIsEditCategoryDialogOpen] = useState(false);
+  
   const [editingHotspotId, setEditingHotspotId] = useState<string | null>(null);
   const [pendingHotspotPos, setPendingHotspotPos] = useState<{top: string, left: string} | null>(null);
   
@@ -109,14 +113,24 @@ export default function Home() {
     sectionId: "machine"
   });
 
+  const [newCategoryForm, setNewCategoryForm] = useState({
+    id: "",
+    title: "",
+    desc: ""
+  });
+
+  const [editingCategory, setEditingCategory] = useState<SectionData | null>(null);
+
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle section change
   const handleSectionChange = (sectionId: string) => {
-    setActiveSection(sectionId);
-    setSearchTerm(""); 
+    if (data[sectionId]) {
+        setActiveSection(sectionId);
+        setSearchTerm(""); 
+    }
   };
 
   // Handle moving an item
@@ -155,9 +169,12 @@ export default function Home() {
   const handleAddStandard = () => {
     if (!newItem.title || !newItem.body) return;
 
+    // Ensure section exists, fallback to current active if not
+    const targetSectionId = data[newItem.sectionId] ? newItem.sectionId : activeSection;
+
     setData(prev => {
       const newData = { ...prev };
-      const targetSection = newData[newItem.sectionId];
+      const targetSection = newData[targetSectionId];
       
       const updatedItems = [{
         title: newItem.title,
@@ -168,7 +185,7 @@ export default function Home() {
         permitDate: newItem.permitDate
       }, ...targetSection.items];
 
-      newData[newItem.sectionId] = {
+      newData[targetSectionId] = {
         ...targetSection,
         items: updatedItems
       };
@@ -181,14 +198,82 @@ export default function Home() {
       title: "", 
       std: "", 
       body: "", 
-      sectionId: "machine", 
+      sectionId: targetSectionId, 
       imageUrl: "",
       inspectionDate: "",
       permitDate: ""
     });
     
-    // Switch to the section where item was added
-    setActiveSection(newItem.sectionId);
+    setActiveSection(targetSectionId);
+  };
+
+  // Handle Category Management
+  const handleAddCategory = () => {
+    if (!newCategoryForm.title) return;
+    
+    const newId = `cat_${Date.now()}`;
+    
+    setData(prev => ({
+        ...prev,
+        [newId]: {
+            id: newId,
+            title: newCategoryForm.title,
+            desc: newCategoryForm.desc || "설명이 없습니다.",
+            items: []
+        }
+    }));
+    
+    setNewCategoryForm({ id: "", title: "", desc: "" });
+  };
+
+  const handleUpdateCategory = () => {
+    if (!editingCategory || !editingCategory.title) return;
+
+    setData(prev => ({
+        ...prev,
+        [editingCategory.id]: {
+            ...prev[editingCategory.id],
+            title: editingCategory.title,
+            desc: editingCategory.desc
+        }
+    }));
+
+    setIsEditCategoryDialogOpen(false);
+    setEditingCategory(null);
+  };
+
+  const handleDeleteCategory = (catId: string) => {
+    if (Object.keys(data).length <= 1) {
+        alert("최소 하나의 카테고리는 존재해야 합니다.");
+        return;
+    }
+    
+    const confirmDelete = window.confirm("정말 이 카테고리를 삭제하시겠습니까? 포함된 모든 기준 항목이 삭제됩니다.");
+    if (!confirmDelete) return;
+
+    setData(prev => {
+        const newData = { ...prev };
+        delete newData[catId];
+        return newData;
+    });
+
+    // If deleted active section, switch to another
+    if (activeSection === catId) {
+        const remainingIds = Object.keys(data).filter(id => id !== catId);
+        if (remainingIds.length > 0) {
+            setActiveSection(remainingIds[0]);
+        }
+    }
+    
+    // Cleanup hotspots linking to this category?
+    // For now, we will just let them point to nothing or maybe we should filter them.
+    // Let's filter hotspots that point to invalid sections in the render or here.
+    setHotspots(prev => prev.filter(h => h.sectionId !== catId));
+  };
+
+  const openEditCategory = (cat: SectionData) => {
+      setEditingCategory({ ...cat });
+      setIsEditCategoryDialogOpen(true);
   };
 
   // Handle Image Click (Add Hotspot)
@@ -206,7 +291,7 @@ export default function Home() {
 
     setPendingHotspotPos({ top, left });
     setEditingHotspotId(null); // New mode
-    setHotspotForm({ label: "", sectionId: "machine" });
+    setHotspotForm({ label: "", sectionId: activeSection });
     setIsHotspotDialogOpen(true);
   };
 
@@ -243,7 +328,7 @@ export default function Home() {
     }
 
     setIsHotspotDialogOpen(false);
-    setHotspotForm({ label: "", sectionId: "machine" });
+    setHotspotForm({ label: "", sectionId: activeSection });
     setPendingHotspotPos(null);
     setEditingHotspotId(null);
   };
@@ -299,6 +384,7 @@ export default function Home() {
       });
       return results;
     } else {
+        if (!data[activeSection]) return [];
       return data[activeSection].items.map(item => ({ item, sectionId: activeSection }));
     }
   }, [data, activeSection, searchTerm, isSearching]);
@@ -324,16 +410,109 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Edit Mode Toggle */}
-            <div className="flex items-center justify-between mb-4 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                <Settings2 className="w-4 h-4 text-slate-400" />
-                <span>구조도 편집 모드</span>
-              </div>
-              <Switch 
-                checked={isEditMode}
-                onCheckedChange={setIsEditMode}
-              />
+            {/* Edit Mode Toggle & Category Manager */}
+            <div className="flex flex-col gap-3 mb-4">
+                <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                    <Settings2 className="w-4 h-4 text-slate-400" />
+                    <span>구조도 편집 모드</span>
+                  </div>
+                  <Switch 
+                    checked={isEditMode}
+                    onCheckedChange={setIsEditMode}
+                  />
+                </div>
+
+                <Dialog open={isCategoryManagerOpen} onOpenChange={setIsCategoryManagerOpen}>
+                    <DialogTrigger asChild>
+                        <Button variant="outline" className="w-full justify-between bg-white border-slate-200 hover:bg-slate-50">
+                            <span className="flex items-center gap-2 text-slate-600">
+                                <List className="w-4 h-4" />
+                                카테고리 관리
+                            </span>
+                            <span className="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full font-mono">
+                                {Object.keys(data).length}
+                            </span>
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[600px]">
+                        <DialogHeader>
+                            <DialogTitle>카테고리 관리</DialogTitle>
+                            <DialogDescription>
+                                검사 기준 카테고리를 생성, 수정, 삭제할 수 있습니다.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="py-4 space-y-6">
+                            {/* Create New */}
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-3">
+                                <h4 className="text-sm font-medium text-slate-700">새 카테고리 생성</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <Input 
+                                        placeholder="카테고리명 (예: 로프)" 
+                                        className="sm:col-span-1 bg-white"
+                                        value={newCategoryForm.title}
+                                        onChange={(e) => setNewCategoryForm({...newCategoryForm, title: e.target.value})}
+                                    />
+                                    <Input 
+                                        placeholder="설명 (선택사항)" 
+                                        className="sm:col-span-2 bg-white"
+                                        value={newCategoryForm.desc}
+                                        onChange={(e) => setNewCategoryForm({...newCategoryForm, desc: e.target.value})}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleAddCategory();
+                                        }}
+                                    />
+                                </div>
+                                <Button size="sm" onClick={handleAddCategory} className="w-full sm:w-auto">
+                                    <Plus className="w-4 h-4 mr-1" /> 추가하기
+                                </Button>
+                            </div>
+
+                            {/* List */}
+                            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                                {Object.values(data).map(category => (
+                                    <div key={category.id} className="flex items-center justify-between p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors">
+                                        <div className="min-w-0 flex-1 mr-4">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-medium text-slate-900 truncate">
+                                                    {category.title}
+                                                </span>
+                                                <Badge variant="secondary" className="text-[10px] h-5 font-mono text-slate-400">
+                                                    Items: {category.items.length}
+                                                </Badge>
+                                            </div>
+                                            <p className="text-xs text-slate-500 truncate mt-0.5">
+                                                {category.desc}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <Button 
+                                                size="icon" 
+                                                variant="ghost" 
+                                                className="h-8 w-8 text-slate-400 hover:text-blue-600"
+                                                onClick={() => openEditCategory(category)}
+                                            >
+                                                <Pencil className="w-4 h-4" />
+                                            </Button>
+                                            <Button 
+                                                size="icon" 
+                                                variant="ghost" 
+                                                className="h-8 w-8 text-slate-400 hover:text-red-600"
+                                                onClick={() => handleDeleteCategory(category.id)}
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button onClick={() => setIsCategoryManagerOpen(false)}>닫기</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </div>
 
             {/* Interactive Structure Diagram */}
@@ -453,26 +632,32 @@ export default function Home() {
                   </motion.div>
                 ) : (
                   <div>
-                    <motion.h2 
-                      key={currentSectionInfo.title}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="text-3xl font-bold text-slate-900 flex items-center gap-3"
-                    >
-                      {currentSectionInfo.title}
-                      <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-mono font-medium tracking-wide">
-                        {currentSectionInfo.id.toUpperCase()}
-                      </span>
-                    </motion.h2>
-                    <motion.p 
-                      key={currentSectionInfo.desc}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.1 }}
-                      className="text-slate-500 mt-2 leading-relaxed max-w-2xl"
-                    >
-                      {currentSectionInfo.desc}
-                    </motion.p>
+                    {currentSectionInfo ? (
+                        <>
+                        <motion.h2 
+                          key={currentSectionInfo.title}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          className="text-3xl font-bold text-slate-900 flex items-center gap-3"
+                        >
+                          {currentSectionInfo.title}
+                          <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-mono font-medium tracking-wide">
+                            {currentSectionInfo.id.toUpperCase()}
+                          </span>
+                        </motion.h2>
+                        <motion.p 
+                          key={currentSectionInfo.desc}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.1 }}
+                          className="text-slate-500 mt-2 leading-relaxed max-w-2xl"
+                        >
+                          {currentSectionInfo.desc}
+                        </motion.p>
+                        </>
+                    ) : (
+                        <div className="text-slate-400 italic">카테고리를 선택하세요</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -778,6 +963,42 @@ export default function Home() {
                   {editingHotspotId ? "수정 저장" : "추가하기"}
                 </Button>
               </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Edit Category Dialog */}
+          <Dialog open={isEditCategoryDialogOpen} onOpenChange={setIsEditCategoryDialogOpen}>
+            <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                    <DialogTitle>카테고리 수정</DialogTitle>
+                    <DialogDescription>
+                        카테고리 이름과 설명을 수정합니다.
+                    </DialogDescription>
+                </DialogHeader>
+                {editingCategory && (
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="cat-title">카테고리명</Label>
+                            <Input 
+                                id="cat-title" 
+                                value={editingCategory.title}
+                                onChange={(e) => setEditingCategory({...editingCategory, title: e.target.value})}
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="cat-desc">설명</Label>
+                            <Input 
+                                id="cat-desc" 
+                                value={editingCategory.desc}
+                                onChange={(e) => setEditingCategory({...editingCategory, desc: e.target.value})}
+                            />
+                        </div>
+                    </div>
+                )}
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsEditCategoryDialogOpen(false)}>취소</Button>
+                    <Button onClick={handleUpdateCategory}>저장</Button>
+                </DialogFooter>
             </DialogContent>
           </Dialog>
 
