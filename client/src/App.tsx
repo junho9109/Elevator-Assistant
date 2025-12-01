@@ -10,12 +10,10 @@ import SwipeNavigator from "@/components/SwipeNavigator";
 
 function MainApp() {
   return (
-    <div className="min-h-screen pt-16">
-      <SwipeNavigator 
-        pages={[<Home key="home" />, <JudgmentPage key="judgment" />]}
-        pageNames={["기술자료조회", "판정결과(예시)"]}
-      />
-    </div>
+    <SwipeNavigator 
+      pages={[<Home key="home" />, <JudgmentPage key="judgment" />]}
+      pageNames={["기술자료조회", "판정결과(예시)"]}
+    />
   );
 }
 

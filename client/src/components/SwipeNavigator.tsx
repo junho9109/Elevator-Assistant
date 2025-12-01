@@ -51,7 +51,7 @@ export default function SwipeNavigator({ pages, pageNames }: SwipeNavigatorProps
   };
 
   return (
-    <div className="relative w-full h-full overflow-hidden">
+    <div className="relative w-full min-h-screen overflow-hidden">
       <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex gap-2 bg-background/80 backdrop-blur-sm rounded-full px-4 py-2 shadow-lg border border-border">
         {pageNames.map((name, index) => (
           <button
@@ -102,7 +102,7 @@ export default function SwipeNavigator({ pages, pageNames }: SwipeNavigatorProps
           dragConstraints={{ left: 0, right: 0 }}
           dragElastic={0.2}
           onDragEnd={handleDragEnd}
-          className="absolute inset-0 cursor-grab active:cursor-grabbing"
+          className="w-full min-h-screen overflow-auto"
         >
           {pages[currentPage]}
         </motion.div>
