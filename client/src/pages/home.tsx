@@ -11,7 +11,8 @@ import {
   Trash2,
   Settings2,
   X,
-  Upload
+  Upload,
+  RefreshCw
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { useQueryClient } from "@tanstack/react-query";
 import { 
   useStandards, 
   useHotspots,
@@ -49,8 +51,15 @@ const cardVariants = {
 };
 
 export default function Home() {
-  const { data: standards = [], isLoading: standardsLoading } = useStandards();
-  const { data: hotspots = [], isLoading: hotspotsLoading } = useHotspots();
+  const queryClient = useQueryClient();
+  const { data: standards = [], isLoading: standardsLoading, isFetching: standardsFetching } = useStandards();
+  const { data: hotspots = [], isLoading: hotspotsLoading, isFetching: hotspotsFetching } = useHotspots();
+  const isRefreshing = standardsFetching || hotspotsFetching;
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["standards"] });
+    queryClient.invalidateQueries({ queryKey: ["hotspots"] });
+  };
 
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
@@ -196,9 +205,7 @@ export default function Home() {
   };
 
   const handleSaveButton = () => {
-    console.log("handleSaveButton called", { buttonForm, editingButtonId, pendingButtonPos });
     if (!buttonForm.label) {
-      console.log("No label provided, returning early");
       return;
     }
 
@@ -216,12 +223,6 @@ export default function Home() {
         }
       });
     } else if (pendingButtonPos) {
-      console.log("Creating new button with:", {
-        label: buttonForm.label,
-        top: pendingButtonPos.top,
-        left: pendingButtonPos.left,
-        categoryId: null
-      });
       createHotspot.mutate({
         label: buttonForm.label,
         top: pendingButtonPos.top,
@@ -229,18 +230,14 @@ export default function Home() {
         categoryId: null
       }, {
         onSuccess: () => {
-          console.log("Button created successfully");
           setIsButtonDialogOpen(false);
           setButtonForm({ label: "" });
           setPendingButtonPos(null);
         },
-        onError: (error) => {
-          console.error("Failed to create button:", error);
+        onError: () => {
           alert("버튼 생성에 실패했습니다.");
         }
       });
-    } else {
-      console.log("Neither editingButtonId nor pendingButtonPos is set");
     }
   };
 
@@ -478,15 +475,29 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Add Standard Button */}
-              <Dialog open={isAddStandardOpen} onOpenChange={setIsAddStandardOpen}>
-                <DialogTrigger asChild>
-                  <Button className="shrink-0 gap-2 shadow-md hover:shadow-lg transition-all" data-testid="button-add-standard">
-                    <Plus className="w-4 h-4" />
-                    표준화 추가
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px]">
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                {/* Update Button */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                  data-testid="button-refresh"
+                >
+                  <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
+                </Button>
+
+                {/* Add Standard Button */}
+                <Dialog open={isAddStandardOpen} onOpenChange={setIsAddStandardOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="shrink-0 gap-2 shadow-md hover:shadow-lg transition-all" data-testid="button-add-standard">
+                      <Plus className="w-4 h-4" />
+                      표준화 추가
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[500px]">
                   <DialogHeader>
                     <DialogTitle>새 표준화 기준 추가</DialogTitle>
                   </DialogHeader>
@@ -591,6 +602,7 @@ export default function Home() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+            </div>
             </div>
 
             {/* Scrollable Content Area */}
