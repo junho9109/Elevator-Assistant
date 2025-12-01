@@ -75,8 +75,32 @@ export default function Home() {
     });
   };
 
-  const handleSave = async () => {
+  const handleSaveClick = () => {
+    setAdminPassword("");
+    setIsPasswordDialogOpen(true);
+  };
+
+  const handlePasswordSubmit = async () => {
     try {
+      const response = await fetch("/api/admin/verify-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        toast({
+          title: response.status === 401 ? "비밀번호 오류" : "서버 오류",
+          description: data.error || "알 수 없는 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      setIsPasswordDialogOpen(false);
+      setAdminPassword("");
+      
       await queryClient.refetchQueries({ queryKey: ["standards"] });
       await queryClient.refetchQueries({ queryKey: ["hotspots"] });
       
@@ -114,6 +138,8 @@ export default function Home() {
   
   const [editingButtonId, setEditingButtonId] = useState<number | null>(null);
   const [pendingButtonPos, setPendingButtonPos] = useState<{top: string, left: string} | null>(null);
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
   
   const [newItem, setNewItem] = useState({
     title: "",
@@ -396,7 +422,7 @@ export default function Home() {
                   <Button
                     variant="outline"
                     size="icon"
-                    onClick={handleSave}
+                    onClick={handleSaveClick}
                     className="shrink-0 shadow-sm hover:shadow-md transition-all"
                     data-testid="button-save"
                     title="저장 확인"
@@ -978,6 +1004,36 @@ export default function Home() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsButtonDialogOpen(false)}>취소</Button>
             <Button onClick={handleSaveButton} data-testid="button-save-button">저장</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Dialog for Save */}
+      <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>관리자 비밀번호 확인</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>비밀번호</Label>
+              <Input 
+                type="password"
+                placeholder="비밀번호를 입력하세요"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handlePasswordSubmit();
+                  }
+                }}
+                data-testid="input-admin-password"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
+            <Button onClick={handlePasswordSubmit} data-testid="button-confirm-password">확인</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

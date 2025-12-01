@@ -128,6 +128,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin password verification
+  app.post("/api/admin/verify-password", async (req, res) => {
+    try {
+      const adminPassword = process.env.ADMIN_PASSWORD;
+      if (!adminPassword) {
+        console.error("ADMIN_PASSWORD environment variable is not set");
+        return res.status(500).json({ success: false, error: "서버 설정 오류입니다." });
+      }
+      
+      const { password } = req.body;
+      if (password === adminPassword) {
+        res.json({ success: true });
+      } else {
+        res.status(401).json({ success: false, error: "잘못된 비밀번호입니다." });
+      }
+    } catch (error) {
+      res.status(400).json({ success: false, error: "비밀번호 검증에 실패했습니다." });
+    }
+  });
+
   // Hotspot routes
   app.get("/api/hotspots", async (req, res) => {
     try {
