@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, serial, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -19,7 +19,7 @@ export const categories = pgTable("categories", {
 
 export const standards = pgTable("standards", {
   id: serial("id").primaryKey(),
-  categoryId: serial("category_id").notNull().references(() => categories.id, { onDelete: 'cascade' }),
+  categoryId: integer("category_id").references(() => categories.id, { onDelete: 'cascade' }),
   title: text("title").notNull(),
   standardNumber: varchar("standard_number", { length: 50 }),
   body: text("body").notNull(),
@@ -34,7 +34,7 @@ export const hotspots = pgTable("hotspots", {
   label: text("label").notNull(),
   top: varchar("top", { length: 10 }).notNull(),
   left: varchar("left", { length: 10 }).notNull(),
-  categoryId: serial("category_id").notNull().references(() => categories.id, { onDelete: 'cascade' }),
+  categoryId: integer("category_id").references(() => categories.id, { onDelete: 'cascade' }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
