@@ -317,10 +317,10 @@ export default function Home() {
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
                   E
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight">엘리베이터 구조도 뷰어</h1>
+                <h1 className="text-2xl font-bold tracking-tight">기술자료조회</h1>
               </div>
               <p className="text-muted-foreground text-sm pl-[52px]">
-                구조도나 버튼을 눌러 기계실, 승강로, 카 내, 피트 관련 기준을 확인하세요.
+                버튼을 눌러 관련 표준화를 확인하세요
               </p>
             </div>
 
