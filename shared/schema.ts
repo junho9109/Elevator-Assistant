@@ -20,6 +20,7 @@ export const categories = pgTable("categories", {
 export const standards = pgTable("standards", {
   id: serial("id").primaryKey(),
   categoryId: integer("category_id").references(() => categories.id, { onDelete: 'cascade' }),
+  hotspotId: integer("hotspot_id").references(() => hotspots.id, { onDelete: 'set null' }),
   title: text("title").notNull(),
   standardNumber: varchar("standard_number", { length: 50 }),
   body: text("body").notNull(),
@@ -66,6 +67,7 @@ export const insertStandardSchemaExt = createInsertSchema(standards).omit({
   createdAt: true,
 }).extend({
   categoryId: z.number().nullable().optional(),
+  hotspotId: z.number().nullable().optional(),
 });
 
 // Types
