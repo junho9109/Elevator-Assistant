@@ -12,8 +12,10 @@ import {
   Settings2,
   X,
   Upload,
-  RefreshCw
+  RefreshCw,
+  Save
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,6 +61,7 @@ const cardVariants = {
 
 export default function Home() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: standards = [], isLoading: standardsLoading, isFetching: standardsFetching } = useStandards();
   const { data: hotspots = [], isLoading: hotspotsLoading, isFetching: hotspotsFetching } = useHotspots();
   const isRefreshing = standardsFetching || hotspotsFetching;
@@ -66,6 +69,42 @@ export default function Home() {
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["standards"] });
     queryClient.invalidateQueries({ queryKey: ["hotspots"] });
+    toast({
+      title: "데이터 갱신됨",
+      description: "서버에서 최신 데이터를 불러왔습니다.",
+    });
+  };
+
+  const handleSave = async () => {
+    try {
+      const standardsResult = await queryClient.refetchQueries({ queryKey: ["standards"], throwOnError: true });
+      const hotspotsResult = await queryClient.refetchQueries({ queryKey: ["hotspots"], throwOnError: true });
+      
+      const hasError = [...standardsResult, ...hotspotsResult].some(r => r.status === 'error');
+      
+      if (hasError) {
+        toast({
+          title: "저장 상태 확인 실패",
+          description: "서버와 연결할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      const currentStandards = queryClient.getQueryData(["standards"]) as Standard[] || [];
+      const currentHotspots = queryClient.getQueryData(["hotspots"]) as Hotspot[] || [];
+      
+      toast({
+        title: "저장 상태 확인 완료",
+        description: `서버에 저장된 데이터: 표준화 ${currentStandards.length}건, 버튼 ${currentHotspots.length}개`,
+      });
+    } catch {
+      toast({
+        title: "저장 상태 확인 실패",
+        description: "서버와 연결할 수 없습니다.",
+        variant: "destructive",
+      });
+    }
   };
 
   const createStandard = useCreateStandard();
@@ -157,6 +196,10 @@ export default function Home() {
           permitDate: "",
           hotspotId: null
         });
+        toast({
+          title: "표준화 추가 완료",
+          description: "새 표준화가 서버에 저장되었습니다.",
+        });
       }
     });
   };
@@ -189,6 +232,10 @@ export default function Home() {
       onSuccess: () => {
         setIsEditStandardOpen(false);
         setEditingItem(null);
+        toast({
+          title: "표준화 수정 완료",
+          description: "변경사항이 서버에 저장되었습니다.",
+        });
       }
     });
   };
@@ -203,6 +250,10 @@ export default function Home() {
       onSuccess: () => {
         setIsEditStandardOpen(false);
         setEditingItem(null);
+        toast({
+          title: "표준화 삭제 완료",
+          description: "항목이 서버에서 삭제되었습니다.",
+        });
       }
     });
   };
@@ -231,6 +282,10 @@ export default function Home() {
           setIsButtonDialogOpen(false);
           setButtonForm({ label: "" });
           setEditingButtonId(null);
+          toast({
+            title: "버튼 수정 완료",
+            description: "버튼이 서버에 저장되었습니다.",
+          });
         }
       });
     } else if (pendingButtonPos) {
@@ -244,9 +299,17 @@ export default function Home() {
           setIsButtonDialogOpen(false);
           setButtonForm({ label: "" });
           setPendingButtonPos(null);
+          toast({
+            title: "버튼 추가 완료",
+            description: "새 버튼이 서버에 저장되었습니다.",
+          });
         },
         onError: () => {
-          alert("버튼 생성에 실패했습니다.");
+          toast({
+            title: "버튼 생성 실패",
+            description: "버튼을 생성할 수 없습니다.",
+            variant: "destructive",
+          });
         }
       });
     }
@@ -271,12 +334,29 @@ export default function Home() {
         left: `${clampedLeft}%`,
         top: `${clampedTop}%`
       }
+    }, {
+      onSuccess: () => {
+        toast({
+          title: "버튼 위치 저장됨",
+          description: "버튼 위치가 서버에 저장되었습니다.",
+        });
+      }
     });
   };
 
   const handleDeleteButton = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteHotspot.mutate(id);
+    const confirmDelete = window.confirm("정말 이 버튼을 삭제하시겠습니까?");
+    if (!confirmDelete) return;
+    
+    deleteHotspot.mutate(id, {
+      onSuccess: () => {
+        toast({
+          title: "버튼 삭제 완료",
+          description: "버튼이 서버에서 삭제되었습니다.",
+        });
+      }
+    });
   };
 
   const isSearching = searchTerm.length > 0;
@@ -323,16 +403,29 @@ export default function Home() {
                   </div>
                   <h1 className="text-2xl font-bold tracking-tight">기술자료조회</h1>
                 </div>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing}
-                  className="shrink-0 shadow-sm hover:shadow-md transition-all"
-                  data-testid="button-refresh"
-                >
-                  <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleSave}
+                    className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                    data-testid="button-save"
+                    title="저장 확인"
+                  >
+                    <Save className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                    data-testid="button-refresh"
+                    title="서버에서 다시 불러오기"
+                  >
+                    <RefreshCw className={cn("w-4 h-4", isRefreshing && "animate-spin")} />
+                  </Button>
+                </div>
               </div>
               <p className="text-muted-foreground text-sm pl-[52px]">
                 버튼을 눌러 관련 표준화를 확인하세요
