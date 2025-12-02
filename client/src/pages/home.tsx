@@ -945,21 +945,40 @@ export default function Home() {
           <div className="py-4 space-y-4">
             {editingItem?.imageUrls && editingItem.imageUrls.length > 0 && (
               <div className="grid grid-cols-2 gap-2">
-                {editingItem.imageUrls.map((url, index) => (
-                  <button 
-                    key={index} 
-                    type="button"
-                    className="rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                    onPointerUp={(e) => {
-                      e.stopPropagation();
-                      openImageViewer(editingItem.imageUrls!, index);
-                    }}
-                    data-testid={`image-thumbnail-${index}`}
-                  >
-                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48 pointer-events-none select-none" draggable={false} />
-                  </button>
-                ))}
+                {editingItem.imageUrls.map((url, index) => {
+                  const handleImageClick = (e: React.MouseEvent | React.TouchEvent) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openImageViewer(editingItem.imageUrls!, index);
+                  };
+                  return (
+                    <div 
+                      key={index} 
+                      role="button"
+                      tabIndex={0}
+                      className="rounded-lg overflow-hidden border-2 border-blue-300 cursor-pointer hover:border-blue-500 hover:shadow-lg transition-all active:scale-95 active:bg-blue-50 bg-white"
+                      onClick={handleImageClick}
+                      onTouchEnd={handleImageClick}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          openImageViewer(editingItem.imageUrls!, index);
+                        }
+                      }}
+                      data-testid={`image-thumbnail-${index}`}
+                    >
+                      <div className="relative">
+                        <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48 select-none" draggable={false} />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/10 transition-colors">
+                          <ZoomIn className="w-8 h-8 text-white drop-shadow-lg opacity-0 hover:opacity-100 transition-opacity" />
+                        </div>
+                        <div className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                          탭하여 확대
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
             <div className="space-y-2">
@@ -1259,32 +1278,32 @@ export default function Home() {
             <div className="absolute top-4 right-4 z-10 flex gap-3">
               <button
                 type="button"
-                className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center disabled:opacity-50"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                onPointerUp={handleZoomOut}
+                className="h-14 w-14 rounded-full bg-white/30 hover:bg-white/40 active:bg-white/50 text-white flex items-center justify-center disabled:opacity-50 shadow-lg"
+                onClick={(e) => { e.stopPropagation(); handleZoomOut(); }}
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleZoomOut(); }}
                 disabled={zoomLevel <= 0.5}
                 data-testid="button-zoom-out"
               >
-                <ZoomOut className="w-6 h-6" />
+                <ZoomOut className="w-7 h-7" />
               </button>
               <button
                 type="button"
-                className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center disabled:opacity-50"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                onPointerUp={handleZoomIn}
+                className="h-14 w-14 rounded-full bg-white/30 hover:bg-white/40 active:bg-white/50 text-white flex items-center justify-center disabled:opacity-50 shadow-lg"
+                onClick={(e) => { e.stopPropagation(); handleZoomIn(); }}
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleZoomIn(); }}
                 disabled={zoomLevel >= 3}
                 data-testid="button-zoom-in"
               >
-                <ZoomIn className="w-6 h-6" />
+                <ZoomIn className="w-7 h-7" />
               </button>
               <button
                 type="button"
-                className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
-                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                onPointerUp={() => setIsImageViewerOpen(false)}
+                className="h-14 w-14 rounded-full bg-red-500/80 hover:bg-red-500 active:bg-red-600 text-white flex items-center justify-center shadow-lg"
+                onClick={(e) => { e.stopPropagation(); setIsImageViewerOpen(false); }}
+                onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setIsImageViewerOpen(false); }}
                 data-testid="button-close-viewer"
               >
-                <X className="w-6 h-6" />
+                <X className="w-7 h-7" />
               </button>
             </div>
             
@@ -1303,21 +1322,21 @@ export default function Home() {
               <>
                 <button
                   type="button"
-                  className="absolute left-4 top-1/2 -translate-y-1/2 h-14 w-14 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
-                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                  onPointerUp={handlePrevImage}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 h-16 w-16 rounded-full bg-white/30 hover:bg-white/40 active:bg-white/50 text-white flex items-center justify-center shadow-lg"
+                  onClick={(e) => { e.stopPropagation(); handlePrevImage(); }}
+                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handlePrevImage(); }}
                   data-testid="button-prev-image"
                 >
-                  <ChevronLeft className="w-8 h-8" />
+                  <ChevronLeft className="w-10 h-10" />
                 </button>
                 <button
                   type="button"
-                  className="absolute right-4 top-1/2 -translate-y-1/2 h-14 w-14 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
-                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                  onPointerUp={handleNextImage}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 h-16 w-16 rounded-full bg-white/30 hover:bg-white/40 active:bg-white/50 text-white flex items-center justify-center shadow-lg"
+                  onClick={(e) => { e.stopPropagation(); handleNextImage(); }}
+                  onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleNextImage(); }}
                   data-testid="button-next-image"
                 >
-                  <ChevronRight className="w-8 h-8" />
+                  <ChevronRight className="w-10 h-10" />
                 </button>
               </>
             )}
