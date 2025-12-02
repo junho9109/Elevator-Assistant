@@ -951,9 +951,13 @@ export default function Home() {
                     type="button"
                     className="rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400"
                     style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                    onClick={() => openImageViewer(editingItem.imageUrls!, index)}
+                    onPointerUp={(e) => {
+                      e.stopPropagation();
+                      openImageViewer(editingItem.imageUrls!, index);
+                    }}
+                    data-testid={`image-thumbnail-${index}`}
                   >
-                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48 pointer-events-none" draggable={false} />
+                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48 pointer-events-none select-none" draggable={false} />
                   </button>
                 ))}
               </div>
@@ -1257,8 +1261,9 @@ export default function Home() {
                 type="button"
                 className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center disabled:opacity-50"
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                onClick={handleZoomOut}
+                onPointerUp={handleZoomOut}
                 disabled={zoomLevel <= 0.5}
+                data-testid="button-zoom-out"
               >
                 <ZoomOut className="w-6 h-6" />
               </button>
@@ -1266,8 +1271,9 @@ export default function Home() {
                 type="button"
                 className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center disabled:opacity-50"
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                onClick={handleZoomIn}
+                onPointerUp={handleZoomIn}
                 disabled={zoomLevel >= 3}
+                data-testid="button-zoom-in"
               >
                 <ZoomIn className="w-6 h-6" />
               </button>
@@ -1275,7 +1281,8 @@ export default function Home() {
                 type="button"
                 className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
                 style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                onClick={() => setIsImageViewerOpen(false)}
+                onPointerUp={() => setIsImageViewerOpen(false)}
+                data-testid="button-close-viewer"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -1298,7 +1305,8 @@ export default function Home() {
                   type="button"
                   className="absolute left-4 top-1/2 -translate-y-1/2 h-14 w-14 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
                   style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                  onClick={handlePrevImage}
+                  onPointerUp={handlePrevImage}
+                  data-testid="button-prev-image"
                 >
                   <ChevronLeft className="w-8 h-8" />
                 </button>
@@ -1306,7 +1314,8 @@ export default function Home() {
                   type="button"
                   className="absolute right-4 top-1/2 -translate-y-1/2 h-14 w-14 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
                   style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-                  onClick={handleNextImage}
+                  onPointerUp={handleNextImage}
+                  data-testid="button-next-image"
                 >
                   <ChevronRight className="w-8 h-8" />
                 </button>
