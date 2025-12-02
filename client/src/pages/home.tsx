@@ -261,9 +261,10 @@ export default function Home() {
         hotspotId: editingItem.hotspotId,
       }
     }, {
-      onSuccess: () => {
+      onSuccess: (updatedStandard) => {
         setIsEditStandardOpen(false);
-        setEditingItem(null);
+        setEditingItem(updatedStandard);
+        setIsViewStandardOpen(true);
         toast({
           title: "표준화 수정 완료",
           description: "변경사항이 서버에 저장되었습니다.",
