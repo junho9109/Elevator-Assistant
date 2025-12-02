@@ -946,17 +946,15 @@ export default function Home() {
             {editingItem?.imageUrls && editingItem.imageUrls.length > 0 && (
               <div className="grid grid-cols-2 gap-2">
                 {editingItem.imageUrls.map((url, index) => (
-                  <div 
+                  <button 
                     key={index} 
-                    className="rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all active:scale-95 touch-manipulation"
+                    type="button"
+                    className="rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all active:scale-95 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                     onClick={() => openImageViewer(editingItem.imageUrls!, index)}
-                    onTouchEnd={(e) => {
-                      e.preventDefault();
-                      openImageViewer(editingItem.imageUrls!, index);
-                    }}
                   >
-                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48 pointer-events-none" />
-                  </div>
+                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48 pointer-events-none" draggable={false} />
+                  </button>
                 ))}
               </div>
             )}
@@ -1254,33 +1252,33 @@ export default function Home() {
             <DialogTitle>이미지 보기</DialogTitle>
           </DialogHeader>
           <div className="relative w-full h-full flex flex-col touch-manipulation">
-            <div className="absolute top-4 right-4 z-10 flex gap-2">
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
+            <div className="absolute top-4 right-4 z-10 flex gap-3">
+              <button
+                type="button"
+                className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center disabled:opacity-50"
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 onClick={handleZoomOut}
                 disabled={zoomLevel <= 0.5}
               >
-                <ZoomOut className="w-5 h-5" />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                <ZoomOut className="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center disabled:opacity-50"
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 onClick={handleZoomIn}
                 disabled={zoomLevel >= 3}
               >
-                <ZoomIn className="w-5 h-5" />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                <ZoomIn className="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                className="h-12 w-12 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
+                style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 onClick={() => setIsImageViewerOpen(false)}
               >
-                <X className="w-5 h-5" />
-              </Button>
+                <X className="w-6 h-6" />
+              </button>
             </div>
             
             <div className="flex-1 flex items-center justify-center overflow-auto p-4 min-h-[60vh]">
@@ -1296,22 +1294,22 @@ export default function Home() {
 
             {viewerImages.length > 1 && (
               <>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="absolute left-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                <button
+                  type="button"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 h-14 w-14 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                   onClick={handlePrevImage}
                 >
-                  <ChevronLeft className="w-6 h-6" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="absolute right-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                  <ChevronLeft className="w-8 h-8" />
+                </button>
+                <button
+                  type="button"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 h-14 w-14 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center"
+                  style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                   onClick={handleNextImage}
                 >
-                  <ChevronRight className="w-6 h-6" />
-                </Button>
+                  <ChevronRight className="w-8 h-8" />
+                </button>
               </>
             )}
 
