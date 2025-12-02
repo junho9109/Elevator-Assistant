@@ -13,7 +13,11 @@ import {
   X,
   Upload,
   RefreshCw,
-  Save
+  Save,
+  ZoomIn,
+  ZoomOut,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -159,6 +163,11 @@ export default function Home() {
     label: ""
   });
 
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+  const [viewerImages, setViewerImages] = useState<string[]>([]);
+  const [viewerImageIndex, setViewerImageIndex] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(1);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -172,6 +181,31 @@ export default function Home() {
   const handleButtonClick = (buttonId: number) => {
     setActiveButtonId(buttonId);
     setSearchTerm(""); 
+  };
+
+  const openImageViewer = (images: string[], startIndex: number = 0) => {
+    setViewerImages(images);
+    setViewerImageIndex(startIndex);
+    setZoomLevel(1);
+    setIsImageViewerOpen(true);
+  };
+
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 0.5, 3));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 0.5, 0.5));
+  };
+
+  const handlePrevImage = () => {
+    setViewerImageIndex(prev => (prev > 0 ? prev - 1 : viewerImages.length - 1));
+    setZoomLevel(1);
+  };
+
+  const handleNextImage = () => {
+    setViewerImageIndex(prev => (prev < viewerImages.length - 1 ? prev + 1 : 0));
+    setZoomLevel(1);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean = false) => {
@@ -912,7 +946,11 @@ export default function Home() {
             {editingItem?.imageUrls && editingItem.imageUrls.length > 0 && (
               <div className="grid grid-cols-2 gap-2">
                 {editingItem.imageUrls.map((url, index) => (
-                  <div key={index} className="rounded-lg overflow-hidden border border-slate-200">
+                  <div 
+                    key={index} 
+                    className="rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all"
+                    onClick={() => openImageViewer(editingItem.imageUrls!, index)}
+                  >
                     <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48" />
                   </div>
                 ))}
@@ -1199,6 +1237,86 @@ export default function Home() {
             <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
             <Button onClick={handlePasswordSubmit} data-testid="button-confirm-password">확인</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Viewer Dialog */}
+      <Dialog open={isImageViewerOpen} onOpenChange={(open) => {
+        setIsImageViewerOpen(open);
+        if (!open) setZoomLevel(1);
+      }}>
+        <DialogContent className="sm:max-w-[90vw] max-h-[90vh] p-0 bg-black/95 border-none">
+          <div className="relative w-full h-full flex flex-col">
+            <div className="absolute top-4 right-4 z-10 flex gap-2">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                onClick={handleZoomOut}
+                disabled={zoomLevel <= 0.5}
+              >
+                <ZoomOut className="w-5 h-5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                onClick={handleZoomIn}
+                disabled={zoomLevel >= 3}
+              >
+                <ZoomIn className="w-5 h-5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                onClick={() => setIsImageViewerOpen(false)}
+              >
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+            
+            <div className="flex-1 flex items-center justify-center overflow-auto p-4 min-h-[60vh]">
+              {viewerImages.length > 0 && (
+                <img 
+                  src={viewerImages[viewerImageIndex]} 
+                  alt={`Image ${viewerImageIndex + 1}`}
+                  className="max-w-full max-h-full object-contain transition-transform duration-200"
+                  style={{ transform: `scale(${zoomLevel})` }}
+                />
+              )}
+            </div>
+
+            {viewerImages.length > 1 && (
+              <>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                  onClick={handlePrevImage}
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white"
+                  onClick={handleNextImage}
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </Button>
+              </>
+            )}
+
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 text-white text-sm">
+              <span className="bg-black/50 px-3 py-1 rounded-full">
+                {viewerImageIndex + 1} / {viewerImages.length}
+              </span>
+              <span className="bg-black/50 px-3 py-1 rounded-full">
+                {Math.round(zoomLevel * 100)}%
+              </span>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
