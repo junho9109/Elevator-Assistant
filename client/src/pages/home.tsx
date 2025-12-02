@@ -948,10 +948,14 @@ export default function Home() {
                 {editingItem.imageUrls.map((url, index) => (
                   <div 
                     key={index} 
-                    className="rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all"
+                    className="rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:border-blue-400 hover:shadow-md transition-all active:scale-95 touch-manipulation"
                     onClick={() => openImageViewer(editingItem.imageUrls!, index)}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      openImageViewer(editingItem.imageUrls!, index);
+                    }}
                   >
-                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48" />
+                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48 pointer-events-none" />
                   </div>
                 ))}
               </div>
@@ -1246,7 +1250,10 @@ export default function Home() {
         if (!open) setZoomLevel(1);
       }}>
         <DialogContent className="sm:max-w-[90vw] max-h-[90vh] p-0 bg-black/95 border-none">
-          <div className="relative w-full h-full flex flex-col">
+          <DialogHeader className="sr-only">
+            <DialogTitle>이미지 보기</DialogTitle>
+          </DialogHeader>
+          <div className="relative w-full h-full flex flex-col touch-manipulation">
             <div className="absolute top-4 right-4 z-10 flex gap-2">
               <Button
                 size="icon"
