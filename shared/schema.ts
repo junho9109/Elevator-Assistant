@@ -24,7 +24,7 @@ export const standards = pgTable("standards", {
   title: text("title").notNull(),
   standardNumber: varchar("standard_number", { length: 50 }),
   body: text("body").notNull(),
-  imageUrl: text("image_url"),
+  imageUrls: text("image_urls").array(),
   permitDate: varchar("permit_date", { length: 10 }),
   inspectionDate: varchar("inspection_date", { length: 10 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -68,6 +68,7 @@ export const insertStandardSchemaExt = createInsertSchema(standards).omit({
 }).extend({
   categoryId: z.number().nullable().optional(),
   hotspotId: z.number().nullable().optional(),
+  imageUrls: z.array(z.string()).nullable().optional(),
 });
 
 // Types
