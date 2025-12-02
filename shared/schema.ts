@@ -27,6 +27,8 @@ export const standards = pgTable("standards", {
   imageUrls: text("image_urls").array(),
   permitDate: varchar("permit_date", { length: 10 }),
   inspectionDate: varchar("inspection_date", { length: 10 }),
+  inspectionYear: varchar("inspection_year", { length: 4 }),
+  inspectionRound: varchar("inspection_round", { length: 10 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
