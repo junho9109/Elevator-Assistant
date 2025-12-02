@@ -145,7 +145,7 @@ export default function Home() {
     title: "",
     standardNumber: "",
     body: "",
-    imageUrl: "",
+    imageUrls: [] as string[],
     inspectionDate: "",
     permitDate: "",
     hotspotId: null as number | null
@@ -173,18 +173,35 @@ export default function Home() {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean = false) => {
-    const file = e.target.files?.[0];
-    if (file) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const maxImages = 5;
+    const currentCount = isEdit ? (editingItem?.imageUrls?.length || 0) : newItem.imageUrls.length;
+    const remainingSlots = maxImages - currentCount;
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
+    
+    filesToProcess.forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
         if (isEdit && editingItem) {
-          setEditingItem({ ...editingItem, imageUrl: reader.result as string || null });
+          setEditingItem(prev => {
+            if (!prev) return prev;
+            const existingUrls = prev.imageUrls || [];
+            if (existingUrls.length >= maxImages) return prev;
+            return { ...prev, imageUrls: [...existingUrls, reader.result as string] };
+          });
         } else {
-          setNewItem(prev => ({ ...prev, imageUrl: reader.result as string }));
+          setNewItem(prev => {
+            if (prev.imageUrls.length >= maxImages) return prev;
+            return { ...prev, imageUrls: [...prev.imageUrls, reader.result as string] };
+          });
         }
       };
       reader.readAsDataURL(file);
-    }
+    });
+    
+    e.target.value = "";
   };
 
   const handleAddStandard = () => {
@@ -194,7 +211,7 @@ export default function Home() {
       title: newItem.title,
       standardNumber: newItem.standardNumber || null,
       body: newItem.body,
-      imageUrl: newItem.imageUrl || null,
+      imageUrls: newItem.imageUrls.length > 0 ? newItem.imageUrls : null,
       permitDate: newItem.permitDate || null,
       inspectionDate: newItem.inspectionDate || null,
       categoryId: null,
@@ -206,7 +223,7 @@ export default function Home() {
           title: "", 
           standardNumber: "", 
           body: "", 
-          imageUrl: "",
+          imageUrls: [],
           inspectionDate: "",
           permitDate: "",
           hotspotId: null
@@ -238,7 +255,7 @@ export default function Home() {
         title: editingItem.title,
         standardNumber: editingItem.standardNumber || null,
         body: editingItem.body,
-        imageUrl: editingItem.imageUrl || null,
+        imageUrls: editingItem.imageUrls && editingItem.imageUrls.length > 0 ? editingItem.imageUrls : null,
         permitDate: editingItem.permitDate || null,
         inspectionDate: editingItem.inspectionDate || null,
         hotspotId: editingItem.hotspotId,
@@ -709,38 +726,47 @@ export default function Home() {
                     
                     {/* Image Upload Field */}
                     <div className="grid gap-2">
-                      <Label htmlFor="image">사진 첨부 (선택사항)</Label>
+                      <Label htmlFor="image">사진 첨부 (최대 5장)</Label>
                       <div className="flex items-center gap-3">
                         <Button 
                           type="button" 
                           variant="outline" 
                           onClick={() => fileInputRef.current?.click()}
-                          className="w-full border-dashed border-2 h-12 text-slate-500 hover:text-primary hover:border-primary hover:bg-blue-50"
+                          disabled={newItem.imageUrls.length >= 5}
+                          className="w-full border-dashed border-2 h-12 text-slate-500 hover:text-primary hover:border-primary hover:bg-blue-50 disabled:opacity-50"
                           data-testid="button-upload-image"
                         >
                           <Upload className="w-4 h-4 mr-2" />
-                          {newItem.imageUrl ? "사진 변경하기" : "이미지 업로드"}
+                          {newItem.imageUrls.length > 0 ? `사진 추가 (${newItem.imageUrls.length}/5)` : "이미지 업로드"}
                         </Button>
                         <input 
                           ref={fileInputRef}
                           id="image" 
                           type="file" 
                           accept="image/*" 
+                          multiple
                           className="hidden"
                           onChange={(e) => handleFileChange(e, false)}
                         />
                       </div>
-                      {newItem.imageUrl && (
-                        <div className="mt-2 relative w-full h-32 bg-slate-100 rounded-md overflow-hidden border border-slate-200">
-                          <img src={newItem.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                          <Button
-                            size="icon"
-                            variant="destructive"
-                            className="absolute top-2 right-2 h-6 w-6 rounded-full"
-                            onClick={() => setNewItem(prev => ({ ...prev, imageUrl: "" }))}
-                          >
-                            <X className="w-3 h-3" />
-                          </Button>
+                      {newItem.imageUrls.length > 0 && (
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {newItem.imageUrls.map((url, index) => (
+                            <div key={index} className="relative aspect-square bg-slate-100 rounded-md overflow-hidden border border-slate-200">
+                              <img src={url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover" />
+                              <Button
+                                size="icon"
+                                variant="destructive"
+                                className="absolute top-1 right-1 h-5 w-5 rounded-full"
+                                onClick={() => setNewItem(prev => ({ 
+                                  ...prev, 
+                                  imageUrls: prev.imageUrls.filter((_, i) => i !== index) 
+                                }))}
+                              >
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -824,9 +850,13 @@ export default function Home() {
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-4">
-            {editingItem?.imageUrl && (
-              <div className="w-full rounded-lg overflow-hidden border border-slate-200">
-                <img src={editingItem.imageUrl} alt={editingItem.title} className="w-full object-cover max-h-64" />
+            {editingItem?.imageUrls && editingItem.imageUrls.length > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                {editingItem.imageUrls.map((url, index) => (
+                  <div key={index} className="rounded-lg overflow-hidden border border-slate-200">
+                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48" />
+                  </div>
+                ))}
               </div>
             )}
             <div className="space-y-2">
@@ -939,36 +969,47 @@ export default function Home() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-image">사진</Label>
+                <Label htmlFor="edit-image">사진 (최대 5장)</Label>
                 <div className="flex items-center gap-3">
                   <Button 
                     type="button" 
                     variant="outline" 
                     onClick={() => editFileInputRef.current?.click()}
-                    className="w-full border-dashed border-2 h-12"
+                    disabled={(editingItem.imageUrls?.length || 0) >= 5}
+                    className="w-full border-dashed border-2 h-12 disabled:opacity-50"
                   >
                     <Upload className="w-4 h-4 mr-2" />
-                    {editingItem.imageUrl ? "사진 변경하기" : "이미지 업로드"}
+                    {(editingItem.imageUrls?.length || 0) > 0 
+                      ? `사진 추가 (${editingItem.imageUrls?.length || 0}/5)` 
+                      : "이미지 업로드"}
                   </Button>
                   <input 
                     ref={editFileInputRef}
                     type="file" 
                     accept="image/*" 
+                    multiple
                     className="hidden"
                     onChange={(e) => handleFileChange(e, true)}
                   />
                 </div>
-                {editingItem.imageUrl && (
-                  <div className="mt-2 relative w-full h-32 bg-slate-100 rounded-md overflow-hidden border border-slate-200">
-                    <img src={editingItem.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                    <Button
-                      size="icon"
-                      variant="destructive"
-                      className="absolute top-2 right-2 h-6 w-6 rounded-full"
-                      onClick={() => setEditingItem({...editingItem, imageUrl: null})}
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
+                {editingItem.imageUrls && editingItem.imageUrls.length > 0 && (
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {editingItem.imageUrls.map((url, index) => (
+                      <div key={index} className="relative aspect-square bg-slate-100 rounded-md overflow-hidden border border-slate-200">
+                        <img src={url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover" />
+                        <Button
+                          size="icon"
+                          variant="destructive"
+                          className="absolute top-1 right-1 h-5 w-5 rounded-full"
+                          onClick={() => setEditingItem({
+                            ...editingItem, 
+                            imageUrls: editingItem.imageUrls?.filter((_, i) => i !== index) || null
+                          })}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
