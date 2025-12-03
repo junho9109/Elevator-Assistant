@@ -315,23 +315,10 @@ export default function JudgmentPage() {
             <h1 className="text-2xl font-bold tracking-tight">판정결과(예시)</h1>
           </div>
           <p className="text-muted-foreground text-sm mb-6">
-            검사기준 적용일 또는 건축허가일자를 입력하면 해당 기준의 적용 여부를 확인할 수 있습니다.
+            건축허가일자 또는 검사기준 적용일을 입력하면 해당 기준의 적용 여부를 확인할 수 있습니다.
           </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="inspectionDate">검사기준 적용일</Label>
-              <Input
-                id="inspectionDate"
-                type="date"
-                value={inspectionDate}
-                onChange={(e) => {
-                  setInspectionDate(e.target.value);
-                  setPermitDate("");
-                }}
-                data-testid="input-inspection-date"
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="permitDate">건축허가일자</Label>
               <Input
@@ -343,6 +330,19 @@ export default function JudgmentPage() {
                   setInspectionDate("");
                 }}
                 data-testid="input-permit-date"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inspectionDate">검사기준 적용일</Label>
+              <Input
+                id="inspectionDate"
+                type="date"
+                value={inspectionDate}
+                onChange={(e) => {
+                  setInspectionDate(e.target.value);
+                  setPermitDate("");
+                }}
+                data-testid="input-inspection-date"
               />
             </div>
           </div>
