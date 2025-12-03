@@ -64,6 +64,211 @@ const cardVariants = {
   })
 };
 
+interface ImageViewerState {
+  isOpen: boolean;
+  images: string[];
+  currentIndex: number;
+  zoom: number;
+}
+
+function ImageViewerComponent({ 
+  imageViewer, 
+  setImageViewer, 
+  closeImageViewer 
+}: { 
+  imageViewer: ImageViewerState;
+  setImageViewer: React.Dispatch<React.SetStateAction<ImageViewerState>>;
+  closeImageViewer: () => void;
+}) {
+  const lastTouchDistance = useRef<number | null>(null);
+  const lastZoom = useRef<number>(1);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      lastTouchDistance.current = distance;
+      lastZoom.current = imageViewer.zoom;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && lastTouchDistance.current !== null) {
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const scale = distance / lastTouchDistance.current;
+      const newZoom = Math.min(5, Math.max(0.5, lastZoom.current * scale));
+      setImageViewer(prev => ({ ...prev, zoom: newZoom }));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    lastTouchDistance.current = null;
+  };
+
+  const goToPrev = () => {
+    setImageViewer(prev => ({ 
+      ...prev, 
+      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1,
+      zoom: 1 
+    }));
+  };
+
+  const goToNext = () => {
+    setImageViewer(prev => ({ 
+      ...prev, 
+      currentIndex: prev.currentIndex < prev.images.length - 1 ? prev.currentIndex + 1 : 0,
+      zoom: 1 
+    }));
+  };
+
+  return (
+    <div 
+      id="image-viewer-portal"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        zIndex: 999999,
+        display: 'flex',
+        flexDirection: 'column',
+        touchAction: 'none',
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Close Button */}
+      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000000 }}>
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); closeImageViewer(); }}
+          style={{
+            width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(239,68,68,0.9)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          }}
+        >
+          <X style={{ width: 28, height: 28 }} />
+        </a>
+      </div>
+
+      {/* Image */}
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        overflow: 'hidden',
+        padding: 16
+      }}>
+        <img 
+          src={imageViewer.images[imageViewer.currentIndex]} 
+          alt="확대 이미지"
+          style={{ 
+            maxWidth: '100%', 
+            maxHeight: '100%', 
+            objectFit: 'contain',
+            transform: `scale(${imageViewer.zoom})`,
+            transition: 'transform 0.1s ease-out',
+            pointerEvents: 'none'
+          }}
+          draggable={false}
+        />
+      </div>
+
+      {/* Navigation */}
+      {imageViewer.images.length > 1 && (
+        <>
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); goToPrev(); }}
+            style={{
+              position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+              textDecoration: 'none'
+            }}
+          >
+            <ChevronLeft style={{ width: 32, height: 32 }} />
+          </a>
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); goToNext(); }}
+            style={{
+              position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+              textDecoration: 'none'
+            }}
+          >
+            <ChevronRight style={{ width: 32, height: 32 }} />
+          </a>
+        </>
+      )}
+
+      {/* Info & Zoom Controls */}
+      <div style={{ 
+        position: 'absolute', 
+        bottom: 16, 
+        left: 0, 
+        right: 0, 
+        display: 'flex', 
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 12
+      }}>
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.max(0.5, prev.zoom - 0.5) })); }}
+          style={{
+            width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none'
+          }}
+        >
+          <ZoomOut style={{ width: 22, height: 22 }} />
+        </a>
+        <span style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: '6px 16px', borderRadius: 9999, fontSize: 14 }}>
+          {imageViewer.currentIndex + 1} / {imageViewer.images.length} · {Math.round(imageViewer.zoom * 100)}%
+        </span>
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.min(5, prev.zoom + 0.5) })); }}
+          style={{
+            width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none'
+          }}
+        >
+          <ZoomIn style={{ width: 22, height: 22 }} />
+        </a>
+      </div>
+
+      {/* Pinch Hint */}
+      <div style={{ 
+        position: 'absolute', 
+        top: 16, 
+        left: 16, 
+        backgroundColor: 'rgba(0,0,0,0.6)', 
+        color: 'white', 
+        padding: '6px 12px', 
+        borderRadius: 8, 
+        fontSize: 12 
+      }}>
+        두 손가락으로 확대/축소
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -187,6 +392,7 @@ export default function Home() {
 
   const closeImageViewer = () => {
     setImageViewer(prev => ({ ...prev, isOpen: false }));
+    setTimeout(() => setIsViewStandardOpen(true), 100);
   };
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -940,12 +1146,12 @@ export default function Home() {
           </DialogHeader>
           <div className="py-4 space-y-4">
             {editingItem?.imageUrls && editingItem.imageUrls.length > 0 && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-3">
                 {editingItem.imageUrls.map((url, index) => (
                   <a 
                     key={index}
                     href="#"
-                    className="block rounded-lg overflow-hidden border-2 border-blue-400 bg-white relative"
+                    className="block rounded-lg overflow-hidden border border-slate-200 bg-white"
                     onClick={(e) => {
                       e.preventDefault();
                       setIsViewStandardOpen(false);
@@ -956,14 +1162,9 @@ export default function Home() {
                     <img 
                       src={url} 
                       alt={`${editingItem.title} ${index + 1}`} 
-                      className="w-full object-cover h-32"
+                      className="w-full object-contain"
+                      style={{ maxHeight: '50vh' }}
                     />
-                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                      <div className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1">
-                        <ZoomIn className="w-3 h-3" />
-                        확대
-                      </div>
-                    </div>
                   </a>
                 ))}
               </div>
@@ -1254,128 +1455,11 @@ export default function Home() {
 
       {/* Image Viewer - Portal to body */}
       {imageViewer.isOpen && createPortal(
-        <div 
-          id="image-viewer-portal"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.95)',
-            zIndex: 999999,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {/* Top Controls */}
-          <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 12, zIndex: 1000000 }}>
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.max(0.5, prev.zoom - 0.5) })); }}
-              style={{
-                width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                textDecoration: 'none'
-              }}
-            >
-              <ZoomOut style={{ width: 28, height: 28 }} />
-            </a>
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.min(3, prev.zoom + 0.5) })); }}
-              style={{
-                width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                textDecoration: 'none'
-              }}
-            >
-              <ZoomIn style={{ width: 28, height: 28 }} />
-            </a>
-            <a
-              href="#"
-              onClick={(e) => { e.preventDefault(); closeImageViewer(); }}
-              style={{
-                width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(239,68,68,0.8)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                textDecoration: 'none'
-              }}
-            >
-              <X style={{ width: 28, height: 28 }} />
-            </a>
-          </div>
-
-          {/* Image */}
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: 16, width: '100%' }}>
-            <img 
-              src={imageViewer.images[imageViewer.currentIndex]} 
-              alt="확대 이미지"
-              style={{ 
-                maxWidth: '100%', 
-                maxHeight: '100%', 
-                objectFit: 'contain',
-                transform: `scale(${imageViewer.zoom})`,
-                transition: 'transform 0.2s'
-              }}
-            />
-          </div>
-
-          {/* Navigation */}
-          {imageViewer.images.length > 1 && (
-            <>
-              <a
-                href="#"
-                onClick={(e) => { 
-                  e.preventDefault(); 
-                  setImageViewer(prev => ({ 
-                    ...prev, 
-                    currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1,
-                    zoom: 1 
-                  })); 
-                }}
-                style={{
-                  position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)',
-                  width: 64, height: 64, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                  textDecoration: 'none'
-                }}
-              >
-                <ChevronLeft style={{ width: 40, height: 40 }} />
-              </a>
-              <a
-                href="#"
-                onClick={(e) => { 
-                  e.preventDefault(); 
-                  setImageViewer(prev => ({ 
-                    ...prev, 
-                    currentIndex: prev.currentIndex < prev.images.length - 1 ? prev.currentIndex + 1 : 0,
-                    zoom: 1 
-                  })); 
-                }}
-                style={{
-                  position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)',
-                  width: 64, height: 64, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                  textDecoration: 'none'
-                }}
-              >
-                <ChevronRight style={{ width: 40, height: 40 }} />
-              </a>
-            </>
-          )}
-
-          {/* Info */}
-          <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 16 }}>
-            <span style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', padding: '4px 12px', borderRadius: 9999, fontSize: 14 }}>
-              {imageViewer.currentIndex + 1} / {imageViewer.images.length}
-            </span>
-            <span style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', padding: '4px 12px', borderRadius: 9999, fontSize: 14 }}>
-              {Math.round(imageViewer.zoom * 100)}%
-            </span>
-          </div>
-        </div>,
+        <ImageViewerComponent 
+          imageViewer={imageViewer}
+          setImageViewer={setImageViewer}
+          closeImageViewer={closeImageViewer}
+        />,
         document.body
       )}
 
