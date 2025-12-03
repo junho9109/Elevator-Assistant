@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import structureImg from "@assets/structure_1764142259144.png";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,11 @@ import {
   X,
   Upload,
   RefreshCw,
-  Save
+  Save,
+  ZoomIn,
+  ZoomOut,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -159,6 +164,30 @@ export default function Home() {
     label: ""
   });
 
+  const [imageViewer, setImageViewer] = useState<{
+    isOpen: boolean;
+    images: string[];
+    currentIndex: number;
+    zoom: number;
+  }>({
+    isOpen: false,
+    images: [],
+    currentIndex: 0,
+    zoom: 1
+  });
+
+  const openImageViewer = (images: string[], startIndex: number = 0) => {
+    setImageViewer({
+      isOpen: true,
+      images,
+      currentIndex: startIndex,
+      zoom: 1
+    });
+  };
+
+  const closeImageViewer = () => {
+    setImageViewer(prev => ({ ...prev, isOpen: false }));
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -911,20 +940,31 @@ export default function Home() {
           </DialogHeader>
           <div className="py-4 space-y-4">
             {editingItem?.imageUrls && editingItem.imageUrls.length > 0 && (
-              <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
                 {editingItem.imageUrls.map((url, index) => (
-                  <div 
-                    key={index} 
-                    className="rounded-lg overflow-hidden border border-slate-200 bg-white"
+                  <a 
+                    key={index}
+                    href="#"
+                    className="block rounded-lg overflow-hidden border-2 border-blue-400 bg-white relative"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsViewStandardOpen(false);
+                      setTimeout(() => openImageViewer(editingItem.imageUrls!, index), 150);
+                    }}
                     data-testid={`image-${index}`}
                   >
                     <img 
                       src={url} 
                       alt={`${editingItem.title} ${index + 1}`} 
-                      className="w-full object-contain" 
-                      style={{ maxHeight: '70vh' }}
+                      className="w-full object-cover h-32"
                     />
-                  </div>
+                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                      <div className="bg-blue-600 text-white px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1">
+                        <ZoomIn className="w-3 h-3" />
+                        확대
+                      </div>
+                    </div>
+                  </a>
                 ))}
               </div>
             )}
@@ -1211,6 +1251,133 @@ export default function Home() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Image Viewer - Portal to body */}
+      {imageViewer.isOpen && createPortal(
+        <div 
+          id="image-viewer-portal"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.95)',
+            zIndex: 999999,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {/* Top Controls */}
+          <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 12, zIndex: 1000000 }}>
+            <a
+              href="#"
+              onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.max(0.5, prev.zoom - 0.5) })); }}
+              style={{
+                width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                textDecoration: 'none'
+              }}
+            >
+              <ZoomOut style={{ width: 28, height: 28 }} />
+            </a>
+            <a
+              href="#"
+              onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.min(3, prev.zoom + 0.5) })); }}
+              style={{
+                width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                textDecoration: 'none'
+              }}
+            >
+              <ZoomIn style={{ width: 28, height: 28 }} />
+            </a>
+            <a
+              href="#"
+              onClick={(e) => { e.preventDefault(); closeImageViewer(); }}
+              style={{
+                width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(239,68,68,0.8)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                textDecoration: 'none'
+              }}
+            >
+              <X style={{ width: 28, height: 28 }} />
+            </a>
+          </div>
+
+          {/* Image */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', padding: 16, width: '100%' }}>
+            <img 
+              src={imageViewer.images[imageViewer.currentIndex]} 
+              alt="확대 이미지"
+              style={{ 
+                maxWidth: '100%', 
+                maxHeight: '100%', 
+                objectFit: 'contain',
+                transform: `scale(${imageViewer.zoom})`,
+                transition: 'transform 0.2s'
+              }}
+            />
+          </div>
+
+          {/* Navigation */}
+          {imageViewer.images.length > 1 && (
+            <>
+              <a
+                href="#"
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  setImageViewer(prev => ({ 
+                    ...prev, 
+                    currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1,
+                    zoom: 1 
+                  })); 
+                }}
+                style={{
+                  position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)',
+                  width: 64, height: 64, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                  textDecoration: 'none'
+                }}
+              >
+                <ChevronLeft style={{ width: 40, height: 40 }} />
+              </a>
+              <a
+                href="#"
+                onClick={(e) => { 
+                  e.preventDefault(); 
+                  setImageViewer(prev => ({ 
+                    ...prev, 
+                    currentIndex: prev.currentIndex < prev.images.length - 1 ? prev.currentIndex + 1 : 0,
+                    zoom: 1 
+                  })); 
+                }}
+                style={{
+                  position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)',
+                  width: 64, height: 64, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                  textDecoration: 'none'
+                }}
+              >
+                <ChevronRight style={{ width: 40, height: 40 }} />
+              </a>
+            </>
+          )}
+
+          {/* Info */}
+          <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 16 }}>
+            <span style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', padding: '4px 12px', borderRadius: 9999, fontSize: 14 }}>
+              {imageViewer.currentIndex + 1} / {imageViewer.images.length}
+            </span>
+            <span style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white', padding: '4px 12px', borderRadius: 9999, fontSize: 14 }}>
+              {Math.round(imageViewer.zoom * 100)}%
+            </span>
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   );
