@@ -11,277 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-
-interface InspectionItem {
-  id: string;
-  text: string;
-  result: "적합" | "부적합" | "시정권고" | "해당없음" | "종전" | null;
-  effectiveDate?: string;
-  expiryDate?: string;
-}
-
-interface InspectionSection {
-  id: string;
-  title: string;
-  items?: InspectionItem[];
-  subsections?: InspectionSection[];
-}
-
-const INSPECTION_DATA: InspectionSection[] = [
-  {
-    id: "1.1",
-    title: "[1.1] 기본제원",
-    subsections: [
-      {
-        id: "1.1.1",
-        title: "[1.1.1] 적용범위",
-        items: [
-          {
-            id: "1.1.1-가",
-            text: "가) 정격속도가 0.15 m/s 이하의 엘리베이터는 이 기준을 적용하지 않는다.",
-            result: null,
-            effectiveDate: "2013-09-15"
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "1.2",
-    title: "[1.2] 기계류 공간",
-    subsections: [
-      {
-        id: "1.2.1",
-        title: "[1.2.1] 일반사항",
-        subsections: [
-          {
-            id: "1.2.1.1",
-            title: "[1.2.1.1] 접근 및 출입",
-            items: [
-              {
-                id: "1.2.1.1-가",
-                text: "가) 승강로, 기계실·기계류 공간 및 풀리실의 접근 통로는 개인적인 공간을 경유하지 않고 항상 접근 가능하여야 한다.",
-                result: null,
-                effectiveDate: "2013-09-15"
-              },
-              {
-                id: "1.2.1.1-나",
-                text: "나) 기계실·기계류 공간 및 풀리실 출입문은 폭 0.6 m 이상, 높이 1.8 m 이상이어야 하며, 밖으로 열리거나 미닫이 문이어야 한다.",
-                result: null,
-                effectiveDate: "1997-08-18"
-              }
-            ]
-          },
-          {
-            id: "1.2.1.2",
-            title: "[1.2.1.2] 주개폐기",
-            items: [
-              {
-                id: "1.2.1.2-가",
-                text: "가) 주 개폐기는 기계실·기계류 공간(해당되는 경우)에 설치되어야 하며 신속하게 접근할 수 있어야 한다.",
-                result: null,
-                effectiveDate: "2013-09-15"
-              },
-              {
-                id: "1.2.1.2-나",
-                text: "나) 주 개폐기는 차단 위치에서 잠금 가능해야 하며, 여러 대의 엘리베이터가 있는 경우 쉽게 식별되어야 한다.",
-                result: null,
-                effectiveDate: "2019-03-28"
-              }
-            ]
-          },
-          {
-            id: "1.2.1.3",
-            title: "[1.2.1.3] 양중 지지대",
-            items: [
-              {
-                id: "1.2.1.3-가",
-                text: "가) 무거운 설비를 편리한 위치에서 양중할 수 있는 금속 지지대 또는 고리가 기계실 천장에 1개 이상 설치되어야 한다.",
-                result: null,
-                effectiveDate: "1997-08-18"
-              },
-              {
-                id: "1.2.1.3-나",
-                text: "나) 금속 지지대 또는 고리에는 안전한 양중을 위해 허용 하중이 표시되어야 한다.",
-                result: null,
-                effectiveDate: "2013-09-15"
-              }
-            ]
-          }
-        ]
-      },
-      {
-        id: "1.2.2",
-        title: "[1.2.2] 기계실 없는 엘리베이터(MRL)",
-        items: [
-          {
-            id: "1.2.2-가",
-            text: "가) 기계실이 없는 엘리베이터는 2005년 12월 1일 이후 건축허가분부터 적용한다.",
-            result: null,
-            effectiveDate: "2005-12-01"
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "1.3",
-    title: "[1.3] 승강로",
-    subsections: [
-      {
-        id: "1.3.1",
-        title: "[1.3.1] 구조",
-        items: [
-          {
-            id: "1.3.1-가",
-            text: "가) 승강로의 벽 또는 울 및 출입문은 불연재료 또는 내화구조로 만들거나 씌워야 한다.",
-            result: null,
-            effectiveDate: "2009-11-24"
-          },
-          {
-            id: "1.3.1-나",
-            text: "나) 승강로 구조는 건축 관련 법령에 적합하여야 하고, 추락방지안전장치 작동 순간의 주행안내 레일 하중을 지지할 수 있어야 한다.",
-            result: null,
-            effectiveDate: "2013-09-15"
-          }
-        ]
-      },
-      {
-        id: "1.3.2",
-        title: "[1.3.2] 비상통화장치",
-        items: [
-          {
-            id: "1.3.2-가",
-            text: "가) 승강로에서 작업하는 사람이 갇히게 되는 경우를 대비하여 비상통화장치가 설치되어야 한다.",
-            result: null,
-            effectiveDate: "2013-09-15"
-          }
-        ]
-      },
-      {
-        id: "1.3.3",
-        title: "[1.3.3] 조명",
-        items: [
-          {
-            id: "1.3.3-가",
-            text: "가) 승강로 내에는 카의 최상층 및 최하층 위치에서 측정하여 바닥면에서 1 m 위의 조도가 50 럭스 이상인 고정된 전기 조명이 설치되어야 한다.",
-            result: null,
-            effectiveDate: "2015-05-13"
-          },
-          {
-            id: "1.3.3-나",
-            text: "나) 승강로 내에는 조명 조절용 스위치가 설치되어야 한다.",
-            result: null,
-            effectiveDate: "1997-08-18"
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "1.4",
-    title: "[1.4] 카",
-    subsections: [
-      {
-        id: "1.4.1",
-        title: "[1.4.1] 문열림출발 방지",
-        items: [
-          {
-            id: "1.4.1-가",
-            text: "가) 문열림출발(UCMP) 방지를 위한 장치가 설치되어야 한다.",
-            result: null,
-            effectiveDate: "2019-03-28"
-          }
-        ]
-      },
-      {
-        id: "1.4.2",
-        title: "[1.4.2] 카 비상통화장치",
-        items: [
-          {
-            id: "1.4.2-가",
-            text: "가) 카 내부에는 비상시 외부와 양방향 통화가 가능한 장치가 설치되어야 한다.",
-            result: null,
-            effectiveDate: "1997-08-18"
-          },
-          {
-            id: "1.4.2-나",
-            text: "나) 비상통화장치는 자동 다이얼 기능을 갖추어야 하며, 24시간 운영되는 구조대와 연결되어야 한다.",
-            result: null,
-            effectiveDate: "2013-09-15"
-          }
-        ]
-      },
-      {
-        id: "1.4.3",
-        title: "[1.4.3] 조명",
-        items: [
-          {
-            id: "1.4.3-가",
-            text: "가) 카 내부 바닥에서의 조명은 100 럭스 이상이어야 한다.",
-            result: null,
-            effectiveDate: "2013-09-15"
-          },
-          {
-            id: "1.4.3-나",
-            text: "나) 카 내 조명은 50 럭스 이상이어야 한다. (2013년 9월 15일 이전 건축허가분)",
-            result: null,
-            effectiveDate: "1997-08-18",
-            expiryDate: "2013-09-14"
-          }
-        ]
-      }
-    ]
-  },
-  {
-    id: "1.5",
-    title: "[1.5] 피트",
-    subsections: [
-      {
-        id: "1.5.1",
-        title: "[1.5.1] 구조",
-        items: [
-          {
-            id: "1.5.1-가",
-            text: "가) 피트 바닥은 거의 수평이어야 하고 충분히 매끄러워야 한다.",
-            result: null,
-            effectiveDate: "2013-09-15"
-          },
-          {
-            id: "1.5.1-나",
-            text: "나) 피트 깊이가 1.6 m를 초과하는 경우 피트 출입문이 설치되어야 한다.",
-            result: null,
-            effectiveDate: "1997-08-18"
-          },
-          {
-            id: "1.5.1-다",
-            text: "다) 피트에는 정지스위치 및 전원콘센트가 설치되어야 한다.",
-            result: null,
-            effectiveDate: "1995-06-07"
-          }
-        ]
-      },
-      {
-        id: "1.5.2",
-        title: "[1.5.2] 피트 사다리",
-        items: [
-          {
-            id: "1.5.2-가",
-            text: "가) 피트 깊이가 0.5 m를 초과하고 피트 출입문이 없는 경우 피트 사다리가 설치되어야 한다.",
-            result: null,
-            effectiveDate: "2013-09-15"
-          },
-          {
-            id: "1.5.2-나",
-            text: "나) 피트 사다리는 부속서 Ⅶ에 따라 설치되어야 한다.",
-            result: null,
-            effectiveDate: "2022-03-02"
-          }
-        ]
-      }
-    ]
-  }
-];
+import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
 
 type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
 
@@ -302,7 +32,7 @@ export default function JudgmentPage() {
   const [subType, setSubType] = useState<string>("전기식(MR)");
   const [inspectionDate, setInspectionDate] = useState("");
   const [permitDate, setPermitDate] = useState("");
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["1.1", "1.1.1", "1.2", "1.2.1", "1.2.1.1", "1.2.1.2", "1.2.1.3", "1.2.2", "1.3", "1.3.1", "1.3.2", "1.3.3", "1.4", "1.4.1", "1.4.2", "1.4.3", "1.5", "1.5.1", "1.5.2"]));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["1.1", "1.2", "1.3", "1.4", "1.5"]));
   const [results, setResults] = useState<Record<string, ResultType>>({});
 
   const handleEquipmentTypeChange = (type: EquipmentType) => {
@@ -363,10 +93,31 @@ export default function JudgmentPage() {
     return items;
   }, []);
 
+  const collectAllSectionIds = useCallback((sections: InspectionSection[]): string[] => {
+    const ids: string[] = [];
+    const processSection = (section: InspectionSection) => {
+      ids.push(section.id);
+      if (section.subsections) {
+        section.subsections.forEach(processSection);
+      }
+    };
+    sections.forEach(processSection);
+    return ids;
+  }, []);
+
+  const expandAll = () => {
+    const allIds = collectAllSectionIds(INSPECTION_DATA_MR);
+    setExpandedSections(new Set(allIds));
+  };
+
+  const collapseAll = () => {
+    setExpandedSections(new Set());
+  };
+
   useEffect(() => {
     if (!referenceDate) return;
     
-    const allItems = collectAllItems(INSPECTION_DATA);
+    const allItems = collectAllItems(INSPECTION_DATA_MR);
     const newResults: Record<string, ResultType> = {};
     let hasChanges = false;
     
@@ -610,6 +361,24 @@ export default function JudgmentPage() {
         </div>
 
         <div className="overflow-hidden">
+          <div className="flex items-center justify-end gap-2 p-2 bg-slate-50 border-b border-border">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={expandAll}
+              data-testid="button-expand-all"
+            >
+              전체 펼치기
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={collapseAll}
+              data-testid="button-collapse-all"
+            >
+              전체 접기
+            </Button>
+          </div>
           <div className="bg-slate-100 border-b border-border">
             <div className="flex items-center">
               <div className="flex-1 p-3 font-semibold text-center border-r border-border">검사기준</div>
@@ -622,7 +391,7 @@ export default function JudgmentPage() {
           </div>
           
           <div className="max-h-[600px] overflow-y-auto">
-            {INSPECTION_DATA.map(section => renderSection(section))}
+            {INSPECTION_DATA_MR.map(section => renderSection(section))}
           </div>
         </div>
       </div>
