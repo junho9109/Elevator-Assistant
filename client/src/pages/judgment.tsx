@@ -232,7 +232,7 @@ export default function JudgmentPage() {
         )}
         {status === "not-applicable" && referenceDate && (
           <div className="px-4 pb-2 text-xs text-gray-600 ml-10">
-            ※ 이 항목은 입력하신 날짜({referenceDate.toISOString().split('T')[0]}) 기준으로 「해당없음」이 자동 적용됩니다.
+            ※ 이 항목은 건축허가일(검사기준 적용일) 기준으로 이후에 개정되어 해당없음을 적용합니다.
           </div>
         )}
       </div>
