@@ -834,22 +834,64 @@ export default function Home() {
   const fuse = useMemo(() => {
     return new Fuse(standards, {
       keys: [
-        { name: "title", weight: 0.4 },
-        { name: "body", weight: 0.4 },
-        { name: "standardNumber", weight: 0.2 }
+        { name: "title", weight: 0.5 },
+        { name: "body", weight: 0.35 },
+        { name: "standardNumber", weight: 0.15 }
       ],
-      threshold: 0.35,
-      distance: 100,
+      threshold: 0.4,
+      distance: 150,
       ignoreLocation: true,
       minMatchCharLength: 1,
       includeScore: true,
+      findAllMatches: true,
     });
   }, [standards]);
 
   const displayItems = useMemo(() => {
     if (isSearching) {
-      const results = fuse.search(searchTerm);
-      return results.map(result => result.item);
+      const keywords = searchTerm
+        .split(/[\s,]+/)
+        .map(k => k.trim())
+        .filter(k => k.length >= 1);
+      
+      if (keywords.length === 0) {
+        return standards;
+      }
+
+      if (keywords.length === 1) {
+        const results = fuse.search(searchTerm);
+        return results.map(result => result.item);
+      }
+
+      const scoreMap = new Map<number, { item: Standard; totalScore: number; matchCount: number }>();
+      
+      keywords.forEach(keyword => {
+        const results = fuse.search(keyword);
+        results.forEach(result => {
+          const existing = scoreMap.get(result.item.id);
+          if (existing) {
+            existing.totalScore += (1 - (result.score || 0));
+            existing.matchCount += 1;
+          } else {
+            scoreMap.set(result.item.id, {
+              item: result.item,
+              totalScore: 1 - (result.score || 0),
+              matchCount: 1
+            });
+          }
+        });
+      });
+
+      const sortedResults = Array.from(scoreMap.values())
+        .sort((a, b) => {
+          if (b.matchCount !== a.matchCount) {
+            return b.matchCount - a.matchCount;
+          }
+          return b.totalScore - a.totalScore;
+        })
+        .map(r => r.item);
+
+      return sortedResults;
     } else if (activeButtonId) {
       return standards.filter(standard => standard.hotspotId === activeButtonId);
     } else {
