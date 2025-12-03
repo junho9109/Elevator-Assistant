@@ -499,8 +499,8 @@ export default function Home() {
   const startVoiceSearch = useCallback(() => {
     if (!voiceSupported) {
       toast({
-        title: "음성 인식 미지원",
-        description: "이 브라우저/기기에서는 음성 인식을 지원하지 않습니다. Chrome 브라우저를 사용해주세요.",
+        title: "음성 인식을 사용할 수 없습니다",
+        description: "앱에서는 음성 인식이 지원되지 않습니다. 검색창에 직접 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -518,8 +518,8 @@ export default function Home() {
     const recognition = createRecognition();
     if (!recognition) {
       toast({
-        title: "음성 인식 시작 실패",
-        description: "다시 시도해주세요.",
+        title: "음성 인식을 사용할 수 없습니다",
+        description: "앱에서는 음성 인식이 지원되지 않습니다. 검색창에 직접 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -539,8 +539,8 @@ export default function Home() {
     } catch (e) {
       console.error("Failed to start speech recognition:", e);
       toast({
-        title: "음성 인식 시작 실패",
-        description: "다시 시도해주세요.",
+        title: "음성 인식을 사용할 수 없습니다",
+        description: "앱에서는 음성 인식이 지원되지 않습니다. 검색창에 직접 입력해주세요.",
         variant: "destructive",
       });
     }
@@ -1065,20 +1065,21 @@ export default function Home() {
                   />
                 </div>
                 <Button
-                  variant={isListening ? "destructive" : "outline"}
+                  variant={isListening ? "destructive" : voiceSupported ? "outline" : "ghost"}
                   size="icon"
                   onClick={isListening ? stopVoiceSearch : startVoiceSearch}
                   className={cn(
                     "h-11 w-11 shrink-0 shadow-sm transition-all",
-                    isListening && "animate-pulse"
+                    isListening && "animate-pulse",
+                    !voiceSupported && "opacity-50 cursor-not-allowed"
                   )}
                   data-testid="button-voice-search"
-                  title={voiceSupported ? "음성으로 검색" : "음성 인식 미지원"}
+                  title={voiceSupported ? "음성으로 검색" : "앱에서는 음성 인식이 지원되지 않습니다"}
                 >
                   {isListening ? (
                     <MicOff className="w-5 h-5" />
                   ) : (
-                    <Mic className="w-5 h-5" />
+                    <Mic className={cn("w-5 h-5", !voiceSupported && "text-slate-400")} />
                   )}
                 </Button>
               </div>
