@@ -121,7 +121,8 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
                 id: "1.2.1.4-마",
                 text: "마) 자동구출운전장치가「엘리베이터 안전기준」13.2.3.6에 따라 작동하는지 확인한다.",
                 result: null,
-                effectiveDate: "2019-03-28"
+                effectiveDate: "2019-03-28",
+                introductionType: "new"
               }
             ]
           },
@@ -163,13 +164,15 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
                 id: "1.2.1.7-가",
                 text: "가)「엘리베이터 안전기준」16.1.12에 따라 지진을 감지하는 엘리베이터 전용 수단(지진감지기 등) 작동시험을 위한 장치가 설치되었는지 확인한다.",
                 result: null,
-                effectiveDate: "2015-05-13"
+                effectiveDate: "2015-05-13",
+                introductionType: "new"
               },
               {
                 id: "1.2.1.7-나",
                 text: "나) 지진관제운전 시「엘리베이터 안전기준」16.1.12에 따라 작동되는지 확인한다.",
                 result: null,
-                effectiveDate: "2015-05-13"
+                effectiveDate: "2015-05-13",
+                introductionType: "new"
               }
             ]
           }
@@ -255,7 +258,8 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.3.1-나",
             text: "나) 두개 이상의 점검운전 조작반이\"점검\"위치에 있는 경우,「엘리베이터 안전기준」16.1.5.2.1자)에 따라 동일한 조작버튼을 동시에 누를 때만 운행되는지 확인한다.",
             result: null,
-            effectiveDate: "2019-03-28"
+            effectiveDate: "2019-03-28",
+            introductionType: "new"
           },
           {
             id: "1.3.1-다",
@@ -513,7 +517,8 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.4.3-다",
             text: "다) 어린이 손끼임방지 수단(틈새)이「엘리베이터 안전기준」7.6.2.2.1자)에 따라 적합한지 확인한다.",
             result: null,
-            effectiveDate: "2019-03-28"
+            effectiveDate: "2019-03-28",
+            introductionType: "new"
           },
           {
             id: "1.4.3-라",
@@ -615,19 +620,22 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.4.5-가",
             text: "가) 로봇 탑승용 엘리베이터 카 내부에 표시되는 내용과 글자 크기의 높이가「엘리베이터 안전기준」14.11나)에 따라 표시되었는지 확인한다.",
             result: null,
-            effectiveDate: "2022-03-02"
+            effectiveDate: "2022-03-02",
+            introductionType: "new"
           },
           {
             id: "1.4.5-나",
             text: "나) 로봇 탑승용 엘리베이터에 설치된 무선 통신장치가「엘리베이터 안전기준」14.11에 따라 설치되었는지 확인한다.",
             result: null,
-            effectiveDate: "2022-03-02"
+            effectiveDate: "2022-03-02",
+            introductionType: "new"
           },
           {
             id: "1.4.5-다",
             text: "다) 로봇이 KS B 7317에 따라 공인기관에서 발급한 안전성 평가서를 구비하였는지 확인한다.",
             result: null,
-            effectiveDate: "2022-03-02"
+            effectiveDate: "2022-03-02",
+            introductionType: "new"
           }
         ]
       },
@@ -867,7 +875,8 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.7.8-가",
             text: "무부하 상승 시 문열림출발이 감지되면「엘리베이터 안전기준」10.7.5에 따른 보호거리 내에서 카가 정지되는지 확인한다.",
             result: null,
-            effectiveDate: "2019-03-28"
+            effectiveDate: "2019-03-28",
+            introductionType: "new"
           }
         ]
       }
@@ -939,7 +948,8 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.9.2-나",
             text: "나) 바이패스 장치가「엘리베이터 안전기준」16.1.8에 따라 식별 가능하고, 작동상태가 명확히 표시되는지 확인한다.",
             result: null,
-            effectiveDate: "2019-03-28"
+            effectiveDate: "2019-03-28",
+            introductionType: "new"
           }
         ]
       }
