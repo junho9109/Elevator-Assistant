@@ -4,6 +4,7 @@ export interface InspectionItem {
   result: "적합" | "부적합" | "시정권고" | "해당없음" | "종전" | null;
   effectiveDate?: string;
   expiryDate?: string;
+  introductionType?: "new" | "revision";
 }
 
 export interface InspectionSection {
