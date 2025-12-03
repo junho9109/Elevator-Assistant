@@ -13,11 +13,7 @@ import {
   X,
   Upload,
   RefreshCw,
-  Save,
-  ZoomIn,
-  ZoomOut,
-  ChevronLeft,
-  ChevronRight
+  Save
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -163,10 +159,6 @@ export default function Home() {
     label: ""
   });
 
-  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
-  const [viewerImages, setViewerImages] = useState<string[]>([]);
-  const [viewerImageIndex, setViewerImageIndex] = useState(0);
-  const [zoomLevel, setZoomLevel] = useState(1);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -181,31 +173,6 @@ export default function Home() {
   const handleButtonClick = (buttonId: number) => {
     setActiveButtonId(buttonId);
     setSearchTerm(""); 
-  };
-
-  const openImageViewer = (images: string[], startIndex: number = 0) => {
-    setViewerImages(images);
-    setViewerImageIndex(startIndex);
-    setZoomLevel(1);
-    setIsImageViewerOpen(true);
-  };
-
-  const handleZoomIn = () => {
-    setZoomLevel(prev => Math.min(prev + 0.5, 3));
-  };
-
-  const handleZoomOut = () => {
-    setZoomLevel(prev => Math.max(prev - 0.5, 0.5));
-  };
-
-  const handlePrevImage = () => {
-    setViewerImageIndex(prev => (prev > 0 ? prev - 1 : viewerImages.length - 1));
-    setZoomLevel(1);
-  };
-
-  const handleNextImage = () => {
-    setViewerImageIndex(prev => (prev < viewerImages.length - 1 ? prev + 1 : 0));
-    setZoomLevel(1);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean = false) => {
@@ -944,24 +911,19 @@ export default function Home() {
           </DialogHeader>
           <div className="py-4 space-y-4">
             {editingItem?.imageUrls && editingItem.imageUrls.length > 0 && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-3">
                 {editingItem.imageUrls.map((url, index) => (
                   <div 
                     key={index} 
-                    className="rounded-lg overflow-hidden border-2 border-blue-300 cursor-pointer hover:border-blue-500 hover:shadow-lg transition-all active:scale-95 active:bg-blue-50 bg-white relative"
-                    onClick={() => {
-                      setIsViewStandardOpen(false);
-                      setTimeout(() => {
-                        openImageViewer(editingItem.imageUrls!, index);
-                      }, 100);
-                    }}
-                    data-testid={`image-thumbnail-${index}`}
+                    className="rounded-lg overflow-hidden border border-slate-200 bg-white"
+                    data-testid={`image-${index}`}
                   >
-                    <img src={url} alt={`${editingItem.title} ${index + 1}`} className="w-full object-cover max-h-48 select-none" draggable={false} />
-                    <div className="absolute bottom-2 right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
-                      <ZoomIn className="w-3 h-3" />
-                      확대
-                    </div>
+                    <img 
+                      src={url} 
+                      alt={`${editingItem.title} ${index + 1}`} 
+                      className="w-full object-contain" 
+                      style={{ maxHeight: '70vh' }}
+                    />
                   </div>
                 ))}
               </div>
@@ -1250,88 +1212,6 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* Image Viewer - Fixed Overlay (NOT using Dialog/Portal) */}
-      {isImageViewerOpen && (
-        <div 
-          className="fixed inset-0 bg-black/95 flex flex-col items-center justify-center"
-          style={{ zIndex: 99999 }}
-          data-testid="image-viewer-overlay"
-        >
-          {/* Controls */}
-          <div className="absolute top-4 right-4 flex gap-3" style={{ zIndex: 100000 }}>
-            <button
-              type="button"
-              className="h-14 w-14 rounded-full bg-white/30 active:bg-white/50 text-white flex items-center justify-center disabled:opacity-50 shadow-lg"
-              onClick={() => handleZoomOut()}
-              disabled={zoomLevel <= 0.5}
-              data-testid="button-zoom-out"
-            >
-              <ZoomOut className="w-7 h-7" />
-            </button>
-            <button
-              type="button"
-              className="h-14 w-14 rounded-full bg-white/30 active:bg-white/50 text-white flex items-center justify-center disabled:opacity-50 shadow-lg"
-              onClick={() => handleZoomIn()}
-              disabled={zoomLevel >= 3}
-              data-testid="button-zoom-in"
-            >
-              <ZoomIn className="w-7 h-7" />
-            </button>
-            <button
-              type="button"
-              className="h-14 w-14 rounded-full bg-red-500/80 active:bg-red-600 text-white flex items-center justify-center shadow-lg"
-              onClick={() => { setIsImageViewerOpen(false); setZoomLevel(1); }}
-              data-testid="button-close-viewer"
-            >
-              <X className="w-7 h-7" />
-            </button>
-          </div>
-          
-          {/* Image */}
-          <div className="flex-1 flex items-center justify-center overflow-auto p-4 w-full">
-            {viewerImages.length > 0 && (
-              <img 
-                src={viewerImages[viewerImageIndex]} 
-                alt={`Image ${viewerImageIndex + 1}`}
-                className="max-w-full max-h-full object-contain transition-transform duration-200"
-                style={{ transform: `scale(${zoomLevel})` }}
-              />
-            )}
-          </div>
-
-          {/* Navigation */}
-          {viewerImages.length > 1 && (
-            <>
-              <button
-                type="button"
-                className="absolute left-4 top-1/2 -translate-y-1/2 h-16 w-16 rounded-full bg-white/30 active:bg-white/50 text-white flex items-center justify-center shadow-lg"
-                onClick={() => handlePrevImage()}
-                data-testid="button-prev-image"
-              >
-                <ChevronLeft className="w-10 h-10" />
-              </button>
-              <button
-                type="button"
-                className="absolute right-4 top-1/2 -translate-y-1/2 h-16 w-16 rounded-full bg-white/30 active:bg-white/50 text-white flex items-center justify-center shadow-lg"
-                onClick={() => handleNextImage()}
-                data-testid="button-next-image"
-              >
-                <ChevronRight className="w-10 h-10" />
-              </button>
-            </>
-          )}
-
-          {/* Info */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 text-white text-sm">
-            <span className="bg-black/50 px-3 py-1 rounded-full">
-              {viewerImageIndex + 1} / {viewerImages.length}
-            </span>
-            <span className="bg-black/50 px-3 py-1 rounded-full">
-              {Math.round(zoomLevel * 100)}%
-            </span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
