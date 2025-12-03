@@ -402,85 +402,101 @@ export default function Home() {
   const [isListening, setIsListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
+  const [voiceResult, setVoiceResult] = useState("");
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
+  const getSpeechRecognitionClass = useCallback(() => {
+    return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  }, []);
+
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = getSpeechRecognitionClass();
     if (SpeechRecognition) {
       setVoiceSupported(true);
-      const recognition = new SpeechRecognition();
-      recognition.lang = "ko-KR";
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let interim = "";
-        let final = "";
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            final += transcript;
-          } else {
-            interim += transcript;
-          }
-        }
-        
-        if (interim) {
-          setInterimTranscript(interim);
-        }
-        
-        if (final) {
-          setSearchTerm(final);
-          setInterimTranscript("");
-          setIsListening(false);
-          toast({
-            title: "음성 인식 완료",
-            description: `"${final}" 검색 중...`,
-          });
-        }
-      };
-      
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error("Speech recognition error:", event.error);
-        setIsListening(false);
-        setInterimTranscript("");
-        
-        let errorMessage = "음성 인식 중 오류가 발생했습니다.";
-        if (event.error === "not-allowed") {
-          errorMessage = "마이크 권한이 필요합니다. 브라우저 설정에서 마이크를 허용해주세요.";
-        } else if (event.error === "no-speech") {
-          errorMessage = "음성이 감지되지 않았습니다. 다시 시도해주세요.";
-        } else if (event.error === "network") {
-          errorMessage = "네트워크 연결을 확인해주세요.";
-        }
-        
-        toast({
-          title: "음성 인식 오류",
-          description: errorMessage,
-          variant: "destructive",
-        });
-      };
-      
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-      
-      recognitionRef.current = recognition;
     }
+  }, [getSpeechRecognitionClass]);
+
+  const createRecognition = useCallback(() => {
+    const SpeechRecognition = getSpeechRecognitionClass();
+    if (!SpeechRecognition) return null;
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ko-KR";
+    recognition.continuous = false;
+    recognition.interimResults = true;
     
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interim = "";
+      let final = "";
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      
+      if (interim) {
+        setInterimTranscript(interim);
+      }
+      
+      if (final) {
+        setVoiceResult(final);
+        setInterimTranscript("");
+        setIsListening(false);
+        toast({
+          title: "음성 인식 완료",
+          description: "검색 버튼을 눌러주세요!",
+        });
+      }
+    };
+    
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+      setInterimTranscript("");
+      
+      let errorMessage = "음성 인식 중 오류가 발생했습니다.";
+      if (event.error === "not-allowed") {
+        errorMessage = "마이크 권한이 필요합니다. 브라우저 설정에서 마이크를 허용해주세요.";
+      } else if (event.error === "no-speech") {
+        errorMessage = "음성이 감지되지 않았습니다. 다시 시도해주세요.";
+      } else if (event.error === "network") {
+        errorMessage = "네트워크 연결을 확인해주세요.";
+      } else if (event.error === "aborted") {
+        return;
+      }
+      
+      toast({
+        title: "음성 인식 오류",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    };
+    
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+    
+    return recognition;
+  }, [getSpeechRecognitionClass, toast]);
+
+  useEffect(() => {
     return () => {
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        recognitionRef.current.onresult = null;
-        recognitionRef.current.onerror = null;
-        recognitionRef.current.onend = null;
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // Ignore errors on cleanup
+        }
         recognitionRef.current = null;
       }
     };
-  }, [toast]);
+  }, []);
 
-  const toggleVoiceSearch = useCallback(() => {
+  const startVoiceSearch = useCallback(() => {
     if (!voiceSupported) {
       toast({
         title: "음성 인식 미지원",
@@ -490,29 +506,72 @@ export default function Home() {
       return;
     }
 
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      setInterimTranscript("");
-    } else {
+    if (recognitionRef.current) {
       try {
-        recognitionRef.current?.start();
-        setIsListening(true);
-        setInterimTranscript("");
-        toast({
-          title: "음성 인식 시작",
-          description: "말씀해주세요...",
-        });
+        recognitionRef.current.stop();
       } catch (e) {
-        console.error("Failed to start speech recognition:", e);
-        toast({
-          title: "음성 인식 시작 실패",
-          description: "다시 시도해주세요.",
-          variant: "destructive",
-        });
+        // Ignore
+      }
+      recognitionRef.current = null;
+    }
+
+    const recognition = createRecognition();
+    if (!recognition) {
+      toast({
+        title: "음성 인식 시작 실패",
+        description: "다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    recognitionRef.current = recognition;
+    setVoiceResult("");
+    setInterimTranscript("");
+
+    try {
+      recognition.start();
+      setIsListening(true);
+      toast({
+        title: "음성 인식 시작",
+        description: "말씀해주세요...",
+      });
+    } catch (e) {
+      console.error("Failed to start speech recognition:", e);
+      toast({
+        title: "음성 인식 시작 실패",
+        description: "다시 시도해주세요.",
+        variant: "destructive",
+      });
+    }
+  }, [voiceSupported, createRecognition, toast]);
+
+  const stopVoiceSearch = useCallback(() => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // Ignore
       }
     }
-  }, [voiceSupported, isListening, toast]);
+    setIsListening(false);
+  }, []);
+
+  const applyVoiceSearch = useCallback(() => {
+    if (voiceResult) {
+      setSearchTerm(voiceResult);
+      setVoiceResult("");
+      toast({
+        title: "검색 시작",
+        description: `"${voiceResult}" 검색 중...`,
+      });
+    }
+  }, [voiceResult, toast]);
+
+  const clearVoiceResult = useCallback(() => {
+    setVoiceResult("");
+    setInterimTranscript("");
+  }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -958,7 +1017,7 @@ export default function Home() {
                       "pl-9 bg-white border-slate-200 focus-visible:ring-primary h-11 shadow-sm",
                       isListening && "border-red-400 bg-red-50"
                     )}
-                    value={interimTranscript || searchTerm}
+                    value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     data-testid="input-search"
                   />
@@ -966,7 +1025,7 @@ export default function Home() {
                 <Button
                   variant={isListening ? "destructive" : "outline"}
                   size="icon"
-                  onClick={toggleVoiceSearch}
+                  onClick={isListening ? stopVoiceSearch : startVoiceSearch}
                   className={cn(
                     "h-11 w-11 shrink-0 shadow-sm transition-all",
                     isListening && "animate-pulse"
@@ -981,16 +1040,47 @@ export default function Home() {
                   )}
                 </Button>
               </div>
+              
+              {/* 음성 인식 중 */}
               {isListening && (
-                <div className="flex items-center gap-2 mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
-                  <Loader2 className="w-4 h-4 animate-spin text-red-500" />
-                  <span className="text-sm text-red-600">음성 인식 중...</span>
-                  {interimTranscript && (
-                    <span className="text-sm text-red-800 font-medium">"{interimTranscript}"</span>
-                  )}
+                <div className="flex items-center gap-2 mt-3 p-3 bg-red-50 rounded-xl border border-red-200">
+                  <Loader2 className="w-5 h-5 animate-spin text-red-500 shrink-0" />
+                  <div className="flex-1">
+                    <span className="text-sm text-red-600 font-medium">음성 인식 중...</span>
+                    {interimTranscript && (
+                      <p className="text-base text-red-800 font-bold mt-1">"{interimTranscript}"</p>
+                    )}
+                  </div>
                 </div>
               )}
-              {isSearching && !isListening && (
+
+              {/* 음성 인식 결과 - 검색 버튼 표시 */}
+              {voiceResult && !isListening && (
+                <div className="mt-3 p-3 bg-green-50 rounded-xl border border-green-200">
+                  <p className="text-sm text-green-600 mb-2">인식된 텍스트:</p>
+                  <p className="text-lg text-green-800 font-bold mb-3">"{voiceResult}"</p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={applyVoiceSearch}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                      data-testid="button-apply-voice-search"
+                    >
+                      <Search className="w-4 h-4 mr-2" />
+                      검색하기
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={clearVoiceResult}
+                      data-testid="button-clear-voice"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      취소
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {isSearching && !isListening && !voiceResult && (
                 <p className="text-xs text-slate-500 mt-2 pl-1 flex items-center gap-1.5">
                   <Info className="w-3 h-3" />
                   "{searchTerm}" 검색 결과: {displayItems.length}건
