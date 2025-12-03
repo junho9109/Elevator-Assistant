@@ -1,8 +1,9 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import structureImg from "@assets/structure_1764142259144.png";
 import { cn } from "@/lib/utils";
+import Fuse from "fuse.js";
 import { 
   Info, 
   CheckCircle2,
@@ -18,7 +19,10 @@ import {
   ZoomIn,
   ZoomOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Mic,
+  MicOff,
+  Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -395,6 +399,121 @@ export default function Home() {
     setTimeout(() => setIsViewStandardOpen(true), 100);
   };
 
+  const [isListening, setIsListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState("");
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setVoiceSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.lang = "ko-KR";
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        let interim = "";
+        let final = "";
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            final += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+        
+        if (interim) {
+          setInterimTranscript(interim);
+        }
+        
+        if (final) {
+          setSearchTerm(final);
+          setInterimTranscript("");
+          setIsListening(false);
+          toast({
+            title: "음성 인식 완료",
+            description: `"${final}" 검색 중...`,
+          });
+        }
+      };
+      
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        console.error("Speech recognition error:", event.error);
+        setIsListening(false);
+        setInterimTranscript("");
+        
+        let errorMessage = "음성 인식 중 오류가 발생했습니다.";
+        if (event.error === "not-allowed") {
+          errorMessage = "마이크 권한이 필요합니다. 브라우저 설정에서 마이크를 허용해주세요.";
+        } else if (event.error === "no-speech") {
+          errorMessage = "음성이 감지되지 않았습니다. 다시 시도해주세요.";
+        } else if (event.error === "network") {
+          errorMessage = "네트워크 연결을 확인해주세요.";
+        }
+        
+        toast({
+          title: "음성 인식 오류",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      };
+      
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+      
+      recognitionRef.current = recognition;
+    }
+    
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current = null;
+      }
+    };
+  }, [toast]);
+
+  const toggleVoiceSearch = useCallback(() => {
+    if (!voiceSupported) {
+      toast({
+        title: "음성 인식 미지원",
+        description: "이 브라우저/기기에서는 음성 인식을 지원하지 않습니다. Chrome 브라우저를 사용해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      setInterimTranscript("");
+    } else {
+      try {
+        recognitionRef.current?.start();
+        setIsListening(true);
+        setInterimTranscript("");
+        toast({
+          title: "음성 인식 시작",
+          description: "말씀해주세요...",
+        });
+      } catch (e) {
+        console.error("Failed to start speech recognition:", e);
+        toast({
+          title: "음성 인식 시작 실패",
+          description: "다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    }
+  }, [voiceSupported, isListening, toast]);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -653,19 +772,31 @@ export default function Home() {
 
   const isSearching = searchTerm.length > 0;
 
+  const fuse = useMemo(() => {
+    return new Fuse(standards, {
+      keys: [
+        { name: "title", weight: 0.4 },
+        { name: "body", weight: 0.4 },
+        { name: "standardNumber", weight: 0.2 }
+      ],
+      threshold: 0.35,
+      distance: 100,
+      ignoreLocation: true,
+      minMatchCharLength: 1,
+      includeScore: true,
+    });
+  }, [standards]);
+
   const displayItems = useMemo(() => {
     if (isSearching) {
-      return standards.filter(standard => 
-        standard.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        standard.body.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (standard.standardNumber && standard.standardNumber.includes(searchTerm))
-      );
+      const results = fuse.search(searchTerm);
+      return results.map(result => result.item);
     } else if (activeButtonId) {
       return standards.filter(standard => standard.hotspotId === activeButtonId);
     } else {
       return standards;
     }
-  }, [standards, searchTerm, isSearching, activeButtonId]);
+  }, [standards, searchTerm, isSearching, activeButtonId, fuse]);
 
   const activeButton = hotspots.find(h => h.id === activeButtonId);
 
@@ -816,19 +947,50 @@ export default function Home() {
               
             </div>
 
-            {/* Search Input */}
+            {/* Search Input with Voice */}
             <div className="mt-auto">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <Input 
-                  placeholder="검사 기준 검색 (예: 조명, 틈새)..." 
-                  className="pl-9 bg-white border-slate-200 focus-visible:ring-primary h-11 shadow-sm"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  data-testid="input-search"
-                />
+              <div className="relative flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <Input 
+                    placeholder={isListening ? "말씀해주세요..." : "검사 기준 검색 (예: 조명, 틈새)..."} 
+                    className={cn(
+                      "pl-9 bg-white border-slate-200 focus-visible:ring-primary h-11 shadow-sm",
+                      isListening && "border-red-400 bg-red-50"
+                    )}
+                    value={interimTranscript || searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    data-testid="input-search"
+                  />
+                </div>
+                <Button
+                  variant={isListening ? "destructive" : "outline"}
+                  size="icon"
+                  onClick={toggleVoiceSearch}
+                  className={cn(
+                    "h-11 w-11 shrink-0 shadow-sm transition-all",
+                    isListening && "animate-pulse"
+                  )}
+                  data-testid="button-voice-search"
+                  title={voiceSupported ? "음성으로 검색" : "음성 인식 미지원"}
+                >
+                  {isListening ? (
+                    <MicOff className="w-5 h-5" />
+                  ) : (
+                    <Mic className="w-5 h-5" />
+                  )}
+                </Button>
               </div>
-              {isSearching && (
+              {isListening && (
+                <div className="flex items-center gap-2 mt-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                  <Loader2 className="w-4 h-4 animate-spin text-red-500" />
+                  <span className="text-sm text-red-600">음성 인식 중...</span>
+                  {interimTranscript && (
+                    <span className="text-sm text-red-800 font-medium">"{interimTranscript}"</span>
+                  )}
+                </div>
+              )}
+              {isSearching && !isListening && (
                 <p className="text-xs text-slate-500 mt-2 pl-1 flex items-center gap-1.5">
                   <Info className="w-3 h-3" />
                   "{searchTerm}" 검색 결과: {displayItems.length}건
