@@ -66,7 +66,12 @@ export default function JudgmentPage() {
     
     if (item.effectiveDate) {
       const effectiveDate = new Date(item.effectiveDate);
-      if (referenceDate < effectiveDate) return "previous";
+      if (referenceDate < effectiveDate) {
+        if (item.introductionType === "new") {
+          return "not-applicable";
+        }
+        return "previous";
+      }
     }
     
     return "applicable";
