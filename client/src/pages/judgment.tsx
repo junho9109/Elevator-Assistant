@@ -3,6 +3,13 @@ import { ChevronDown, ChevronRight, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 interface InspectionItem {
@@ -278,11 +285,35 @@ const INSPECTION_DATA: InspectionSection[] = [
 
 type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
 
+type EquipmentType = "엘리베이터" | "에스컬레이터" | "덤웨이터" | "휠체어리프트";
+type ElevatorSubType = "전기식(MR)" | "전기식(MRL)" | "유압식" | "경사형";
+type EscalatorSubType = "에스컬레이터" | "무빙워크";
+type WheelchairLiftSubType = "수직형" | "경사형";
+
+const EQUIPMENT_SUBTYPES: Record<EquipmentType, string[]> = {
+  "엘리베이터": ["전기식(MR)", "전기식(MRL)", "유압식", "경사형"],
+  "에스컬레이터": ["에스컬레이터", "무빙워크"],
+  "덤웨이터": [],
+  "휠체어리프트": ["수직형", "경사형"]
+};
+
 export default function JudgmentPage() {
+  const [equipmentType, setEquipmentType] = useState<EquipmentType>("엘리베이터");
+  const [subType, setSubType] = useState<string>("전기식(MR)");
   const [inspectionDate, setInspectionDate] = useState("");
   const [permitDate, setPermitDate] = useState("");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["1.1", "1.1.1", "1.2", "1.2.1", "1.2.1.1", "1.2.1.2", "1.2.1.3", "1.2.2", "1.3", "1.3.1", "1.3.2", "1.3.3", "1.4", "1.4.1", "1.4.2", "1.4.3", "1.5", "1.5.1", "1.5.2"]));
   const [results, setResults] = useState<Record<string, ResultType>>({});
+
+  const handleEquipmentTypeChange = (type: EquipmentType) => {
+    setEquipmentType(type);
+    const subtypes = EQUIPMENT_SUBTYPES[type];
+    if (subtypes.length > 0) {
+      setSubType(subtypes[0]);
+    } else {
+      setSubType("");
+    }
+  };
 
   const referenceDate = useMemo(() => {
     if (permitDate && inspectionDate) {
@@ -498,9 +529,44 @@ export default function JudgmentPage() {
             <h1 className="text-2xl font-bold tracking-tight">판정결과(예시)</h1>
           </div>
           <p className="text-muted-foreground text-sm mb-6">
-            건축허가일자 또는 검사기준 적용일을 입력하면 해당 기준의 적용 여부를 확인할 수 있습니다.
+            승강기 종류를 선택하고 건축허가일자 또는 검사기준 적용일을 입력하면 해당 기준의 적용 여부를 확인할 수 있습니다.
           </p>
           
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="space-y-2">
+              <Label>승강기 종류</Label>
+              <Select 
+                value={equipmentType} 
+                onValueChange={(value) => handleEquipmentTypeChange(value as EquipmentType)}
+              >
+                <SelectTrigger data-testid="select-equipment-type">
+                  <SelectValue placeholder="승강기 종류 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="엘리베이터">엘리베이터</SelectItem>
+                  <SelectItem value="에스컬레이터">에스컬레이터</SelectItem>
+                  <SelectItem value="덤웨이터">덤웨이터</SelectItem>
+                  <SelectItem value="휠체어리프트">휠체어리프트</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {EQUIPMENT_SUBTYPES[equipmentType].length > 0 && (
+              <div className="space-y-2">
+                <Label>세부 종류</Label>
+                <Select value={subType} onValueChange={setSubType}>
+                  <SelectTrigger data-testid="select-sub-type">
+                    <SelectValue placeholder="세부 종류 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EQUIPMENT_SUBTYPES[equipmentType].map((type) => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="permitDate">건축허가일자</Label>
