@@ -19,10 +19,7 @@ import {
   ZoomIn,
   ZoomOut,
   ChevronLeft,
-  ChevronRight,
-  Mic,
-  MicOff,
-  Loader2
+  ChevronRight
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -398,245 +395,6 @@ export default function Home() {
     setImageViewer(prev => ({ ...prev, isOpen: false }));
     setTimeout(() => setIsViewStandardOpen(true), 100);
   };
-
-  const [isListening, setIsListening] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const [interimTranscript, setInterimTranscript] = useState("");
-  const [voiceResult, setVoiceResult] = useState("");
-  const [useNativeBridge, setUseNativeBridge] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-
-  const getSpeechRecognitionClass = useCallback(() => {
-    return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  }, []);
-
-  const hasAndroidBridge = useCallback(() => {
-    return typeof (window as any).AndroidSpeech !== 'undefined';
-  }, []);
-
-  useEffect(() => {
-    if (hasAndroidBridge()) {
-      setVoiceSupported(true);
-      setUseNativeBridge(true);
-      
-      (window as any).onSpeechResult = (text: string) => {
-        setVoiceResult(text);
-        setInterimTranscript("");
-        setIsListening(false);
-        toast({
-          title: "음성 인식 완료",
-          description: "검색 버튼을 눌러주세요!",
-        });
-      };
-      
-      (window as any).onSpeechPartial = (text: string) => {
-        setInterimTranscript(text);
-      };
-      
-      (window as any).onSpeechError = (error: string) => {
-        setIsListening(false);
-        setInterimTranscript("");
-        toast({
-          title: "음성 인식 오류",
-          description: error || "다시 시도해주세요.",
-          variant: "destructive",
-        });
-      };
-
-      (window as any).onSpeechEnd = () => {
-        setIsListening(false);
-      };
-    } else {
-      const SpeechRecognition = getSpeechRecognitionClass();
-      if (SpeechRecognition) {
-        setVoiceSupported(true);
-        setUseNativeBridge(false);
-      }
-    }
-  }, [getSpeechRecognitionClass, hasAndroidBridge, toast]);
-
-  const createRecognition = useCallback(() => {
-    const SpeechRecognition = getSpeechRecognitionClass();
-    if (!SpeechRecognition) return null;
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = "ko-KR";
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interim = "";
-      let final = "";
-      
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          final += transcript;
-        } else {
-          interim += transcript;
-        }
-      }
-      
-      if (interim) {
-        setInterimTranscript(interim);
-      }
-      
-      if (final) {
-        setVoiceResult(final);
-        setInterimTranscript("");
-        setIsListening(false);
-        toast({
-          title: "음성 인식 완료",
-          description: "검색 버튼을 눌러주세요!",
-        });
-      }
-    };
-    
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      console.error("Speech recognition error:", event.error);
-      setIsListening(false);
-      setInterimTranscript("");
-      
-      let errorMessage = "음성 인식 중 오류가 발생했습니다.";
-      if (event.error === "not-allowed") {
-        errorMessage = "마이크 권한이 필요합니다. 브라우저 설정에서 마이크를 허용해주세요.";
-      } else if (event.error === "no-speech") {
-        errorMessage = "음성이 감지되지 않았습니다. 다시 시도해주세요.";
-      } else if (event.error === "network") {
-        errorMessage = "네트워크 연결을 확인해주세요.";
-      } else if (event.error === "aborted") {
-        return;
-      }
-      
-      toast({
-        title: "음성 인식 오류",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    };
-    
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-    
-    return recognition;
-  }, [getSpeechRecognitionClass, toast]);
-
-  useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {
-          // Ignore errors on cleanup
-        }
-        recognitionRef.current = null;
-      }
-    };
-  }, []);
-
-  const startVoiceSearch = useCallback(() => {
-    if (!voiceSupported) {
-      toast({
-        title: "음성 인식을 사용할 수 없습니다",
-        description: "앱에서는 음성 인식이 지원되지 않습니다. 검색창에 직접 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setVoiceResult("");
-    setInterimTranscript("");
-
-    if (useNativeBridge) {
-      try {
-        (window as any).AndroidSpeech.startListening();
-        setIsListening(true);
-        toast({
-          title: "음성 인식 시작",
-          description: "말씀해주세요...",
-        });
-      } catch (e) {
-        console.error("Failed to start native speech recognition:", e);
-        toast({
-          title: "음성 인식 시작 실패",
-          description: "다시 시도해주세요.",
-          variant: "destructive",
-        });
-      }
-      return;
-    }
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {
-        // Ignore
-      }
-      recognitionRef.current = null;
-    }
-
-    const recognition = createRecognition();
-    if (!recognition) {
-      toast({
-        title: "음성 인식을 사용할 수 없습니다",
-        description: "앱에서는 음성 인식이 지원되지 않습니다. 검색창에 직접 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    recognitionRef.current = recognition;
-
-    try {
-      recognition.start();
-      setIsListening(true);
-      toast({
-        title: "음성 인식 시작",
-        description: "말씀해주세요...",
-      });
-    } catch (e) {
-      console.error("Failed to start speech recognition:", e);
-      toast({
-        title: "음성 인식을 사용할 수 없습니다",
-        description: "앱에서는 음성 인식이 지원되지 않습니다. 검색창에 직접 입력해주세요.",
-        variant: "destructive",
-      });
-    }
-  }, [voiceSupported, useNativeBridge, createRecognition, toast]);
-
-  const stopVoiceSearch = useCallback(() => {
-    if (useNativeBridge) {
-      try {
-        (window as any).AndroidSpeech.stopListening();
-      } catch (e) {
-        // Ignore
-      }
-    } else if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {
-        // Ignore
-      }
-    }
-    setIsListening(false);
-  }, [useNativeBridge]);
-
-  const applyVoiceSearch = useCallback(() => {
-    if (voiceResult) {
-      setSearchTerm(voiceResult);
-      setVoiceResult("");
-      toast({
-        title: "검색 시작",
-        description: `"${voiceResult}" 검색 중...`,
-      });
-    }
-  }, [voiceResult, toast]);
-
-  const clearVoiceResult = useCallback(() => {
-    setVoiceResult("");
-    setInterimTranscript("");
-  }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1113,82 +871,20 @@ export default function Home() {
               
             </div>
 
-            {/* Search Input with Voice */}
+            {/* Search Input */}
             <div className="mt-auto">
-              <div className="relative flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <Input 
-                    placeholder={isListening ? "말씀해주세요..." : "검사 기준 검색 (예: 조명, 틈새)..."} 
-                    className={cn(
-                      "pl-9 bg-white border-slate-200 focus-visible:ring-primary h-11 shadow-sm",
-                      isListening && "border-red-400 bg-red-50"
-                    )}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    data-testid="input-search"
-                  />
-                </div>
-                <Button
-                  variant={isListening ? "destructive" : voiceSupported ? "outline" : "ghost"}
-                  size="icon"
-                  onClick={isListening ? stopVoiceSearch : startVoiceSearch}
-                  className={cn(
-                    "h-11 w-11 shrink-0 shadow-sm transition-all",
-                    isListening && "animate-pulse",
-                    !voiceSupported && "opacity-50 cursor-not-allowed"
-                  )}
-                  data-testid="button-voice-search"
-                  title={voiceSupported ? "음성으로 검색" : "앱에서는 음성 인식이 지원되지 않습니다"}
-                >
-                  {isListening ? (
-                    <MicOff className="w-5 h-5" />
-                  ) : (
-                    <Mic className={cn("w-5 h-5", !voiceSupported && "text-slate-400")} />
-                  )}
-                </Button>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <Input 
+                  placeholder="검사 기준 검색 (예: 조명, 틈새)..." 
+                  className="pl-9 bg-white border-slate-200 focus-visible:ring-primary h-11 shadow-sm"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  data-testid="input-search"
+                />
               </div>
-              
-              {/* 음성 인식 중 */}
-              {isListening && (
-                <div className="flex items-center gap-2 mt-3 p-3 bg-red-50 rounded-xl border border-red-200">
-                  <Loader2 className="w-5 h-5 animate-spin text-red-500 shrink-0" />
-                  <div className="flex-1">
-                    <span className="text-sm text-red-600 font-medium">음성 인식 중...</span>
-                    {interimTranscript && (
-                      <p className="text-base text-red-800 font-bold mt-1">"{interimTranscript}"</p>
-                    )}
-                  </div>
-                </div>
-              )}
 
-              {/* 음성 인식 결과 - 검색 버튼 표시 */}
-              {voiceResult && !isListening && (
-                <div className="mt-3 p-3 bg-green-50 rounded-xl border border-green-200">
-                  <p className="text-sm text-green-600 mb-2">인식된 텍스트:</p>
-                  <p className="text-lg text-green-800 font-bold mb-3">"{voiceResult}"</p>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={applyVoiceSearch}
-                      className="flex-1 bg-green-600 hover:bg-green-700"
-                      data-testid="button-apply-voice-search"
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      검색하기
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={clearVoiceResult}
-                      data-testid="button-clear-voice"
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      취소
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {isSearching && !isListening && !voiceResult && (
+              {isSearching && (
                 <p className="text-xs text-slate-500 mt-2 pl-1 flex items-center gap-1.5">
                   <Info className="w-3 h-3" />
                   "{searchTerm}" 검색 결과: {displayItems.length}건
