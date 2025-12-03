@@ -285,8 +285,13 @@ export default function JudgmentPage() {
   const [results, setResults] = useState<Record<string, ResultType>>({});
 
   const referenceDate = useMemo(() => {
-    if (inspectionDate) return new Date(inspectionDate);
+    if (permitDate && inspectionDate) {
+      const permit = new Date(permitDate);
+      const inspection = new Date(inspectionDate);
+      return permit < inspection ? permit : inspection;
+    }
     if (permitDate) return new Date(permitDate);
+    if (inspectionDate) return new Date(inspectionDate);
     return null;
   }, [inspectionDate, permitDate]);
 
@@ -503,10 +508,7 @@ export default function JudgmentPage() {
                 id="permitDate"
                 type="date"
                 value={permitDate}
-                onChange={(e) => {
-                  setPermitDate(e.target.value);
-                  setInspectionDate("");
-                }}
+                onChange={(e) => setPermitDate(e.target.value)}
                 data-testid="input-permit-date"
               />
             </div>
@@ -516,21 +518,27 @@ export default function JudgmentPage() {
                 id="inspectionDate"
                 type="date"
                 value={inspectionDate}
-                onChange={(e) => {
-                  setInspectionDate(e.target.value);
-                  setPermitDate("");
-                }}
+                onChange={(e) => setInspectionDate(e.target.value)}
                 data-testid="input-inspection-date"
               />
             </div>
           </div>
           
-          {referenceDate && (
+          {(permitDate || inspectionDate) && (
             <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-sm text-blue-800">
-                기준일: <strong>{referenceDate.toISOString().split('T')[0]}</strong> - 
-                이 날짜를 기준으로 검사기준 적용 여부가 표시됩니다.
-              </p>
+              <div className="text-sm text-blue-800 space-y-1">
+                {permitDate && (
+                  <p>건축허가일: <strong>{permitDate}</strong></p>
+                )}
+                {inspectionDate && (
+                  <p>검사기준 적용일: <strong>{inspectionDate}</strong></p>
+                )}
+                <p className="text-xs text-blue-600 mt-2">
+                  {permitDate && inspectionDate 
+                    ? "두 날짜 중 더 이른 날짜를 기준으로 적용 여부가 판정됩니다."
+                    : "이 날짜를 기준으로 검사기준 적용 여부가 표시됩니다."}
+                </p>
+              </div>
             </div>
           )}
         </div>
