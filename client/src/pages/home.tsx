@@ -403,18 +403,57 @@ export default function Home() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [voiceResult, setVoiceResult] = useState("");
+  const [useNativeBridge, setUseNativeBridge] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const getSpeechRecognitionClass = useCallback(() => {
     return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   }, []);
 
+  const hasAndroidBridge = useCallback(() => {
+    return typeof (window as any).AndroidSpeech !== 'undefined';
+  }, []);
+
   useEffect(() => {
-    const SpeechRecognition = getSpeechRecognitionClass();
-    if (SpeechRecognition) {
+    if (hasAndroidBridge()) {
       setVoiceSupported(true);
+      setUseNativeBridge(true);
+      
+      (window as any).onSpeechResult = (text: string) => {
+        setVoiceResult(text);
+        setInterimTranscript("");
+        setIsListening(false);
+        toast({
+          title: "음성 인식 완료",
+          description: "검색 버튼을 눌러주세요!",
+        });
+      };
+      
+      (window as any).onSpeechPartial = (text: string) => {
+        setInterimTranscript(text);
+      };
+      
+      (window as any).onSpeechError = (error: string) => {
+        setIsListening(false);
+        setInterimTranscript("");
+        toast({
+          title: "음성 인식 오류",
+          description: error || "다시 시도해주세요.",
+          variant: "destructive",
+        });
+      };
+
+      (window as any).onSpeechEnd = () => {
+        setIsListening(false);
+      };
+    } else {
+      const SpeechRecognition = getSpeechRecognitionClass();
+      if (SpeechRecognition) {
+        setVoiceSupported(true);
+        setUseNativeBridge(false);
+      }
     }
-  }, [getSpeechRecognitionClass]);
+  }, [getSpeechRecognitionClass, hasAndroidBridge, toast]);
 
   const createRecognition = useCallback(() => {
     const SpeechRecognition = getSpeechRecognitionClass();
@@ -506,6 +545,28 @@ export default function Home() {
       return;
     }
 
+    setVoiceResult("");
+    setInterimTranscript("");
+
+    if (useNativeBridge) {
+      try {
+        (window as any).AndroidSpeech.startListening();
+        setIsListening(true);
+        toast({
+          title: "음성 인식 시작",
+          description: "말씀해주세요...",
+        });
+      } catch (e) {
+        console.error("Failed to start native speech recognition:", e);
+        toast({
+          title: "음성 인식 시작 실패",
+          description: "다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -526,8 +587,6 @@ export default function Home() {
     }
 
     recognitionRef.current = recognition;
-    setVoiceResult("");
-    setInterimTranscript("");
 
     try {
       recognition.start();
@@ -544,10 +603,16 @@ export default function Home() {
         variant: "destructive",
       });
     }
-  }, [voiceSupported, createRecognition, toast]);
+  }, [voiceSupported, useNativeBridge, createRecognition, toast]);
 
   const stopVoiceSearch = useCallback(() => {
-    if (recognitionRef.current) {
+    if (useNativeBridge) {
+      try {
+        (window as any).AndroidSpeech.stopListening();
+      } catch (e) {
+        // Ignore
+      }
+    } else if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
       } catch (e) {
@@ -555,7 +620,7 @@ export default function Home() {
       }
     }
     setIsListening(false);
-  }, []);
+  }, [useNativeBridge]);
 
   const applyVoiceSearch = useCallback(() => {
     if (voiceResult) {
