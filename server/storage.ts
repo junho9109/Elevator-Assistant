@@ -7,13 +7,22 @@ import {
   type InsertStandard,
   type Hotspot,
   type InsertHotspot,
+  type Memo,
+  type InsertMemo,
+  type MemoPhoto,
+  type InsertMemoPhoto,
+  type PhotoAnnotation,
+  type InsertPhotoAnnotation,
   users,
   categories,
   standards,
-  hotspots
+  hotspots,
+  memos,
+  memoPhotos,
+  photoAnnotations
 } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, ilike, or } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -43,6 +52,26 @@ export interface IStorage {
   createHotspot(hotspot: InsertHotspot): Promise<Hotspot>;
   updateHotspot(id: number, hotspot: Partial<InsertHotspot>): Promise<Hotspot | undefined>;
   deleteHotspot(id: number): Promise<void>;
+
+  // Memo methods
+  getAllMemos(): Promise<Memo[]>;
+  searchMemos(query: string): Promise<Memo[]>;
+  getMemo(id: number): Promise<Memo | undefined>;
+  createMemo(memo: InsertMemo): Promise<Memo>;
+  updateMemo(id: number, memo: Partial<InsertMemo>): Promise<Memo | undefined>;
+  deleteMemo(id: number): Promise<void>;
+
+  // MemoPhoto methods
+  getPhotosByMemo(memoId: number): Promise<MemoPhoto[]>;
+  getPhoto(id: number): Promise<MemoPhoto | undefined>;
+  createPhoto(photo: InsertMemoPhoto): Promise<MemoPhoto>;
+  deletePhoto(id: number): Promise<void>;
+
+  // PhotoAnnotation methods
+  getAnnotationsByPhoto(photoId: number): Promise<PhotoAnnotation[]>;
+  createAnnotation(annotation: InsertPhotoAnnotation): Promise<PhotoAnnotation>;
+  deleteAnnotation(id: number): Promise<void>;
+  deleteAnnotationsByPhoto(photoId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -152,6 +181,80 @@ export class DatabaseStorage implements IStorage {
 
   async deleteHotspot(id: number): Promise<void> {
     await db.delete(hotspots).where(eq(hotspots.id, id));
+  }
+
+  // Memo methods
+  async getAllMemos(): Promise<Memo[]> {
+    return await db.select().from(memos).orderBy(memos.createdAt);
+  }
+
+  async searchMemos(query: string): Promise<Memo[]> {
+    return await db.select().from(memos).where(
+      or(
+        ilike(memos.title, `%${query}%`),
+        ilike(memos.body, `%${query}%`)
+      )
+    );
+  }
+
+  async getMemo(id: number): Promise<Memo | undefined> {
+    const [memo] = await db.select().from(memos).where(eq(memos.id, id));
+    return memo || undefined;
+  }
+
+  async createMemo(memo: InsertMemo): Promise<Memo> {
+    const [created] = await db.insert(memos).values(memo).returning();
+    return created;
+  }
+
+  async updateMemo(id: number, memo: Partial<InsertMemo>): Promise<Memo | undefined> {
+    const [updated] = await db
+      .update(memos)
+      .set({ ...memo, updatedAt: new Date() })
+      .where(eq(memos.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteMemo(id: number): Promise<void> {
+    await db.delete(memos).where(eq(memos.id, id));
+  }
+
+  // MemoPhoto methods
+  async getPhotosByMemo(memoId: number): Promise<MemoPhoto[]> {
+    return await db.select().from(memoPhotos).where(eq(memoPhotos.memoId, memoId));
+  }
+
+  async getPhoto(id: number): Promise<MemoPhoto | undefined> {
+    const [photo] = await db.select().from(memoPhotos).where(eq(memoPhotos.id, id));
+    return photo || undefined;
+  }
+
+  async createPhoto(photo: InsertMemoPhoto): Promise<MemoPhoto> {
+    const [created] = await db.insert(memoPhotos).values(photo).returning();
+    return created;
+  }
+
+  async deletePhoto(id: number): Promise<void> {
+    await db.delete(memoPhotos).where(eq(memoPhotos.id, id));
+  }
+
+  // PhotoAnnotation methods
+  async getAnnotationsByPhoto(photoId: number): Promise<PhotoAnnotation[]> {
+    return await db.select().from(photoAnnotations).where(eq(photoAnnotations.photoId, photoId));
+  }
+
+  async createAnnotation(annotation: InsertPhotoAnnotation): Promise<PhotoAnnotation> {
+    const [created] = await db.insert(photoAnnotations).values(annotation).returning();
+    return created;
+  }
+
+  async deleteAnnotation(id: number): Promise<void> {
+    await db.delete(photoAnnotations).where(eq(photoAnnotations.id, id));
+  }
+
+  async deleteAnnotationsByPhoto(photoId: number): Promise<void> {
+    await db.delete(photoAnnotations).where(eq(photoAnnotations.photoId, photoId));
   }
 }
 

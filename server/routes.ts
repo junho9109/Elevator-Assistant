@@ -1,7 +1,13 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import multer from "multer";
 import { storage } from "./storage";
-import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema } from "@shared/schema";
+import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema } from "@shared/schema";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Category routes
@@ -202,6 +208,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete hotspot" });
+    }
+  });
+
+  // Memo routes
+  app.get("/api/memos", async (req, res) => {
+    try {
+      const search = req.query.search as string;
+      const memos = search 
+        ? await storage.searchMemos(search)
+        : await storage.getAllMemos();
+      res.json(memos);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch memos" });
+    }
+  });
+
+  app.get("/api/memos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const memo = await storage.getMemo(id);
+      if (!memo) {
+        return res.status(404).json({ error: "Memo not found" });
+      }
+      res.json(memo);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch memo" });
+    }
+  });
+
+  app.post("/api/memos", async (req, res) => {
+    try {
+      const validatedData = insertMemoSchema.parse(req.body);
+      const memo = await storage.createMemo(validatedData);
+      res.status(201).json(memo);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid memo data" });
+    }
+  });
+
+  app.put("/api/memos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const validatedData = insertMemoSchema.partial().parse(req.body);
+      const memo = await storage.updateMemo(id, validatedData);
+      if (!memo) {
+        return res.status(404).json({ error: "Memo not found" });
+      }
+      res.json(memo);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid memo data" });
+    }
+  });
+
+  app.delete("/api/memos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteMemo(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete memo" });
+    }
+  });
+
+  // Photo routes
+  app.get("/api/memos/:memoId/photos", async (req, res) => {
+    try {
+      const memoId = parseInt(req.params.memoId);
+      const photos = await storage.getPhotosByMemo(memoId);
+      res.json(photos.map(p => ({ ...p, imageData: undefined, hasImage: true })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch photos" });
+    }
+  });
+
+  app.get("/api/photos/:id/image", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const photo = await storage.getPhoto(id);
+      if (!photo) {
+        return res.status(404).json({ error: "Photo not found" });
+      }
+      const base64Data = photo.imageData.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      res.setHeader('Content-Type', photo.mimeType);
+      res.send(buffer);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch photo image" });
+    }
+  });
+
+  app.post("/api/memos/:memoId/photos", upload.single('image'), async (req, res) => {
+    try {
+      const memoId = parseInt(req.params.memoId);
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No image provided" });
+      }
+      
+      const existingPhotos = await storage.getPhotosByMemo(memoId);
+      if (existingPhotos.length >= 5) {
+        return res.status(400).json({ error: "Maximum 5 photos allowed" });
+      }
+
+      const base64Data = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+      const photo = await storage.createPhoto({
+        memoId,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        imageData: base64Data
+      });
+      res.status(201).json({ ...photo, imageData: undefined, hasImage: true });
+    } catch (error) {
+      res.status(400).json({ error: "Failed to upload photo" });
+    }
+  });
+
+  app.delete("/api/photos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deletePhoto(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete photo" });
+    }
+  });
+
+  // Annotation routes
+  app.get("/api/photos/:photoId/annotations", async (req, res) => {
+    try {
+      const photoId = parseInt(req.params.photoId);
+      const annotations = await storage.getAnnotationsByPhoto(photoId);
+      res.json(annotations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch annotations" });
+    }
+  });
+
+  app.post("/api/photos/:photoId/annotations", async (req, res) => {
+    try {
+      const photoId = parseInt(req.params.photoId);
+      const validatedData = insertPhotoAnnotationSchema.parse({ ...req.body, photoId });
+      const annotation = await storage.createAnnotation(validatedData);
+      res.status(201).json(annotation);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid annotation data" });
+    }
+  });
+
+  app.delete("/api/annotations/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteAnnotation(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete annotation" });
+    }
+  });
+
+  app.delete("/api/photos/:photoId/annotations", async (req, res) => {
+    try {
+      const photoId = parseInt(req.params.photoId);
+      await storage.deleteAnnotationsByPhoto(photoId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete annotations" });
     }
   });
 
