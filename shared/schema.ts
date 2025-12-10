@@ -73,6 +73,52 @@ export const insertStandardSchemaExt = createInsertSchema(standards).omit({
   imageUrls: z.array(z.string()).nullable().optional(),
 });
 
+// Memo tables for 3rd slide
+export const memos = pgTable("memos", {
+  id: serial("id").primaryKey(),
+  title: text("title"),
+  body: text("body").notNull().default(""),
+  keywords: text("keywords").array(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const memoPhotos = pgTable("memo_photos", {
+  id: serial("id").primaryKey(),
+  memoId: integer("memo_id").references(() => memos.id, { onDelete: 'cascade' }).notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  imageData: text("image_data").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const photoAnnotations = pgTable("photo_annotations", {
+  id: serial("id").primaryKey(),
+  photoId: integer("photo_id").references(() => memoPhotos.id, { onDelete: 'cascade' }).notNull(),
+  tool: varchar("tool", { length: 20 }).notNull(),
+  color: varchar("color", { length: 20 }).notNull(),
+  strokeWidth: integer("stroke_width").default(2),
+  points: text("points").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Insert schemas for memo tables
+export const insertMemoSchema = createInsertSchema(memos).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertMemoPhotoSchema = createInsertSchema(memoPhotos).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertPhotoAnnotationSchema = createInsertSchema(photoAnnotations).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -85,3 +131,12 @@ export type Standard = typeof standards.$inferSelect;
 
 export type InsertHotspot = z.infer<typeof insertHotspotSchema>;
 export type Hotspot = typeof hotspots.$inferSelect;
+
+export type InsertMemo = z.infer<typeof insertMemoSchema>;
+export type Memo = typeof memos.$inferSelect;
+
+export type InsertMemoPhoto = z.infer<typeof insertMemoPhotoSchema>;
+export type MemoPhoto = typeof memoPhotos.$inferSelect;
+
+export type InsertPhotoAnnotation = z.infer<typeof insertPhotoAnnotationSchema>;
+export type PhotoAnnotation = typeof photoAnnotations.$inferSelect;
