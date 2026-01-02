@@ -1276,12 +1276,12 @@ export default function Home() {
 
       {/* Edit Standard Dialog */}
       <Dialog open={isEditStandardOpen} onOpenChange={setIsEditStandardOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>표준화 기준 수정</DialogTitle>
           </DialogHeader>
           {editingItem && (
-            <div className="grid gap-4 py-4">
+            <div className="flex-1 overflow-y-auto grid gap-4 py-4 pr-2" style={{ maxHeight: 'calc(90vh - 140px)' }}>
               <div className="grid gap-2">
                 <Label htmlFor="edit-hotspot">분류 (버튼 선택)</Label>
                 <Select
@@ -1438,7 +1438,7 @@ export default function Home() {
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button variant="destructive" onClick={handleDeleteStandard} data-testid="button-delete-standard">
               <Trash2 className="w-4 h-4 mr-2" />
               삭제
