@@ -1191,8 +1191,8 @@ export default function Home() {
 
       {/* View Standard Dialog */}
       <Dialog open={isViewStandardOpen} onOpenChange={setIsViewStandardOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center justify-between pr-8">
               <span>{editingItem?.title}</span>
               <Badge variant="outline" className="font-mono">
@@ -1200,7 +1200,7 @@ export default function Home() {
               </Badge>
             </DialogTitle>
           </DialogHeader>
-          <div className="py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-2" style={{ maxHeight: 'calc(90vh - 140px)' }}>
             {editingItem?.imageUrls && editingItem.imageUrls.length > 0 && (
               <div className="space-y-3">
                 {editingItem.imageUrls.map((url, index) => (
@@ -1219,7 +1219,7 @@ export default function Home() {
                       src={url} 
                       alt={`${editingItem.title} ${index + 1}`} 
                       className="w-full object-contain"
-                      style={{ maxHeight: '50vh' }}
+                      style={{ maxHeight: '40vh' }}
                     />
                   </a>
                 ))}
@@ -1264,7 +1264,7 @@ export default function Home() {
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button variant="outline" onClick={() => setIsViewStandardOpen(false)}>닫기</Button>
             <Button onClick={handleSwitchToEditMode} data-testid="button-edit-from-view">
               <Pencil className="w-4 h-4 mr-2" />
