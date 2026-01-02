@@ -193,7 +193,7 @@ function ImageViewerComponent({
             onClick={(e) => { e.preventDefault(); goToPrev(); }}
             style={{
               position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.18)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
               textDecoration: 'none'
             }}
@@ -205,7 +205,7 @@ function ImageViewerComponent({
             onClick={(e) => { e.preventDefault(); goToNext(); }}
             style={{
               position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.18)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
               textDecoration: 'none'
             }}
@@ -1103,8 +1103,41 @@ export default function Home() {
                       {newItem.imageUrls.length > 0 && (
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           {newItem.imageUrls.map((url, index) => (
-                            <div key={index} className="relative aspect-square bg-slate-100 rounded-md overflow-hidden border border-slate-200">
-                              <img src={url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover" />
+                            <div 
+                              key={index} 
+                              className="relative aspect-square bg-slate-100 rounded-md overflow-hidden border border-slate-200 cursor-grab active:cursor-grabbing"
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData('text/plain', index.toString());
+                                e.currentTarget.style.opacity = '0.5';
+                              }}
+                              onDragEnd={(e) => {
+                                e.currentTarget.style.opacity = '1';
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                e.currentTarget.style.borderColor = '#3b82f6';
+                              }}
+                              onDragLeave={(e) => {
+                                e.currentTarget.style.borderColor = '';
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.currentTarget.style.borderColor = '';
+                                const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                                const toIndex = index;
+                                if (fromIndex !== toIndex) {
+                                  const newUrls = [...newItem.imageUrls];
+                                  const [moved] = newUrls.splice(fromIndex, 1);
+                                  newUrls.splice(toIndex, 0, moved);
+                                  setNewItem(prev => ({ ...prev, imageUrls: newUrls }));
+                                }
+                              }}
+                            >
+                              <img src={url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                              <div className="absolute top-1 left-1 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">
+                                {index + 1}
+                              </div>
                               <Button
                                 size="icon"
                                 variant="destructive"
@@ -1418,8 +1451,41 @@ export default function Home() {
                 {editingItem.imageUrls && editingItem.imageUrls.length > 0 && (
                   <div className="mt-2 grid grid-cols-3 gap-2">
                     {editingItem.imageUrls.map((url, index) => (
-                      <div key={index} className="relative aspect-square bg-slate-100 rounded-md overflow-hidden border border-slate-200">
-                        <img src={url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover" />
+                      <div 
+                        key={index} 
+                        className="relative aspect-square bg-slate-100 rounded-md overflow-hidden border border-slate-200 cursor-grab active:cursor-grabbing"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', index.toString());
+                          e.currentTarget.style.opacity = '0.5';
+                        }}
+                        onDragEnd={(e) => {
+                          e.currentTarget.style.opacity = '1';
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.style.borderColor = '#3b82f6';
+                        }}
+                        onDragLeave={(e) => {
+                          e.currentTarget.style.borderColor = '';
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.style.borderColor = '';
+                          const fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                          const toIndex = index;
+                          if (fromIndex !== toIndex && editingItem.imageUrls) {
+                            const newUrls = [...editingItem.imageUrls];
+                            const [moved] = newUrls.splice(fromIndex, 1);
+                            newUrls.splice(toIndex, 0, moved);
+                            setEditingItem({ ...editingItem, imageUrls: newUrls });
+                          }
+                        }}
+                      >
+                        <img src={url} alt={`Preview ${index + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                        <div className="absolute top-1 left-1 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">
+                          {index + 1}
+                        </div>
                         <Button
                           size="icon"
                           variant="destructive"
