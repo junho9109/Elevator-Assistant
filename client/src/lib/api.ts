@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Category, Standard, Hotspot, InsertCategory, InsertStandard, InsertHotspot } from "@shared/schema";
 
-// API client functions
 async function fetchCategories(): Promise<Category[]> {
   const response = await fetch("/api/categories");
   if (!response.ok) throw new Error("Failed to fetch categories");
@@ -102,7 +101,6 @@ async function deleteHotspot(id: number): Promise<void> {
   if (!response.ok) throw new Error("Failed to delete hotspot");
 }
 
-// React Query hooks
 export function useCategories() {
   return useQuery({
     queryKey: ["categories"],
@@ -128,8 +126,10 @@ export function useCreateCategory() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createCategory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    onSuccess: (newCategory) => {
+      queryClient.setQueryData<Category[]>(["categories"], (old) => 
+        old ? [...old, newCategory] : [newCategory]
+      );
     },
   });
 }
@@ -139,8 +139,10 @@ export function useUpdateCategory() {
   return useMutation({
     mutationFn: ({ id, category }: { id: number; category: Partial<InsertCategory> }) =>
       updateCategory(id, category),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
+    onSuccess: (updated) => {
+      queryClient.setQueryData<Category[]>(["categories"], (old) =>
+        old?.map(c => c.id === updated.id ? updated : c) || []
+      );
     },
   });
 }
@@ -149,10 +151,16 @@ export function useDeleteCategory() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteCategory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["categories"] });
-      queryClient.invalidateQueries({ queryKey: ["standards"] });
-      queryClient.invalidateQueries({ queryKey: ["hotspots"] });
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["categories"] });
+      const prev = queryClient.getQueryData<Category[]>(["categories"]);
+      queryClient.setQueryData<Category[]>(["categories"], (old) =>
+        old?.filter(c => c.id !== id) || []
+      );
+      return { prev };
+    },
+    onError: (_, __, context) => {
+      if (context?.prev) queryClient.setQueryData(["categories"], context.prev);
     },
   });
 }
@@ -161,8 +169,10 @@ export function useCreateStandard() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createStandard,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["standards"] });
+    onSuccess: (newStandard) => {
+      queryClient.setQueryData<Standard[]>(["standards"], (old) =>
+        old ? [...old, newStandard] : [newStandard]
+      );
     },
   });
 }
@@ -172,8 +182,21 @@ export function useUpdateStandard() {
   return useMutation({
     mutationFn: ({ id, standard }: { id: number; standard: Partial<InsertStandard> }) =>
       updateStandard(id, standard),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["standards"] });
+    onMutate: async ({ id, standard }) => {
+      await queryClient.cancelQueries({ queryKey: ["standards"] });
+      const prev = queryClient.getQueryData<Standard[]>(["standards"]);
+      queryClient.setQueryData<Standard[]>(["standards"], (old) =>
+        old?.map(s => s.id === id ? { ...s, ...standard } as Standard : s) || []
+      );
+      return { prev };
+    },
+    onError: (_, __, context) => {
+      if (context?.prev) queryClient.setQueryData(["standards"], context.prev);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData<Standard[]>(["standards"], (old) =>
+        old?.map(s => s.id === updated.id ? updated : s) || []
+      );
     },
   });
 }
@@ -182,8 +205,16 @@ export function useDeleteStandard() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteStandard,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["standards"] });
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["standards"] });
+      const prev = queryClient.getQueryData<Standard[]>(["standards"]);
+      queryClient.setQueryData<Standard[]>(["standards"], (old) =>
+        old?.filter(s => s.id !== id) || []
+      );
+      return { prev };
+    },
+    onError: (_, __, context) => {
+      if (context?.prev) queryClient.setQueryData(["standards"], context.prev);
     },
   });
 }
@@ -192,8 +223,10 @@ export function useCreateHotspot() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createHotspot,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["hotspots"] });
+    onSuccess: (newHotspot) => {
+      queryClient.setQueryData<Hotspot[]>(["hotspots"], (old) =>
+        old ? [...old, newHotspot] : [newHotspot]
+      );
     },
   });
 }
@@ -203,8 +236,21 @@ export function useUpdateHotspot() {
   return useMutation({
     mutationFn: ({ id, hotspot }: { id: number; hotspot: Partial<InsertHotspot> }) =>
       updateHotspot(id, hotspot),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["hotspots"] });
+    onMutate: async ({ id, hotspot }) => {
+      await queryClient.cancelQueries({ queryKey: ["hotspots"] });
+      const prev = queryClient.getQueryData<Hotspot[]>(["hotspots"]);
+      queryClient.setQueryData<Hotspot[]>(["hotspots"], (old) =>
+        old?.map(h => h.id === id ? { ...h, ...hotspot } as Hotspot : h) || []
+      );
+      return { prev };
+    },
+    onError: (_, __, context) => {
+      if (context?.prev) queryClient.setQueryData(["hotspots"], context.prev);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData<Hotspot[]>(["hotspots"], (old) =>
+        old?.map(h => h.id === updated.id ? updated : h) || []
+      );
     },
   });
 }
@@ -213,8 +259,16 @@ export function useDeleteHotspot() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteHotspot,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["hotspots"] });
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: ["hotspots"] });
+      const prev = queryClient.getQueryData<Hotspot[]>(["hotspots"]);
+      queryClient.setQueryData<Hotspot[]>(["hotspots"], (old) =>
+        old?.filter(h => h.id !== id) || []
+      );
+      return { prev };
+    },
+    onError: (_, __, context) => {
+      if (context?.prev) queryClient.setQueryData(["hotspots"], context.prev);
     },
   });
 }

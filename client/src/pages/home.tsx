@@ -509,18 +509,13 @@ export default function Home() {
       id: itemId,
       standard: updatedData
     }, {
-      onSuccess: async () => {
+      onSuccess: (updated) => {
         setIsEditStandardOpen(false);
-        await queryClient.refetchQueries({ queryKey: ["standards"] });
-        const freshStandards = queryClient.getQueryData(["standards"]) as Standard[] || [];
-        const freshItem = freshStandards.find(s => s.id === itemId);
-        if (freshItem) {
-          setEditingItem(freshItem);
-        }
+        setEditingItem(updated);
         setIsViewStandardOpen(true);
         toast({
           title: "표준화 수정 완료",
-          description: "변경사항이 서버에 저장되었습니다.",
+          description: "변경사항이 저장되었습니다.",
         });
       }
     });
