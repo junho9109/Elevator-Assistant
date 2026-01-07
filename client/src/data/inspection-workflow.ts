@@ -2,6 +2,38 @@ export type BuildingType = "apartment" | "general";
 export type EquipmentType = "elevator_mr" | "elevator_mrl" | "elevator_hydraulic" | "elevator_inclined" | "escalator" | "dumbwaiter" | "wheelchair_lift";
 export type InspectionType = "precision" | "periodic";
 export type ExtensionType = "3year" | "1stage" | "none";
+export type InspectionResult = "pass" | "conditional_next" | "conditional_12" | "fail";
+
+export const INSPECTION_RESULTS: { value: InspectionResult; label: string; shortLabel: string; description: string; color: string }[] = [
+  { 
+    value: "pass", 
+    label: "합격", 
+    shortLabel: "합격",
+    description: "모든 검사항목 적합", 
+    color: "bg-green-100 text-green-800 border-green-300" 
+  },
+  { 
+    value: "conditional_next", 
+    label: "차기안전검사 조건부합격", 
+    shortLabel: "차기조건부",
+    description: "차기 안전검사 시까지 시정 조건", 
+    color: "bg-blue-100 text-blue-800 border-blue-300" 
+  },
+  { 
+    value: "conditional_12", 
+    label: "조건부합격(12개월 이하)", 
+    shortLabel: "12개월조건부",
+    description: "12개월 이내 시정 후 재검사 필요", 
+    color: "bg-yellow-100 text-yellow-800 border-yellow-300" 
+  },
+  { 
+    value: "fail", 
+    label: "불합격", 
+    shortLabel: "불합격",
+    description: "중대 결함으로 즉시 시정 필요", 
+    color: "bg-red-100 text-red-800 border-red-300" 
+  }
+];
 
 export interface ExtensionOption {
   id: string;
@@ -122,7 +154,7 @@ export function evaluateWorkflow(
   installDate: Date,
   lastPrecisionDate: Date | null,
   lastPeriodicDate: Date | null,
-  lastResult: "pass" | "conditional" | "fail" | null
+  lastResult: InspectionResult | null
 ): WorkflowResult {
   const equipmentAge = calculateEquipmentAge(installDate);
   const eligibleExtensions: ExtensionOption[] = [];
@@ -136,8 +168,14 @@ export function evaluateWorkflow(
       if (option.eligibleBuildings.includes(buildingType)) {
         if (lastResult === "pass") {
           eligibleExtensions.push(option);
-        } else if (lastResult === "conditional") {
-          warnings.push(`${option.name}을 신청하려면 직전 검사 결과가 '적합'이어야 합니다. 현재 조건부 적합 상태입니다.`);
+        } else if (lastResult === "conditional_next") {
+          recommendations.push(`${option.name} 신청 가능 여부: 차기안전검사 조건부합격 상태에서는 시정 완료 후 신청 검토 가능`);
+        } else if (lastResult === "conditional_12") {
+          warnings.push(`${option.name}을 신청하려면 직전 검사 결과가 '합격'이어야 합니다. 현재 12개월 이하 조건부합격 상태로 재검사가 필요합니다.`);
+          nextSteps.push("12개월 이내 시정 후 재검사 신청");
+        } else if (lastResult === "fail") {
+          warnings.push(`불합격 상태에서는 연장 신청이 불가합니다. 즉시 시정 후 재검사를 받으세요.`);
+          nextSteps.push("즉시 시정 조치 후 재검사 신청");
         }
       }
     });

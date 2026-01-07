@@ -11,13 +11,13 @@ import { CheckCircle2, AlertTriangle, FileText, Calendar, Building, Cog, Chevron
 import {
   BUILDING_TYPES,
   EQUIPMENT_TYPES,
+  INSPECTION_RESULTS,
   BuildingType,
   EquipmentType,
+  InspectionResult,
   evaluateWorkflow,
   WorkflowResult
 } from "@/data/inspection-workflow";
-
-type LastResult = "pass" | "conditional" | "fail" | null;
 
 interface FormState {
   buildingType: BuildingType | null;
@@ -25,7 +25,7 @@ interface FormState {
   installDate: string;
   lastPrecisionDate: string;
   lastPeriodicDate: string;
-  lastResult: LastResult;
+  lastResult: InspectionResult | null;
 }
 
 const INITIAL_STATE: FormState = {
@@ -210,23 +210,20 @@ export default function PrecisionInspectionPage() {
 
               <div className="space-y-2">
                 <Label>직전 검사 결과</Label>
-                <div className="flex gap-2">
-                  {[
-                    { value: "pass", label: "적합", color: "bg-green-100 text-green-800 border-green-300" },
-                    { value: "conditional", label: "조건부적합", color: "bg-yellow-100 text-yellow-800 border-yellow-300" },
-                    { value: "fail", label: "부적합", color: "bg-red-100 text-red-800 border-red-300" }
-                  ].map((opt) => (
+                <div className="grid grid-cols-2 gap-2">
+                  {INSPECTION_RESULTS.map((opt) => (
                     <button
                       key={opt.value}
-                      onClick={() => setForm({ ...form, lastResult: opt.value as LastResult })}
-                      className={`flex-1 py-2 px-3 rounded-lg border-2 text-sm font-medium transition-all ${
+                      onClick={() => setForm({ ...form, lastResult: opt.value })}
+                      className={`py-2 px-3 rounded-lg border-2 text-sm font-medium transition-all ${
                         form.lastResult === opt.value
                           ? opt.color + " border-current"
                           : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
                       }`}
                       data-testid={`button-result-${opt.value}`}
                     >
-                      {opt.label}
+                      <div className="font-medium">{opt.shortLabel}</div>
+                      <div className="text-xs opacity-70 mt-0.5">{opt.description}</div>
                     </button>
                   ))}
                 </div>
