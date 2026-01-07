@@ -1,4 +1,4 @@
-export type BuildingType = "apartment" | "collective" | "general";
+export type BuildingType = "apartment" | "general";
 export type EquipmentType = "elevator_mr" | "elevator_mrl" | "elevator_hydraulic" | "elevator_inclined" | "escalator" | "dumbwaiter" | "wheelchair_lift";
 export type InspectionType = "precision" | "periodic";
 export type ExtensionType = "3year" | "1stage" | "none";
@@ -55,6 +55,183 @@ export const IMPROVEMENT_PLANS: {
     obligations: ["월 2회 이상 자체점검", "유지관리계약 유지", "안전관리 강화"]
   }
 ];
+
+export interface CTAActionDetail {
+  title: string;
+  description: string;
+  documents: string[];
+  procedures: string[];
+  notes: string[];
+}
+
+export const CTA_ACTION_DETAILS: Record<string, CTAActionDetail> = {
+  apply_stage1: {
+    title: "1단계 연장 신청",
+    description: "조건부합격 승강기의 이행기간을 1단계로 연장 신청합니다.",
+    documents: [
+      "보완연장신청서 (소정 양식)",
+      "이행계획서 (관리주체 서명/직인 필수)",
+      "부품 설치 관련 공사계약서 (해당 시)"
+    ],
+    procedures: [
+      "1. 보완연장신청서 작성",
+      "2. 이행계획서 작성 및 관리주체 서명/직인 날인",
+      "3. 관할 검사기관에 서류 제출",
+      "4. 최초 2개월 연장 승인 → 추가 2개월 연장 가능 (총 4개월)",
+      "5. 또는 최대 1년 6개월 이내 도래하는 차기검사 시까지 연장"
+    ],
+    notes: [
+      "정밀안전검사 관련 부품 추가설치 사항에 한정하여 적용",
+      "연장기간은 원래의 검사주기를 초과할 수 없음",
+      "분기별 자체점검을 추가 실시해야 함"
+    ]
+  },
+  review_stage2: {
+    title: "2단계로 전환 검토",
+    description: "1단계 연장 이후 2단계 이행기간 연장 조건을 확인합니다.",
+    documents: [
+      "보완연장신청서 (소정 양식)",
+      "이행계획서 (관리주체 서명/직인 필수)",
+      "해당 사유별 증빙서류 (전체교체 계획서, 관리처분계획인가 고시 등)"
+    ],
+    procedures: [
+      "1. 2단계 연장 사유 해당 여부 확인 (A~E 중 선택)",
+      "2. 해당 사유에 맞는 증빙서류 준비",
+      "3. 1단계 종료 전 2단계 서류 제출",
+      "4. 대상별 6개월~1년 추가 연장 승인"
+    ],
+    notes: [
+      "A: 전체교체 예정 - 차기검사 시까지",
+      "B: 부분교체 예정 - 6개월 (추가 6개월 가능, 이행확인서 필요)",
+      "C: 재개발·재건축 철거 예정 - 차기검사 시까지",
+      "D: 국민 이동편의보장 필요 - 차기검사 시까지",
+      "E: 건축물 대수선 필요 - 행안부 장관 인정 시 설치 제외 판정",
+      "※ 2단계 사유는 중복 적용 불가, 중도 사유변경도 불가"
+    ]
+  },
+  confirmation_inspection: {
+    title: "보완 완료 후 확인검사",
+    description: "조건부 사항 시정 완료 후 확인검사를 신청합니다.",
+    documents: [
+      "확인검사 신청서",
+      "시정 완료 증빙서류 (부품 교체 완료 사진, 시공 확인서 등)",
+      "자체점검 기록부"
+    ],
+    procedures: [
+      "1. 조건부 사항 시정 공사 완료",
+      "2. 시정 완료 증빙자료 준비",
+      "3. 확인검사 신청서 작성",
+      "4. 관할 검사기관에 확인검사 신청",
+      "5. 검사 후 합격 시 조건부 해제"
+    ],
+    notes: [
+      "확인검사는 시정 완료 후 신속히 신청해야 함",
+      "확인검사 불합격 시 재시정 후 재신청 필요",
+      "합격 시 정상 검사주기로 복귀"
+    ]
+  },
+  change_plan: {
+    title: "교체 계획 변경",
+    description: "기존 개선 계획(A~E)을 다른 계획으로 변경합니다.",
+    documents: [
+      "계획변경 신청서",
+      "변경 사유서",
+      "새로운 이행계획서 (관리주체 서명/직인 필수)",
+      "변경된 계획에 해당하는 증빙서류"
+    ],
+    procedures: [
+      "1. 계획 변경 필요성 검토",
+      "2. 계획변경 신청서 및 사유서 작성",
+      "3. 새로운 이행계획서 작성",
+      "4. 관할 검사기관에 변경 신청",
+      "5. 승인 후 변경된 계획에 따라 진행"
+    ],
+    notes: [
+      "원칙적으로 2단계 사유 변경은 불가",
+      "불가피한 사유 발생 시 검사기관과 사전 협의 필요",
+      "변경 승인 전까지는 기존 계획 유지"
+    ]
+  },
+  extend_period: {
+    title: "이행기간 추가 연장 신청",
+    description: "부분교체(B) 등 추가 연장이 가능한 경우 연장을 신청합니다.",
+    documents: [
+      "추가연장 신청서",
+      "이행확인서 (기존 이행 상황 확인)",
+      "추가 연장 사유 증빙서류"
+    ],
+    procedures: [
+      "1. 기존 이행기간 내 추가 연장 필요성 확인",
+      "2. 이행확인서 작성 (기존 진행 상황 명시)",
+      "3. 추가연장 신청서 작성",
+      "4. 관할 검사기관에 추가 연장 신청",
+      "5. 승인 시 추가 6개월 연장"
+    ],
+    notes: [
+      "부분교체(B) 대상만 추가 연장 가능 (6개월 + 6개월)",
+      "이행확인서에 기존 진행 상황을 명확히 기재",
+      "연장기간은 원래의 검사주기를 초과할 수 없음"
+    ]
+  },
+  check_schedule: {
+    title: "정밀안전검사 일정 확인",
+    description: "3년 연장 종료일을 확인하고 차기 검사 일정을 준비합니다.",
+    documents: [],
+    procedures: [
+      "1. 서면동의서 제출일 확인",
+      "2. 3년 연장 종료일 계산 (제출일 + 3년)",
+      "3. 종료일 6개월 전부터 정밀안전검사 준비",
+      "4. 검사기관에 검사 예약 문의"
+    ],
+    notes: [
+      "3년 연장 종료 후에는 정밀안전검사 필수",
+      "종료일 초과 시 과태료 부과 가능",
+      "미리 검사 일정을 확인하고 준비해야 함"
+    ]
+  },
+  self_inspection: {
+    title: "자체점검 기록 관리",
+    description: "일상점검 및 자체점검 기록을 관리합니다.",
+    documents: [
+      "자체점검 기록부",
+      "일상점검 체크리스트",
+      "점검 결과 보고서"
+    ],
+    procedures: [
+      "1. 일상점검 매일 실시 및 기록",
+      "2. 자체점검 분기별 실시",
+      "3. 점검 결과 기록부에 기재",
+      "4. 이상 발견 시 즉시 보수 조치",
+      "5. 기록부 3년간 보관"
+    ],
+    notes: [
+      "자체점검 기록은 검사 시 제출해야 할 수 있음",
+      "점검 누락 시 과태료 부과 가능",
+      "유지관리업체와 협조하여 점검 실시"
+    ]
+  },
+  long_term_plan: {
+    title: "장기수선계획 검토",
+    description: "승강기 교체/보수 비용을 장기수선계획에 반영합니다.",
+    documents: [
+      "장기수선계획서",
+      "승강기 교체/보수 견적서",
+      "입주자대표회의 의결서 (해당 시)"
+    ],
+    procedures: [
+      "1. 현재 장기수선계획서 검토",
+      "2. 승강기 교체/보수 비용 산정",
+      "3. 장기수선계획 수정안 작성",
+      "4. 입주자대표회의 의결 (공동주택)",
+      "5. 수정된 장기수선계획 시행"
+    ],
+    notes: [
+      "공동주택관리법에 따라 장기수선계획 수립 의무",
+      "승강기 교체 비용은 장기수선충당금에서 지출",
+      "3년 연장 종료 전 미리 계획 수립 권장"
+    ]
+  }
+};
 
 export interface StatusDiagnosis {
   currentStatus: string;
@@ -213,8 +390,7 @@ export interface DocumentRequirement {
 }
 
 export const BUILDING_TYPES: { value: BuildingType; label: string; description: string }[] = [
-  { value: "apartment", label: "공동주택", description: "주택법에 따른 공동주택 (아파트 등)" },
-  { value: "collective", label: "집합건축물", description: "상가, 오피스텔 등 집합건물법 적용 건축물" },
+  { value: "apartment", label: "공동주택/집합건축물", description: "아파트, 상가, 오피스텔 등 (3년 연장 적용 가능)" },
   { value: "general", label: "일반건축물", description: "상업/업무/기타 일반 건축물" }
 ];
 
@@ -380,7 +556,7 @@ export function evaluateWorkflow(
     nextSteps.push("관할 검사기관에 신청서 제출");
   }
 
-  if ((buildingType === "apartment" || buildingType === "collective") && equipmentAge >= 15) {
+  if (buildingType === "apartment" && equipmentAge >= 15) {
     recommendations.push("공동주택/집합건축물은 장기수선계획에 승강기 교체/보수 비용을 반영하세요.");
   }
 
@@ -401,7 +577,7 @@ export function generateStatusDiagnosis(
 ): StatusDiagnosis {
   const plan = improvementPlan ? IMPROVEMENT_PLANS.find(p => p.value === improvementPlan) : null;
   
-  if ((buildingType === "apartment" || buildingType === "collective") && is3YearApplied) {
+  if (buildingType === "apartment" && is3YearApplied) {
     return {
       currentStatus: "3년 연장 적용 중",
       statusDescription: "부칙 제3조제3항에 따른 3년 연장이 적용 중입니다.",
@@ -421,15 +597,33 @@ export function generateStatusDiagnosis(
     };
   }
 
-  if (currentStatus === "new" || currentStatus === "stage1") {
-    const statusLabel = currentStatus === "new" ? "1단계 연장 신규 신청" : "1단계 연장 진행 중";
+  if (currentStatus === "new") {
     return {
-      currentStatus: statusLabel,
+      currentStatus: "1단계 연장 신규 신청",
       statusDescription: "코로나19 일상회복 지원 또는 공사 지연으로 인한 1단계 연장",
       improvementPlanLabel: plan?.label || "-",
-      mainMessage: `귀하의 현장은 [${statusLabel}] 상태입니다. 연장 조건 충족 시 최초 2개월 + 추가 2개월(총 4개월) 또는 최대 1년 6개월 이내 차기검사 시까지 연장 가능합니다.`,
+      mainMessage: "귀하의 현장은 [1단계 연장 신규 신청] 상태입니다. 연장 조건 충족 시 최초 2개월 + 추가 2개월(총 4개월) 또는 최대 1년 6개월 이내 차기검사 시까지 연장 가능합니다.",
       ctaButtons: [
         { label: "1단계 연장 신청", action: "apply_stage1", description: "연장 신청서 및 서류 제출" },
+        { label: "2단계로 전환 검토", action: "review_stage2", description: "2단계 연장 조건 확인" },
+        { label: "보완 완료 후 확인검사", action: "confirmation_inspection", description: "시정 완료 시 확인검사 신청" }
+      ],
+      warnings: [
+        "보완기간은 원래의 검사주기를 초과할 수 없습니다.",
+        "초과 시 다음 검사 안내문이 발송되지 않으니 시스템을 직접 확인해야 합니다."
+      ],
+      requiredDocuments: ["보완연장신청서", "이행계획서(관리주체 서명/직인 필수)", "부품 설치 관련 공사계약서"],
+      obligations: ["정밀안전검사 관련 부품 추가 설치 공사 진행", "일상점검 기록 유지"]
+    };
+  }
+
+  if (currentStatus === "stage1") {
+    return {
+      currentStatus: "1단계 연장 진행 중",
+      statusDescription: "코로나19 일상회복 지원 또는 공사 지연으로 인한 1단계 연장",
+      improvementPlanLabel: plan?.label || "-",
+      mainMessage: "귀하의 현장은 [1단계 연장 진행 중] 상태입니다. 연장 조건 충족 시 최초 2개월 + 추가 2개월(총 4개월) 또는 최대 1년 6개월 이내 차기검사 시까지 연장 가능합니다.",
+      ctaButtons: [
         { label: "2단계로 전환 검토", action: "review_stage2", description: "2단계 연장 조건 확인" },
         { label: "보완 완료 후 확인검사", action: "confirmation_inspection", description: "시정 완료 시 확인검사 신청" }
       ],

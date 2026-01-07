@@ -13,13 +13,15 @@ import {
   EQUIPMENT_TYPES,
   INSPECTION_RESULTS,
   IMPROVEMENT_PLANS,
+  CTA_ACTION_DETAILS,
   BuildingType,
   EquipmentType,
   InspectionResult,
   CurrentStatus,
   ImprovementPlan,
   generateStatusDiagnosis,
-  StatusDiagnosis
+  StatusDiagnosis,
+  CTAActionDetail
 } from "@/data/inspection-workflow";
 
 interface FormState {
@@ -51,6 +53,8 @@ const INITIAL_STATE: FormState = {
 export default function PrecisionInspectionPage() {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(INITIAL_STATE);
+  const [selectedAction, setSelectedAction] = useState<string | null>(null);
+  const actionDetail = selectedAction ? CTA_ACTION_DETAILS[selectedAction] : null;
 
   const statusDiagnosis = useMemo<StatusDiagnosis | null>(() => {
     if (!form.buildingType || !form.currentStatus) {
@@ -64,7 +68,7 @@ export default function PrecisionInspectionPage() {
     );
   }, [form.buildingType, form.currentStatus, form.improvementPlan, form.is3YearApplied]);
 
-  const isApartmentOrCollective = form.buildingType === "apartment" || form.buildingType === "collective";
+  const isApartmentOrCollective = form.buildingType === "apartment";
 
   const selectedPlan = useMemo(() => {
     return IMPROVEMENT_PLANS.find(p => p.value === form.improvementPlan);
@@ -683,7 +687,7 @@ export default function PrecisionInspectionPage() {
                   </div>
                 )}
 
-                {statusDiagnosis.ctaButtons.length > 0 && (
+                {statusDiagnosis.ctaButtons.length > 0 && !selectedAction && (
                   <div className="space-y-2">
                     <h3 className="font-medium text-sm">향후 선택지</h3>
                     <div className="space-y-2">
@@ -692,6 +696,7 @@ export default function PrecisionInspectionPage() {
                           key={i}
                           variant="outline"
                           className="w-full justify-between h-auto py-3"
+                          onClick={() => setSelectedAction(btn.action)}
                           data-testid={`button-cta-${btn.action}`}
                         >
                           <div className="text-left">
@@ -704,17 +709,88 @@ export default function PrecisionInspectionPage() {
                     </div>
                   </div>
                 )}
+
+                {selectedAction && actionDetail && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium text-base">{actionDetail.title}</h3>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setSelectedAction(null)}
+                        data-testid="button-close-action-detail"
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-1" /> 뒤로
+                      </Button>
+                    </div>
+                    
+                    <Alert className="bg-blue-50 border-blue-200">
+                      <Info className="h-4 w-4 text-blue-600" />
+                      <AlertDescription className="text-blue-700 text-sm">
+                        {actionDetail.description}
+                      </AlertDescription>
+                    </Alert>
+
+                    {actionDetail.documents.length > 0 && (
+                      <div className="bg-white border rounded-lg p-4">
+                        <h4 className="font-medium text-sm flex items-center gap-2 mb-2">
+                          <FileText className="w-4 h-4 text-gray-600" />
+                          필요 서류
+                        </h4>
+                        <ul className="space-y-1">
+                          {actionDetail.documents.map((doc, i) => (
+                            <li key={i} className="flex items-center gap-2 text-sm">
+                              <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                              {doc}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {actionDetail.procedures.length > 0 && (
+                      <div className="bg-gray-50 border rounded-lg p-4">
+                        <h4 className="font-medium text-sm mb-2">처리 절차</h4>
+                        <ol className="space-y-1">
+                          {actionDetail.procedures.map((proc, i) => (
+                            <li key={i} className="text-sm text-gray-700">{proc}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+
+                    {actionDetail.notes.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                        <h4 className="font-medium text-sm text-amber-800 mb-2">참고사항</h4>
+                        <ul className="space-y-1">
+                          {actionDetail.notes.map((note, i) => (
+                            <li key={i} className="text-sm text-amber-700 flex items-start gap-2">
+                              <span className="w-1.5 h-1.5 bg-amber-600 rounded-full flex-shrink-0 mt-1.5" />
+                              {note}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
             <div className="flex gap-2">
               <Button 
                 variant="outline" 
-                onClick={() => setStep(form.currentStatus === "stage2" ? 4 : 3)} 
+                onClick={() => {
+                  if (selectedAction) {
+                    setSelectedAction(null);
+                  } else {
+                    setStep(form.currentStatus === "stage2" ? 4 : 3);
+                  }
+                }} 
                 className="flex-1" 
                 data-testid="button-prev-step5"
               >
-                <ChevronLeft className="w-4 h-4 mr-1" /> 수정
+                <ChevronLeft className="w-4 h-4 mr-1" /> {selectedAction ? "뒤로" : "수정"}
               </Button>
               <Button variant="secondary" onClick={handleReset} className="flex-1" data-testid="button-reset">
                 처음부터
