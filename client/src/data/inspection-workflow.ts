@@ -1,4 +1,4 @@
-export type BuildingType = "apartment" | "general" | "public";
+export type BuildingType = "apartment" | "general";
 export type EquipmentType = "elevator_mr" | "elevator_mrl" | "elevator_hydraulic" | "elevator_inclined" | "escalator" | "dumbwaiter" | "wheelchair_lift";
 export type InspectionType = "precision" | "periodic";
 export type ExtensionType = "3year" | "1stage" | "none";
@@ -22,8 +22,7 @@ export interface DocumentRequirement {
 
 export const BUILDING_TYPES: { value: BuildingType; label: string; description: string }[] = [
   { value: "apartment", label: "공동주택(아파트)", description: "주택법에 따른 공동주택" },
-  { value: "general", label: "일반건축물", description: "상업/업무/기타 건축물" },
-  { value: "public", label: "공공건물", description: "관공서, 학교 등 공공시설" }
+  { value: "general", label: "일반건축물", description: "상업/업무/기타 건축물" }
 ];
 
 export const EQUIPMENT_TYPES: { value: EquipmentType; label: string }[] = [
@@ -61,7 +60,7 @@ export const EXTENSION_OPTIONS: ExtensionOption[] = [
     id: "1stage",
     name: "1단계 연장",
     description: "일반건축물은 정밀안전검사 1단계 연장(최대 1년) 가능",
-    eligibleBuildings: ["general", "public"],
+    eligibleBuildings: ["general"],
     maxExtensionMonths: 12,
     requirements: [
       "15년 이상 경과된 승강기",
