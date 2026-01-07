@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
 import JudgmentPage from "@/pages/judgment";
+import PrecisionInspectionPage from "@/pages/precision-inspection";
 import MemoPage from "@/pages/memo";
 import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
@@ -12,8 +13,8 @@ import SwipeNavigator from "@/components/SwipeNavigator";
 function MainApp() {
   return (
     <SwipeNavigator 
-      pages={[<Home key="home" />, <JudgmentPage key="judgment" />, <MemoPage key="memo" />]}
-      pageNames={["기술자료조회", "판정결과(예시)", "메모"]}
+      pages={[<Home key="home" />, <JudgmentPage key="judgment" />, <PrecisionInspectionPage key="precision" />, <MemoPage key="memo" />]}
+      pageNames={["기술자료조회", "판정결과(예시)", "정밀안전검사", "메모"]}
     />
   );
 }
