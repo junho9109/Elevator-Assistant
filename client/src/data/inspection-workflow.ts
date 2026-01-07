@@ -15,14 +15,14 @@ export const INSPECTION_RESULTS: { value: InspectionResult; label: string; short
   { 
     value: "conditional_next", 
     label: "차기안전검사 조건부합격", 
-    shortLabel: "차기조건부",
+    shortLabel: "차기안전검사",
     description: "차기 안전검사 시까지 시정 조건", 
     color: "bg-blue-100 text-blue-800 border-blue-300" 
   },
   { 
     value: "conditional_12", 
     label: "조건부합격(12개월 이하)", 
-    shortLabel: "12개월조건부",
+    shortLabel: "12개월이하",
     description: "12개월 이내 시정 후 재검사 필요", 
     color: "bg-yellow-100 text-yellow-800 border-yellow-300" 
   },
@@ -34,6 +34,92 @@ export const INSPECTION_RESULTS: { value: InspectionResult; label: string; short
     color: "bg-red-100 text-red-800 border-red-300" 
   }
 ];
+
+export type ExtensionStage = "none" | "stage1" | "stage2";
+export type ExtensionReason = 
+  | "full_replacement" 
+  | "partial_replacement" 
+  | "redevelopment" 
+  | "accessibility" 
+  | "agency_decision"
+  | "disaster"
+  | "covid19"
+  | "building_renovation";
+
+export const EXTENSION_STAGES: { value: ExtensionStage; label: string; description: string; forBuilding: BuildingType[] }[] = [
+  { value: "none", label: "신규 (연장 이력 없음)", description: "이행기간 연장을 처음 신청하는 경우", forBuilding: ["apartment", "general"] },
+  { value: "stage1", label: "1단계 진행 중", description: "1단계 이행기간 연장 중", forBuilding: ["apartment", "general"] },
+  { value: "stage2", label: "2단계 진행 중", description: "2단계 이행기간 연장 중 (일반건축물만 해당)", forBuilding: ["general"] }
+];
+
+export const EXTENSION_REASONS: { value: ExtensionReason; label: string; description: string; stages: ExtensionStage[]; documents: string[] }[] = [
+  { 
+    value: "full_replacement", 
+    label: "ⓐ 전체교체 예정", 
+    description: "호환되는 부품이 없는 승강기 등으로 전체교체를 예정하는 승강기",
+    stages: ["stage2"],
+    documents: ["보완연장신청서", "이행계획서"]
+  },
+  { 
+    value: "partial_replacement", 
+    label: "ⓑ 부분교체 예정", 
+    description: "주요부품(구동기, 제어반) 교체가 필요한 승강기 (추가 6개월 연장 가능)",
+    stages: ["stage2"],
+    documents: ["보완연장신청서", "이행계획서", "이행확인서"]
+  },
+  { 
+    value: "redevelopment", 
+    label: "ⓒ 재개발·재건축 철거 예정", 
+    description: "관리처분계획인가가 고시된 건축물의 승강기",
+    stages: ["stage2"],
+    documents: ["보완연장신청서", "이행계획서", "관리처분계획인가 고시 증명서류"]
+  },
+  { 
+    value: "accessibility", 
+    label: "ⓓ 국민 이동편의보장 필요", 
+    description: "이동편의시설 관련 법령에 따른 승강기",
+    stages: ["stage2"],
+    documents: ["보완연장신청서", "이행계획서", "건물용도 확인 가능서류(건축물대장 등)"]
+  },
+  { 
+    value: "agency_decision", 
+    label: "ⓔ 공단 이사장 판단", 
+    description: "부품 설치를 위해 건축물 수선이 필요하여 이행기간 연장이 필요한 승강기",
+    stages: ["stage2"],
+    documents: ["보완연장신청서", "이행계획서", "검토의견서(공단 검사기관 검토)"]
+  },
+  { 
+    value: "disaster", 
+    label: "재난 발생", 
+    description: "재난으로 인해 조건부사항 처리가 불가한 경우",
+    stages: ["stage1", "stage2"],
+    documents: ["보완연장신청서", "자체개선계획서", "재난 관련 증빙서류"]
+  },
+  { 
+    value: "covid19", 
+    label: "코로나19 일상회복 지원", 
+    description: "코로나19 관련시설 지정 등으로 정상운행이 불가한 경우",
+    stages: ["stage1"],
+    documents: ["보완연장신청서", "자체개선계획서", "코로나19 관련 시설 지정서 등"]
+  },
+  { 
+    value: "building_renovation", 
+    label: "건축물 대수선 필요", 
+    description: "개선조치를 위해 건축물 대수선을 해야 하는 경우",
+    stages: ["stage2"],
+    documents: ["보완연장신청서", "이행계획서", "대수선 관련 증명서류"]
+  }
+];
+
+export interface ExtensionGuidance {
+  title: string;
+  description: string;
+  maxPeriod: string;
+  requirements: string[];
+  documents: string[];
+  nextSteps: string[];
+  warnings: string[];
+}
 
 export interface ExtensionOption {
   id: string;
