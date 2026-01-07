@@ -29,8 +29,9 @@ interface FormState {
   equipmentType: EquipmentType | null;
   installDate: string;
   lastPrecisionDate: string;
+  precisionResult: InspectionResult | null;
   lastPeriodicDate: string;
-  lastResult: InspectionResult | null;
+  periodicResult: InspectionResult | null;
   extensionStage: ExtensionStage | null;
   extensionReason: ExtensionReason | null;
 }
@@ -40,8 +41,9 @@ const INITIAL_STATE: FormState = {
   equipmentType: null,
   installDate: "",
   lastPrecisionDate: "",
+  precisionResult: null,
   lastPeriodicDate: "",
-  lastResult: null,
+  periodicResult: null,
   extensionStage: null,
   extensionReason: null
 };
@@ -63,7 +65,7 @@ export default function PrecisionInspectionPage() {
       installDate,
       lastPrecisionDate,
       lastPeriodicDate,
-      form.lastResult
+      form.precisionResult || form.periodicResult
     );
   }, [form]);
 
@@ -247,7 +249,7 @@ export default function PrecisionInspectionPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="installDate">설치완료일 (완성검사일)</Label>
+                <Label htmlFor="installDate">설치검사일 (전면교체일)</Label>
                 <Input
                   id="installDate"
                   type="date"
@@ -279,89 +281,118 @@ export default function PrecisionInspectionPage() {
               <CardDescription>최근 검사 일자와 결과를 입력하세요</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="lastPrecisionDate">최근 정밀안전검사일</Label>
-                <Input
-                  id="lastPrecisionDate"
-                  type="date"
-                  value={form.lastPrecisionDate}
-                  onChange={(e) => setForm({ ...form, lastPrecisionDate: e.target.value })}
-                  data-testid="input-precision-date"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="lastPeriodicDate">최근 정기검사일</Label>
-                <Input
-                  id="lastPeriodicDate"
-                  type="date"
-                  value={form.lastPeriodicDate}
-                  onChange={(e) => setForm({ ...form, lastPeriodicDate: e.target.value })}
-                  data-testid="input-periodic-date"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>직전 검사 결과</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {INSPECTION_RESULTS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setForm({ ...form, lastResult: opt.value })}
-                      className={`py-2 px-3 rounded-lg border-2 text-sm font-medium transition-all ${
-                        form.lastResult === opt.value
-                          ? opt.color + " border-current"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                      }`}
-                      data-testid={`button-result-${opt.value}`}
-                    >
-                      <div className="font-medium">{opt.shortLabel}</div>
-                      <div className="text-xs opacity-70 mt-0.5">{opt.description}</div>
-                    </button>
-                  ))}
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                <Label className="text-blue-800 font-medium">정밀안전검사</Label>
+                <div className="space-y-2 mt-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="lastPrecisionDate" className="text-xs text-blue-700">최근 검사일</Label>
+                    <Input
+                      id="lastPrecisionDate"
+                      type="date"
+                      value={form.lastPrecisionDate}
+                      onChange={(e) => setForm({ ...form, lastPrecisionDate: e.target.value })}
+                      data-testid="input-precision-date"
+                      className="bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-blue-700">검사 결과</Label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {INSPECTION_RESULTS.map((opt) => (
+                        <button
+                          key={`precision-${opt.value}`}
+                          onClick={() => setForm({ ...form, precisionResult: opt.value })}
+                          className={`py-1.5 px-2 rounded-lg border-2 text-xs font-medium transition-all ${
+                            form.precisionResult === opt.value
+                              ? opt.color + " border-current"
+                              : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                          }`}
+                          data-testid={`button-precision-result-${opt.value}`}
+                        >
+                          <div className="font-medium">{opt.shortLabel}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {form.lastResult && form.buildingType === "apartment" && (
+              <div className="p-3 bg-amber-50 rounded-lg border border-amber-100">
+                <Label className="text-amber-800 font-medium">정기검사</Label>
+                <div className="space-y-2 mt-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="lastPeriodicDate" className="text-xs text-amber-700">최근 검사일</Label>
+                    <Input
+                      id="lastPeriodicDate"
+                      type="date"
+                      value={form.lastPeriodicDate}
+                      onChange={(e) => setForm({ ...form, lastPeriodicDate: e.target.value })}
+                      data-testid="input-periodic-date"
+                      className="bg-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-amber-700">검사 결과</Label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {INSPECTION_RESULTS.map((opt) => (
+                        <button
+                          key={`periodic-${opt.value}`}
+                          onClick={() => setForm({ ...form, periodicResult: opt.value })}
+                          className={`py-1.5 px-2 rounded-lg border-2 text-xs font-medium transition-all ${
+                            form.periodicResult === opt.value
+                              ? opt.color + " border-current"
+                              : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                          }`}
+                          data-testid={`button-periodic-result-${opt.value}`}
+                        >
+                          <div className="font-medium">{opt.shortLabel}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {(form.precisionResult || form.periodicResult) && form.buildingType === "apartment" && (
                 <Alert className="bg-blue-50 border-blue-200">
                   <Info className="h-4 w-4 text-blue-600" />
                   <AlertTitle className="text-blue-800 text-sm">공동주택 검사결과별 안내</AlertTitle>
                   <AlertDescription className="text-blue-700 text-xs">
-                    {form.lastResult === "pass" && (
+                    {(form.precisionResult === "pass" || form.periodicResult === "pass") && (
                       <p>합격 판정으로 정상 운행 가능합니다. 3년 연장 조건 충족 시 신청 가능합니다.</p>
                     )}
-                    {form.lastResult === "conditional_next" && (
+                    {(form.precisionResult === "conditional_next" || form.periodicResult === "conditional_next") && (
                       <p>차기안전검사 시까지 조건부 항목 이행 필요. 확인검사 불필요, 차기 안전검사 시 조건부항목 확인하여 판정합니다.</p>
                     )}
-                    {form.lastResult === "conditional_12" && (
+                    {(form.precisionResult === "conditional_12" || form.periodicResult === "conditional_12") && (
                       <p>12개월 이내 시정 후 확인검사 필요. 보완기간 연장 또는 차기안전검사 판정을 통해 이행기간 연장 가능합니다.</p>
                     )}
-                    {form.lastResult === "fail" && (
+                    {(form.precisionResult === "fail" || form.periodicResult === "fail") && (
                       <p>불합격으로 즉시 시정 조치 후 재검사가 필요합니다.</p>
                     )}
                   </AlertDescription>
                 </Alert>
               )}
 
-              {form.lastResult && form.buildingType === "general" && (
+              {(form.precisionResult || form.periodicResult) && form.buildingType === "general" && (
                 <Alert className="bg-amber-50 border-amber-200">
                   <Info className="h-4 w-4 text-amber-600" />
                   <AlertTitle className="text-amber-800 text-sm">일반건축물 검사결과별 안내</AlertTitle>
                   <AlertDescription className="text-amber-700 text-xs">
-                    {form.lastResult === "pass" && (
+                    {(form.precisionResult === "pass" || form.periodicResult === "pass") && (
                       <p>합격 판정으로 정상 운행 가능합니다.</p>
                     )}
-                    {form.lastResult === "conditional_next" && (
+                    {(form.precisionResult === "conditional_next" || form.periodicResult === "conditional_next") && (
                       <p>차기안전검사 시까지 조건부 항목 이행 필요. 확인검사 불필요합니다.</p>
                     )}
-                    {form.lastResult === "conditional_12" && (
+                    {(form.precisionResult === "conditional_12" || form.periodicResult === "conditional_12") && (
                       <div>
                         <p>12개월 이내 시정 후 확인검사 필요.</p>
                         <p className="mt-1">• 1단계: 최초 2개월 조건부 부여 후 추가 2개월 연장 가능</p>
                         <p>• 2단계: 대상별 여건에 따라 6개월~1년 추가 연장</p>
                       </div>
                     )}
-                    {form.lastResult === "fail" && (
+                    {(form.precisionResult === "fail" || form.periodicResult === "fail") && (
                       <p>불합격으로 즉시 시정 조치 후 재검사가 필요합니다.</p>
                     )}
                   </AlertDescription>
