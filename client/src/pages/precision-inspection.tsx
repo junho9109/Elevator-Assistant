@@ -199,10 +199,29 @@ export default function PrecisionInspectionPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                {form.buildingType && (
-                  <p className="text-xs text-gray-500">
-                    {BUILDING_TYPES.find((b) => b.value === form.buildingType)?.description}
-                  </p>
+                {form.buildingType === "apartment" && (
+                  <Alert className="mt-2 bg-blue-50 border-blue-200">
+                    <Info className="h-4 w-4 text-blue-600" />
+                    <AlertTitle className="text-blue-800 text-sm">공동주택(아파트) 선택됨</AlertTitle>
+                    <AlertDescription className="text-blue-700 text-xs">
+                      <p>검사규정 제13조제3항제2호 (세 번째 정밀안전검사, 안전검사)</p>
+                      <p className="mt-1">• 3년 연장 가능 (서면동의서 제출 시)</p>
+                      <p>• 1단계: 최대 1년 6개월</p>
+                      <p>• 2단계: 추가 6개월~1년</p>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {form.buildingType === "general" && (
+                  <Alert className="mt-2 bg-amber-50 border-amber-200">
+                    <Info className="h-4 w-4 text-amber-600" />
+                    <AlertTitle className="text-amber-800 text-sm">일반건축물 선택됨</AlertTitle>
+                    <AlertDescription className="text-amber-700 text-xs">
+                      <p>검사규정 부칙 제2조제4항 (세부적용방안)</p>
+                      <p className="mt-1">• 1단계: 조건부합격 2개월 부여</p>
+                      <p>• 2단계: 대상별 여건에 따라 6개월~1년</p>
+                      <p className="text-[10px] mt-1 text-amber-600">※ 건축물 대수선이 불가피한 경우에 한함</p>
+                    </AlertDescription>
+                  </Alert>
                 )}
               </div>
 
@@ -300,6 +319,52 @@ export default function PrecisionInspectionPage() {
                   ))}
                 </div>
               </div>
+
+              {form.lastResult && form.buildingType === "apartment" && (
+                <Alert className="bg-blue-50 border-blue-200">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-800 text-sm">공동주택 검사결과별 안내</AlertTitle>
+                  <AlertDescription className="text-blue-700 text-xs">
+                    {form.lastResult === "pass" && (
+                      <p>합격 판정으로 정상 운행 가능합니다. 3년 연장 조건 충족 시 신청 가능합니다.</p>
+                    )}
+                    {form.lastResult === "conditional_next" && (
+                      <p>차기안전검사 시까지 조건부 항목 이행 필요. 확인검사 불필요, 차기 안전검사 시 조건부항목 확인하여 판정합니다.</p>
+                    )}
+                    {form.lastResult === "conditional_12" && (
+                      <p>12개월 이내 시정 후 확인검사 필요. 보완기간 연장 또는 차기안전검사 판정을 통해 이행기간 연장 가능합니다.</p>
+                    )}
+                    {form.lastResult === "fail" && (
+                      <p>불합격으로 즉시 시정 조치 후 재검사가 필요합니다.</p>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {form.lastResult && form.buildingType === "general" && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <Info className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800 text-sm">일반건축물 검사결과별 안내</AlertTitle>
+                  <AlertDescription className="text-amber-700 text-xs">
+                    {form.lastResult === "pass" && (
+                      <p>합격 판정으로 정상 운행 가능합니다.</p>
+                    )}
+                    {form.lastResult === "conditional_next" && (
+                      <p>차기안전검사 시까지 조건부 항목 이행 필요. 확인검사 불필요합니다.</p>
+                    )}
+                    {form.lastResult === "conditional_12" && (
+                      <div>
+                        <p>12개월 이내 시정 후 확인검사 필요.</p>
+                        <p className="mt-1">• 1단계: 최초 2개월 조건부 부여 후 추가 2개월 연장 가능</p>
+                        <p>• 2단계: 대상별 여건에 따라 6개월~1년 추가 연장</p>
+                      </div>
+                    )}
+                    {form.lastResult === "fail" && (
+                      <p>불합격으로 즉시 시정 조치 후 재검사가 필요합니다.</p>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
 
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep(1)} className="flex-1" data-testid="button-prev-step2">
