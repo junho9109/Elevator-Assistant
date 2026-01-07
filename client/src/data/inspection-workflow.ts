@@ -35,7 +35,7 @@ export const INSPECTION_RESULTS: { value: InspectionResult; label: string; short
   }
 ];
 
-export type ExtensionStage = "none" | "stage1" | "stage2";
+export type ExtensionStage = "none" | "stage1" | "stage2" | "3year_applied";
 export type ExtensionReason = 
   | "full_replacement" 
   | "partial_replacement" 
@@ -46,10 +46,24 @@ export type ExtensionReason =
   | "covid19"
   | "building_renovation";
 
+export const EXTENSION_STAGES_APARTMENT: { value: ExtensionStage; label: string; description: string }[] = [
+  { value: "3year_applied", label: "3년 연장 신청 (서면동의서 제출)", description: "검사규정 부칙 제3조제3항에 따라 서면동의서를 제출하여 3년 연장 적용" },
+  { value: "none", label: "이행연장 (1단계) 신청", description: "서면동의서 미제출, 검사규정 제13조제3항제2호에 따른 이행기간 연장" },
+  { value: "stage1", label: "1단계 진행 중", description: "1단계 이행기간 연장 중 (최대 1년 6개월)" },
+  { value: "stage2", label: "2단계 진행 중", description: "1단계 완료 후 추가 연장 진행 중" }
+];
+
+export const EXTENSION_STAGES_GENERAL: { value: ExtensionStage; label: string; description: string }[] = [
+  { value: "none", label: "신규 (1단계 신청)", description: "조건부합격 이행기간 연장을 처음 신청하는 경우" },
+  { value: "stage1", label: "1단계 진행 중", description: "1단계 이행기간 연장 중 (최대 2개월+2개월)" },
+  { value: "stage2", label: "2단계 진행 중", description: "2단계 이행기간 연장 중 (대상별 6개월~1년)" }
+];
+
 export const EXTENSION_STAGES: { value: ExtensionStage; label: string; description: string; forBuilding: BuildingType[] }[] = [
   { value: "none", label: "신규 (연장 이력 없음)", description: "이행기간 연장을 처음 신청하는 경우", forBuilding: ["apartment", "general"] },
   { value: "stage1", label: "1단계 진행 중", description: "1단계 이행기간 연장 중", forBuilding: ["apartment", "general"] },
-  { value: "stage2", label: "2단계 진행 중", description: "2단계 이행기간 연장 중 (일반건축물만 해당)", forBuilding: ["general"] }
+  { value: "stage2", label: "2단계 진행 중", description: "2단계 이행기간 연장 중", forBuilding: ["apartment", "general"] },
+  { value: "3year_applied", label: "3년 연장 적용", description: "서면동의서 제출로 3년 연장 적용 (공동주택)", forBuilding: ["apartment"] }
 ];
 
 export const EXTENSION_REASONS: { value: ExtensionReason; label: string; description: string; stages: ExtensionStage[]; documents: string[] }[] = [

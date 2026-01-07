@@ -11,6 +11,8 @@ import {
   BUILDING_TYPES,
   EQUIPMENT_TYPES,
   INSPECTION_RESULTS,
+  EXTENSION_STAGES_APARTMENT,
+  EXTENSION_STAGES_GENERAL,
   EXTENSION_STAGES,
   EXTENSION_REASONS,
   BuildingType,
@@ -67,7 +69,8 @@ export default function PrecisionInspectionPage() {
 
   const availableStages = useMemo(() => {
     if (!form.buildingType) return [];
-    return EXTENSION_STAGES.filter(s => s.forBuilding.includes(form.buildingType!));
+    if (form.buildingType === "apartment") return EXTENSION_STAGES_APARTMENT;
+    return EXTENSION_STAGES_GENERAL;
   }, [form.buildingType]);
 
   const availableReasons = useMemo(() => {
@@ -204,10 +207,11 @@ export default function PrecisionInspectionPage() {
                     <Info className="h-4 w-4 text-blue-600" />
                     <AlertTitle className="text-blue-800 text-sm">공동주택(아파트) 선택됨</AlertTitle>
                     <AlertDescription className="text-blue-700 text-xs">
-                      <p>검사규정 제13조제3항제2호 (세 번째 정밀안전검사, 안전검사)</p>
-                      <p className="mt-1">• 3년 연장 가능 (서면동의서 제출 시)</p>
-                      <p>• 1단계: 최대 1년 6개월</p>
-                      <p>• 2단계: 추가 6개월~1년</p>
+                      <p>검사규정 제13조제3항제2호에 따라 두 가지 경로 중 택일:</p>
+                      <p className="mt-1 font-medium">① 3년 연장 (서면동의서 제출)</p>
+                      <p className="ml-3 text-[10px]">→ 서면동의서 제출 시 3년간 검사 연장 (1단계/2단계 불가)</p>
+                      <p className="mt-1 font-medium">② 이행연장 1단계/2단계</p>
+                      <p className="ml-3 text-[10px]">→ 서면동의서 미제출 시 단계별 이행기간 연장 진행</p>
                     </AlertDescription>
                   </Alert>
                 )}
@@ -388,22 +392,24 @@ export default function PrecisionInspectionPage() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Layers className="w-5 h-5" />
-                연장 단계 선택
+                {form.buildingType === "apartment" ? "연장 경로 선택" : "연장 단계 선택"}
               </CardTitle>
-              <CardDescription>현재 이행기간 연장 진행 단계를 선택하세요</CardDescription>
+              <CardDescription>
+                {form.buildingType === "apartment" 
+                  ? "서면동의서 제출 여부에 따라 연장 경로를 선택하세요"
+                  : "현재 이행기간 연장 진행 단계를 선택하세요"
+                }
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {form.buildingType === "apartment" && getGuidanceForApartment() && (
+              {form.buildingType === "apartment" && (
                 <Alert className="bg-blue-50 border-blue-200">
-                  <Info className="h-4 w-4 text-blue-600" />
-                  <AlertTitle className="text-blue-800">{getGuidanceForApartment()?.title}</AlertTitle>
+                  <AlertTriangle className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-800 text-sm">중요: 두 경로는 상호 배타적입니다</AlertTitle>
                   <AlertDescription className="text-blue-700 text-xs mt-2">
-                    <div className="space-y-1">
-                      {getGuidanceForApartment()?.stages.map((s, i) => (
-                        <div key={i}><strong>{s.name}</strong>: {s.period}</div>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-blue-600 text-[10px]">※ {getGuidanceForApartment()?.note}</p>
+                    <p>• <strong>3년 연장 신청</strong> 시 → 1단계/2단계 이행연장 불가</p>
+                    <p>• <strong>이행연장 신청</strong> 시 → 3년 연장 불가</p>
+                    <p className="mt-1 text-[10px] text-blue-600">※ 검사규정 부칙 제3조제3항 및 제13조제3항제2호</p>
                   </AlertDescription>
                 </Alert>
               )}
@@ -444,6 +450,21 @@ export default function PrecisionInspectionPage() {
                   ))}
                 </div>
               </div>
+
+              {form.extensionStage === "3year_applied" && (
+                <Alert className="bg-green-50 border-green-200">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertTitle className="text-green-800 text-sm">3년 연장 신청 선택됨</AlertTitle>
+                  <AlertDescription className="text-green-700 text-xs mt-2">
+                    <p className="font-medium">필요 서류:</p>
+                    <p>• 서면동의서 (입주민대표회의 등 관리주체 동의)</p>
+                    <p className="mt-2 text-[10px] text-green-600">
+                      ※ 검사규정 부칙 제3조제3항에 따라 3년간 검사 유예<br/>
+                      ※ 3년 연장 적용 시 1단계/2단계 이행연장은 적용 불가
+                    </p>
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {form.extensionStage === "stage2" && availableReasons.length > 0 && (
                 <div className="space-y-2">
