@@ -47,10 +47,7 @@ export type ExtensionReason =
   | "building_renovation";
 
 export const EXTENSION_STAGES_APARTMENT: { value: ExtensionStage; label: string; description: string }[] = [
-  { value: "3year_applied", label: "3년 연장 신청 (서면동의서 제출)", description: "검사규정 부칙 제3조제3항에 따라 서면동의서를 제출하여 3년 연장 적용" },
-  { value: "none", label: "이행연장 (1단계) 신청", description: "서면동의서 미제출, 검사규정 제13조제3항제2호에 따른 이행기간 연장" },
-  { value: "stage1", label: "1단계 진행 중", description: "1단계 이행기간 연장 중 (최대 1년 6개월)" },
-  { value: "stage2", label: "2단계 진행 중", description: "1단계 완료 후 추가 연장 진행 중" }
+  { value: "3year_applied", label: "3년 연장 (서면동의서 제출)", description: "검사규정 부칙 제3조제3항에 따라 서면동의서를 제출하여 3년간 검사 유예" }
 ];
 
 export const EXTENSION_STAGES_GENERAL: { value: ExtensionStage; label: string; description: string }[] = [

@@ -207,11 +207,9 @@ export default function PrecisionInspectionPage() {
                     <Info className="h-4 w-4 text-blue-600" />
                     <AlertTitle className="text-blue-800 text-sm">공동주택(아파트) 선택됨</AlertTitle>
                     <AlertDescription className="text-blue-700 text-xs">
-                      <p>검사규정 제13조제3항제2호에 따라 두 가지 경로 중 택일:</p>
-                      <p className="mt-1 font-medium">① 3년 연장 (서면동의서 제출)</p>
-                      <p className="ml-3 text-[10px]">→ 서면동의서 제출 시 3년간 검사 연장 (1단계/2단계 불가)</p>
-                      <p className="mt-1 font-medium">② 이행연장 1단계/2단계</p>
-                      <p className="ml-3 text-[10px]">→ 서면동의서 미제출 시 단계별 이행기간 연장 진행</p>
+                      <p>검사규정 부칙 제3조제3항에 따른 3년 연장 적용</p>
+                      <p className="mt-1">• 서면동의서 제출 시 3년간 검사 유예</p>
+                      <p className="text-[10px] mt-1 text-blue-600">※ 공동주택은 1단계/2단계 이행연장 적용 불가</p>
                     </AlertDescription>
                   </Alert>
                 )}
@@ -404,12 +402,11 @@ export default function PrecisionInspectionPage() {
             <CardContent className="space-y-4">
               {form.buildingType === "apartment" && (
                 <Alert className="bg-blue-50 border-blue-200">
-                  <AlertTriangle className="h-4 w-4 text-blue-600" />
-                  <AlertTitle className="text-blue-800 text-sm">중요: 두 경로는 상호 배타적입니다</AlertTitle>
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-800 text-sm">공동주택 3년 연장</AlertTitle>
                   <AlertDescription className="text-blue-700 text-xs mt-2">
-                    <p>• <strong>3년 연장 신청</strong> 시 → 1단계/2단계 이행연장 불가</p>
-                    <p>• <strong>이행연장 신청</strong> 시 → 3년 연장 불가</p>
-                    <p className="mt-1 text-[10px] text-blue-600">※ 검사규정 부칙 제3조제3항 및 제13조제3항제2호</p>
+                    <p>공동주택은 검사규정 부칙 제3조제3항에 따라 서면동의서 제출 시 3년간 검사가 유예됩니다.</p>
+                    <p className="mt-1 text-[10px] text-blue-600">※ 1단계/2단계 이행연장은 일반건축물에만 적용</p>
                   </AlertDescription>
                 </Alert>
               )}
