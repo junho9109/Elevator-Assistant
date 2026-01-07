@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,22 +6,20 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, AlertTriangle, FileText, Calendar, Building, Cog, ChevronRight, ChevronLeft, Info, Layers } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { CheckCircle2, AlertTriangle, FileText, Calendar, Building, Cog, ChevronRight, ChevronLeft, Info, Layers, ClipboardList, Target } from "lucide-react";
 import {
   BUILDING_TYPES,
   EQUIPMENT_TYPES,
   INSPECTION_RESULTS,
-  EXTENSION_STAGES_APARTMENT,
-  EXTENSION_STAGES_GENERAL,
-  EXTENSION_STAGES,
-  EXTENSION_REASONS,
+  IMPROVEMENT_PLANS,
   BuildingType,
   EquipmentType,
   InspectionResult,
-  ExtensionStage,
-  ExtensionReason,
-  evaluateWorkflow,
-  WorkflowResult
+  CurrentStatus,
+  ImprovementPlan,
+  generateStatusDiagnosis,
+  StatusDiagnosis
 } from "@/data/inspection-workflow";
 
 interface FormState {
@@ -32,8 +30,9 @@ interface FormState {
   precisionResult: InspectionResult | null;
   lastPeriodicDate: string;
   periodicResult: InspectionResult | null;
-  extensionStage: ExtensionStage | null;
-  extensionReason: ExtensionReason | null;
+  is3YearApplied: boolean;
+  currentStatus: CurrentStatus | null;
+  improvementPlan: ImprovementPlan | null;
 }
 
 const INITIAL_STATE: FormState = {
@@ -44,49 +43,43 @@ const INITIAL_STATE: FormState = {
   precisionResult: null,
   lastPeriodicDate: "",
   periodicResult: null,
-  extensionStage: null,
-  extensionReason: null
+  is3YearApplied: false,
+  currentStatus: null,
+  improvementPlan: null
 };
 
 export default function PrecisionInspectionPage() {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(INITIAL_STATE);
 
-  const result = useMemo<WorkflowResult | null>(() => {
-    if (!form.buildingType || !form.equipmentType || !form.installDate) {
+  const statusDiagnosis = useMemo<StatusDiagnosis | null>(() => {
+    if (!form.buildingType || !form.currentStatus) {
       return null;
     }
-    const installDate = new Date(form.installDate);
-    const lastPrecisionDate = form.lastPrecisionDate ? new Date(form.lastPrecisionDate) : null;
-    const lastPeriodicDate = form.lastPeriodicDate ? new Date(form.lastPeriodicDate) : null;
-    return evaluateWorkflow(
+    return generateStatusDiagnosis(
       form.buildingType,
-      form.equipmentType,
-      installDate,
-      lastPrecisionDate,
-      lastPeriodicDate,
-      form.precisionResult || form.periodicResult
+      form.currentStatus,
+      form.improvementPlan,
+      form.is3YearApplied
     );
-  }, [form]);
+  }, [form.buildingType, form.currentStatus, form.improvementPlan, form.is3YearApplied]);
 
-  const availableStages = useMemo(() => {
-    if (!form.buildingType) return [];
-    if (form.buildingType === "apartment") return EXTENSION_STAGES_APARTMENT;
-    return EXTENSION_STAGES_GENERAL;
-  }, [form.buildingType]);
+  const isApartmentOrCollective = form.buildingType === "apartment" || form.buildingType === "collective";
 
-  const availableReasons = useMemo(() => {
-    if (!form.extensionStage) return [];
-    return EXTENSION_REASONS.filter(r => r.stages.includes(form.extensionStage!));
-  }, [form.extensionStage]);
-
-  const selectedReason = useMemo(() => {
-    return EXTENSION_REASONS.find(r => r.value === form.extensionReason);
-  }, [form.extensionReason]);
+  const selectedPlan = useMemo(() => {
+    return IMPROVEMENT_PLANS.find(p => p.value === form.improvementPlan);
+  }, [form.improvementPlan]);
 
   const canProceedStep1 = form.buildingType && form.equipmentType && form.installDate;
   const canProceedStep2 = canProceedStep1 && (form.lastPrecisionDate || form.lastPeriodicDate);
-  const canProceedStep3 = canProceedStep2 && form.extensionStage !== null;
+  const canProceedStep3 = canProceedStep2 && form.currentStatus !== null;
+  const canProceedStep4 = canProceedStep3 && (form.is3YearApplied || form.currentStatus === "new" || form.currentStatus === "stage1" || (form.currentStatus === "stage2" && form.improvementPlan !== null));
+
+  useEffect(() => {
+    if (step === 4 && (form.is3YearApplied || form.currentStatus === "new" || form.currentStatus === "stage1")) {
+      setStep(5);
+    }
+  }, [step, form.is3YearApplied, form.currentStatus]);
 
   const handleReset = () => {
     setForm(INITIAL_STATE);
@@ -151,11 +144,11 @@ export default function PrecisionInspectionPage() {
     <div className="min-h-screen bg-gray-50 pb-20">
       <div className="bg-white border-b px-4 py-3 sticky top-0 z-10">
         <h1 className="text-lg font-bold text-center">정밀안전검사 업무처리</h1>
-        <div className="flex justify-center gap-1.5 mt-2">
-          {[1, 2, 3, 4].map((s) => (
+        <div className="flex justify-center gap-1 mt-2">
+          {[1, 2, 3, 4, 5].map((s) => (
             <div
               key={s}
-              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${
+              className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${
                 step === s
                   ? "bg-blue-600 text-white"
                   : step > s
@@ -164,15 +157,16 @@ export default function PrecisionInspectionPage() {
               }`}
               data-testid={`step-indicator-${s}`}
             >
-              {step > s ? <CheckCircle2 className="w-4 h-4" /> : s}
+              {step > s ? <CheckCircle2 className="w-3.5 h-3.5" /> : s}
             </div>
           ))}
         </div>
-        <div className="flex justify-center gap-2 mt-1 text-[10px] text-gray-500">
-          <span>기본정보</span>
-          <span>검사이력</span>
-          <span>연장단계</span>
-          <span>결과</span>
+        <div className="flex justify-center gap-1.5 mt-1 text-[10px] text-gray-500">
+          <span>정보</span>
+          <span>이력</span>
+          <span>분류</span>
+          <span>계획</span>
+          <span>진단</span>
         </div>
       </div>
 
@@ -191,7 +185,7 @@ export default function PrecisionInspectionPage() {
                 <Label htmlFor="buildingType">건축물 유형</Label>
                 <Select
                   value={form.buildingType || ""}
-                  onValueChange={(v) => setForm({ ...form, buildingType: v as BuildingType, extensionStage: null, extensionReason: null })}
+                  onValueChange={(v) => setForm({ ...form, buildingType: v as BuildingType, is3YearApplied: false, currentStatus: null, improvementPlan: null })}
                 >
                   <SelectTrigger id="buildingType" data-testid="select-building-type">
                     <SelectValue placeholder="건축물 유형 선택" />
@@ -421,100 +415,121 @@ export default function PrecisionInspectionPage() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Layers className="w-5 h-5" />
-                {form.buildingType === "apartment" ? "연장 경로 선택" : "연장 단계 선택"}
+                적용 대상 분류
               </CardTitle>
               <CardDescription>
-                {form.buildingType === "apartment" 
-                  ? "서면동의서 제출 여부에 따라 연장 경로를 선택하세요"
-                  : "현재 이행기간 연장 진행 단계를 선택하세요"
+                {isApartmentOrCollective 
+                  ? "3년 연장 적용 여부를 확인하세요"
+                  : "현재 이행기간 연장 진행 상태를 선택하세요"
                 }
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {form.buildingType === "apartment" && (
-                <Alert className="bg-blue-50 border-blue-200">
-                  <Info className="h-4 w-4 text-blue-600" />
-                  <AlertTitle className="text-blue-800 text-sm">공동주택 3년 연장</AlertTitle>
-                  <AlertDescription className="text-blue-700 text-xs mt-2">
-                    <p>공동주택은 검사규정 부칙 제3조제3항에 따라 서면동의서 제출 시 3년간 검사가 유예됩니다.</p>
-                    <p className="mt-1 text-[10px] text-blue-600">※ 1단계/2단계 이행연장은 일반건축물에만 적용</p>
-                  </AlertDescription>
-                </Alert>
+              {isApartmentOrCollective && (
+                <>
+                  <Alert className="bg-blue-50 border-blue-200">
+                    <Info className="h-4 w-4 text-blue-600" />
+                    <AlertTitle className="text-blue-800 text-sm">
+                      {form.buildingType === "apartment" ? "공동주택" : "집합건축물"} 3년 연장
+                    </AlertTitle>
+                    <AlertDescription className="text-blue-700 text-xs mt-2">
+                      <p>부칙 제3조제3항에 따라 서면동의서 제출 시 3년간 검사가 유예됩니다.</p>
+                      <p className="mt-1 text-[10px] text-blue-600">※ 3년 연장 적용 중인 경우 추가 이행연장 불가</p>
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border">
+                    <div>
+                      <Label className="text-sm font-medium">3년 연장 적용 중</Label>
+                      <p className="text-xs text-gray-500 mt-0.5">서면동의서를 제출하여 3년 연장이 적용된 상태입니까?</p>
+                    </div>
+                    <Switch
+                      checked={form.is3YearApplied}
+                      onCheckedChange={(checked) => setForm({ 
+                        ...form, 
+                        is3YearApplied: checked, 
+                        currentStatus: checked ? "3year_applied" : null,
+                        improvementPlan: null 
+                      })}
+                      data-testid="switch-3year-applied"
+                    />
+                  </div>
+
+                  {form.is3YearApplied && (
+                    <Alert className="bg-amber-50 border-amber-200">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      <AlertTitle className="text-amber-800 text-sm">추가 연장 불가 안내</AlertTitle>
+                      <AlertDescription className="text-amber-700 text-xs mt-1">
+                        3년 연장 적용 중에는 추가 이행기간 연장이 불가합니다.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {!form.is3YearApplied && (
+                    <div className="space-y-2">
+                      <Label>3년 연장 미적용 시 상태 선택</Label>
+                      <div className="space-y-2">
+                        {[
+                          { value: "new" as CurrentStatus, label: "신규 신청", description: "이행기간 연장을 처음 신청합니다" },
+                          { value: "stage1" as CurrentStatus, label: "1단계 연장 중", description: "1단계 이행기간 연장이 진행 중입니다" },
+                          { value: "stage2" as CurrentStatus, label: "2단계 연장 중", description: "2단계 이행기간 연장이 진행 중입니다" }
+                        ].map((status) => (
+                          <button
+                            key={status.value}
+                            onClick={() => setForm({ ...form, currentStatus: status.value, improvementPlan: null })}
+                            className={`w-full text-left py-3 px-4 rounded-lg border-2 transition-all ${
+                              form.currentStatus === status.value
+                                ? "bg-blue-50 border-blue-500 text-blue-800"
+                                : "bg-white border-gray-200 hover:border-gray-300"
+                            }`}
+                            data-testid={`button-status-apt-${status.value}`}
+                          >
+                            <div className="font-medium">{status.label}</div>
+                            <div className="text-xs opacity-70 mt-0.5">{status.description}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
-              {form.buildingType === "general" && getGuidanceForGeneral() && (
-                <Alert className="bg-amber-50 border-amber-200">
-                  <Info className="h-4 w-4 text-amber-600" />
-                  <AlertTitle className="text-amber-800">{getGuidanceForGeneral()?.title}</AlertTitle>
-                  <AlertDescription className="text-amber-700 text-xs mt-2">
+              {!isApartmentOrCollective && (
+                <>
+                  <Alert className="bg-amber-50 border-amber-200">
+                    <Info className="h-4 w-4 text-amber-600" />
+                    <AlertTitle className="text-amber-800 text-sm">일반건축물 이행연장</AlertTitle>
+                    <AlertDescription className="text-amber-700 text-xs mt-2">
+                      <p>• <strong>1단계</strong>: 최초 2개월 + 추가 2개월 (총 4개월) 또는 최대 1년 6개월</p>
+                      <p>• <strong>2단계</strong>: 대상별 6개월~1년 추가 연장</p>
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="space-y-2">
+                    <Label>현재 상태 선택</Label>
                     <div className="space-y-2">
-                      {getGuidanceForGeneral()?.stages.map((s, i) => (
-                        <div key={i}>
-                          <strong>{s.name}</strong> ({s.period}): {s.description}
-                        </div>
+                      {[
+                        { value: "new" as CurrentStatus, label: "신규 신청", description: "이행기간 연장을 처음 신청합니다" },
+                        { value: "stage1" as CurrentStatus, label: "1단계 연장 중", description: "1단계 이행기간 연장이 진행 중입니다" },
+                        { value: "stage2" as CurrentStatus, label: "2단계 연장 중", description: "2단계 이행기간 연장이 진행 중입니다" }
+                      ].map((status) => (
+                        <button
+                          key={status.value}
+                          onClick={() => setForm({ ...form, currentStatus: status.value, improvementPlan: null })}
+                          className={`w-full text-left py-3 px-4 rounded-lg border-2 transition-all ${
+                            form.currentStatus === status.value
+                              ? "bg-amber-50 border-amber-500 text-amber-800"
+                              : "bg-white border-gray-200 hover:border-gray-300"
+                          }`}
+                          data-testid={`button-status-${status.value}`}
+                        >
+                          <div className="font-medium">{status.label}</div>
+                          <div className="text-xs opacity-70 mt-0.5">{status.description}</div>
+                        </button>
                       ))}
                     </div>
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <div className="space-y-2">
-                <Label>현재 연장 단계</Label>
-                <div className="space-y-2">
-                  {availableStages.map((stage) => (
-                    <button
-                      key={stage.value}
-                      onClick={() => setForm({ ...form, extensionStage: stage.value, extensionReason: null })}
-                      className={`w-full text-left py-3 px-4 rounded-lg border-2 transition-all ${
-                        form.extensionStage === stage.value
-                          ? "bg-blue-50 border-blue-500 text-blue-800"
-                          : "bg-white border-gray-200 hover:border-gray-300"
-                      }`}
-                      data-testid={`button-stage-${stage.value}`}
-                    >
-                      <div className="font-medium">{stage.label}</div>
-                      <div className="text-xs opacity-70 mt-0.5">{stage.description}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {form.extensionStage === "3year_applied" && (
-                <Alert className="bg-green-50 border-green-200">
-                  <CheckCircle2 className="h-4 w-4 text-green-600" />
-                  <AlertTitle className="text-green-800 text-sm">3년 연장 신청 선택됨</AlertTitle>
-                  <AlertDescription className="text-green-700 text-xs mt-2">
-                    <p className="font-medium">필요 서류:</p>
-                    <p>• 서면동의서 (입주민대표회의 등 관리주체 동의)</p>
-                    <p className="mt-2 text-[10px] text-green-600">
-                      ※ 검사규정 부칙 제3조제3항에 따라 3년간 검사 유예<br/>
-                      ※ 3년 연장 적용 시 1단계/2단계 이행연장은 적용 불가
-                    </p>
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {form.extensionStage === "stage2" && availableReasons.length > 0 && (
-                <div className="space-y-2">
-                  <Label>2단계 연장 사유</Label>
-                  <div className="space-y-2">
-                    {availableReasons.map((reason) => (
-                      <button
-                        key={reason.value}
-                        onClick={() => setForm({ ...form, extensionReason: reason.value })}
-                        className={`w-full text-left py-3 px-4 rounded-lg border-2 transition-all ${
-                          form.extensionReason === reason.value
-                            ? "bg-amber-50 border-amber-500 text-amber-800"
-                            : "bg-white border-gray-200 hover:border-gray-300"
-                        }`}
-                        data-testid={`button-reason-${reason.value}`}
-                      >
-                        <div className="font-medium text-sm">{reason.label}</div>
-                        <div className="text-xs opacity-70 mt-0.5">{reason.description}</div>
-                      </button>
-                    ))}
                   </div>
-                </div>
+                </>
               )}
 
               <div className="flex gap-2">
@@ -527,6 +542,72 @@ export default function PrecisionInspectionPage() {
                   onClick={() => setStep(4)}
                   data-testid="button-next-step3"
                 >
+                  다음 <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {step === 4 && !form.is3YearApplied && form.currentStatus === "stage2" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ClipboardList className="w-5 h-5" />
+                개선 계획 선택
+              </CardTitle>
+              <CardDescription>2단계 연장에 해당하는 개선 계획을 선택하세요</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                {IMPROVEMENT_PLANS.map((plan) => (
+                  <button
+                    key={plan.value}
+                    onClick={() => setForm({ ...form, improvementPlan: plan.value })}
+                    className={`w-full text-left py-3 px-4 rounded-lg border-2 transition-all ${
+                      form.improvementPlan === plan.value
+                        ? "bg-blue-50 border-blue-500 text-blue-800"
+                        : "bg-white border-gray-200 hover:border-gray-300"
+                    }`}
+                    data-testid={`button-plan-${plan.value}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">{plan.value}</Badge>
+                      <span className="font-medium">{plan.label}</span>
+                    </div>
+                    <div className="text-xs opacity-70 mt-1">{plan.description}</div>
+                    <div className="text-xs text-blue-600 mt-1">연장 기간: {plan.extensionPeriod}</div>
+                  </button>
+                ))}
+              </div>
+
+              {selectedPlan && (
+                <Alert className="bg-blue-50 border-blue-200">
+                  <FileText className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-800 text-sm">{selectedPlan.label} 필요 서류</AlertTitle>
+                  <AlertDescription className="text-blue-700 text-xs mt-2">
+                    <ul className="space-y-1">
+                      {selectedPlan.documents.map((doc, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <CheckCircle2 className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                          {doc}
+                        </li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setStep(3)} className="flex-1" data-testid="button-prev-step4">
+                  <ChevronLeft className="w-4 h-4 mr-1" /> 이전
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={!form.improvementPlan}
+                  onClick={() => setStep(5)}
+                  data-testid="button-next-step4"
+                >
                   결과 확인 <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
               </div>
@@ -534,28 +615,36 @@ export default function PrecisionInspectionPage() {
           </Card>
         )}
 
-        {step === 4 && result && (
+
+        {step === 5 && statusDiagnosis && (
           <>
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Cog className="w-5 h-5" />
-                  업무처리 결과
+                  <Target className="w-5 h-5" />
+                  현재 상태 진단
                 </CardTitle>
                 <CardDescription>
-                  {BUILDING_TYPES.find((b) => b.value === form.buildingType)?.label} |{" "}
-                  {EXTENSION_STAGES.find((s) => s.value === form.extensionStage)?.label}
-                  {form.extensionReason && ` | ${EXTENSION_REASONS.find((r) => r.value === form.extensionReason)?.label}`}
+                  {BUILDING_TYPES.find((b) => b.value === form.buildingType)?.label} | {statusDiagnosis.currentStatus}
+                  {statusDiagnosis.improvementPlanLabel !== "-" && ` | ${statusDiagnosis.improvementPlanLabel}`}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {result.warnings.length > 0 && (
+                <Alert className="bg-blue-50 border-blue-200">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertTitle className="text-blue-800 text-sm">{statusDiagnosis.statusDescription}</AlertTitle>
+                  <AlertDescription className="text-blue-700 text-sm mt-2">
+                    {statusDiagnosis.mainMessage}
+                  </AlertDescription>
+                </Alert>
+
+                {statusDiagnosis.warnings.length > 0 && (
                   <Alert variant="destructive">
                     <AlertTriangle className="h-4 w-4" />
                     <AlertTitle>주의사항</AlertTitle>
                     <AlertDescription>
                       <ul className="list-disc list-inside space-y-1 mt-2">
-                        {result.warnings.map((w, i) => (
+                        {statusDiagnosis.warnings.map((w, i) => (
                           <li key={i} className="text-sm">{w}</li>
                         ))}
                       </ul>
@@ -563,111 +652,68 @@ export default function PrecisionInspectionPage() {
                   </Alert>
                 )}
 
-                {form.extensionStage === "none" && (
-                  <Alert className="bg-green-50 border-green-200">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                    <AlertTitle className="text-green-800">1단계 이행연장 신청 안내</AlertTitle>
-                    <AlertDescription className="text-green-700 text-sm mt-2">
-                      <p className="mb-2">조건부합격 승강기의 이행기간 연장을 처음 신청합니다.</p>
-                      <div className="bg-white rounded p-3 border border-green-200">
-                        <p className="font-medium mb-1">연장 가능 기간</p>
-                        <p className="text-xs">• 최초 2개월 조건부 부여 → 추가 2개월 연장 (총 4개월)</p>
-                      </div>
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {form.extensionStage === "stage1" && (
-                  <Alert className="bg-blue-50 border-blue-200">
-                    <Info className="h-4 w-4 text-blue-600" />
-                    <AlertTitle className="text-blue-800">1단계 진행 중 안내</AlertTitle>
-                    <AlertDescription className="text-blue-700 text-sm mt-2">
-                      <p className="mb-2">현재 1단계 이행기간 연장 중입니다.</p>
-                      {form.buildingType === "apartment" && (
-                        <div className="bg-white rounded p-3 border border-blue-200 text-xs">
-                          <p className="font-medium mb-1">공동주택 1단계</p>
-                          <p>• 최대 1년 6개월 이내 도래하는 안전검사 또는 확인검사 시까지</p>
-                          <p>• 분기별 자체점검 추가 실시 필요</p>
-                        </div>
-                      )}
-                      {form.buildingType === "general" && (
-                        <div className="bg-white rounded p-3 border border-blue-200 text-xs">
-                          <p className="font-medium mb-1">일반건축물 1단계</p>
-                          <p>• 최초 2개월 부여 후 이행확인</p>
-                          <p>• 1단계 종료 전 2단계 서류 제출 필요</p>
-                        </div>
-                      )}
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {form.extensionStage === "stage2" && selectedReason && (
-                  <Alert className="bg-amber-50 border-amber-200">
-                    <FileText className="h-4 w-4 text-amber-600" />
-                    <AlertTitle className="text-amber-800">2단계 이행연장 안내: {selectedReason.label}</AlertTitle>
-                    <AlertDescription className="text-amber-700 text-sm mt-2">
-                      <p className="mb-2">{selectedReason.description}</p>
-                      <div className="bg-white rounded p-3 border border-amber-200">
-                        <p className="font-medium mb-2 text-xs">필요 서류</p>
-                        <ul className="text-xs space-y-1">
-                          {selectedReason.documents.map((doc, i) => (
-                            <li key={i} className="flex items-center gap-2">
-                              <CheckCircle2 className="w-3 h-3 text-amber-600" />
-                              {doc}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {result.requiredInspections.length > 0 && (
-                  <div className="space-y-2">
-                    <h3 className="font-medium flex items-center gap-2 text-sm">
-                      <Calendar className="w-4 h-4 text-blue-600" />
-                      예정된 검사
+                {statusDiagnosis.requiredDocuments.length > 0 && (
+                  <div className="bg-white border rounded-lg p-4">
+                    <h3 className="font-medium text-sm flex items-center gap-2 mb-2">
+                      <FileText className="w-4 h-4 text-gray-600" />
+                      필요 서류
                     </h3>
-                    {result.requiredInspections.map((insp, i) => (
-                      <div key={i} className="flex justify-between items-center border rounded-lg p-3">
-                        <div>
-                          <span className="font-medium text-sm">
-                            {insp.type === "precision" ? "정밀안전검사" : "정기검사"}
-                          </span>
-                          <p className="text-xs text-gray-500">{insp.description}</p>
-                        </div>
-                        <Badge variant="outline">{formatDate(insp.dueDate)}</Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {result.recommendations.length > 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <h4 className="font-medium text-blue-800 text-sm mb-1">참고사항</h4>
-                    <ul className="text-sm text-blue-700 list-disc list-inside">
-                      {result.recommendations.map((r, i) => (
-                        <li key={i}>{r}</li>
+                    <ul className="space-y-1">
+                      {statusDiagnosis.requiredDocuments.map((doc, i) => (
+                        <li key={i} className="flex items-center gap-2 text-sm">
+                          <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                          {doc}
+                        </li>
                       ))}
                     </ul>
                   </div>
                 )}
 
-                {result.nextSteps.length > 0 && (
-                  <div className="space-y-2">
-                    <h3 className="font-medium text-sm">다음 단계</h3>
-                    <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
-                      {result.nextSteps.map((step, i) => (
-                        <li key={i}>{step}</li>
+                {statusDiagnosis.obligations.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <h3 className="font-medium text-sm text-amber-800 mb-2">공통 의무사항</h3>
+                    <ul className="space-y-1">
+                      {statusDiagnosis.obligations.map((obl, i) => (
+                        <li key={i} className="text-sm text-amber-700 flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 bg-amber-600 rounded-full flex-shrink-0" />
+                          {obl}
+                        </li>
                       ))}
-                    </ol>
+                    </ul>
+                  </div>
+                )}
+
+                {statusDiagnosis.ctaButtons.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="font-medium text-sm">향후 선택지</h3>
+                    <div className="space-y-2">
+                      {statusDiagnosis.ctaButtons.map((btn, i) => (
+                        <Button
+                          key={i}
+                          variant="outline"
+                          className="w-full justify-between h-auto py-3"
+                          data-testid={`button-cta-${btn.action}`}
+                        >
+                          <div className="text-left">
+                            <div className="font-medium">{btn.label}</div>
+                            <div className="text-xs text-gray-500 mt-0.5">{btn.description}</div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
             </Card>
 
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep(3)} className="flex-1" data-testid="button-prev-step4">
+              <Button 
+                variant="outline" 
+                onClick={() => setStep(form.currentStatus === "stage2" ? 4 : 3)} 
+                className="flex-1" 
+                data-testid="button-prev-step5"
+              >
                 <ChevronLeft className="w-4 h-4 mr-1" /> 수정
               </Button>
               <Button variant="secondary" onClick={handleReset} className="flex-1" data-testid="button-reset">
