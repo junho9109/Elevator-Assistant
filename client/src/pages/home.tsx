@@ -286,46 +286,33 @@ export default function Home() {
     });
   };
 
-  const handleSaveClick = () => {
-    setAdminPassword("");
-    setIsPasswordDialogOpen(true);
+  const handleAdminModeClick = () => {
+    if (isAdminMode) {
+      setIsAdminMode(false);
+      setIsEditMode(false);
+      toast({
+        title: "관리자 모드 종료",
+        description: "관리자 모드가 종료되었습니다.",
+      });
+    } else {
+      setAdminPassword("");
+      setIsPasswordDialogOpen(true);
+    }
   };
 
-  const handlePasswordSubmit = async () => {
-    try {
-      const response = await fetch("/api/admin/verify-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: adminPassword }),
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        toast({
-          title: response.status === 401 ? "비밀번호 오류" : "서버 오류",
-          description: data.error || "알 수 없는 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
+  const handlePasswordSubmit = () => {
+    if (adminPassword === "910919") {
       setIsPasswordDialogOpen(false);
       setAdminPassword("");
-      
-      await queryClient.refetchQueries({ queryKey: ["standards"] });
-      await queryClient.refetchQueries({ queryKey: ["hotspots"] });
-      
-      const currentStandards = queryClient.getQueryData(["standards"]) as Standard[] || [];
-      const currentHotspots = queryClient.getQueryData(["hotspots"]) as Hotspot[] || [];
-      
+      setIsAdminMode(true);
       toast({
-        title: "저장 상태 확인 완료",
-        description: `서버에 저장된 데이터: 표준화 ${currentStandards.length}건, 버튼 ${currentHotspots.length}개`,
+        title: "관리자 모드 진입",
+        description: "관리자 모드가 활성화되었습니다.",
       });
-    } catch {
+    } else {
       toast({
-        title: "저장 상태 확인 실패",
-        description: "서버와 연결할 수 없습니다.",
+        title: "비밀번호 오류",
+        description: "비밀번호가 올바르지 않습니다.",
         variant: "destructive",
       });
     }
@@ -352,6 +339,7 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
+  const [isAdminMode, setIsAdminMode] = useState(false);
   
   const [newItem, setNewItem] = useState({
     title: "",
@@ -748,14 +736,17 @@ export default function Home() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
-                    variant="outline"
+                    variant={isAdminMode ? "default" : "outline"}
                     size="icon"
-                    onClick={handleSaveClick}
-                    className="shrink-0 shadow-sm hover:shadow-md transition-all"
-                    data-testid="button-save"
-                    title="저장 확인"
+                    onClick={handleAdminModeClick}
+                    className={cn(
+                      "shrink-0 shadow-sm hover:shadow-md transition-all",
+                      isAdminMode && "bg-red-500 hover:bg-red-600"
+                    )}
+                    data-testid="button-admin-mode"
+                    title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
                   >
-                    <Save className="w-4 h-4" />
+                    <Settings2 className="w-4 h-4" />
                   </Button>
                   <Button
                     variant="outline"
@@ -775,35 +766,37 @@ export default function Home() {
               </p>
             </div>
 
-            {/* Edit Mode Toggle */}
-            <div className="flex flex-col gap-3 mb-4">
-              <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
-                  <Settings2 className="w-4 h-4 text-slate-400" />
-                  <span>구조도 편집 모드</span>
+            {/* Edit Mode Toggle - Admin Only */}
+            {isAdminMode && (
+              <div className="flex flex-col gap-3 mb-4">
+                <div className="flex items-center justify-between bg-red-50 p-3 rounded-xl border border-red-200 shadow-sm">
+                  <div className="flex items-center gap-2 text-sm font-medium text-red-600">
+                    <Settings2 className="w-4 h-4 text-red-400" />
+                    <span>구조도 편집 모드</span>
+                  </div>
+                  <Switch 
+                    checked={isEditMode}
+                    onCheckedChange={setIsEditMode}
+                    data-testid="switch-edit-mode"
+                  />
                 </div>
-                <Switch 
-                  checked={isEditMode}
-                  onCheckedChange={setIsEditMode}
-                  data-testid="switch-edit-mode"
-                />
+                {isEditMode && (
+                  <Button
+                    onClick={() => {
+                      setPendingButtonPos({ top: "50%", left: "50%" });
+                      setEditingButtonId(null);
+                      setButtonForm({ label: "" });
+                      setIsButtonDialogOpen(true);
+                    }}
+                    className="w-full"
+                    data-testid="button-add-new"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    새 버튼 추가
+                  </Button>
+                )}
               </div>
-              {isEditMode && (
-                <Button
-                  onClick={() => {
-                    setPendingButtonPos({ top: "50%", left: "50%" });
-                    setEditingButtonId(null);
-                    setButtonForm({ label: "" });
-                    setIsButtonDialogOpen(true);
-                  }}
-                  className="w-full"
-                  data-testid="button-add-new"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  새 버튼 추가
-                </Button>
-              )}
-            </div>
+            )}
 
             {/* Interactive Structure Diagram */}
             <div 
@@ -963,7 +956,8 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Add Standard Button */}
+              {/* Add Standard Button - Admin Only */}
+              {isAdminMode && (
               <Dialog open={isAddStandardOpen} onOpenChange={(open) => {
                 if (open && activeButtonId) {
                   setNewItem(prev => ({ ...prev, hotspotId: activeButtonId }));
@@ -971,7 +965,7 @@ export default function Home() {
                 setIsAddStandardOpen(open);
               }}>
                   <DialogTrigger asChild>
-                    <Button className="shrink-0 gap-2 shadow-md hover:shadow-lg transition-all" data-testid="button-add-standard">
+                    <Button className="shrink-0 gap-2 shadow-md hover:shadow-lg transition-all bg-red-500 hover:bg-red-600" data-testid="button-add-standard">
                       <Plus className="w-4 h-4" />
                       표준화 추가
                     </Button>
@@ -1189,6 +1183,7 @@ export default function Home() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+              )}
             </div>
 
             {/* Scrollable Content Area */}
@@ -1567,11 +1562,11 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      {/* Password Dialog for Save */}
+      {/* Password Dialog for Admin Mode */}
       <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>관리자 비밀번호 확인</DialogTitle>
+            <DialogTitle>관리자 모드 진입</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
