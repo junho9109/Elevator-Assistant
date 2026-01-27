@@ -22,6 +22,7 @@ interface CustomItemEdit {
   effectiveDate?: string;
   expiryDate?: string;
   introductionType?: "new" | "revision";
+  customWarning?: string;
 }
 
 type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
@@ -105,6 +106,7 @@ export default function JudgmentPage() {
       effectiveDate: existingEdit?.effectiveDate ?? item.effectiveDate ?? "",
       expiryDate: existingEdit?.expiryDate ?? item.expiryDate ?? "",
       introductionType: existingEdit?.introductionType ?? item.introductionType,
+      customWarning: existingEdit?.customWarning ?? "",
     });
     setIsEditItemDialogOpen(true);
   };
@@ -401,6 +403,11 @@ export default function JudgmentPage() {
             {getAutoRescueWarning(item)}
           </div>
         )}
+        {customEdits[item.id]?.customWarning && (
+          <div className="px-4 pb-2 text-xs text-blue-600 ml-10 font-medium bg-blue-50 rounded mx-4 p-2">
+            ※ {customEdits[item.id].customWarning}
+          </div>
+        )}
       </div>
     );
   };
@@ -695,6 +702,18 @@ export default function JudgmentPage() {
                   <SelectItem value="revision">개정</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-item-custom-warning">※ 안내문구 (선택사항)</Label>
+              <Textarea
+                id="edit-item-custom-warning"
+                value={editForm.customWarning || ""}
+                onChange={(e) => setEditForm(prev => ({ ...prev, customWarning: e.target.value }))}
+                placeholder="이 항목에 표시할 특별 안내문구를 입력하세요"
+                rows={2}
+                data-testid="input-edit-item-custom-warning"
+              />
+              <p className="text-xs text-muted-foreground">입력 시 해당 항목 하단에 파란색 안내문구로 표시됩니다</p>
             </div>
           </div>
           <DialogFooter className="flex gap-2">
