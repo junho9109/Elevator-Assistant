@@ -159,8 +159,8 @@ export default function JudgmentPage() {
     if (permitDate && inspectionDate) {
       const permit = new Date(permitDate);
       const inspection = new Date(inspectionDate);
-      // 두 날짜 중 더 이른 날짜를 기준으로 적용 여부 판정
-      return permit < inspection ? permit : inspection;
+      // 두 날짜 중 더 늦은 날짜를 기준으로 적용 여부 판정
+      return permit > inspection ? permit : inspection;
     }
     if (permitDate) return new Date(permitDate);
     if (inspectionDate) return new Date(inspectionDate);
@@ -538,7 +538,7 @@ export default function JudgmentPage() {
                 )}
                 <p className="text-xs text-blue-600 mt-2">
                   {permitDate && inspectionDate 
-                    ? "두 날짜 중 더 이른 날짜를 기준으로 적용 여부가 판정됩니다."
+                    ? "두 날짜 중 더 늦은 날짜를 기준으로 적용 여부가 판정됩니다."
                     : "이 날짜를 기준으로 검사기준 적용 여부가 표시됩니다."}
                 </p>
               </div>
