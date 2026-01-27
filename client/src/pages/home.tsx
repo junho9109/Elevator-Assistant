@@ -369,8 +369,6 @@ export default function Home() {
     imageUrls: [] as string[],
     inspectionDate: "",
     permitDate: "",
-    inspectionYear: "",
-    inspectionRound: "",
     hotspotId: null as number | null
   });
 
@@ -463,8 +461,6 @@ export default function Home() {
       imageUrls: newItem.imageUrls.length > 0 ? newItem.imageUrls : null,
       permitDate: newItem.permitDate || null,
       inspectionDate: newItem.inspectionDate || null,
-      inspectionYear: newItem.inspectionYear || null,
-      inspectionRound: newItem.inspectionRound || null,
       categoryId: null,
       hotspotId: newItem.hotspotId,
     }, {
@@ -477,8 +473,6 @@ export default function Home() {
           imageUrls: [],
           inspectionDate: "",
           permitDate: "",
-          inspectionYear: "",
-          inspectionRound: "",
           hotspotId: null
         });
         toast({
@@ -510,8 +504,6 @@ export default function Home() {
       imageUrls: editingItem.imageUrls && editingItem.imageUrls.length > 0 ? editingItem.imageUrls : null,
       permitDate: editingItem.permitDate || null,
       inspectionDate: editingItem.inspectionDate || null,
-      inspectionYear: editingItem.inspectionYear || null,
-      inspectionRound: editingItem.inspectionRound || null,
       hotspotId: editingItem.hotspotId,
     };
     
@@ -1070,48 +1062,6 @@ export default function Home() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="inspectionYear">검사년도</Label>
-                        <Select
-                          value={newItem.inspectionYear}
-                          onValueChange={(value) => setNewItem({...newItem, inspectionYear: value})}
-                        >
-                          <SelectTrigger data-testid="select-inspection-year">
-                            <SelectValue placeholder="년도 선택..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from({ length: 10 }, (_, i) => {
-                              const year = new Date().getFullYear() - i;
-                              return (
-                                <SelectItem key={year} value={year.toString()}>
-                                  {year}년
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="inspectionRound">검사차수</Label>
-                        <Select
-                          value={newItem.inspectionRound}
-                          onValueChange={(value) => setNewItem({...newItem, inspectionRound: value})}
-                        >
-                          <SelectTrigger data-testid="select-inspection-round">
-                            <SelectValue placeholder="차수 선택..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">1차</SelectItem>
-                            <SelectItem value="2">2차</SelectItem>
-                            <SelectItem value="3">3차</SelectItem>
-                            <SelectItem value="4">4차</SelectItem>
-                            <SelectItem value="5">5차</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
                     <div className="grid gap-2">
                       <Label htmlFor="body">세부 내용</Label>
                       <Textarea 
@@ -1314,22 +1264,6 @@ export default function Home() {
                 {editingItem?.body}
               </p>
             </div>
-            {(editingItem?.inspectionYear || editingItem?.inspectionRound) && (
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-                {editingItem?.inspectionYear && (
-                  <div className="space-y-1">
-                    <Label className="text-slate-500 text-xs">검사년도</Label>
-                    <p className="text-slate-700 text-sm font-mono">{editingItem.inspectionYear}년</p>
-                  </div>
-                )}
-                {editingItem?.inspectionRound && (
-                  <div className="space-y-1">
-                    <Label className="text-slate-500 text-xs">검사차수</Label>
-                    <p className="text-slate-700 text-sm font-mono">{editingItem.inspectionRound}차</p>
-                  </div>
-                )}
-              </div>
-            )}
             {(editingItem?.permitDate || editingItem?.inspectionDate) && (
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                 {editingItem?.permitDate && (
@@ -1422,47 +1356,6 @@ export default function Home() {
                   onChange={(e) => setEditingItem({...editingItem, inspectionDate: e.target.value})}
                   data-testid="input-edit-inspection-date"
                 />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-inspectionYear">검사년도</Label>
-                  <Select
-                    value={editingItem.inspectionYear || ""}
-                    onValueChange={(value) => setEditingItem({...editingItem, inspectionYear: value})}
-                  >
-                    <SelectTrigger data-testid="select-edit-inspection-year">
-                      <SelectValue placeholder="년도 선택..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 10 }, (_, i) => {
-                        const year = new Date().getFullYear() - i;
-                        return (
-                          <SelectItem key={year} value={year.toString()}>
-                            {year}년
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-inspectionRound">검사차수</Label>
-                  <Select
-                    value={editingItem.inspectionRound || ""}
-                    onValueChange={(value) => setEditingItem({...editingItem, inspectionRound: value})}
-                  >
-                    <SelectTrigger data-testid="select-edit-inspection-round">
-                      <SelectValue placeholder="차수 선택..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">1차</SelectItem>
-                      <SelectItem value="2">2차</SelectItem>
-                      <SelectItem value="3">3차</SelectItem>
-                      <SelectItem value="4">4차</SelectItem>
-                      <SelectItem value="5">5차</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-body">세부 내용</Label>
