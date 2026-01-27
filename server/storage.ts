@@ -13,13 +13,16 @@ import {
   type InsertMemoPhoto,
   type PhotoAnnotation,
   type InsertPhotoAnnotation,
+  type StandardComment,
+  type InsertStandardComment,
   users,
   categories,
   standards,
   hotspots,
   memos,
   memoPhotos,
-  photoAnnotations
+  photoAnnotations,
+  standardComments
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or } from "drizzle-orm";
@@ -72,6 +75,11 @@ export interface IStorage {
   createAnnotation(annotation: InsertPhotoAnnotation): Promise<PhotoAnnotation>;
   deleteAnnotation(id: number): Promise<void>;
   deleteAnnotationsByPhoto(photoId: number): Promise<void>;
+
+  // StandardComment methods
+  getCommentsByStandard(standardId: number): Promise<StandardComment[]>;
+  createComment(comment: InsertStandardComment): Promise<StandardComment>;
+  deleteComment(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -255,6 +263,20 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAnnotationsByPhoto(photoId: number): Promise<void> {
     await db.delete(photoAnnotations).where(eq(photoAnnotations.photoId, photoId));
+  }
+
+  // StandardComment methods
+  async getCommentsByStandard(standardId: number): Promise<StandardComment[]> {
+    return await db.select().from(standardComments).where(eq(standardComments.standardId, standardId));
+  }
+
+  async createComment(comment: InsertStandardComment): Promise<StandardComment> {
+    const [newComment] = await db.insert(standardComments).values(comment).returning();
+    return newComment;
+  }
+
+  async deleteComment(id: number): Promise<void> {
+    await db.delete(standardComments).where(eq(standardComments.id, id));
   }
 }
 

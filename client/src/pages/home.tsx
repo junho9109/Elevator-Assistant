@@ -19,7 +19,9 @@ import {
   ZoomIn,
   ZoomOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  MessageSquare,
+  Send
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -52,7 +54,10 @@ import {
   useDeleteStandard,
   useCreateHotspot,
   useUpdateHotspot,
-  useDeleteHotspot
+  useDeleteHotspot,
+  useComments,
+  useCreateComment,
+  useDeleteComment
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
 
@@ -276,6 +281,9 @@ export default function Home() {
   const { data: standards = [], isLoading: standardsLoading, isFetching: standardsFetching } = useStandards();
   const { data: hotspots = [], isLoading: hotspotsLoading, isFetching: hotspotsFetching } = useHotspots();
   const isRefreshing = standardsFetching || hotspotsFetching;
+  
+  const [viewingStandardId, setViewingStandardId] = useState<number | null>(null);
+  const { data: comments = [] } = useComments(viewingStandardId);
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["standards"] });
@@ -345,6 +353,8 @@ export default function Home() {
   const createHotspot = useCreateHotspot();
   const updateHotspot = useUpdateHotspot();
   const deleteHotspot = useDeleteHotspot();
+  const createComment = useCreateComment();
+  const deleteComment = useDeleteComment();
 
   const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -354,6 +364,8 @@ export default function Home() {
   const [isViewStandardOpen, setIsViewStandardOpen] = useState(false);
   const [isEditStandardOpen, setIsEditStandardOpen] = useState(false);
   const [isButtonDialogOpen, setIsButtonDialogOpen] = useState(false);
+  
+  const [newComment, setNewComment] = useState({ author: "", content: "" });
   
   const [editingButtonId, setEditingButtonId] = useState<number | null>(null);
   const [pendingButtonPos, setPendingButtonPos] = useState<{top: string, left: string} | null>(null);
@@ -485,6 +497,8 @@ export default function Home() {
 
   const handleOpenViewStandard = (standard: Standard) => {
     setEditingItem({ ...standard });
+    setViewingStandardId(standard.id);
+    setNewComment({ author: "", content: "" });
     setIsViewStandardOpen(true);
   };
 
@@ -1280,6 +1294,99 @@ export default function Home() {
                 )}
               </div>
             )}
+            
+            {/* Comments Section */}
+            <div className="border-t border-slate-200 pt-4 mt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <MessageSquare className="w-4 h-4 text-slate-500" />
+                <Label className="text-slate-600 text-sm font-medium">댓글 ({comments.length})</Label>
+              </div>
+              
+              {/* Comment List */}
+              <div className="space-y-3 max-h-40 overflow-y-auto mb-4">
+                {comments.length === 0 ? (
+                  <p className="text-slate-400 text-sm italic">아직 댓글이 없습니다.</p>
+                ) : (
+                  comments.map((comment) => (
+                    <div key={comment.id} className="bg-slate-50 rounded-lg p-3 relative group">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-sm text-slate-700">{comment.author}</span>
+                        <span className="text-xs text-slate-400">
+                          {new Date(comment.createdAt).toLocaleDateString('ko-KR')}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-600">{comment.content}</p>
+                      {isAdminMode && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm("이 댓글을 삭제하시겠습니까?")) {
+                              deleteComment.mutate(comment.id);
+                            }
+                          }}
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
+                          data-testid={`button-delete-comment-${comment.id}`}
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              {/* Add Comment Form */}
+              <div className="space-y-2">
+                <Input
+                  placeholder="이름"
+                  value={newComment.author}
+                  onChange={(e) => setNewComment({ ...newComment, author: e.target.value })}
+                  className="text-sm"
+                  data-testid="input-comment-author"
+                />
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="댓글을 입력하세요..."
+                    value={newComment.content}
+                    onChange={(e) => setNewComment({ ...newComment, content: e.target.value })}
+                    className="flex-1 text-sm"
+                    data-testid="input-comment-content"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newComment.author && newComment.content && viewingStandardId) {
+                        createComment.mutate({
+                          standardId: viewingStandardId,
+                          author: newComment.author,
+                          content: newComment.content
+                        }, {
+                          onSuccess: () => {
+                            setNewComment({ author: newComment.author, content: "" });
+                          }
+                        });
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (newComment.author && newComment.content && viewingStandardId) {
+                        createComment.mutate({
+                          standardId: viewingStandardId,
+                          author: newComment.author,
+                          content: newComment.content
+                        }, {
+                          onSuccess: () => {
+                            setNewComment({ author: newComment.author, content: "" });
+                          }
+                        });
+                      }
+                    }}
+                    disabled={!newComment.author || !newComment.content}
+                    data-testid="button-submit-comment"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
           <DialogFooter className="flex-shrink-0">
             <Button variant="outline" onClick={() => setIsViewStandardOpen(false)}>닫기</Button>

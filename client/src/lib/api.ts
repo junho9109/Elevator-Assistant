@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Category, Standard, Hotspot, InsertCategory, InsertStandard, InsertHotspot } from "@shared/schema";
+import type { Category, Standard, Hotspot, InsertCategory, InsertStandard, InsertHotspot, StandardComment, InsertStandardComment } from "@shared/schema";
 
 async function fetchCategories(): Promise<Category[]> {
   const response = await fetch("/api/categories");
@@ -269,6 +269,59 @@ export function useDeleteHotspot() {
     },
     onError: (_, __, context) => {
       if (context?.prev) queryClient.setQueryData(["hotspots"], context.prev);
+    },
+  });
+}
+
+// Comment API functions
+async function fetchComments(standardId: number): Promise<StandardComment[]> {
+  const response = await fetch(`/api/standards/${standardId}/comments`);
+  if (!response.ok) throw new Error("Failed to fetch comments");
+  return response.json();
+}
+
+async function createComment(data: { standardId: number; author: string; content: string }): Promise<StandardComment> {
+  const response = await fetch(`/api/standards/${data.standardId}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ author: data.author, content: data.content }),
+  });
+  if (!response.ok) throw new Error("Failed to create comment");
+  return response.json();
+}
+
+async function deleteComment(id: number): Promise<void> {
+  const response = await fetch(`/api/comments/${id}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) throw new Error("Failed to delete comment");
+}
+
+// Comment hooks
+export function useComments(standardId: number | null) {
+  return useQuery({
+    queryKey: ["comments", standardId],
+    queryFn: () => fetchComments(standardId!),
+    enabled: !!standardId,
+  });
+}
+
+export function useCreateComment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createComment,
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["comments", variables.standardId] });
+    },
+  });
+}
+
+export function useDeleteComment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteComment,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["comments"] });
     },
   });
 }

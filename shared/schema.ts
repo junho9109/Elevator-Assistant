@@ -119,7 +119,24 @@ export const insertPhotoAnnotationSchema = createInsertSchema(photoAnnotations).
   createdAt: true,
 });
 
+// Comments table for standards
+export const standardComments = pgTable("standard_comments", {
+  id: serial("id").primaryKey(),
+  standardId: integer("standard_id").references(() => standards.id, { onDelete: 'cascade' }).notNull(),
+  author: text("author").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertStandardCommentSchema = createInsertSchema(standardComments).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
+export type InsertStandardComment = z.infer<typeof insertStandardCommentSchema>;
+export type StandardComment = typeof standardComments.$inferSelect;
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
