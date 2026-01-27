@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { ChevronDown, ChevronRight, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, Check, Settings2, Save } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
 
 type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
@@ -28,12 +30,55 @@ const EQUIPMENT_SUBTYPES: Record<EquipmentType, string[]> = {
 };
 
 export default function JudgmentPage() {
+  const { toast } = useToast();
   const [equipmentType, setEquipmentType] = useState<EquipmentType>("엘리베이터");
   const [subType, setSubType] = useState<string>("전기식(MR)");
   const [inspectionDate, setInspectionDate] = useState("");
   const [permitDate, setPermitDate] = useState("");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["1.1", "1.2", "1.3", "1.4", "1.5"]));
   const [results, setResults] = useState<Record<string, ResultType>>({});
+  
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+
+  const handleAdminModeClick = () => {
+    if (isAdminMode) {
+      setIsAdminMode(false);
+      toast({
+        title: "관리자 모드 종료",
+        description: "관리자 모드가 비활성화되었습니다.",
+      });
+    } else {
+      setIsPasswordDialogOpen(true);
+    }
+  };
+
+  const handlePasswordSubmit = () => {
+    if (adminPassword === "910919") {
+      setIsPasswordDialogOpen(false);
+      setAdminPassword("");
+      setIsAdminMode(true);
+      toast({
+        title: "관리자 모드 진입",
+        description: "관리자 모드가 활성화되었습니다.",
+      });
+    } else {
+      toast({
+        title: "비밀번호 오류",
+        description: "비밀번호가 올바르지 않습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSaveConfirm = () => {
+    const resultCount = Object.keys(results).length;
+    toast({
+      title: "저장 상태 확인",
+      description: `현재 ${resultCount}개 항목의 판정 결과가 입력되었습니다.`,
+    });
+  };
 
   const handleEquipmentTypeChange = (type: EquipmentType) => {
     setEquipmentType(type);
@@ -278,11 +323,40 @@ export default function JudgmentPage() {
     <div className="min-h-screen bg-background p-4 md:p-8 font-sans text-foreground">
       <div className="mx-auto max-w-5xl bg-card rounded-3xl shadow-2xl border border-border overflow-hidden">
         <div className="p-6 border-b border-border bg-slate-50">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
-              E
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
+                E
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight">판정결과(예시)</h1>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">판정결과(예시)</h1>
+            <div className="flex items-center gap-2">
+              {isAdminMode && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleSaveConfirm}
+                  className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                  data-testid="button-save-judgment"
+                  title="저장 확인"
+                >
+                  <Save className="w-4 h-4" />
+                </Button>
+              )}
+              <Button
+                variant={isAdminMode ? "default" : "outline"}
+                size="icon"
+                onClick={handleAdminModeClick}
+                className={cn(
+                  "shrink-0 shadow-sm hover:shadow-md transition-all",
+                  isAdminMode && "bg-red-500 hover:bg-red-600"
+                )}
+                data-testid="button-admin-mode-judgment"
+                title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
+              >
+                <Settings2 className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
           <p className="text-muted-foreground text-sm mb-6">
             승강기 종류를 선택하고 건축허가일자 또는 검사기준 적용일을 입력하면 해당 기준의 적용 여부를 확인할 수 있습니다.
@@ -400,6 +474,37 @@ export default function JudgmentPage() {
           </div>
         </div>
       </div>
+
+      {/* Password Dialog */}
+      <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+        <DialogContent className="sm:max-w-[300px]">
+          <DialogHeader>
+            <DialogTitle>관리자 모드</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="admin-password-judgment">비밀번호 입력</Label>
+              <Input
+                id="admin-password-judgment"
+                type="password"
+                placeholder="비밀번호를 입력하세요"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handlePasswordSubmit();
+                  }
+                }}
+                data-testid="input-admin-password-judgment"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
+            <Button onClick={handlePasswordSubmit} data-testid="button-submit-password-judgment">확인</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
