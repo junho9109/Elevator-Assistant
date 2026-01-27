@@ -149,7 +149,8 @@ export default function JudgmentPage() {
     if (permitDate && inspectionDate) {
       const permit = new Date(permitDate);
       const inspection = new Date(inspectionDate);
-      return permit < inspection ? permit : inspection;
+      // 두 날짜 중 더 늦은 날짜를 기준으로 적용 여부 판정
+      return permit > inspection ? permit : inspection;
     }
     if (permitDate) return new Date(permitDate);
     if (inspectionDate) return new Date(inspectionDate);
