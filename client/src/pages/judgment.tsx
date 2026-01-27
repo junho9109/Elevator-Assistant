@@ -232,7 +232,8 @@ export default function JudgmentPage() {
     const newResults: Record<string, ResultType> = {};
     let hasChanges = false;
     
-    allItems.forEach(item => {
+    allItems.forEach(originalItem => {
+      const item = getItemWithEdits(originalItem);
       const autoResult = getAutoResult(item);
       if (autoResult) {
         if (results[item.id] !== autoResult) {
@@ -249,7 +250,7 @@ export default function JudgmentPage() {
     if (hasChanges) {
       setResults(newResults);
     }
-  }, [referenceDate, collectAllItems]);
+  }, [referenceDate, collectAllItems, customEdits]);
 
   const toggleSection = (sectionId: string) => {
     setExpandedSections(prev => {
