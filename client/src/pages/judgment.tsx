@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { ChevronDown, ChevronRight, Check, Settings2, Save } from "lucide-react";
+import { ChevronDown, ChevronRight, Check, Settings2, Save, Pencil } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -14,6 +15,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
+
+interface CustomItemEdit {
+  id: string;
+  text?: string;
+  effectiveDate?: string;
+  expiryDate?: string;
+  introductionType?: "new" | "revision";
+}
 
 type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
 
@@ -41,6 +50,11 @@ export default function JudgmentPage() {
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
+  
+  const [customEdits, setCustomEdits] = useState<Record<string, CustomItemEdit>>({});
+  const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
+  const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
 
   const handleAdminModeClick = () => {
     if (isAdminMode) {
@@ -74,10 +88,51 @@ export default function JudgmentPage() {
 
   const handleSaveConfirm = () => {
     const resultCount = Object.keys(results).length;
+    const editCount = Object.keys(customEdits).length;
     toast({
       title: "저장 상태 확인",
-      description: `현재 ${resultCount}개 항목의 판정 결과가 입력되었습니다.`,
+      description: `현재 ${resultCount}개 항목의 판정 결과와 ${editCount}개 항목의 수정사항이 저장되었습니다.`,
     });
+  };
+
+  const handleOpenEditItem = (item: InspectionItem) => {
+    if (!isAdminMode) return;
+    const existingEdit = customEdits[item.id];
+    setEditingItem(item);
+    setEditForm({
+      id: item.id,
+      text: existingEdit?.text ?? item.text,
+      effectiveDate: existingEdit?.effectiveDate ?? item.effectiveDate ?? "",
+      expiryDate: existingEdit?.expiryDate ?? item.expiryDate ?? "",
+      introductionType: existingEdit?.introductionType ?? item.introductionType,
+    });
+    setIsEditItemDialogOpen(true);
+  };
+
+  const handleSaveItemEdit = () => {
+    if (!editingItem) return;
+    setCustomEdits(prev => ({
+      ...prev,
+      [editingItem.id]: editForm
+    }));
+    setIsEditItemDialogOpen(false);
+    setEditingItem(null);
+    toast({
+      title: "항목 수정 완료",
+      description: "검사 항목이 수정되었습니다.",
+    });
+  };
+
+  const getItemWithEdits = (item: InspectionItem): InspectionItem => {
+    const edit = customEdits[item.id];
+    if (!edit) return item;
+    return {
+      ...item,
+      text: edit.text ?? item.text,
+      effectiveDate: edit.effectiveDate || item.effectiveDate,
+      expiryDate: edit.expiryDate || item.expiryDate,
+      introductionType: edit.introductionType ?? item.introductionType,
+    };
   };
 
   const handleEquipmentTypeChange = (type: EquipmentType) => {
@@ -251,17 +306,46 @@ export default function JudgmentPage() {
     );
   };
 
-  const renderItem = (item: InspectionItem) => {
+  const renderItem = (originalItem: InspectionItem) => {
+    const item = getItemWithEdits(originalItem);
     const status = getItemStatus(item);
     const autoResult = getAutoResult(item);
+    const hasCustomEdit = !!customEdits[item.id];
     
     return (
-      <div key={item.id} className="border-b border-border last:border-b-0">
+      <div 
+        key={item.id} 
+        className={cn(
+          "border-b border-border last:border-b-0",
+          hasCustomEdit && "bg-green-50 border-l-4 border-l-green-500"
+        )}
+      >
         <div className="flex items-start gap-4 p-4">
           <div className="flex items-center justify-center w-6 h-6 mt-1">
-            <Check className="w-4 h-4 text-primary" />
+            {isAdminMode ? (
+              <button
+                onClick={() => handleOpenEditItem(item)}
+                className="p-1 hover:bg-accent rounded transition-colors"
+                data-testid={`edit-item-${item.id}`}
+              >
+                <Pencil className="w-4 h-4 text-primary" />
+              </button>
+            ) : (
+              <Check className="w-4 h-4 text-primary" />
+            )}
           </div>
-          <div className="flex-1 text-sm leading-relaxed">{item.text}</div>
+          <div 
+            className={cn(
+              "flex-1 text-sm leading-relaxed",
+              isAdminMode && "cursor-pointer hover:text-primary"
+            )}
+            onClick={() => isAdminMode && handleOpenEditItem(item)}
+          >
+            {item.text}
+            {hasCustomEdit && (
+              <span className="ml-2 text-xs text-green-600 font-medium">(수정됨)</span>
+            )}
+          </div>
           <div className="flex gap-1 shrink-0">
             {renderResultButton(item.id, "적합", status, autoResult)}
             {renderResultButton(item.id, "부적합", status, autoResult)}
@@ -502,6 +586,103 @@ export default function JudgmentPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
             <Button onClick={handlePasswordSubmit} data-testid="button-submit-password-judgment">확인</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Item Dialog */}
+      <Dialog open={isEditItemDialogOpen} onOpenChange={setIsEditItemDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>검사 항목 수정</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-item-id">항목 ID</Label>
+              <Input
+                id="edit-item-id"
+                value={editForm.id}
+                disabled
+                className="bg-muted"
+                data-testid="input-edit-item-id"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-item-text">검사 내용</Label>
+              <Textarea
+                id="edit-item-text"
+                value={editForm.text || ""}
+                onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
+                rows={4}
+                data-testid="input-edit-item-text"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-item-effective-date">적용일 (시행일)</Label>
+                <Input
+                  id="edit-item-effective-date"
+                  type="date"
+                  value={editForm.effectiveDate || ""}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, effectiveDate: e.target.value }))}
+                  data-testid="input-edit-item-effective-date"
+                />
+                <p className="text-xs text-muted-foreground">이 날짜 이후에 적용되는 기준</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-item-expiry-date">만료일</Label>
+                <Input
+                  id="edit-item-expiry-date"
+                  type="date"
+                  value={editForm.expiryDate || ""}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, expiryDate: e.target.value }))}
+                  data-testid="input-edit-item-expiry-date"
+                />
+                <p className="text-xs text-muted-foreground">이 날짜 이후에는 해당없음 처리</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-item-intro-type">도입 유형</Label>
+              <Select
+                value={editForm.introductionType || ""}
+                onValueChange={(value) => setEditForm(prev => ({ 
+                  ...prev, 
+                  introductionType: value as "new" | "revision" | undefined 
+                }))}
+              >
+                <SelectTrigger id="edit-item-intro-type" data-testid="select-edit-item-intro-type">
+                  <SelectValue placeholder="선택 안함" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">신규</SelectItem>
+                  <SelectItem value="revision">개정</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="flex gap-2">
+            {customEdits[editForm.id] && (
+              <Button 
+                variant="destructive" 
+                onClick={() => {
+                  setCustomEdits(prev => {
+                    const newEdits = { ...prev };
+                    delete newEdits[editForm.id];
+                    return newEdits;
+                  });
+                  setIsEditItemDialogOpen(false);
+                  toast({
+                    title: "수정 초기화",
+                    description: "원본 데이터로 복원되었습니다.",
+                  });
+                }}
+                data-testid="button-reset-item-edit"
+              >
+                초기화
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setIsEditItemDialogOpen(false)}>취소</Button>
+            <Button onClick={handleSaveItemEdit} data-testid="button-save-item-edit">저장</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

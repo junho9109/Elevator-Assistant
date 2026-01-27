@@ -23,6 +23,9 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={MainApp} />
+      <Route path="/judgment" component={MainApp} />
+      <Route path="/precision-inspection" component={MainApp} />
+      <Route path="/memo" component={MainApp} />
       <Route component={NotFound} />
     </Switch>
   );
