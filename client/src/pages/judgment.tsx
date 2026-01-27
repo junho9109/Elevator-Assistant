@@ -23,6 +23,7 @@ interface CustomItemEdit {
   expiryDate?: string;
   introductionType?: "new" | "revision";
   customWarning?: string;
+  fixedResult?: ResultType;
 }
 
 type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
@@ -107,6 +108,7 @@ export default function JudgmentPage() {
       expiryDate: existingEdit?.expiryDate ?? item.expiryDate ?? "",
       introductionType: existingEdit?.introductionType ?? item.introductionType,
       customWarning: existingEdit?.customWarning ?? "",
+      fixedResult: existingEdit?.fixedResult ?? results[item.id],
     });
     setIsEditItemDialogOpen(true);
   };
@@ -117,6 +119,12 @@ export default function JudgmentPage() {
       ...prev,
       [editingItem.id]: editForm
     }));
+    if (editForm.fixedResult) {
+      setResults(prev => ({
+        ...prev,
+        [editingItem.id]: editForm.fixedResult!
+      }));
+    }
     setIsEditItemDialogOpen(false);
     setEditingItem(null);
     toast({
@@ -673,6 +681,27 @@ export default function JudgmentPage() {
                   <SelectItem value="revision">개정</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>판정 결과</Label>
+              <div className="flex gap-2 flex-wrap">
+                {(["적합", "부적합", "시정권고", "해당없음", "종전"] as ResultType[]).map((resultType) => (
+                  <Button
+                    key={resultType}
+                    type="button"
+                    variant={editForm.fixedResult === resultType ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setEditForm(prev => ({ 
+                      ...prev, 
+                      fixedResult: prev.fixedResult === resultType ? undefined : resultType 
+                    }))}
+                    data-testid={`edit-result-${resultType}`}
+                  >
+                    {resultType}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">선택 시 해당 결과가 고정 적용됩니다</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-item-custom-warning">※ 안내문구 (선택사항)</Label>
