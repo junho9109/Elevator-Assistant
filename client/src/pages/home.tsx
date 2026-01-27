@@ -349,6 +349,7 @@ export default function Home() {
   
   const [editingButtonId, setEditingButtonId] = useState<number | null>(null);
   const [pendingButtonPos, setPendingButtonPos] = useState<{top: string, left: string} | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   
@@ -819,12 +820,38 @@ export default function Home() {
               />
               
               {/* Buttons (formerly Hotspots) */}
+              {/* Drop position grid - shown when dragging in edit mode */}
+              {isEditMode && isDragging && (
+                <div className="absolute inset-0 pointer-events-none z-5">
+                  {Array.from({ length: 50 }, (_, row) => (
+                    Array.from({ length: 40 }, (_, col) => {
+                      const top = 2 + (row * 96 / 49);
+                      const left = 2 + (col * 96 / 39);
+                      return (
+                        <div
+                          key={`grid-${row}-${col}`}
+                          className="absolute w-1.5 h-1.5 rounded-full bg-blue-400/60 transform -translate-x-1/2 -translate-y-1/2"
+                          style={{ 
+                            top: `${top}%`, 
+                            left: `${left}%`
+                          }}
+                        />
+                      );
+                    })
+                  )).flat()}
+                </div>
+              )}
+
               {hotspots.map(hotspot => (
                 <motion.div
                   key={`${hotspot.id}-${hotspot.top}-${hotspot.left}`}
                   drag={isEditMode}
                   dragMomentum={false}
-                  onDragEnd={(_, info) => handleDragEnd(hotspot.id, info)}
+                  onDragStart={() => setIsDragging(true)}
+                  onDragEnd={(_, info) => {
+                    setIsDragging(false);
+                    handleDragEnd(hotspot.id, info);
+                  }}
                   className={cn(
                     "absolute transform -translate-x-1/2 -translate-y-1/2 z-10",
                     isEditMode ? "cursor-move" : "cursor-pointer"
