@@ -1283,10 +1283,12 @@ export default function Home() {
           </div>
           <DialogFooter className="flex-shrink-0">
             <Button variant="outline" onClick={() => setIsViewStandardOpen(false)}>닫기</Button>
-            <Button onClick={handleSwitchToEditMode} data-testid="button-edit-from-view">
-              <Pencil className="w-4 h-4 mr-2" />
-              수정
-            </Button>
+            {isAdminMode && (
+              <Button onClick={handleSwitchToEditMode} data-testid="button-edit-from-view">
+                <Pencil className="w-4 h-4 mr-2" />
+                수정
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
