@@ -7,7 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
-import { CheckCircle2, AlertTriangle, FileText, Calendar, Building, Cog, ChevronRight, ChevronLeft, Info, Layers, ClipboardList, Target } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { CheckCircle2, AlertTriangle, FileText, Calendar, Building, Cog, ChevronRight, ChevronLeft, Info, Layers, ClipboardList, Target, Settings2, Save } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   BUILDING_TYPES,
   EQUIPMENT_TYPES,
@@ -51,10 +54,52 @@ const INITIAL_STATE: FormState = {
 };
 
 export default function PrecisionInspectionPage() {
+  const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(INITIAL_STATE);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const actionDetail = selectedAction ? CTA_ACTION_DETAILS[selectedAction] : null;
+  
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+
+  const handleAdminModeClick = () => {
+    if (isAdminMode) {
+      setIsAdminMode(false);
+      toast({
+        title: "관리자 모드 종료",
+        description: "관리자 모드가 비활성화되었습니다.",
+      });
+    } else {
+      setIsPasswordDialogOpen(true);
+    }
+  };
+
+  const handlePasswordSubmit = () => {
+    if (adminPassword === "910919") {
+      setIsPasswordDialogOpen(false);
+      setAdminPassword("");
+      setIsAdminMode(true);
+      toast({
+        title: "관리자 모드 진입",
+        description: "관리자 모드가 활성화되었습니다.",
+      });
+    } else {
+      toast({
+        title: "비밀번호 오류",
+        description: "비밀번호가 올바르지 않습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSaveConfirm = () => {
+    toast({
+      title: "저장 상태 확인",
+      description: "현재 입력된 데이터가 세션에 저장되었습니다.",
+    });
+  };
 
   const statusDiagnosis = useMemo<StatusDiagnosis | null>(() => {
     if (!form.buildingType || !form.currentStatus) {
@@ -147,7 +192,37 @@ export default function PrecisionInspectionPage() {
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <div className="bg-white border-b px-4 py-3 sticky top-0 z-10">
-        <h1 className="text-lg font-bold text-center">정밀안전검사 업무처리</h1>
+        <div className="flex items-center justify-between">
+          <div className="w-16"></div>
+          <h1 className="text-lg font-bold text-center flex-1">정밀안전검사 업무처리</h1>
+          <div className="flex items-center gap-2 w-16 justify-end">
+            {isAdminMode && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleSaveConfirm}
+                className="h-8 w-8"
+                data-testid="button-save-precision"
+                title="저장 확인"
+              >
+                <Save className="w-4 h-4" />
+              </Button>
+            )}
+            <Button
+              variant={isAdminMode ? "default" : "outline"}
+              size="icon"
+              onClick={handleAdminModeClick}
+              className={cn(
+                "h-8 w-8",
+                isAdminMode && "bg-red-500 hover:bg-red-600"
+              )}
+              data-testid="button-admin-mode-precision"
+              title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
+            >
+              <Settings2 className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
         <div className="flex justify-center gap-1 mt-2">
           {[1, 2, 3, 4, 5].map((s) => (
             <div
@@ -799,6 +874,37 @@ export default function PrecisionInspectionPage() {
           </>
         )}
       </div>
+
+      {/* Password Dialog */}
+      <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+        <DialogContent className="sm:max-w-[300px]">
+          <DialogHeader>
+            <DialogTitle>관리자 모드</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="admin-password">비밀번호 입력</Label>
+              <Input
+                id="admin-password"
+                type="password"
+                placeholder="비밀번호를 입력하세요"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handlePasswordSubmit();
+                  }
+                }}
+                data-testid="input-admin-password-precision"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
+            <Button onClick={handlePasswordSubmit} data-testid="button-submit-password-precision">확인</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
