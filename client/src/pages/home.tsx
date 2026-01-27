@@ -318,6 +318,27 @@ export default function Home() {
     }
   };
 
+  const handleSaveConfirm = async () => {
+    try {
+      await queryClient.refetchQueries({ queryKey: ["standards"] });
+      await queryClient.refetchQueries({ queryKey: ["hotspots"] });
+      
+      const currentStandards = queryClient.getQueryData(["standards"]) as Standard[] || [];
+      const currentHotspots = queryClient.getQueryData(["hotspots"]) as Hotspot[] || [];
+      
+      toast({
+        title: "저장 상태 확인 완료",
+        description: `서버에 저장된 데이터: 표준화 ${currentStandards.length}건, 버튼 ${currentHotspots.length}개`,
+      });
+    } catch {
+      toast({
+        title: "저장 상태 확인 실패",
+        description: "서버와 연결할 수 없습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
   const deleteStandard = useDeleteStandard();
@@ -735,6 +756,18 @@ export default function Home() {
                   <h1 className="text-2xl font-bold tracking-tight">기술자료조회</h1>
                 </div>
                 <div className="flex items-center gap-2">
+                  {isAdminMode && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleSaveConfirm}
+                      className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                      data-testid="button-save"
+                      title="저장 확인"
+                    >
+                      <Save className="w-4 h-4" />
+                    </Button>
+                  )}
                   <Button
                     variant={isAdminMode ? "default" : "outline"}
                     size="icon"
