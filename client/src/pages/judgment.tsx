@@ -191,6 +191,30 @@ export default function JudgmentPage() {
     return null;
   };
 
+  // 자동구출운전장치 특별 판정 로직
+  const AUTO_RESCUE_ITEM_ID = "1.2.1.4-마";
+  const AUTO_RESCUE_MANDATORY_DATE = new Date("2017-01-28");
+  
+  const getAutoRescueWarning = (item: InspectionItem): string | null => {
+    if (item.id !== AUTO_RESCUE_ITEM_ID) return null;
+    if (!inspectionDate) return null;
+    
+    const inspDate = new Date(inspectionDate);
+    const permitDateObj = permitDate ? new Date(permitDate) : null;
+    
+    // 검사기준 적용일이 2017.01.28 이후인 경우
+    if (inspDate >= AUTO_RESCUE_MANDATORY_DATE) {
+      // 건축허가일이 2017.01.28 이전인 경우 현장 확인 필요
+      if (permitDateObj && permitDateObj < AUTO_RESCUE_MANDATORY_DATE) {
+        return "※ 검사기준 적용일(2017.01.28 이후)에 따라 자동구출운전장치 설치가 의무입니다. 단, 건축허가일이 의무 적용 기준일 이전이므로 현장에서 설치 여부를 확인해야 합니다.";
+      }
+      // 건축허가일도 2017.01.28 이후인 경우 - 설치 필수
+      return "※ 자동구출운전장치 설치 필수 항목입니다. (의무 적용 기준일: 2017.01.28)";
+    }
+    
+    return null;
+  };
+
   const collectAllItems = useCallback((sections: InspectionSection[]): InspectionItem[] => {
     const items: InspectionItem[] = [];
     const processSection = (section: InspectionSection) => {
@@ -370,6 +394,11 @@ export default function JudgmentPage() {
         {status === "not-applicable" && referenceDate && (
           <div className="px-4 pb-2 text-xs text-gray-600 ml-10">
             ※ 이 항목은 건축허가일(검사기준 적용일) 기준으로 이후에 개정되어 해당없음을 적용합니다.
+          </div>
+        )}
+        {getAutoRescueWarning(item) && (
+          <div className="px-4 pb-2 text-xs text-blue-600 ml-10 font-medium bg-blue-50 rounded mx-4 p-2">
+            {getAutoRescueWarning(item)}
           </div>
         )}
       </div>
