@@ -121,7 +121,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
                 id: "1.2.1.4-마",
                 text: "마) 자동구출운전장치가「엘리베이터 안전기준」13.2.3.6에 따라 작동하는지 확인한다.",
                 result: null,
-                effectiveDate: "2019-03-28",
+                effectiveDate: "2017-01-28",
                 introductionType: "new"
               }
             ]

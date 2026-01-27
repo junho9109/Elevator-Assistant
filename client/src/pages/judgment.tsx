@@ -159,11 +159,17 @@ export default function JudgmentPage() {
   const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => {
     if (!referenceDate) return "applicable";
     
+    // expiryDate: 이 날짜 이후에는 더 이상 적용되지 않음 (만료됨)
     if (item.expiryDate) {
       const expiryDate = new Date(item.expiryDate);
-      if (referenceDate <= expiryDate) return "not-applicable";
+      if (referenceDate > expiryDate) return "not-applicable";
     }
     
+    // effectiveDate: 이 날짜부터 적용됨
+    // referenceDate >= effectiveDate면 검사 대상 (applicable)
+    // referenceDate < effectiveDate면:
+    //   - "new" 타입: 아직 도입 전이므로 해당없음
+    //   - "revision" 타입: 개정 전 기준 적용 (종전)
     if (item.effectiveDate) {
       const effectiveDate = new Date(item.effectiveDate);
       if (referenceDate < effectiveDate) {
