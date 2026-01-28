@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { ChevronDown, ChevronRight, Check, Settings2, Save, Pencil } from "lucide-react";
+import { ChevronDown, ChevronRight, Check, Settings2, Save, Pencil, Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,22 @@ export default function JudgmentPage() {
   const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
+
+  const [customItems, setCustomItems] = useState<InspectionItem[]>(() => {
+    const saved = localStorage.getItem("judgmentCustomItems");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
+  const [addItemForm, setAddItemForm] = useState({
+    sectionId: "",
+    text: "",
+    effectiveDate: "",
+    introductionType: "" as "" | "new" | "revision"
+  });
+
+  useEffect(() => {
+    localStorage.setItem("judgmentCustomItems", JSON.stringify(customItems));
+  }, [customItems]);
 
   useEffect(() => {
     localStorage.setItem("judgmentCustomEdits", JSON.stringify(customEdits));
@@ -149,6 +165,45 @@ export default function JudgmentPage() {
     });
   };
 
+  const handleAddItem = () => {
+    if (!addItemForm.sectionId || !addItemForm.text) {
+      toast({
+        title: "입력 오류",
+        description: "섹션과 검사 내용을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const newId = `custom-${Date.now()}`;
+    const newItem: InspectionItem = {
+      id: newId,
+      text: addItemForm.text,
+      result: null,
+      effectiveDate: addItemForm.effectiveDate || undefined,
+      introductionType: addItemForm.introductionType || undefined,
+    };
+    setCustomItems(prev => [...prev, { ...newItem, sectionId: addItemForm.sectionId } as any]);
+    setIsAddItemDialogOpen(false);
+    setAddItemForm({ sectionId: "", text: "", effectiveDate: "", introductionType: "" });
+    toast({
+      title: "항목 추가 완료",
+      description: "새 검사 항목이 추가되었습니다.",
+    });
+  };
+
+  const handleDeleteCustomItem = (itemId: string) => {
+    setCustomItems(prev => prev.filter(item => item.id !== itemId));
+    setResults(prev => {
+      const newResults = { ...prev };
+      delete newResults[itemId];
+      return newResults;
+    });
+    toast({
+      title: "항목 삭제",
+      description: "검사 항목이 삭제되었습니다.",
+    });
+  };
+
   const getItemWithEdits = (item: InspectionItem): InspectionItem => {
     const edit = customEdits[item.id];
     if (!edit) return item;
@@ -228,8 +283,10 @@ export default function JudgmentPage() {
       }
     };
     sections.forEach(processSection);
+    // 커스텀 항목도 추가
+    items.push(...customItems);
     return items;
-  }, []);
+  }, [customItems]);
 
   const collectAllSectionIds = useCallback((sections: InspectionSection[]): string[] => {
     const ids: string[] = [];
@@ -398,6 +455,16 @@ export default function JudgmentPage() {
             {renderResultButton(item.id, "해당없음", status, autoResult)}
             {renderResultButton(item.id, "종전", status, autoResult)}
           </div>
+          {isAdminMode && item.id.startsWith("custom-") && (
+            <button
+              onClick={() => handleDeleteCustomItem(item.id)}
+              className="p-1 hover:bg-red-100 rounded transition-colors ml-2"
+              data-testid={`delete-item-${item.id}`}
+              title="삭제"
+            >
+              <Trash2 className="w-4 h-4 text-red-500" />
+            </button>
+          )}
         </div>
         {status === "previous" && referenceDate && (
           <div className="px-4 pb-2 text-xs text-amber-600 ml-10">
@@ -418,10 +485,16 @@ export default function JudgmentPage() {
     );
   };
 
+  const getCustomItemsForSection = (sectionId: string) => {
+    return customItems.filter(item => (item as any).sectionId === sectionId);
+  };
+
   const renderSection = (section: InspectionSection, depth: number = 0) => {
     const isExpanded = expandedSections.has(section.id);
+    const sectionCustomItems = getCustomItemsForSection(section.id);
     const hasContent = (section.items && section.items.length > 0) || 
-                       (section.subsections && section.subsections.length > 0);
+                       (section.subsections && section.subsections.length > 0) ||
+                       sectionCustomItems.length > 0;
     
     return (
       <div key={section.id} className={cn("border-b border-border", depth === 0 && "bg-slate-50")}>
@@ -441,12 +514,22 @@ export default function JudgmentPage() {
             <div className="w-4 h-4 shrink-0" />
           )}
           <span>{section.title}</span>
+          {sectionCustomItems.length > 0 && (
+            <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+              +{sectionCustomItems.length}
+            </span>
+          )}
         </button>
         
         {isExpanded && (
           <div className={cn(depth > 0 && "bg-background")}>
             {section.subsections?.map(sub => renderSection(sub, depth + 1))}
             {section.items?.map(item => renderItem(item))}
+            {sectionCustomItems.map(item => (
+              <div key={item.id} className="bg-blue-50 border-l-4 border-l-blue-500">
+                {renderItem(item)}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -467,16 +550,28 @@ export default function JudgmentPage() {
               </div>
             <div className="flex items-center gap-2">
               {isAdminMode && (
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleSaveConfirm}
-                  className="shrink-0 shadow-sm hover:shadow-md transition-all"
-                  data-testid="button-save-judgment"
-                  title="저장 확인"
-                >
-                  <Save className="w-4 h-4" />
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setIsAddItemDialogOpen(true)}
+                    className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                    data-testid="button-add-item"
+                    title="항목 추가"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleSaveConfirm}
+                    className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                    data-testid="button-save-judgment"
+                    title="저장 확인"
+                  >
+                    <Save className="w-4 h-4" />
+                  </Button>
+                </>
               )}
               <Button
                 variant={isAdminMode ? "default" : "outline"}
@@ -767,6 +862,76 @@ export default function JudgmentPage() {
             )}
             <Button variant="outline" onClick={() => setIsEditItemDialogOpen(false)}>취소</Button>
             <Button onClick={handleSaveItemEdit} data-testid="button-save-item-edit">저장</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 항목 추가 다이얼로그 */}
+      <Dialog open={isAddItemDialogOpen} onOpenChange={setIsAddItemDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>검사 항목 추가</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="add-item-section">추가할 섹션 *</Label>
+              <Select
+                value={addItemForm.sectionId}
+                onValueChange={(value) => setAddItemForm(prev => ({ ...prev, sectionId: value }))}
+              >
+                <SelectTrigger id="add-item-section" data-testid="select-add-item-section">
+                  <SelectValue placeholder="섹션 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {collectAllSectionIds(INSPECTION_DATA_MR).map((sectionId) => (
+                    <SelectItem key={sectionId} value={sectionId}>{sectionId}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-item-text">검사 내용 *</Label>
+              <Textarea
+                id="add-item-text"
+                value={addItemForm.text}
+                onChange={(e) => setAddItemForm(prev => ({ ...prev, text: e.target.value }))}
+                placeholder="검사 항목 내용을 입력하세요"
+                rows={3}
+                data-testid="input-add-item-text"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-item-effective-date">적용일 (선택)</Label>
+              <Input
+                id="add-item-effective-date"
+                type="date"
+                value={addItemForm.effectiveDate}
+                onChange={(e) => setAddItemForm(prev => ({ ...prev, effectiveDate: e.target.value }))}
+                data-testid="input-add-item-effective-date"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-item-intro-type">도입유형 (선택)</Label>
+              <Select
+                value={addItemForm.introductionType}
+                onValueChange={(value) => setAddItemForm(prev => ({ 
+                  ...prev, 
+                  introductionType: value as "" | "new" | "revision" 
+                }))}
+              >
+                <SelectTrigger id="add-item-intro-type" data-testid="select-add-item-intro-type">
+                  <SelectValue placeholder="선택 안함" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">신규</SelectItem>
+                  <SelectItem value="revision">개정</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddItemDialogOpen(false)}>취소</Button>
+            <Button onClick={handleAddItem} data-testid="button-confirm-add-item">추가</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
