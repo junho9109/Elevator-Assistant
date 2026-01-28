@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { ChevronDown, ChevronRight, Check, Settings2, Save, Pencil } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { ZoomControl } from "@/components/ZoomControl";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
 
 interface CustomItemEdit {
@@ -42,6 +43,7 @@ const EQUIPMENT_SUBTYPES: Record<EquipmentType, string[]> = {
 
 export default function JudgmentPage() {
   const { toast } = useToast();
+  const zoomContentRef = useRef<HTMLDivElement>(null);
   const [equipmentType, setEquipmentType] = useState<EquipmentType>("엘리베이터");
   const [subType, setSubType] = useState<string>("전기식(MR)");
   const [inspectionDate, setInspectionDate] = useState("");
@@ -438,16 +440,17 @@ export default function JudgmentPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8 font-sans text-foreground">
-      <div className="mx-auto max-w-5xl bg-card rounded-3xl shadow-2xl border border-border overflow-hidden">
-        <div className="p-6 border-b border-border bg-slate-50">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
-                E
+    <>
+      <div ref={zoomContentRef} className="min-h-screen bg-background p-4 md:p-8 font-sans text-foreground">
+        <div className="mx-auto max-w-5xl bg-card rounded-3xl shadow-2xl border border-border overflow-hidden">
+          <div className="p-6 border-b border-border bg-slate-50">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
+                  E
+                </div>
+                <h1 className="text-2xl font-bold tracking-tight">판정결과(예시)</h1>
               </div>
-              <h1 className="text-2xl font-bold tracking-tight">판정결과(예시)</h1>
-            </div>
             <div className="flex items-center gap-2">
               {isAdminMode && (
                 <Button
@@ -753,6 +756,8 @@ export default function JudgmentPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+      <ZoomControl contentRef={zoomContentRef} storageKey="judgmentPageZoom" />
+    </>
   );
 }

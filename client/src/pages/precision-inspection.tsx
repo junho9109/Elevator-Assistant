@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { CheckCircle2, AlertTriangle, FileText, Calendar, Building, Cog, ChevronRight, ChevronLeft, Info, Layers, ClipboardList, Target, Settings2, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { ZoomControl } from "@/components/ZoomControl";
 import {
   BUILDING_TYPES,
   EQUIPMENT_TYPES,
@@ -55,6 +56,7 @@ const INITIAL_STATE: FormState = {
 
 export default function PrecisionInspectionPage() {
   const { toast } = useToast();
+  const zoomContentRef = useRef<HTMLDivElement>(null);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(INITIAL_STATE);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
@@ -190,8 +192,9 @@ export default function PrecisionInspectionPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      <div className="bg-white border-b px-4 py-3 sticky top-0 z-10">
+    <>
+      <div ref={zoomContentRef} className="min-h-screen bg-gray-50 pb-20">
+        <div className="bg-white border-b px-4 py-3 sticky top-0 z-10">
         <div className="flex items-center justify-between">
           <div className="w-16"></div>
           <h1 className="text-lg font-bold text-center flex-1">정밀안전검사 업무처리</h1>
@@ -905,6 +908,8 @@ export default function PrecisionInspectionPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+      <ZoomControl contentRef={zoomContentRef} storageKey="precisionPageZoom" />
+    </>
   );
 }

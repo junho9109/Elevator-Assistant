@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { ZoomControl } from "@/components/ZoomControl";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -274,6 +275,7 @@ function MemoCard({
 export default function MemoPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const zoomContentRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMemoId, setSelectedMemoId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -420,8 +422,9 @@ export default function MemoPage() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      <div className="bg-white border-b p-3">
+    <>
+      <div ref={zoomContentRef} className="h-full flex flex-col bg-gray-50">
+        <div className="bg-white border-b p-3">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -594,6 +597,8 @@ export default function MemoPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+      <ZoomControl contentRef={zoomContentRef} storageKey="memoPageZoom" />
+    </>
   );
 }

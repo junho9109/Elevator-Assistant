@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { ZoomControl } from "@/components/ZoomControl";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import structureImg from "@assets/structure_1764142259144.png";
@@ -356,6 +357,7 @@ export default function Home() {
   const createComment = useCreateComment();
   const deleteComment = useDeleteComment();
 
+  const zoomContentRef = useRef<HTMLDivElement>(null);
   const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditMode, setIsEditMode] = useState(false);
@@ -747,11 +749,12 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8 font-sans text-foreground">
-      <div className="mx-auto max-w-7xl bg-card rounded-3xl shadow-2xl border border-border overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[800px]">
-          
-          {/* Left Panel: Structure & Navigation */}
+    <>
+      <div ref={zoomContentRef} className="min-h-screen bg-background p-4 md:p-8 font-sans text-foreground">
+        <div className="mx-auto max-w-7xl bg-card rounded-3xl shadow-2xl border border-border overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[800px]">
+            
+            {/* Left Panel: Structure & Navigation */}
           <div className="lg:col-span-5 bg-slate-50/50 p-6 lg:p-8 border-b lg:border-b-0 lg:border-r border-border flex flex-col">
             <div className="mb-6">
               <div className="flex items-center justify-between mb-2">
@@ -1627,6 +1630,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
+      </div>
       {/* Image Viewer - Portal to body */}
       {imageViewer.isOpen && createPortal(
         <ImageViewerComponent 
@@ -1636,7 +1640,7 @@ export default function Home() {
         />,
         document.body
       )}
-
-    </div>
+      <ZoomControl contentRef={zoomContentRef} storageKey="homePageZoom" />
+    </>
   );
 }
