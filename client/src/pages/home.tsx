@@ -898,7 +898,7 @@ export default function Home() {
                   data-testid={`button-${hotspot.id}`}
                 >
                   <div className={cn(
-                    "relative px-3 py-2 rounded-full text-xs font-semibold shadow-lg backdrop-blur-sm border-2 transition-all duration-300",
+                    "relative px-2 py-1 rounded-full text-[10px] font-semibold shadow-lg backdrop-blur-sm border-2 transition-all duration-300 whitespace-nowrap",
                     activeButtonId === hotspot.id
                       ? "bg-primary text-primary-foreground border-white scale-110"
                       : "bg-slate-900/70 text-white border-slate-700 hover:bg-primary/90 hover:border-white"
