@@ -49,16 +49,30 @@ export default function JudgmentPage() {
   const [inspectionDate, setInspectionDate] = useState("");
   const [permitDate, setPermitDate] = useState("");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["1.1", "1.2", "1.3", "1.4", "1.5"]));
-  const [results, setResults] = useState<Record<string, ResultType>>({});
+  const [results, setResults] = useState<Record<string, ResultType>>(() => {
+    const saved = localStorage.getItem("judgmentResults");
+    return saved ? JSON.parse(saved) : {};
+  });
   
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   
-  const [customEdits, setCustomEdits] = useState<Record<string, CustomItemEdit>>({});
+  const [customEdits, setCustomEdits] = useState<Record<string, CustomItemEdit>>(() => {
+    const saved = localStorage.getItem("judgmentCustomEdits");
+    return saved ? JSON.parse(saved) : {};
+  });
   const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
+
+  useEffect(() => {
+    localStorage.setItem("judgmentCustomEdits", JSON.stringify(customEdits));
+  }, [customEdits]);
+
+  useEffect(() => {
+    localStorage.setItem("judgmentResults", JSON.stringify(results));
+  }, [results]);
 
   const handleAdminModeClick = () => {
     if (isAdminMode) {
