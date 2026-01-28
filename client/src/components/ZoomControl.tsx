@@ -24,8 +24,11 @@ export function ZoomControl({
 
   useEffect(() => {
     if (contentRef.current) {
-      contentRef.current.style.transform = `scale(${zoom})`;
-      contentRef.current.style.transformOrigin = "top center";
+      // CSS zoom 사용 - 글씨, 배치 모두 확대/축소
+      contentRef.current.style.zoom = `${zoom}`;
+      // transform 제거
+      contentRef.current.style.transform = "";
+      contentRef.current.style.transformOrigin = "";
     }
     localStorage.setItem(storageKey, zoom.toString());
   }, [zoom, contentRef, storageKey]);
