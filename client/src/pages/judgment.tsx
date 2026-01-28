@@ -246,15 +246,26 @@ export default function JudgmentPage() {
     allItems.forEach(originalItem => {
       const item = getItemWithEdits(originalItem);
       const autoResult = getAutoResult(item);
+      const currentResult = results[item.id];
+      
       if (autoResult) {
-        if (results[item.id] !== autoResult) {
+        // 자동 적용 결과가 있는 경우 (해당없음 또는 종전)
+        if (currentResult !== autoResult) {
           newResults[item.id] = autoResult;
           hasChanges = true;
         } else {
-          newResults[item.id] = results[item.id];
+          newResults[item.id] = currentResult;
         }
-      } else if (results[item.id]) {
-        newResults[item.id] = results[item.id];
+      } else {
+        // 검사 대상 (applicable)인 경우
+        // 이전에 자동 적용된 결과(해당없음/종전)는 제거하고, 사용자 선택 결과만 유지
+        if (currentResult === "해당없음" || currentResult === "종전") {
+          // 자동 적용된 결과였으므로 제거
+          hasChanges = true;
+        } else if (currentResult) {
+          // 사용자가 선택한 결과(적합/부적합/시정권고)는 유지
+          newResults[item.id] = currentResult;
+        }
       }
     });
     
