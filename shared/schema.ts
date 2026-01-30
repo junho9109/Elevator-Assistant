@@ -79,6 +79,7 @@ export const memos = pgTable("memos", {
   title: text("title"),
   body: text("body").notNull().default(""),
   keywords: text("keywords").array(),
+  password: text("password"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

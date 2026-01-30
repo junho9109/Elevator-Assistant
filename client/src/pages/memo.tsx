@@ -8,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette } from "lucide-react";
+import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette, Lock } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { DialogFooter } from "@/components/ui/dialog";
 import { Stage, Layer, Line, Rect, Ellipse, Arrow, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
 import type { Memo, MemoPhoto, PhotoAnnotation } from "@shared/schema";
@@ -283,6 +285,14 @@ export default function MemoPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [annotatingPhotoId, setAnnotatingPhotoId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // 비밀번호 관련 상태
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [isCreatePasswordDialogOpen, setIsCreatePasswordDialogOpen] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const MASTER_PASSWORD = "910919";
 
   const { data: memos = [], isLoading } = useQuery<Memo[]>({
     queryKey: ["/api/memos", searchQuery],
@@ -310,14 +320,15 @@ export default function MemoPage() {
       setEditTitle(selectedMemo.title || "");
       setEditBody(selectedMemo.body || "");
     }
+    setIsAuthenticated(false);
   }, [selectedMemo]);
 
   const createMemo = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (password: string) => {
       const res = await fetch("/api/memos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "새 메모", body: "" })
+        body: JSON.stringify({ title: "새 메모", body: "", password })
       });
       return res.json();
     },
@@ -325,9 +336,49 @@ export default function MemoPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
       setSelectedMemoId(newMemo.id);
       setIsEditing(true);
+      setIsAuthenticated(true);
       toast({ title: "메모가 생성되었습니다" });
     }
   });
+
+  const handleCreateMemo = () => {
+    setIsCreatePasswordDialogOpen(true);
+    setNewPassword("");
+  };
+
+  const confirmCreateMemo = () => {
+    if (!newPassword) {
+      toast({ title: "비밀번호를 입력해주세요", variant: "destructive" });
+      return;
+    }
+    createMemo.mutate(newPassword);
+    setIsCreatePasswordDialogOpen(false);
+    setNewPassword("");
+  };
+
+  const handleEditClick = () => {
+    if (!selectedMemo) return;
+    if (isAuthenticated) {
+      setIsEditing(true);
+      return;
+    }
+    setPasswordInput("");
+    setIsPasswordDialogOpen(true);
+  };
+
+  const verifyPassword = () => {
+    if (!selectedMemo) return;
+    const memoPassword = (selectedMemo as any).password;
+    if (passwordInput === MASTER_PASSWORD || passwordInput === memoPassword) {
+      setIsAuthenticated(true);
+      setIsEditing(true);
+      setIsPasswordDialogOpen(false);
+      setPasswordInput("");
+      toast({ title: passwordInput === MASTER_PASSWORD ? "관리자 권한으로 수정합니다" : "비밀번호 확인 완료" });
+    } else {
+      toast({ title: "비밀번호가 틀렸습니다", variant: "destructive" });
+    }
+  };
 
   const updateMemo = useMutation({
     mutationFn: async () => {
@@ -436,7 +487,7 @@ export default function MemoPage() {
               data-testid="input-memo-search"
             />
           </div>
-          <Button onClick={() => createMemo.mutate()} size="sm" data-testid="button-create-memo">
+          <Button onClick={handleCreateMemo} size="sm" data-testid="button-create-memo">
             <Plus className="w-4 h-4" />
           </Button>
         </div>
@@ -489,7 +540,8 @@ export default function MemoPage() {
                   ) : (
                     <>
                       <h2 className="flex-1 font-medium">{selectedMemo.title || "제목 없음"}</h2>
-                      <Button size="sm" variant="outline" onClick={() => setIsEditing(true)} data-testid="button-edit-memo">
+                      <Button size="sm" variant="outline" onClick={handleEditClick} data-testid="button-edit-memo">
+                        <Lock className="w-3 h-3 mr-1" />
                         <Edit2 className="w-4 h-4" />
                       </Button>
                     </>
@@ -595,6 +647,66 @@ export default function MemoPage() {
               onSave={(shapes) => saveAnnotations.mutate({ photoId: annotatingPhotoId, shapes })}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 메모 생성 비밀번호 다이얼로그 */}
+      <Dialog open={isCreatePasswordDialogOpen} onOpenChange={setIsCreatePasswordDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>새 메모 비밀번호 설정</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-memo-password">비밀번호</Label>
+              <Input
+                id="new-memo-password"
+                type="password"
+                placeholder="메모 비밀번호를 입력하세요"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && confirmCreateMemo()}
+                data-testid="input-new-memo-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                이 비밀번호로 메모를 수정할 수 있습니다
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreatePasswordDialogOpen(false)}>취소</Button>
+            <Button onClick={confirmCreateMemo} data-testid="button-confirm-create-memo">생성</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 메모 수정 비밀번호 확인 다이얼로그 */}
+      <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>비밀번호 확인</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="memo-password">비밀번호</Label>
+              <Input
+                id="memo-password"
+                type="password"
+                placeholder="메모 비밀번호 또는 관리자 비밀번호"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && verifyPassword()}
+                data-testid="input-memo-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                메모 작성자 비밀번호 또는 관리자 비밀번호를 입력하세요
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
+            <Button onClick={verifyPassword} data-testid="button-verify-password">확인</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       </div>
