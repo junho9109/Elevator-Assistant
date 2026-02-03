@@ -477,7 +477,7 @@ export default function JudgmentPage() {
           </div>
         )}
         {customEdits[item.id]?.customWarning && (
-          <div className="px-4 pb-2 text-xs text-blue-600 ml-10 font-medium bg-blue-50 rounded mx-4 p-2">
+          <div className="px-4 pb-2 text-xs text-blue-600 ml-10 font-medium bg-blue-50 rounded mx-4 p-2 whitespace-pre-wrap">
             ※ {customEdits[item.id].customWarning}
           </div>
         )}
