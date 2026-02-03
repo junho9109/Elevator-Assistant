@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
-import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema } from "@shared/schema";
+import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema } from "@shared/schema";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -405,6 +405,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteComment(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete comment" });
+    }
+  });
+
+  // Judgment Photo routes
+  app.get("/api/judgment-items/:itemId/photos", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const photos = await storage.getJudgmentPhotosByItem(itemId);
+      res.json(photos);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch photos" });
+    }
+  });
+
+  app.get("/api/judgment-items/:itemId/photo-count", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const count = await storage.getJudgmentPhotoCount(itemId);
+      res.json({ count });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch photo count" });
+    }
+  });
+
+  app.post("/api/judgment-items/:itemId/photos", upload.single("photo"), async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const existingCount = await storage.getJudgmentPhotoCount(itemId);
+      if (existingCount >= 10) {
+        return res.status(400).json({ error: "Maximum 10 photos allowed per item" });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: "No file provided" });
+      }
+      const base64Data = req.file.buffer.toString("base64");
+      const imageData = `data:${req.file.mimetype};base64,${base64Data}`;
+      const validatedData = insertJudgmentPhotoSchema.parse({
+        itemId,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        imageData
+      });
+      const photo = await storage.createJudgmentPhoto(validatedData);
+      res.status(201).json(photo);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid photo data" });
+    }
+  });
+
+  app.delete("/api/judgment-photos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteJudgmentPhoto(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete photo" });
+    }
+  });
+
+  // Judgment Comment routes
+  app.get("/api/judgment-items/:itemId/comments", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const comments = await storage.getJudgmentCommentsByItem(itemId);
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/judgment-items/:itemId/comments", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const validatedData = insertJudgmentCommentSchema.parse({
+        ...req.body,
+        itemId
+      });
+      const comment = await storage.createJudgmentComment(validatedData);
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid comment data" });
+    }
+  });
+
+  app.delete("/api/judgment-comments/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteJudgmentComment(id);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete comment" });

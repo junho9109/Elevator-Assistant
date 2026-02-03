@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { ChevronDown, ChevronRight, Check, Settings2, Save, Pencil, Plus, Trash2 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, Check, Settings2, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -77,6 +79,112 @@ export default function JudgmentPage() {
     effectiveDate: "",
     introductionType: "" as "" | "new" | "revision"
   });
+
+  // Item detail dialog state (photos & comments)
+  const [detailItem, setDetailItem] = useState<InspectionItem | null>(null);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [newComment, setNewComment] = useState({ author: "", content: "" });
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+
+  // Fetch photos for selected item
+  const { data: itemPhotos = [] } = useQuery<any[]>({
+    queryKey: ["/api/judgment-items", detailItem?.id, "photos"],
+    queryFn: async () => {
+      if (!detailItem) return [];
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/photos`);
+      return res.json();
+    },
+    enabled: !!detailItem
+  });
+
+  // Fetch comments for selected item
+  const { data: itemComments = [] } = useQuery<any[]>({
+    queryKey: ["/api/judgment-items", detailItem?.id, "comments"],
+    queryFn: async () => {
+      if (!detailItem) return [];
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/comments`);
+      return res.json();
+    },
+    enabled: !!detailItem
+  });
+
+  const uploadPhoto = useMutation({
+    mutationFn: async (file: File) => {
+      if (!detailItem) throw new Error("No item selected");
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/photos`, {
+        method: "POST",
+        body: formData
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
+      toast({ title: "사진이 업로드되었습니다" });
+    },
+    onError: (err: any) => {
+      toast({ title: err.message || "사진 업로드 실패", variant: "destructive" });
+    }
+  });
+
+  const deletePhoto = useMutation({
+    mutationFn: async (photoId: number) => {
+      await fetch(`/api/judgment-photos/${photoId}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
+      toast({ title: "사진이 삭제되었습니다" });
+    }
+  });
+
+  const createComment = useMutation({
+    mutationFn: async () => {
+      if (!detailItem) throw new Error("No item selected");
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newComment)
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "comments"] });
+      setNewComment({ author: "", content: "" });
+      toast({ title: "댓글이 등록되었습니다" });
+    }
+  });
+
+  const deleteComment = useMutation({
+    mutationFn: async (commentId: number) => {
+      await fetch(`/api/judgment-comments/${commentId}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "comments"] });
+      toast({ title: "댓글이 삭제되었습니다" });
+    }
+  });
+
+  const handleOpenDetail = (item: InspectionItem) => {
+    setDetailItem(item);
+    setIsDetailDialogOpen(true);
+  };
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    if (itemPhotos.length >= 10) {
+      toast({ title: "최대 10장까지 업로드 가능합니다", variant: "destructive" });
+      return;
+    }
+    uploadPhoto.mutate(files[0]);
+    e.target.value = "";
+  };
 
   useEffect(() => {
     localStorage.setItem("judgmentCustomItems", JSON.stringify(customItems));
@@ -437,17 +545,22 @@ export default function JudgmentPage() {
             )}
           </div>
           <div 
-            className={cn(
-              "flex-1 text-sm leading-relaxed",
-              isAdminMode && "cursor-pointer hover:text-primary"
-            )}
-            onClick={() => isAdminMode && handleOpenEditItem(item)}
+            className="flex-1 text-sm leading-relaxed cursor-pointer hover:text-primary"
+            onClick={() => handleOpenDetail(item)}
           >
             {item.text}
             {hasCustomEdit && (
               <span className="ml-2 text-xs text-green-600 font-medium">(수정됨)</span>
             )}
           </div>
+          <button
+            onClick={() => handleOpenDetail(item)}
+            className="p-1 hover:bg-accent rounded transition-colors shrink-0"
+            title="사진/댓글 보기"
+            data-testid={`detail-item-${item.id}`}
+          >
+            <Image className="w-4 h-4 text-muted-foreground" />
+          </button>
           <div className="flex gap-1 shrink-0">
             {renderResultButton(item.id, "적합", status, autoResult)}
             {renderResultButton(item.id, "부적합", status, autoResult)}
@@ -932,6 +1045,162 @@ export default function JudgmentPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddItemDialogOpen(false)}>취소</Button>
             <Button onClick={handleAddItem} data-testid="button-confirm-add-item">추가</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 항목 상세보기 다이얼로그 (사진/댓글) */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              항목 상세보기
+            </DialogTitle>
+          </DialogHeader>
+          {detailItem && (
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <div className="p-3 bg-muted rounded-lg text-sm mb-4">
+                {detailItem.text}
+              </div>
+              
+              <ScrollArea className="flex-1">
+                <div className="space-y-6 pr-4">
+                  {/* 사진 섹션 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-medium flex items-center gap-2">
+                        <Image className="w-4 h-4" />
+                        등록된 사진 ({itemPhotos.length}/10)
+                      </h3>
+                      {isAdminMode && itemPhotos.length < 10 && (
+                        <>
+                          <input
+                            ref={photoInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handlePhotoUpload}
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => photoInputRef.current?.click()}
+                            data-testid="button-upload-photo"
+                          >
+                            <Upload className="w-4 h-4 mr-1" />
+                            사진 추가
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {itemPhotos.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        등록된 사진이 없습니다
+                        {isAdminMode && <p className="text-xs mt-1">관리자 모드에서 사진을 추가할 수 있습니다</p>}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        {itemPhotos.map((photo: any) => (
+                          <div key={photo.id} className="relative group">
+                            <img
+                              src={photo.imageData}
+                              alt={photo.fileName}
+                              className="w-full h-40 object-cover rounded-lg border"
+                            />
+                            {isAdminMode && (
+                              <button
+                                onClick={() => deletePhoto.mutate(photo.id)}
+                                className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="삭제"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 댓글 섹션 */}
+                  <div>
+                    <h3 className="font-medium flex items-center gap-2 mb-3">
+                      <MessageSquare className="w-4 h-4" />
+                      댓글 ({itemComments.length})
+                    </h3>
+                    
+                    {/* 댓글 작성 폼 */}
+                    {isAdminMode && (
+                      <div className="space-y-2 mb-4 p-3 bg-muted rounded-lg">
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="작성자"
+                            value={newComment.author}
+                            onChange={(e) => setNewComment(prev => ({ ...prev, author: e.target.value }))}
+                            className="w-24 bg-white"
+                            data-testid="input-comment-author"
+                          />
+                          <Input
+                            placeholder="댓글 내용"
+                            value={newComment.content}
+                            onChange={(e) => setNewComment(prev => ({ ...prev, content: e.target.value }))}
+                            className="flex-1 bg-white"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && newComment.author && newComment.content) {
+                                createComment.mutate();
+                              }
+                            }}
+                            data-testid="input-comment-content"
+                          />
+                          <Button
+                            size="sm"
+                            onClick={() => createComment.mutate()}
+                            disabled={!newComment.author || !newComment.content}
+                            data-testid="button-submit-comment"
+                          >
+                            등록
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {itemComments.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground text-sm">
+                        등록된 댓글이 없습니다
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {itemComments.map((comment: any) => (
+                          <div key={comment.id} className="p-3 bg-white border rounded-lg">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium text-sm">{comment.author}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(comment.createdAt).toLocaleDateString("ko-KR")}
+                                </span>
+                                {isAdminMode && (
+                                  <button
+                                    onClick={() => deleteComment.mutate(comment.id)}
+                                    className="p-1 hover:bg-red-100 rounded transition-colors"
+                                    title="삭제"
+                                  >
+                                    <Trash2 className="w-3 h-3 text-red-500" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-700">{comment.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>닫기</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -120,6 +120,40 @@ export const insertPhotoAnnotationSchema = createInsertSchema(photoAnnotations).
   createdAt: true,
 });
 
+// Judgment item photos and comments
+export const judgmentPhotos = pgTable("judgment_photos", {
+  id: serial("id").primaryKey(),
+  itemId: varchar("item_id", { length: 50 }).notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  imageData: text("image_data").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const judgmentComments = pgTable("judgment_comments", {
+  id: serial("id").primaryKey(),
+  itemId: varchar("item_id", { length: 50 }).notNull(),
+  author: text("author").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertJudgmentPhotoSchema = createInsertSchema(judgmentPhotos).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertJudgmentCommentSchema = createInsertSchema(judgmentComments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertJudgmentPhoto = z.infer<typeof insertJudgmentPhotoSchema>;
+export type JudgmentPhoto = typeof judgmentPhotos.$inferSelect;
+
+export type InsertJudgmentComment = z.infer<typeof insertJudgmentCommentSchema>;
+export type JudgmentComment = typeof judgmentComments.$inferSelect;
+
 // Comments table for standards
 export const standardComments = pgTable("standard_comments", {
   id: serial("id").primaryKey(),

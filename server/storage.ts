@@ -15,6 +15,10 @@ import {
   type InsertPhotoAnnotation,
   type StandardComment,
   type InsertStandardComment,
+  type JudgmentPhoto,
+  type InsertJudgmentPhoto,
+  type JudgmentComment,
+  type InsertJudgmentComment,
   users,
   categories,
   standards,
@@ -22,7 +26,9 @@ import {
   memos,
   memoPhotos,
   photoAnnotations,
-  standardComments
+  standardComments,
+  judgmentPhotos,
+  judgmentComments
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or } from "drizzle-orm";
@@ -80,6 +86,17 @@ export interface IStorage {
   getCommentsByStandard(standardId: number): Promise<StandardComment[]>;
   createComment(comment: InsertStandardComment): Promise<StandardComment>;
   deleteComment(id: number): Promise<void>;
+
+  // JudgmentPhoto methods
+  getJudgmentPhotosByItem(itemId: string): Promise<JudgmentPhoto[]>;
+  getJudgmentPhotoCount(itemId: string): Promise<number>;
+  createJudgmentPhoto(photo: InsertJudgmentPhoto): Promise<JudgmentPhoto>;
+  deleteJudgmentPhoto(id: number): Promise<void>;
+
+  // JudgmentComment methods
+  getJudgmentCommentsByItem(itemId: string): Promise<JudgmentComment[]>;
+  createJudgmentComment(comment: InsertJudgmentComment): Promise<JudgmentComment>;
+  deleteJudgmentComment(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -277,6 +294,39 @@ export class DatabaseStorage implements IStorage {
 
   async deleteComment(id: number): Promise<void> {
     await db.delete(standardComments).where(eq(standardComments.id, id));
+  }
+
+  // JudgmentPhoto methods
+  async getJudgmentPhotosByItem(itemId: string): Promise<JudgmentPhoto[]> {
+    return await db.select().from(judgmentPhotos).where(eq(judgmentPhotos.itemId, itemId));
+  }
+
+  async getJudgmentPhotoCount(itemId: string): Promise<number> {
+    const photos = await db.select().from(judgmentPhotos).where(eq(judgmentPhotos.itemId, itemId));
+    return photos.length;
+  }
+
+  async createJudgmentPhoto(photo: InsertJudgmentPhoto): Promise<JudgmentPhoto> {
+    const [created] = await db.insert(judgmentPhotos).values(photo).returning();
+    return created;
+  }
+
+  async deleteJudgmentPhoto(id: number): Promise<void> {
+    await db.delete(judgmentPhotos).where(eq(judgmentPhotos.id, id));
+  }
+
+  // JudgmentComment methods
+  async getJudgmentCommentsByItem(itemId: string): Promise<JudgmentComment[]> {
+    return await db.select().from(judgmentComments).where(eq(judgmentComments.itemId, itemId));
+  }
+
+  async createJudgmentComment(comment: InsertJudgmentComment): Promise<JudgmentComment> {
+    const [created] = await db.insert(judgmentComments).values(comment).returning();
+    return created;
+  }
+
+  async deleteJudgmentComment(id: number): Promise<void> {
+    await db.delete(judgmentComments).where(eq(judgmentComments.id, id));
   }
 }
 
