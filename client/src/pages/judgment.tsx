@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Check, Settings2, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChevronDown, ChevronRight, ChevronLeft, Check, Settings2, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,213 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ZoomControl } from "@/components/ZoomControl";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
+
+// Image Viewer State
+interface ImageViewerState {
+  isOpen: boolean;
+  images: string[];
+  currentIndex: number;
+  zoom: number;
+}
+
+// Image Viewer Component
+function ImageViewerComponent({ 
+  imageViewer, 
+  setImageViewer, 
+  closeImageViewer 
+}: { 
+  imageViewer: ImageViewerState;
+  setImageViewer: React.Dispatch<React.SetStateAction<ImageViewerState>>;
+  closeImageViewer: () => void;
+}) {
+  const lastTouchDistance = useRef<number | null>(null);
+  const lastZoom = useRef<number>(1);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      lastTouchDistance.current = distance;
+      lastZoom.current = imageViewer.zoom;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && lastTouchDistance.current !== null) {
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const scale = distance / lastTouchDistance.current;
+      const newZoom = Math.min(5, Math.max(0.5, lastZoom.current * scale));
+      setImageViewer(prev => ({ ...prev, zoom: newZoom }));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    lastTouchDistance.current = null;
+  };
+
+  const goToPrev = () => {
+    setImageViewer(prev => ({ 
+      ...prev, 
+      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1,
+      zoom: 1 
+    }));
+  };
+
+  const goToNext = () => {
+    setImageViewer(prev => ({ 
+      ...prev, 
+      currentIndex: prev.currentIndex < prev.images.length - 1 ? prev.currentIndex + 1 : 0,
+      zoom: 1 
+    }));
+  };
+
+  return (
+    <div 
+      id="image-viewer-portal"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        zIndex: 999999,
+        display: 'flex',
+        flexDirection: 'column',
+        touchAction: 'none',
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Close Button */}
+      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000000 }}>
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); closeImageViewer(); }}
+          style={{
+            width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(239,68,68,0.9)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          }}
+        >
+          <X style={{ width: 28, height: 28 }} />
+        </a>
+      </div>
+
+      {/* Image */}
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        overflow: 'hidden',
+        padding: 16
+      }}>
+        <img 
+          src={imageViewer.images[imageViewer.currentIndex]} 
+          alt="확대 이미지"
+          style={{ 
+            maxWidth: '100%', 
+            maxHeight: '100%', 
+            objectFit: 'contain',
+            transform: `scale(${imageViewer.zoom})`,
+            transition: 'transform 0.1s ease-out',
+            pointerEvents: 'none'
+          }}
+          draggable={false}
+        />
+      </div>
+
+      {/* Navigation */}
+      {imageViewer.images.length > 1 && (
+        <>
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); goToPrev(); }}
+            style={{
+              position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.18)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+              textDecoration: 'none'
+            }}
+          >
+            <ChevronLeft style={{ width: 32, height: 32 }} />
+          </a>
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); goToNext(); }}
+            style={{
+              position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.18)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+              textDecoration: 'none'
+            }}
+          >
+            <ChevronRight style={{ width: 32, height: 32 }} />
+          </a>
+        </>
+      )}
+
+      {/* Info & Zoom Controls */}
+      <div style={{ 
+        position: 'absolute', 
+        bottom: 16, 
+        left: 0, 
+        right: 0, 
+        display: 'flex', 
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 12
+      }}>
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.max(0.5, prev.zoom - 0.5) })); }}
+          style={{
+            width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none'
+          }}
+        >
+          <ZoomOut style={{ width: 22, height: 22 }} />
+        </a>
+        <span style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: '6px 16px', borderRadius: 9999, fontSize: 14 }}>
+          {imageViewer.currentIndex + 1} / {imageViewer.images.length} · {Math.round(imageViewer.zoom * 100)}%
+        </span>
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.min(5, prev.zoom + 0.5) })); }}
+          style={{
+            width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none'
+          }}
+        >
+          <ZoomIn style={{ width: 22, height: 22 }} />
+        </a>
+      </div>
+
+      {/* Pinch Hint */}
+      <div style={{ 
+        position: 'absolute', 
+        top: 16, 
+        left: 16, 
+        backgroundColor: 'rgba(0,0,0,0.6)', 
+        color: 'white', 
+        padding: '6px 12px', 
+        borderRadius: 8,
+        fontSize: 12
+      }}>
+        핀치로 확대/축소
+      </div>
+    </div>
+  );
+}
 
 interface CustomItemEdit {
   id: string;
@@ -86,6 +293,52 @@ export default function JudgmentPage() {
   const [newComment, setNewComment] = useState({ author: "", content: "" });
   const photoInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  const detailScrollRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const dragStart = useRef({ y: 0, scrollTop: 0 });
+
+  // Image viewer state
+  const [imageViewer, setImageViewer] = useState<ImageViewerState>({
+    isOpen: false,
+    images: [],
+    currentIndex: 0,
+    zoom: 1
+  });
+
+  const openImageViewer = (images: string[], startIndex: number = 0) => {
+    setImageViewer({
+      isOpen: true,
+      images,
+      currentIndex: startIndex,
+      zoom: 1
+    });
+  };
+
+  const closeImageViewer = () => {
+    setImageViewer(prev => ({ ...prev, isOpen: false }));
+  };
+
+  // Drag to scroll handlers
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!detailScrollRef.current) return;
+    isDragging.current = true;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    dragStart.current = {
+      y: clientY,
+      scrollTop: detailScrollRef.current.scrollTop
+    };
+  };
+
+  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDragging.current || !detailScrollRef.current) return;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const delta = dragStart.current.y - clientY;
+    detailScrollRef.current.scrollTop = dragStart.current.scrollTop + delta;
+  };
+
+  const handleDragEnd = () => {
+    isDragging.current = false;
+  };
 
   // Fetch photos for selected item
   const { data: itemPhotos = [] } = useQuery<any[]>({
@@ -1063,7 +1316,17 @@ export default function JudgmentPage() {
                 {detailItem.text}
               </div>
               
-              <ScrollArea className="flex-1">
+              <div 
+                ref={detailScrollRef}
+                className="flex-1 overflow-y-auto cursor-grab active:cursor-grabbing select-none"
+                onMouseDown={handleDragStart}
+                onMouseMove={handleDragMove}
+                onMouseUp={handleDragEnd}
+                onMouseLeave={handleDragEnd}
+                onTouchStart={handleDragStart}
+                onTouchMove={handleDragMove}
+                onTouchEnd={handleDragEnd}
+              >
                 <div className="space-y-6 pr-4">
                   {/* 사진 섹션 */}
                   <div>
@@ -1100,16 +1363,23 @@ export default function JudgmentPage() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 gap-3">
-                        {itemPhotos.map((photo: any) => (
+                        {itemPhotos.map((photo: any, index: number) => (
                           <div key={photo.id} className="relative group">
                             <img
                               src={photo.imageData}
                               alt={photo.fileName}
-                              className="w-full h-40 object-cover rounded-lg border"
+                              className="w-full h-40 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => {
+                                const allImages = itemPhotos.map((p: any) => p.imageData);
+                                openImageViewer(allImages, index);
+                              }}
                             />
                             {isAdminMode && (
                               <button
-                                onClick={() => deletePhoto.mutate(photo.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deletePhoto.mutate(photo.id);
+                                }}
                                 className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                 title="삭제"
                               >
@@ -1196,7 +1466,7 @@ export default function JudgmentPage() {
                     )}
                   </div>
                 </div>
-              </ScrollArea>
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -1206,6 +1476,16 @@ export default function JudgmentPage() {
       </Dialog>
       </div>
       <ZoomControl contentRef={zoomContentRef} storageKey="judgmentPageZoom" />
+
+      {/* Image Viewer Portal */}
+      {imageViewer.isOpen && createPortal(
+        <ImageViewerComponent
+          imageViewer={imageViewer}
+          setImageViewer={setImageViewer}
+          closeImageViewer={closeImageViewer}
+        />,
+        document.body
+      )}
     </>
   );
 }
