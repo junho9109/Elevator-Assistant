@@ -25,6 +25,8 @@ interface ImageViewerState {
   images: string[];
   currentIndex: number;
   zoom: number;
+  panX: number;
+  panY: number;
 }
 
 // Image Viewer Component
@@ -39,6 +41,8 @@ function ImageViewerComponent({
 }) {
   const lastTouchDistance = useRef<number | null>(null);
   const lastZoom = useRef<number>(1);
+  const isPanning = useRef(false);
+  const lastPanPos = useRef({ x: 0, y: 0 });
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
@@ -48,6 +52,10 @@ function ImageViewerComponent({
       );
       lastTouchDistance.current = distance;
       lastZoom.current = imageViewer.zoom;
+      isPanning.current = false;
+    } else if (e.touches.length === 1 && imageViewer.zoom > 1) {
+      isPanning.current = true;
+      lastPanPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     }
   };
 
@@ -60,18 +68,54 @@ function ImageViewerComponent({
       const scale = distance / lastTouchDistance.current;
       const newZoom = Math.min(5, Math.max(0.5, lastZoom.current * scale));
       setImageViewer(prev => ({ ...prev, zoom: newZoom }));
+    } else if (e.touches.length === 1 && isPanning.current && imageViewer.zoom > 1) {
+      const deltaX = e.touches[0].clientX - lastPanPos.current.x;
+      const deltaY = e.touches[0].clientY - lastPanPos.current.y;
+      lastPanPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      setImageViewer(prev => ({
+        ...prev,
+        panX: prev.panX + deltaX,
+        panY: prev.panY + deltaY
+      }));
     }
   };
 
   const handleTouchEnd = () => {
     lastTouchDistance.current = null;
+    isPanning.current = false;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (imageViewer.zoom > 1) {
+      isPanning.current = true;
+      lastPanPos.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning.current && imageViewer.zoom > 1) {
+      const deltaX = e.clientX - lastPanPos.current.x;
+      const deltaY = e.clientY - lastPanPos.current.y;
+      lastPanPos.current = { x: e.clientX, y: e.clientY };
+      setImageViewer(prev => ({
+        ...prev,
+        panX: prev.panX + deltaX,
+        panY: prev.panY + deltaY
+      }));
+    }
+  };
+
+  const handleMouseUp = () => {
+    isPanning.current = false;
   };
 
   const goToPrev = () => {
     setImageViewer(prev => ({ 
       ...prev, 
       currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1,
-      zoom: 1 
+      zoom: 1,
+      panX: 0,
+      panY: 0
     }));
   };
 
@@ -79,7 +123,9 @@ function ImageViewerComponent({
     setImageViewer(prev => ({ 
       ...prev, 
       currentIndex: prev.currentIndex < prev.images.length - 1 ? prev.currentIndex + 1 : 0,
-      zoom: 1 
+      zoom: 1,
+      panX: 0,
+      panY: 0
     }));
   };
 
@@ -97,16 +143,21 @@ function ImageViewerComponent({
         display: 'flex',
         flexDirection: 'column',
         touchAction: 'none',
+        cursor: imageViewer.zoom > 1 ? 'grab' : 'default',
       }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
       {/* Close Button */}
       <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000000 }}>
         <a
           href="#"
-          onClick={(e) => { e.preventDefault(); closeImageViewer(); }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); closeImageViewer(); }}
           style={{
             width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(239,68,68,0.9)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
@@ -133,9 +184,10 @@ function ImageViewerComponent({
             maxWidth: '100%', 
             maxHeight: '100%', 
             objectFit: 'contain',
-            transform: `scale(${imageViewer.zoom})`,
-            transition: 'transform 0.1s ease-out',
-            pointerEvents: 'none'
+            transform: `scale(${imageViewer.zoom}) translate(${imageViewer.panX / imageViewer.zoom}px, ${imageViewer.panY / imageViewer.zoom}px)`,
+            transition: isPanning.current ? 'none' : 'transform 0.1s ease-out',
+            pointerEvents: 'none',
+            userSelect: 'none'
           }}
           draggable={false}
         />
@@ -184,7 +236,14 @@ function ImageViewerComponent({
       }}>
         <a
           href="#"
-          onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.max(0.5, prev.zoom - 0.5) })); }}
+          onClick={(e) => { 
+            e.preventDefault(); 
+            e.stopPropagation();
+            setImageViewer(prev => {
+              const newZoom = Math.max(0.5, prev.zoom - 0.5);
+              return { ...prev, zoom: newZoom, panX: newZoom <= 1 ? 0 : prev.panX, panY: newZoom <= 1 ? 0 : prev.panY };
+            }); 
+          }}
           style={{
             width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
@@ -198,7 +257,11 @@ function ImageViewerComponent({
         </span>
         <a
           href="#"
-          onClick={(e) => { e.preventDefault(); setImageViewer(prev => ({ ...prev, zoom: Math.min(5, prev.zoom + 0.5) })); }}
+          onClick={(e) => { 
+            e.preventDefault(); 
+            e.stopPropagation();
+            setImageViewer(prev => ({ ...prev, zoom: Math.min(5, prev.zoom + 0.5) })); 
+          }}
           style={{
             width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
@@ -220,7 +283,7 @@ function ImageViewerComponent({
         borderRadius: 8,
         fontSize: 12
       }}>
-        핀치로 확대/축소
+        {imageViewer.zoom > 1 ? '드래그하여 이동' : '핀치/버튼으로 확대'}
       </div>
     </div>
   );
@@ -376,7 +439,9 @@ export default function JudgmentPage() {
     isOpen: false,
     images: [],
     currentIndex: 0,
-    zoom: 1
+    zoom: 1,
+    panX: 0,
+    panY: 0
   });
 
   const openImageViewer = (images: string[], startIndex: number = 0) => {
@@ -384,12 +449,14 @@ export default function JudgmentPage() {
       isOpen: true,
       images,
       currentIndex: startIndex,
-      zoom: 1
+      zoom: 1,
+      panX: 0,
+      panY: 0
     });
   };
 
   const closeImageViewer = () => {
-    setImageViewer(prev => ({ ...prev, isOpen: false }));
+    setImageViewer(prev => ({ ...prev, isOpen: false, panX: 0, panY: 0 }));
   };
 
   // Drag to scroll handlers
