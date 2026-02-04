@@ -185,7 +185,7 @@ function ImageViewerComponent({
             maxHeight: '100%', 
             objectFit: 'contain',
             transform: `scale(${imageViewer.zoom}) translate(${imageViewer.panX / imageViewer.zoom}px, ${imageViewer.panY / imageViewer.zoom}px)`,
-            transition: isPanning.current ? 'none' : 'transform 0.1s ease-out',
+            willChange: 'transform',
             pointerEvents: 'none',
             userSelect: 'none'
           }}
