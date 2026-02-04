@@ -226,77 +226,76 @@ function ImageViewerComponent({
   );
 }
 
-// Photo Carousel Component - shows one photo at a time
-function PhotoCarousel({ 
+// Photo List Component - shows photos one by one with vertical scroll
+function PhotoList({ 
   photos, 
   isAdminMode, 
-  onDeletePhoto, 
+  onDeletePhoto,
+  onReplacePhoto,
   onOpenViewer 
 }: { 
   photos: any[];
   isAdminMode: boolean;
   onDeletePhoto: (photoId: number) => void;
+  onReplacePhoto: (photoId: number, file: File) => void;
   onOpenViewer: (index: number) => void;
 }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  const goToPrev = () => {
-    setCurrentIndex(prev => prev > 0 ? prev - 1 : photos.length - 1);
-  };
-
-  const goToNext = () => {
-    setCurrentIndex(prev => prev < photos.length - 1 ? prev + 1 : 0);
-  };
+  const replaceInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   if (photos.length === 0) return null;
 
-  const currentPhoto = photos[currentIndex];
-
   return (
-    <div className="relative">
-      <div className="relative group">
-        <img
-          src={currentPhoto.imageData}
-          alt={currentPhoto.fileName}
-          className="w-full h-64 object-contain rounded-lg border bg-muted cursor-pointer hover:opacity-90 transition-opacity"
-          onClick={() => onOpenViewer(currentIndex)}
-        />
-        {isAdminMode && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeletePhoto(currentPhoto.id);
-              if (currentIndex >= photos.length - 1 && currentIndex > 0) {
-                setCurrentIndex(currentIndex - 1);
-              }
-            }}
-            className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-            title="삭제"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-      
-      {photos.length > 1 && (
-        <>
-          <button
-            onClick={goToPrev}
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-          >
-            <ChevronLeft className="w-6 h-6" />
-          </button>
-          <button
-            onClick={goToNext}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
-          >
-            <ChevronRight className="w-6 h-6" />
-          </button>
-          <div className="text-center mt-2 text-sm text-muted-foreground">
-            {currentIndex + 1} / {photos.length}
+    <div className="space-y-4">
+      {photos.map((photo: any, index: number) => (
+        <div key={photo.id} className="relative group">
+          <img
+            src={photo.imageData}
+            alt={photo.fileName}
+            className="w-full h-auto max-h-80 object-contain rounded-lg border bg-muted cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => onOpenViewer(index)}
+          />
+          <div className="text-center text-xs text-muted-foreground mt-1">
+            {index + 1} / {photos.length}
           </div>
-        </>
-      )}
+          {isAdminMode && (
+            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <input
+                ref={(el) => { replaceInputRefs.current[photo.id] = el; }}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    onReplacePhoto(photo.id, file);
+                  }
+                  e.target.value = "";
+                }}
+              />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  replaceInputRefs.current[photo.id]?.click();
+                }}
+                className="p-1.5 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
+                title="사진 변경"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeletePhoto(photo.id);
+                }}
+                className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                title="삭제"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -468,6 +467,31 @@ export default function JudgmentPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
       toast({ title: "사진이 삭제되었습니다" });
+    }
+  });
+
+  const replacePhoto = useMutation({
+    mutationFn: async ({ photoId, file }: { photoId: number; file: File }) => {
+      if (!detailItem) throw new Error("No item selected");
+      await fetch(`/api/judgment-photos/${photoId}`, { method: "DELETE" });
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/photos`, {
+        method: "POST",
+        body: formData
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
+      toast({ title: "사진이 변경되었습니다" });
+    },
+    onError: (err: any) => {
+      toast({ title: err.message || "사진 변경 실패", variant: "destructive" });
     }
   });
 
@@ -1437,10 +1461,11 @@ export default function JudgmentPage() {
                         {isAdminMode && <p className="text-xs mt-1">관리자 모드에서 사진을 추가할 수 있습니다</p>}
                       </div>
                     ) : (
-                      <PhotoCarousel 
+                      <PhotoList 
                         photos={itemPhotos}
                         isAdminMode={isAdminMode}
                         onDeletePhoto={(photoId) => deletePhoto.mutate(photoId)}
+                        onReplacePhoto={(photoId, file) => replacePhoto.mutate({ photoId, file })}
                         onOpenViewer={(index) => {
                           const allImages = itemPhotos.map((p: any) => p.imageData);
                           openImageViewer(allImages, index);
