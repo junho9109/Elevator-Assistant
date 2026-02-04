@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, ChevronLeft, Check, Settings2, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronLeft, Check, Settings2, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -295,12 +295,16 @@ function PhotoList({
   isAdminMode, 
   onDeletePhoto,
   onReplacePhoto,
+  onMoveUp,
+  onMoveDown,
   onOpenViewer 
 }: { 
   photos: any[];
   isAdminMode: boolean;
   onDeletePhoto: (photoId: number) => void;
   onReplacePhoto: (photoId: number, file: File) => void;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
   onOpenViewer: (index: number) => void;
 }) {
   const replaceInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
@@ -321,41 +325,71 @@ function PhotoList({
             {index + 1} / {photos.length}
           </div>
           {isAdminMode && (
-            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <input
-                ref={(el) => { replaceInputRefs.current[photo.id] = el; }}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    onReplacePhoto(photo.id, file);
-                  }
-                  e.target.value = "";
-                }}
-              />
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  replaceInputRefs.current[photo.id]?.click();
-                }}
-                className="p-1.5 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
-                title="사진 변경"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeletePhoto(photo.id);
-                }}
-                className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
-                title="삭제"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            <>
+              {/* Left side: reorder buttons */}
+              {photos.length > 1 && (
+                <div className="absolute top-2 left-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMoveUp(index);
+                    }}
+                    disabled={index === 0}
+                    className="p-1.5 bg-gray-700 text-white rounded-full hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="위로 이동"
+                  >
+                    <ArrowUp className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMoveDown(index);
+                    }}
+                    disabled={index === photos.length - 1}
+                    className="p-1.5 bg-gray-700 text-white rounded-full hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="아래로 이동"
+                  >
+                    <ArrowDown className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              {/* Right side: edit/delete buttons */}
+              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <input
+                  ref={(el) => { replaceInputRefs.current[photo.id] = el; }}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      onReplacePhoto(photo.id, file);
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    replaceInputRefs.current[photo.id]?.click();
+                  }}
+                  className="p-1.5 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
+                  title="사진 변경"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeletePhoto(photo.id);
+                  }}
+                  className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                  title="삭제"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </>
           )}
         </div>
       ))}
@@ -561,6 +595,34 @@ export default function JudgmentPage() {
       toast({ title: err.message || "사진 변경 실패", variant: "destructive" });
     }
   });
+
+  const reorderPhotos = useMutation({
+    mutationFn: async (photoIds: number[]) => {
+      if (!detailItem) throw new Error("No item selected");
+      await fetch(`/api/judgment-items/${detailItem.id}/photos/reorder`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoIds })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
+    }
+  });
+
+  const handleMovePhotoUp = (index: number) => {
+    if (index <= 0) return;
+    const newOrder = [...itemPhotos];
+    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+    reorderPhotos.mutate(newOrder.map((p: any) => p.id));
+  };
+
+  const handleMovePhotoDown = (index: number) => {
+    if (index >= itemPhotos.length - 1) return;
+    const newOrder = [...itemPhotos];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    reorderPhotos.mutate(newOrder.map((p: any) => p.id));
+  };
 
   const createComment = useMutation({
     mutationFn: async () => {
@@ -1533,6 +1595,8 @@ export default function JudgmentPage() {
                         isAdminMode={isAdminMode}
                         onDeletePhoto={(photoId) => deletePhoto.mutate(photoId)}
                         onReplacePhoto={(photoId, file) => replacePhoto.mutate({ photoId, file })}
+                        onMoveUp={handleMovePhotoUp}
+                        onMoveDown={handleMovePhotoDown}
                         onOpenViewer={(index) => {
                           const allImages = itemPhotos.map((p: any) => p.imageData);
                           openImageViewer(allImages, index);

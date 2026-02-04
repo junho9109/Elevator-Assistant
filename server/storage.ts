@@ -31,7 +31,7 @@ import {
   judgmentComments
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, or } from "drizzle-orm";
+import { eq, ilike, or, asc } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -92,6 +92,8 @@ export interface IStorage {
   getJudgmentPhotoCount(itemId: string): Promise<number>;
   createJudgmentPhoto(photo: InsertJudgmentPhoto): Promise<JudgmentPhoto>;
   deleteJudgmentPhoto(id: number): Promise<void>;
+  updateJudgmentPhotoOrder(id: number, sortOrder: number): Promise<void>;
+  reorderJudgmentPhotos(photoIds: number[]): Promise<void>;
 
   // JudgmentComment methods
   getJudgmentCommentsByItem(itemId: string): Promise<JudgmentComment[]>;
@@ -298,7 +300,7 @@ export class DatabaseStorage implements IStorage {
 
   // JudgmentPhoto methods
   async getJudgmentPhotosByItem(itemId: string): Promise<JudgmentPhoto[]> {
-    return await db.select().from(judgmentPhotos).where(eq(judgmentPhotos.itemId, itemId));
+    return await db.select().from(judgmentPhotos).where(eq(judgmentPhotos.itemId, itemId)).orderBy(asc(judgmentPhotos.sortOrder));
   }
 
   async getJudgmentPhotoCount(itemId: string): Promise<number> {
@@ -313,6 +315,16 @@ export class DatabaseStorage implements IStorage {
 
   async deleteJudgmentPhoto(id: number): Promise<void> {
     await db.delete(judgmentPhotos).where(eq(judgmentPhotos.id, id));
+  }
+
+  async updateJudgmentPhotoOrder(id: number, sortOrder: number): Promise<void> {
+    await db.update(judgmentPhotos).set({ sortOrder }).where(eq(judgmentPhotos.id, id));
+  }
+
+  async reorderJudgmentPhotos(photoIds: number[]): Promise<void> {
+    for (let i = 0; i < photoIds.length; i++) {
+      await db.update(judgmentPhotos).set({ sortOrder: i }).where(eq(judgmentPhotos.id, photoIds[i]));
+    }
   }
 
   // JudgmentComment methods

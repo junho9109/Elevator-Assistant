@@ -127,6 +127,7 @@ export const judgmentPhotos = pgTable("judgment_photos", {
   fileName: text("file_name").notNull(),
   mimeType: text("mime_type").notNull(),
   imageData: text("image_data").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -467,6 +467,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put("/api/judgment-photos/:id/order", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { sortOrder } = req.body;
+      if (typeof sortOrder !== 'number') {
+        return res.status(400).json({ error: "sortOrder must be a number" });
+      }
+      await storage.updateJudgmentPhotoOrder(id, sortOrder);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update photo order" });
+    }
+  });
+
+  app.put("/api/judgment-items/:itemId/photos/reorder", async (req, res) => {
+    try {
+      const { photoIds } = req.body;
+      if (!Array.isArray(photoIds)) {
+        return res.status(400).json({ error: "photoIds must be an array" });
+      }
+      await storage.reorderJudgmentPhotos(photoIds);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder photos" });
+    }
+  });
+
   // Judgment Comment routes
   app.get("/api/judgment-items/:itemId/comments", async (req, res) => {
     try {
