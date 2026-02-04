@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette, Lock } from "lucide-react";
+import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette, Lock, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Stage, Layer, Line, Rect, Ellipse, Arrow, Image as KonvaImage } from "react-konva";
@@ -16,6 +16,268 @@ import useImage from "use-image";
 import type { Memo, MemoPhoto, PhotoAnnotation } from "@shared/schema";
 
 type DrawingTool = "freehand" | "rectangle" | "circle" | "arrow" | "line";
+
+interface ImageViewerState {
+  isOpen: boolean;
+  images: string[];
+  currentIndex: number;
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
+function ImageViewerComponent({ 
+  imageViewer, 
+  setImageViewer, 
+  closeImageViewer 
+}: { 
+  imageViewer: ImageViewerState;
+  setImageViewer: React.Dispatch<React.SetStateAction<ImageViewerState>>;
+  closeImageViewer: () => void;
+}) {
+  const lastTouchDistance = useRef<number | null>(null);
+  const lastZoom = useRef<number>(1);
+  const isPanning = useRef(false);
+  const lastPanPos = useRef({ x: 0, y: 0 });
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      lastTouchDistance.current = distance;
+      lastZoom.current = imageViewer.zoom;
+      isPanning.current = false;
+    } else if (e.touches.length === 1 && imageViewer.zoom > 1) {
+      isPanning.current = true;
+      lastPanPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && lastTouchDistance.current !== null) {
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const scale = distance / lastTouchDistance.current;
+      const newZoom = Math.min(5, Math.max(0.5, lastZoom.current * scale));
+      setImageViewer(prev => ({ ...prev, zoom: newZoom }));
+    } else if (e.touches.length === 1 && isPanning.current && imageViewer.zoom > 1) {
+      const deltaX = e.touches[0].clientX - lastPanPos.current.x;
+      const deltaY = e.touches[0].clientY - lastPanPos.current.y;
+      lastPanPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      setImageViewer(prev => ({
+        ...prev,
+        panX: prev.panX + deltaX,
+        panY: prev.panY + deltaY
+      }));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    lastTouchDistance.current = null;
+    isPanning.current = false;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (imageViewer.zoom > 1) {
+      isPanning.current = true;
+      lastPanPos.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning.current && imageViewer.zoom > 1) {
+      const deltaX = e.clientX - lastPanPos.current.x;
+      const deltaY = e.clientY - lastPanPos.current.y;
+      lastPanPos.current = { x: e.clientX, y: e.clientY };
+      setImageViewer(prev => ({
+        ...prev,
+        panX: prev.panX + deltaX,
+        panY: prev.panY + deltaY
+      }));
+    }
+  };
+
+  const handleMouseUp = () => {
+    isPanning.current = false;
+  };
+
+  const goToPrev = () => {
+    setImageViewer(prev => ({ 
+      ...prev, 
+      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1,
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    }));
+  };
+
+  const goToNext = () => {
+    setImageViewer(prev => ({ 
+      ...prev, 
+      currentIndex: prev.currentIndex < prev.images.length - 1 ? prev.currentIndex + 1 : 0,
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    }));
+  };
+
+  return (
+    <div 
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        zIndex: 999999,
+        display: 'flex',
+        flexDirection: 'column',
+        touchAction: 'none',
+        cursor: imageViewer.zoom > 1 ? 'grab' : 'default',
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
+      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000000 }}>
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); closeImageViewer(); }}
+          style={{
+            width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(239,68,68,0.9)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+          }}
+        >
+          <X style={{ width: 28, height: 28 }} />
+        </a>
+      </div>
+
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        overflow: 'hidden',
+        padding: 16
+      }}>
+        <img 
+          src={imageViewer.images[imageViewer.currentIndex]} 
+          alt="확대 이미지"
+          style={{ 
+            maxWidth: '100%', 
+            maxHeight: '100%', 
+            objectFit: 'contain',
+            transform: `scale(${imageViewer.zoom}) translate(${imageViewer.panX / imageViewer.zoom}px, ${imageViewer.panY / imageViewer.zoom}px)`,
+            transition: isPanning.current ? 'none' : 'transform 0.1s ease-out',
+            pointerEvents: 'none',
+            userSelect: 'none'
+          }}
+          draggable={false}
+        />
+      </div>
+
+      {imageViewer.images.length > 1 && (
+        <>
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); goToPrev(); }}
+            style={{
+              position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.18)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+              textDecoration: 'none'
+            }}
+          >
+            <ChevronLeft style={{ width: 32, height: 32 }} />
+          </a>
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); goToNext(); }}
+            style={{
+              position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.18)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+              textDecoration: 'none'
+            }}
+          >
+            <ChevronRight style={{ width: 32, height: 32 }} />
+          </a>
+        </>
+      )}
+
+      <div style={{ 
+        position: 'absolute', 
+        bottom: 16, 
+        left: 0, 
+        right: 0, 
+        display: 'flex', 
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 12
+      }}>
+        <a
+          href="#"
+          onClick={(e) => { 
+            e.preventDefault(); 
+            e.stopPropagation();
+            setImageViewer(prev => {
+              const newZoom = Math.max(0.5, prev.zoom - 0.5);
+              return { ...prev, zoom: newZoom, panX: newZoom <= 1 ? 0 : prev.panX, panY: newZoom <= 1 ? 0 : prev.panY };
+            }); 
+          }}
+          style={{
+            width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none'
+          }}
+        >
+          <ZoomOut style={{ width: 22, height: 22 }} />
+        </a>
+        <span style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: '6px 16px', borderRadius: 9999, fontSize: 14 }}>
+          {imageViewer.currentIndex + 1} / {imageViewer.images.length} · {Math.round(imageViewer.zoom * 100)}%
+        </span>
+        <a
+          href="#"
+          onClick={(e) => { 
+            e.preventDefault(); 
+            e.stopPropagation();
+            setImageViewer(prev => ({ ...prev, zoom: Math.min(5, prev.zoom + 0.5) })); 
+          }}
+          style={{
+            width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none'
+          }}
+        >
+          <ZoomIn style={{ width: 22, height: 22 }} />
+        </a>
+      </div>
+
+      <div style={{ 
+        position: 'absolute', 
+        top: 16, 
+        left: 16, 
+        backgroundColor: 'rgba(0,0,0,0.6)', 
+        color: 'white', 
+        padding: '6px 12px', 
+        borderRadius: 8, 
+        fontSize: 12 
+      }}>
+        핀치로 확대/축소 · 드래그로 이동
+      </div>
+    </div>
+  );
+}
 
 interface PhotoWithMeta {
   id: number;
@@ -298,7 +560,30 @@ export default function MemoPage() {
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [isAdminPasswordDialogOpen, setIsAdminPasswordDialogOpen] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
+  const [imageViewer, setImageViewer] = useState<ImageViewerState>({
+    isOpen: false,
+    images: [],
+    currentIndex: 0,
+    zoom: 1,
+    panX: 0,
+    panY: 0
+  });
   const MASTER_PASSWORD = "910919";
+
+  const openImageViewer = (images: string[], startIndex: number = 0) => {
+    setImageViewer({
+      isOpen: true,
+      images,
+      currentIndex: startIndex,
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    });
+  };
+
+  const closeImageViewer = () => {
+    setImageViewer(prev => ({ ...prev, isOpen: false, panX: 0, panY: 0 }));
+  };
 
   const { data: memos = [], isLoading } = useQuery<Memo[]>({
     queryKey: ["/api/memos", searchQuery],
@@ -650,36 +935,41 @@ export default function MemoPage() {
                     
                     {photos.length > 0 ? (
                       <div className="grid grid-cols-3 gap-2">
-                        {photos.map(photo => (
+                        {photos.map((photo, index) => (
                           <div key={photo.id} className="relative group">
                             <img
                               src={`/api/photos/${photo.id}/image`}
                               alt={photo.fileName}
                               className="w-full h-24 object-cover rounded cursor-pointer"
-                              onClick={() => setAnnotatingPhotoId(photo.id)}
+                              onClick={() => {
+                                const allImages = photos.map(p => `/api/photos/${p.id}/image`);
+                                openImageViewer(allImages, index);
+                              }}
                               data-testid={`photo-${photo.id}`}
                             />
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded flex items-center justify-center opacity-0 group-hover:opacity-100">
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                className="mr-1"
-                                onClick={() => setAnnotatingPhotoId(photo.id)}
-                                data-testid={`annotate-photo-${photo.id}`}
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </Button>
-                              {isAdminMode && (
+                            {isAuthenticated && (
+                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded flex items-center justify-center opacity-0 group-hover:opacity-100">
                                 <Button
                                   size="sm"
-                                  variant="destructive"
-                                  onClick={() => deletePhoto.mutate(photo.id)}
-                                  data-testid={`delete-photo-${photo.id}`}
+                                  variant="secondary"
+                                  className="mr-1"
+                                  onClick={(e) => { e.stopPropagation(); setAnnotatingPhotoId(photo.id); }}
+                                  data-testid={`annotate-photo-${photo.id}`}
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Pencil className="w-3 h-3" />
                                 </Button>
-                              )}
-                            </div>
+                                {isAdminMode && (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={(e) => { e.stopPropagation(); deletePhoto.mutate(photo.id); }}
+                                    data-testid={`delete-photo-${photo.id}`}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -835,6 +1125,14 @@ export default function MemoPage() {
       </Dialog>
       </div>
       <ZoomControl contentRef={zoomContentRef} storageKey="memoPageZoom" />
+      
+      {imageViewer.isOpen && (
+        <ImageViewerComponent
+          imageViewer={imageViewer}
+          setImageViewer={setImageViewer}
+          closeImageViewer={closeImageViewer}
+        />
+      )}
     </>
   );
 }
