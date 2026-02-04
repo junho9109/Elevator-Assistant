@@ -288,8 +288,13 @@ export default function MemoPage() {
   
   // 비밀번호 관련 상태
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [isCreatePasswordDialogOpen, setIsCreatePasswordDialogOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [pendingDeleteMemoId, setPendingDeleteMemoId] = useState<number | null>(null);
+  const [deletePasswordInput, setDeletePasswordInput] = useState("");
+  const [isDeletePasswordDialogOpen, setIsDeletePasswordDialogOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [isAdminPasswordDialogOpen, setIsAdminPasswordDialogOpen] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
@@ -325,11 +330,11 @@ export default function MemoPage() {
   }, [selectedMemo]);
 
   const createMemo = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (password: string) => {
       const res = await fetch("/api/memos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "새 메모", body: "", password: "" })
+        body: JSON.stringify({ title: "새 메모", body: "", password })
       });
       return res.json();
     },
@@ -343,18 +348,19 @@ export default function MemoPage() {
   });
 
   const handleCreateMemo = () => {
-    createMemo.mutate();
+    setNewPassword("");
+    setIsCreatePasswordDialogOpen(true);
+  };
+
+  const confirmCreateMemo = () => {
+    createMemo.mutate(newPassword);
+    setIsCreatePasswordDialogOpen(false);
+    setNewPassword("");
   };
 
   const handleEditClick = () => {
     if (!selectedMemo) return;
     if (isAuthenticated) {
-      setIsEditing(true);
-      return;
-    }
-    const memoPassword = (selectedMemo as any).password;
-    if (!memoPassword) {
-      setIsAuthenticated(true);
       setIsEditing(true);
       return;
     }
@@ -365,12 +371,41 @@ export default function MemoPage() {
   const verifyPassword = () => {
     if (!selectedMemo) return;
     const memoPassword = (selectedMemo as any).password;
-    if (passwordInput === MASTER_PASSWORD || passwordInput === memoPassword || !memoPassword) {
+    if (passwordInput === MASTER_PASSWORD || (memoPassword && passwordInput === memoPassword)) {
       setIsAuthenticated(true);
       setIsEditing(true);
       setIsPasswordDialogOpen(false);
       setPasswordInput("");
       toast({ title: passwordInput === MASTER_PASSWORD ? "관리자 권한으로 수정합니다" : "비밀번호 확인 완료" });
+    } else {
+      toast({ title: "비밀번호가 틀렸습니다", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteMemo = (memoId: number, memo: Memo) => {
+    if (isAdminMode) {
+      deleteMemo.mutate(memoId);
+      return;
+    }
+    const memoPassword = (memo as any).password;
+    if (!memoPassword) {
+      toast({ title: "관리자만 삭제할 수 있습니다", variant: "destructive" });
+      return;
+    }
+    setPendingDeleteMemoId(memoId);
+    setDeletePasswordInput("");
+    setIsDeletePasswordDialogOpen(true);
+  };
+
+  const verifyDeletePassword = () => {
+    const memoToDelete = memos.find(m => m.id === pendingDeleteMemoId);
+    if (!memoToDelete || !pendingDeleteMemoId) return;
+    const memoPassword = (memoToDelete as any).password;
+    if (deletePasswordInput === MASTER_PASSWORD || deletePasswordInput === memoPassword) {
+      deleteMemo.mutate(pendingDeleteMemoId);
+      setIsDeletePasswordDialogOpen(false);
+      setPendingDeleteMemoId(null);
+      setDeletePasswordInput("");
     } else {
       toast({ title: "비밀번호가 틀렸습니다", variant: "destructive" });
     }
@@ -534,7 +569,7 @@ export default function MemoPage() {
                     memo={memo}
                     isSelected={memo.id === selectedMemoId}
                     onSelect={() => { setSelectedMemoId(memo.id); setIsEditing(false); }}
-                    onDelete={() => deleteMemo.mutate(memo.id)}
+                    onDelete={() => handleDeleteMemo(memo.id, memo)}
                   />
                 ))
               )}
@@ -675,6 +710,67 @@ export default function MemoPage() {
               onSave={(shapes) => saveAnnotations.mutate({ photoId: annotatingPhotoId, shapes })}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 메모 생성 비밀번호 다이얼로그 */}
+      <Dialog open={isCreatePasswordDialogOpen} onOpenChange={setIsCreatePasswordDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>메모 비밀번호 설정 (선택)</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-memo-password">비밀번호</Label>
+              <Input
+                id="new-memo-password"
+                type="password"
+                placeholder="비밀번호를 입력하세요 (선택사항)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && confirmCreateMemo()}
+                data-testid="input-new-memo-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                비밀번호를 설정하면 본인과 관리자만 수정/삭제 가능합니다.
+                비밀번호 없이 생성하면 관리자만 수정/삭제할 수 있습니다.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreatePasswordDialogOpen(false)}>취소</Button>
+            <Button onClick={confirmCreateMemo} data-testid="button-confirm-create-memo">생성</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 메모 삭제 비밀번호 다이얼로그 */}
+      <Dialog open={isDeletePasswordDialogOpen} onOpenChange={setIsDeletePasswordDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>삭제 비밀번호 확인</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-password">비밀번호</Label>
+              <Input
+                id="delete-password"
+                type="password"
+                placeholder="메모 비밀번호 또는 관리자 비밀번호"
+                value={deletePasswordInput}
+                onChange={(e) => setDeletePasswordInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && verifyDeletePassword()}
+                data-testid="input-delete-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                메모 작성자 비밀번호 또는 관리자 비밀번호를 입력하세요
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeletePasswordDialogOpen(false)}>취소</Button>
+            <Button variant="destructive" onClick={verifyDeletePassword} data-testid="button-verify-delete">삭제</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
