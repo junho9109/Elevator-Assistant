@@ -292,6 +292,9 @@ export default function MemoPage() {
   const [passwordInput, setPasswordInput] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminPasswordDialogOpen, setIsAdminPasswordDialogOpen] = useState(false);
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const MASTER_PASSWORD = "910919";
 
   const { data: memos = [], isLoading } = useQuery<Memo[]>({
@@ -375,6 +378,27 @@ export default function MemoPage() {
       setIsPasswordDialogOpen(false);
       setPasswordInput("");
       toast({ title: passwordInput === MASTER_PASSWORD ? "관리자 권한으로 수정합니다" : "비밀번호 확인 완료" });
+    } else {
+      toast({ title: "비밀번호가 틀렸습니다", variant: "destructive" });
+    }
+  };
+
+  const handleAdminModeToggle = () => {
+    if (isAdminMode) {
+      setIsAdminMode(false);
+      toast({ title: "관리자 모드 해제" });
+    } else {
+      setAdminPasswordInput("");
+      setIsAdminPasswordDialogOpen(true);
+    }
+  };
+
+  const verifyAdminPassword = () => {
+    if (adminPasswordInput === MASTER_PASSWORD) {
+      setIsAdminMode(true);
+      setIsAdminPasswordDialogOpen(false);
+      setAdminPasswordInput("");
+      toast({ title: "관리자 모드 활성화" });
     } else {
       toast({ title: "비밀번호가 틀렸습니다", variant: "destructive" });
     }
@@ -487,6 +511,15 @@ export default function MemoPage() {
               data-testid="input-memo-search"
             />
           </div>
+          <Button
+            onClick={handleAdminModeToggle}
+            variant={isAdminMode ? "default" : "outline"}
+            size="sm"
+            data-testid="button-admin-mode"
+          >
+            <Lock className="w-4 h-4 mr-1" />
+            {isAdminMode ? "관리자" : "관리"}
+          </Button>
           <Button onClick={handleCreateMemo} size="sm" data-testid="button-create-memo">
             <Plus className="w-4 h-4" />
           </Button>
@@ -608,14 +641,16 @@ export default function MemoPage() {
                               >
                                 <Pencil className="w-3 h-3" />
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => deletePhoto.mutate(photo.id)}
-                                data-testid={`delete-photo-${photo.id}`}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
+                              {isAdminMode && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => deletePhoto.mutate(photo.id)}
+                                  data-testid={`delete-photo-${photo.id}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -706,6 +741,36 @@ export default function MemoPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
             <Button onClick={verifyPassword} data-testid="button-verify-password">확인</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 관리자 비밀번호 확인 다이얼로그 */}
+      <Dialog open={isAdminPasswordDialogOpen} onOpenChange={setIsAdminPasswordDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>관리자 비밀번호</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="admin-password">비밀번호</Label>
+              <Input
+                id="admin-password"
+                type="password"
+                placeholder="관리자 비밀번호 입력"
+                value={adminPasswordInput}
+                onChange={(e) => setAdminPasswordInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && verifyAdminPassword()}
+                data-testid="input-admin-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                관리자 비밀번호를 입력하면 사진 삭제가 가능합니다
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAdminPasswordDialogOpen(false)}>취소</Button>
+            <Button onClick={verifyAdminPassword} data-testid="button-verify-admin-password">확인</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
