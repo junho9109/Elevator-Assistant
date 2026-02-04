@@ -226,6 +226,81 @@ function ImageViewerComponent({
   );
 }
 
+// Photo Carousel Component - shows one photo at a time
+function PhotoCarousel({ 
+  photos, 
+  isAdminMode, 
+  onDeletePhoto, 
+  onOpenViewer 
+}: { 
+  photos: any[];
+  isAdminMode: boolean;
+  onDeletePhoto: (photoId: number) => void;
+  onOpenViewer: (index: number) => void;
+}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const goToPrev = () => {
+    setCurrentIndex(prev => prev > 0 ? prev - 1 : photos.length - 1);
+  };
+
+  const goToNext = () => {
+    setCurrentIndex(prev => prev < photos.length - 1 ? prev + 1 : 0);
+  };
+
+  if (photos.length === 0) return null;
+
+  const currentPhoto = photos[currentIndex];
+
+  return (
+    <div className="relative">
+      <div className="relative group">
+        <img
+          src={currentPhoto.imageData}
+          alt={currentPhoto.fileName}
+          className="w-full h-64 object-contain rounded-lg border bg-muted cursor-pointer hover:opacity-90 transition-opacity"
+          onClick={() => onOpenViewer(currentIndex)}
+        />
+        {isAdminMode && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeletePhoto(currentPhoto.id);
+              if (currentIndex >= photos.length - 1 && currentIndex > 0) {
+                setCurrentIndex(currentIndex - 1);
+              }
+            }}
+            className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+            title="삭제"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+      
+      {photos.length > 1 && (
+        <>
+          <button
+            onClick={goToPrev}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <button
+            onClick={goToNext}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70 transition-colors"
+          >
+            <ChevronRight className="w-6 h-6" />
+          </button>
+          <div className="text-center mt-2 text-sm text-muted-foreground">
+            {currentIndex + 1} / {photos.length}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 interface CustomItemEdit {
   id: string;
   text?: string;
@@ -912,7 +987,7 @@ export default function JudgmentPage() {
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
                   E
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight">판정결과(예시)</h1>
+                <h1 className="text-2xl font-bold tracking-tight">판정결과(도우미)</h1>
               </div>
             <div className="flex items-center gap-2">
               {isAdminMode && (
@@ -1362,33 +1437,15 @@ export default function JudgmentPage() {
                         {isAdminMode && <p className="text-xs mt-1">관리자 모드에서 사진을 추가할 수 있습니다</p>}
                       </div>
                     ) : (
-                      <div className="grid grid-cols-2 gap-3">
-                        {itemPhotos.map((photo: any, index: number) => (
-                          <div key={photo.id} className="relative group">
-                            <img
-                              src={photo.imageData}
-                              alt={photo.fileName}
-                              className="w-full h-40 object-cover rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
-                              onClick={() => {
-                                const allImages = itemPhotos.map((p: any) => p.imageData);
-                                openImageViewer(allImages, index);
-                              }}
-                            />
-                            {isAdminMode && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deletePhoto.mutate(photo.id);
-                                }}
-                                className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="삭제"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                      <PhotoCarousel 
+                        photos={itemPhotos}
+                        isAdminMode={isAdminMode}
+                        onDeletePhoto={(photoId) => deletePhoto.mutate(photoId)}
+                        onOpenViewer={(index) => {
+                          const allImages = itemPhotos.map((p: any) => p.imageData);
+                          openImageViewer(allImages, index);
+                        }}
+                      />
                     )}
                   </div>
 

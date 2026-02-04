@@ -14,7 +14,7 @@ function MainApp() {
   return (
     <SwipeNavigator 
       pages={[<Home key="home" />, <JudgmentPage key="judgment" />, <PrecisionInspectionPage key="precision" />, <MemoPage key="memo" />]}
-      pageNames={["기술자료조회", "판정결과(예시)", "정밀안전검사", "메모"]}
+      pageNames={["기술자료조회", "판정결과(도우미)", "정밀안전검사", "메모"]}
     />
   );
 }
