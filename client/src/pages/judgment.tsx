@@ -1064,6 +1064,8 @@ export default function JudgmentPage() {
         {status === "previous" && referenceDate && (
           <div className="px-4 pb-2 text-xs text-amber-600 ml-10">
             ※ 이 항목은 {item.effectiveDate} 이후 적용되는 기준입니다. 입력하신 날짜({referenceDate.toISOString().split('T')[0]}) 기준으로 「종전」 기준이 자동 적용됩니다.
+            <br />
+            단, 현장 상태가 개정된 현행 기준을 이미 충족하고 있는 경우에는 건축허가일자 또는 검사적용 기준일과 관계없이 [적합]으로 판정할 수 있습니다.
           </div>
         )}
         {status === "not-applicable" && referenceDate && (
