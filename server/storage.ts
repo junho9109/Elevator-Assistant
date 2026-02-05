@@ -19,6 +19,8 @@ import {
   type InsertJudgmentPhoto,
   type JudgmentComment,
   type InsertJudgmentComment,
+  type InspectionItemEdit,
+  type InsertInspectionItemEdit,
   users,
   categories,
   standards,
@@ -28,7 +30,8 @@ import {
   photoAnnotations,
   standardComments,
   judgmentPhotos,
-  judgmentComments
+  judgmentComments,
+  inspectionItemEdits
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or, asc } from "drizzle-orm";
@@ -99,6 +102,12 @@ export interface IStorage {
   getJudgmentCommentsByItem(itemId: string): Promise<JudgmentComment[]>;
   createJudgmentComment(comment: InsertJudgmentComment): Promise<JudgmentComment>;
   deleteJudgmentComment(id: number): Promise<void>;
+
+  // InspectionItemEdit methods
+  getAllInspectionItemEdits(): Promise<InspectionItemEdit[]>;
+  getInspectionItemEdit(itemId: string): Promise<InspectionItemEdit | undefined>;
+  upsertInspectionItemEdit(edit: InsertInspectionItemEdit): Promise<InspectionItemEdit>;
+  deleteInspectionItemEdit(itemId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -339,6 +348,35 @@ export class DatabaseStorage implements IStorage {
 
   async deleteJudgmentComment(id: number): Promise<void> {
     await db.delete(judgmentComments).where(eq(judgmentComments.id, id));
+  }
+
+  // InspectionItemEdit methods
+  async getAllInspectionItemEdits(): Promise<InspectionItemEdit[]> {
+    return await db.select().from(inspectionItemEdits);
+  }
+
+  async getInspectionItemEdit(itemId: string): Promise<InspectionItemEdit | undefined> {
+    const [edit] = await db.select().from(inspectionItemEdits).where(eq(inspectionItemEdits.itemId, itemId));
+    return edit || undefined;
+  }
+
+  async upsertInspectionItemEdit(edit: InsertInspectionItemEdit): Promise<InspectionItemEdit> {
+    const existing = await this.getInspectionItemEdit(edit.itemId);
+    if (existing) {
+      const [updated] = await db
+        .update(inspectionItemEdits)
+        .set({ ...edit, updatedAt: new Date() })
+        .where(eq(inspectionItemEdits.itemId, edit.itemId))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db.insert(inspectionItemEdits).values(edit).returning();
+      return created;
+    }
+  }
+
+  async deleteInspectionItemEdit(itemId: string): Promise<void> {
+    await db.delete(inspectionItemEdits).where(eq(inspectionItemEdits.itemId, itemId));
   }
 }
 
