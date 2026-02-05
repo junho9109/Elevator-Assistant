@@ -193,3 +193,25 @@ export type MemoPhoto = typeof memoPhotos.$inferSelect;
 
 export type InsertPhotoAnnotation = z.infer<typeof insertPhotoAnnotationSchema>;
 export type PhotoAnnotation = typeof photoAnnotations.$inferSelect;
+
+// Inspection item edits table (for admin modifications that sync across all users)
+export const inspectionItemEdits = pgTable("inspection_item_edits", {
+  id: serial("id").primaryKey(),
+  itemId: varchar("item_id", { length: 50 }).notNull().unique(),
+  text: text("text"),
+  effectiveDate: varchar("effective_date", { length: 20 }),
+  expiryDate: varchar("expiry_date", { length: 20 }),
+  introductionType: varchar("introduction_type", { length: 20 }),
+  customWarning: text("custom_warning"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertInspectionItemEditSchema = createInsertSchema(inspectionItemEdits).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertInspectionItemEdit = z.infer<typeof insertInspectionItemEditSchema>;
+export type InspectionItemEdit = typeof inspectionItemEdits.$inferSelect;
