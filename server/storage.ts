@@ -21,6 +21,8 @@ import {
   type InsertJudgmentComment,
   type InspectionItemEdit,
   type InsertInspectionItemEdit,
+  type CustomInspectionItem,
+  type InsertCustomInspectionItem,
   users,
   categories,
   standards,
@@ -31,7 +33,8 @@ import {
   standardComments,
   judgmentPhotos,
   judgmentComments,
-  inspectionItemEdits
+  inspectionItemEdits,
+  customInspectionItems
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or, asc } from "drizzle-orm";
@@ -108,6 +111,11 @@ export interface IStorage {
   getInspectionItemEdit(itemId: string): Promise<InspectionItemEdit | undefined>;
   upsertInspectionItemEdit(edit: InsertInspectionItemEdit): Promise<InspectionItemEdit>;
   deleteInspectionItemEdit(itemId: string): Promise<void>;
+
+  // CustomInspectionItem methods
+  getAllCustomInspectionItems(): Promise<CustomInspectionItem[]>;
+  createCustomInspectionItem(item: InsertCustomInspectionItem): Promise<CustomInspectionItem>;
+  deleteCustomInspectionItem(itemId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -377,6 +385,20 @@ export class DatabaseStorage implements IStorage {
 
   async deleteInspectionItemEdit(itemId: string): Promise<void> {
     await db.delete(inspectionItemEdits).where(eq(inspectionItemEdits.itemId, itemId));
+  }
+
+  // CustomInspectionItem methods
+  async getAllCustomInspectionItems(): Promise<CustomInspectionItem[]> {
+    return await db.select().from(customInspectionItems);
+  }
+
+  async createCustomInspectionItem(item: InsertCustomInspectionItem): Promise<CustomInspectionItem> {
+    const [created] = await db.insert(customInspectionItems).values(item).returning();
+    return created;
+  }
+
+  async deleteCustomInspectionItem(itemId: string): Promise<void> {
+    await db.delete(customInspectionItems).where(eq(customInspectionItems.itemId, itemId));
   }
 }
 

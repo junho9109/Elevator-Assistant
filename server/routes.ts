@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
-import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema } from "@shared/schema";
+import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema } from "@shared/schema";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -573,6 +573,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete inspection edit" });
+    }
+  });
+
+  // Custom Inspection Item routes (for admin-added items synced across all users)
+  app.get("/api/custom-items", async (req, res) => {
+    try {
+      const items = await storage.getAllCustomInspectionItems();
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch custom items" });
+    }
+  });
+
+  app.post("/api/custom-items", async (req, res) => {
+    try {
+      const validatedData = insertCustomInspectionItemSchema.parse(req.body);
+      const item = await storage.createCustomInspectionItem(validatedData);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid item data" });
+    }
+  });
+
+  app.delete("/api/custom-items/:itemId", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      await storage.deleteCustomInspectionItem(itemId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete custom item" });
     }
   });
 

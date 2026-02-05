@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ZoomControl } from "@/components/ZoomControl";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
-import type { InspectionItemEdit } from "@shared/schema";
+import type { InspectionItemEdit, CustomInspectionItem } from "@shared/schema";
 
 // Image Viewer State
 interface ImageViewerState {
@@ -445,10 +445,7 @@ export default function JudgmentPage() {
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
 
-  const [customItems, setCustomItems] = useState<InspectionItem[]>(() => {
-    const saved = localStorage.getItem("judgmentCustomItems");
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [customItems, setCustomItems] = useState<(InspectionItem & { sectionId?: string })[]>([]);
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
   const [addItemForm, setAddItemForm] = useState({
     sectionId: "",
@@ -574,6 +571,57 @@ export default function JudgmentPage() {
     // Clear localStorage to prevent stale data
     localStorage.removeItem("judgmentCustomEdits");
   }, [serverEdits, serverEditsError, toast]);
+
+  // Fetch custom inspection items from server
+  const { data: serverCustomItems = [] } = useQuery<CustomInspectionItem[]>({
+    queryKey: ["/api/custom-items"],
+    queryFn: async () => {
+      const res = await fetch("/api/custom-items");
+      if (!res.ok) throw new Error("Failed to fetch custom items");
+      return res.json();
+    }
+  });
+
+  // Sync custom items from server
+  useEffect(() => {
+    const items = serverCustomItems.map(item => ({
+      id: item.itemId,
+      text: item.text,
+      result: null as "적합" | "부적합" | "시정권고" | "해당없음" | "종전" | null,
+      effectiveDate: item.effectiveDate || undefined,
+      introductionType: item.introductionType as "new" | "revision" | undefined,
+      sectionId: item.sectionId,
+    }));
+    setCustomItems(items);
+    localStorage.removeItem("judgmentCustomItems");
+  }, [serverCustomItems]);
+
+  // Mutation to add custom item to server
+  const addCustomItem = useMutation({
+    mutationFn: async (item: { itemId: string; sectionId: string; text: string; effectiveDate?: string; introductionType?: string }) => {
+      const res = await fetch("/api/custom-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item)
+      });
+      if (!res.ok) throw new Error("Failed to add custom item");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-items"] });
+    }
+  });
+
+  // Mutation to delete custom item from server
+  const deleteCustomItem = useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await fetch(`/api/custom-items/${itemId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete custom item");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-items"] });
+    }
+  });
 
   // Mutation to save inspection item edit to server
   const saveInspectionEdit = useMutation({
@@ -727,11 +775,7 @@ export default function JudgmentPage() {
     e.target.value = "";
   };
 
-  useEffect(() => {
-    localStorage.setItem("judgmentCustomItems", JSON.stringify(customItems));
-  }, [customItems]);
-
-  // Note: customEdits are now stored on server, not localStorage
+  // Note: customItems and customEdits are now stored on server, not localStorage
 
   useEffect(() => {
     localStorage.setItem("judgmentResults", JSON.stringify(results));
@@ -843,32 +887,54 @@ export default function JudgmentPage() {
       return;
     }
     const newId = `custom-${Date.now()}`;
-    const newItem: InspectionItem = {
-      id: newId,
+    
+    // Save to server for all users (admin only)
+    addCustomItem.mutate({
+      itemId: newId,
+      sectionId: addItemForm.sectionId,
       text: addItemForm.text,
-      result: null,
       effectiveDate: addItemForm.effectiveDate || undefined,
       introductionType: addItemForm.introductionType || undefined,
-    };
-    setCustomItems(prev => [...prev, { ...newItem, sectionId: addItemForm.sectionId } as any]);
+    }, {
+      onSuccess: () => {
+        toast({
+          title: "항목 추가 완료",
+          description: "새 검사 항목이 추가되었습니다. 모든 사용자에게 반영됩니다.",
+        });
+      },
+      onError: () => {
+        toast({
+          title: "추가 실패",
+          description: "항목 추가에 실패했습니다. 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    });
+    
     setIsAddItemDialogOpen(false);
     setAddItemForm({ sectionId: "", text: "", effectiveDate: "", introductionType: "" });
-    toast({
-      title: "항목 추가 완료",
-      description: "새 검사 항목이 추가되었습니다.",
-    });
   };
 
   const handleDeleteCustomItem = (itemId: string) => {
-    setCustomItems(prev => prev.filter(item => item.id !== itemId));
-    setResults(prev => {
-      const newResults = { ...prev };
-      delete newResults[itemId];
-      return newResults;
-    });
-    toast({
-      title: "항목 삭제",
-      description: "검사 항목이 삭제되었습니다.",
+    deleteCustomItem.mutate(itemId, {
+      onSuccess: () => {
+        setResults(prev => {
+          const newResults = { ...prev };
+          delete newResults[itemId];
+          return newResults;
+        });
+        toast({
+          title: "항목 삭제",
+          description: "검사 항목이 삭제되었습니다. 모든 사용자에게 반영됩니다.",
+        });
+      },
+      onError: () => {
+        toast({
+          title: "삭제 실패",
+          description: "항목 삭제에 실패했습니다. 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
     });
   };
 

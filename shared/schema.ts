@@ -215,3 +215,22 @@ export const insertInspectionItemEditSchema = createInsertSchema(inspectionItemE
 
 export type InsertInspectionItemEdit = z.infer<typeof insertInspectionItemEditSchema>;
 export type InspectionItemEdit = typeof inspectionItemEdits.$inferSelect;
+
+// Custom inspection items table (for admin-added items that sync across all users)
+export const customInspectionItems = pgTable("custom_inspection_items", {
+  id: serial("id").primaryKey(),
+  itemId: varchar("item_id", { length: 50 }).notNull().unique(),
+  sectionId: varchar("section_id", { length: 50 }).notNull(),
+  text: text("text").notNull(),
+  effectiveDate: varchar("effective_date", { length: 20 }),
+  introductionType: varchar("introduction_type", { length: 20 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertCustomInspectionItemSchema = createInsertSchema(customInspectionItems).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCustomInspectionItem = z.infer<typeof insertCustomInspectionItemSchema>;
+export type CustomInspectionItem = typeof customInspectionItems.$inferSelect;
