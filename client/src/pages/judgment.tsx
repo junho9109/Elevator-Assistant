@@ -582,9 +582,11 @@ export default function JudgmentPage() {
     }
   });
 
-  // Sync custom items from server
+  // Sync custom items from server - use JSON stringified value as dependency to prevent infinite loops
+  const serverCustomItemsJson = JSON.stringify(serverCustomItems);
   useEffect(() => {
-    const items = serverCustomItems.map(item => ({
+    const parsedItems: CustomInspectionItem[] = JSON.parse(serverCustomItemsJson);
+    const items = parsedItems.map(item => ({
       id: item.itemId,
       text: item.text,
       result: null as "적합" | "부적합" | "시정권고" | "해당없음" | "종전" | null,
@@ -594,7 +596,7 @@ export default function JudgmentPage() {
     }));
     setCustomItems(items);
     localStorage.removeItem("judgmentCustomItems");
-  }, [serverCustomItems]);
+  }, [serverCustomItemsJson]);
 
   // Mutation to add custom item to server
   const addCustomItem = useMutation({
