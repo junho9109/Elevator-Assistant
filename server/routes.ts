@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
-import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema } from "@shared/schema";
+import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema } from "@shared/schema";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -526,6 +526,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete comment" });
+    }
+  });
+
+  // Inspection Item Edit routes (for admin modifications synced across all users)
+  app.get("/api/inspection-edits", async (req, res) => {
+    try {
+      const edits = await storage.getAllInspectionItemEdits();
+      res.json(edits);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inspection edits" });
+    }
+  });
+
+  app.get("/api/inspection-edits/:itemId", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const edit = await storage.getInspectionItemEdit(itemId);
+      if (!edit) {
+        return res.status(404).json({ error: "Edit not found" });
+      }
+      res.json(edit);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inspection edit" });
+    }
+  });
+
+  app.put("/api/inspection-edits/:itemId", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const validatedData = insertInspectionItemEditSchema.parse({
+        ...req.body,
+        itemId
+      });
+      const edit = await storage.upsertInspectionItemEdit(validatedData);
+      res.json(edit);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid edit data" });
+    }
+  });
+
+  app.delete("/api/inspection-edits/:itemId", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      await storage.deleteInspectionItemEdit(itemId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete inspection edit" });
     }
   });
 
