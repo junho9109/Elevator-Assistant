@@ -1242,7 +1242,7 @@ export default function Home() {
 
       {/* View Standard Dialog */}
       <Dialog open={isViewStandardOpen} onOpenChange={setIsViewStandardOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col" onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="flex items-center justify-between pr-8">
               <span>{editingItem?.title}</span>
