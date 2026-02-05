@@ -198,25 +198,25 @@ function ImageViewerComponent({
             href="#"
             onClick={(e) => { e.preventDefault(); goToPrev(); }}
             style={{
-              position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
-              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.18)',
+              position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+              width: 36, height: 36, borderRadius: '50%', backgroundColor: 'rgba(0,0,0,0.35)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-              textDecoration: 'none'
+              textDecoration: 'none', border: '1px solid rgba(255,255,255,0.3)'
             }}
           >
-            <ChevronLeft style={{ width: 32, height: 32 }} />
+            <ChevronLeft style={{ width: 24, height: 24 }} />
           </a>
           <a
             href="#"
             onClick={(e) => { e.preventDefault(); goToNext(); }}
             style={{
-              position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-              width: 48, height: 48, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.18)',
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              width: 36, height: 36, borderRadius: '50%', backgroundColor: 'rgba(0,0,0,0.35)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-              textDecoration: 'none'
+              textDecoration: 'none', border: '1px solid rgba(255,255,255,0.3)'
             }}
           >
-            <ChevronRight style={{ width: 32, height: 32 }} />
+            <ChevronRight style={{ width: 24, height: 24 }} />
           </a>
         </>
       )}
