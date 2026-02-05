@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ZoomControl } from "@/components/ZoomControl";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
+import type { InspectionItemEdit } from "@shared/schema";
 
 // Image Viewer State
 interface ImageViewerState {
@@ -439,10 +440,7 @@ export default function JudgmentPage() {
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   
-  const [customEdits, setCustomEdits] = useState<Record<string, CustomItemEdit>>(() => {
-    const saved = localStorage.getItem("judgmentCustomEdits");
-    return saved ? JSON.parse(saved) : {};
-  });
+  const [customEdits, setCustomEdits] = useState<Record<string, CustomItemEdit>>({});
   const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
@@ -536,6 +534,67 @@ export default function JudgmentPage() {
       return res.json();
     },
     enabled: !!detailItem
+  });
+
+  // Fetch inspection item edits from server (for syncing across all users)
+  const { data: serverEdits = [], isError: serverEditsError } = useQuery<InspectionItemEdit[]>({
+    queryKey: ["/api/inspection-edits"],
+    queryFn: async () => {
+      const res = await fetch("/api/inspection-edits");
+      if (!res.ok) throw new Error("Failed to fetch inspection edits");
+      return res.json();
+    }
+  });
+
+  // Server edits are authoritative - replace local state when server data loads
+  useEffect(() => {
+    if (serverEditsError) {
+      toast({
+        title: "동기화 오류",
+        description: "서버에서 수정 데이터를 불러오지 못했습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Build map from server edits (server is source of truth)
+    const serverEditsMap: Record<string, CustomItemEdit> = {};
+    for (const edit of serverEdits) {
+      serverEditsMap[edit.itemId] = {
+        id: edit.itemId,
+        text: edit.text || undefined,
+        effectiveDate: edit.effectiveDate || undefined,
+        expiryDate: edit.expiryDate || undefined,
+        introductionType: edit.introductionType as "new" | "revision" | undefined,
+        customWarning: edit.customWarning || undefined,
+      };
+    }
+    // Server edits take precedence over local edits
+    setCustomEdits(serverEditsMap);
+    // Clear localStorage to prevent stale data
+    localStorage.removeItem("judgmentCustomEdits");
+  }, [serverEdits, serverEditsError, toast]);
+
+  // Mutation to save inspection item edit to server
+  const saveInspectionEdit = useMutation({
+    mutationFn: async (edit: CustomItemEdit) => {
+      const res = await fetch(`/api/inspection-edits/${edit.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: edit.text || null,
+          effectiveDate: edit.effectiveDate || null,
+          expiryDate: edit.expiryDate || null,
+          introductionType: edit.introductionType || null,
+          customWarning: edit.customWarning || null,
+        })
+      });
+      if (!res.ok) throw new Error("Failed to save edit");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inspection-edits"] });
+    }
   });
 
   const uploadPhoto = useMutation({
@@ -672,9 +731,7 @@ export default function JudgmentPage() {
     localStorage.setItem("judgmentCustomItems", JSON.stringify(customItems));
   }, [customItems]);
 
-  useEffect(() => {
-    localStorage.setItem("judgmentCustomEdits", JSON.stringify(customEdits));
-  }, [customEdits]);
+  // Note: customEdits are now stored on server, not localStorage
 
   useEffect(() => {
     localStorage.setItem("judgmentResults", JSON.stringify(results));
@@ -747,12 +804,33 @@ export default function JudgmentPage() {
         [editingItem.id]: editForm.fixedResult!
       }));
     }
+    
+    // Save to server for all users (admin only)
+    if (isAdminMode) {
+      saveInspectionEdit.mutate(editForm, {
+        onSuccess: () => {
+          toast({
+            title: "항목 수정 완료",
+            description: "검사 항목이 저장되었습니다. 모든 사용자에게 반영됩니다.",
+          });
+        },
+        onError: () => {
+          toast({
+            title: "저장 실패",
+            description: "서버 저장에 실패했습니다. 다시 시도해주세요.",
+            variant: "destructive",
+          });
+        }
+      });
+    } else {
+      toast({
+        title: "항목 수정 완료",
+        description: "검사 항목이 수정되었습니다.",
+      });
+    }
+    
     setIsEditItemDialogOpen(false);
     setEditingItem(null);
-    toast({
-      title: "항목 수정 완료",
-      description: "검사 항목이 수정되었습니다.",
-    });
   };
 
   const handleAddItem = () => {
