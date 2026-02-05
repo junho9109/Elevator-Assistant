@@ -140,10 +140,11 @@ function ImageViewerComponent({
         touchAction: 'none',
         cursor: imageViewer.zoom > 1 ? 'grab' : 'default',
       }}
+      onClick={(e) => { e.stopPropagation(); }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      onMouseDown={handleMouseDown}
+      onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e); }}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}

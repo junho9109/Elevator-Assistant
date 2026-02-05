@@ -148,6 +148,7 @@ function ImageViewerComponent({
         flexDirection: 'column',
         touchAction: 'none',
       }}
+      onClick={(e) => { e.stopPropagation(); }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
