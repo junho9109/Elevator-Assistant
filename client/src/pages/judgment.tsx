@@ -544,19 +544,16 @@ export default function JudgmentPage() {
   });
 
   // Server edits are authoritative - replace local state when server data loads
+  const serverEditsJson = JSON.stringify(serverEdits);
   useEffect(() => {
     if (serverEditsError) {
-      toast({
-        title: "동기화 오류",
-        description: "서버에서 수정 데이터를 불러오지 못했습니다.",
-        variant: "destructive",
-      });
       return;
     }
     
+    const parsedEdits: InspectionItemEdit[] = JSON.parse(serverEditsJson);
     // Build map from server edits (server is source of truth)
     const serverEditsMap: Record<string, CustomItemEdit> = {};
-    for (const edit of serverEdits) {
+    for (const edit of parsedEdits) {
       serverEditsMap[edit.itemId] = {
         id: edit.itemId,
         text: edit.text || undefined,
@@ -570,7 +567,7 @@ export default function JudgmentPage() {
     setCustomEdits(serverEditsMap);
     // Clear localStorage to prevent stale data
     localStorage.removeItem("judgmentCustomEdits");
-  }, [serverEdits, serverEditsError, toast]);
+  }, [serverEditsJson, serverEditsError]);
 
   // Fetch custom inspection items from server
   const { data: serverCustomItems = [] } = useQuery<CustomInspectionItem[]>({
