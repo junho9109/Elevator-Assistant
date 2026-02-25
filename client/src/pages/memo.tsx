@@ -586,20 +586,21 @@ export default function MemoPage() {
     setImageViewer(prev => ({ ...prev, isOpen: false, panX: 0, panY: 0 }));
   };
 
-  const { data: memos = [], isLoading, error } = useQuery<Memo[]>({
+  const { data: memosRaw, isLoading, error } = useQuery<Memo[]>({
   queryKey: ['memos'],
-  queryFn: () => fetch('/api/memos').then(res => {
+  queryFn: async () => {
+    const res = await fetch('/api/memos');
     if (!res.ok) {
       throw new Error('메모 불러오기 실패');
     }
     return res.json();
-  }),
+  },
 });
 
-// memos가 배열인지 안전하게 확인 (이게 핵심!)
-const memosArray = Array.isArray(memos) ? memos : [];
+// 🔥 배열 안전 처리 (핵심)
+const memosArray: Memo[] = Array.isArray(memosRaw) ? memosRaw : [];
 
-// 안전하게 find 사용
+// 🔥 여기 수정
 const selectedMemo = memosArray.find(m => m.id === selectedMemoId) ?? null;
 
 const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
@@ -689,7 +690,7 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
   };
 
   const verifyDeletePassword = () => {
-    const memoToDelete = memos.find(m => m.id === pendingDeleteMemoId);
+    const memoToDelete = memosArray.find(m => m.id === pendingDeleteMemoId);
     if (!memoToDelete || !pendingDeleteMemoId) return;
     const memoPassword = (memoToDelete as any).password;
     if (deletePasswordInput === MASTER_PASSWORD || deletePasswordInput === memoPassword) {
@@ -855,10 +856,10 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
                 <p className="text-center text-gray-500 py-4">
                 메모 불러오기 실패
               </p>
-              ) : memos.length === 0 ? (
+              ) : memosArray.length === 0 ? (
                 <p className="text-center text-gray-500 py-4">메모가 없습니다</p>
               ) : (
-                memos.map(memo => (
+                memosArray.map(memo => (
                       <MemoCard
                         key={memo.id}
                         memo={memo}
