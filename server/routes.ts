@@ -9,6 +9,14 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
+function handleError(res: any, error: any, message: string) {
+  console.error("========== API ERROR ==========");
+  console.error(message);
+  console.error(error);
+  console.error("================================");
+  res.status(500).json({ error: message });
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Category routes
   app.get("/api/categories", async (req, res) => {
@@ -220,7 +228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : await storage.getAllMemos();
       res.json(memos);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch memos" });
+      handleError(res, error, "Failed to fetch memos");
     }
   });
 
@@ -535,7 +543,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const edits = await storage.getAllInspectionItemEdits();
       res.json(edits);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch inspection edits" });
+      handleError(res, error, "Failed to fetch inspection edits");
     }
   });
 
@@ -548,7 +556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(edit);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch inspection edit" });
+      handleError(res, error, "Failed to fetch inspection edits");
     }
   });
 
@@ -582,7 +590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const items = await storage.getAllCustomInspectionItems();
       res.json(items);
     } catch (error) {
-      res.status(500).json({ error: "Failed to fetch custom items" });
+      handleError(res, error, "Failed to fetch inspection edits");
     }
   });
 
@@ -602,7 +610,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteCustomInspectionItem(itemId);
       res.status(204).send();
     } catch (error) {
-      res.status(500).json({ error: "Failed to delete custom item" });
+      handleError(res, error, "Failed to fetch custom items");
     }
   });
 

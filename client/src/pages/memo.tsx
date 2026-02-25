@@ -586,18 +586,23 @@ export default function MemoPage() {
     setImageViewer(prev => ({ ...prev, isOpen: false, panX: 0, panY: 0 }));
   };
 
-  const { data: memos = [], isLoading } = useQuery<Memo[]>({
-    queryKey: ["/api/memos", searchQuery],
-    queryFn: async () => {
-      const url = searchQuery ? `/api/memos?search=${encodeURIComponent(searchQuery)}` : "/api/memos";
-      const res = await fetch(url);
-      return res.json();
+  const { data: memos = [], isLoading, error } = useQuery<Memo[]>({
+  queryKey: ['memos'],
+  queryFn: () => fetch('/api/memos').then(res => {
+    if (!res.ok) {
+      throw new Error('메모 불러오기 실패');
     }
-  });
+    return res.json();
+  }),
+});
 
-  const selectedMemo = memos.find(m => m.id === selectedMemoId);
+// memos가 배열인지 안전하게 확인 (이게 핵심!)
+const memosArray = Array.isArray(memos) ? memos : [];
 
-  const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
+// 안전하게 find 사용
+const selectedMemo = memosArray.find(m => m.id === selectedMemoId) ?? null;
+
+const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
     queryKey: ["/api/memos", selectedMemoId, "photos"],
     queryFn: async () => {
       if (!selectedMemoId) return [];
@@ -846,17 +851,21 @@ export default function MemoPage() {
             <div className="p-2 space-y-2">
               {isLoading ? (
                 <p className="text-center text-gray-500 py-4">로딩중...</p>
+              ) : error ? (
+                <p className="text-center text-gray-500 py-4">
+                메모 불러오기 실패
+              </p>
               ) : memos.length === 0 ? (
                 <p className="text-center text-gray-500 py-4">메모가 없습니다</p>
               ) : (
                 memos.map(memo => (
-                  <MemoCard
-                    key={memo.id}
-                    memo={memo}
-                    isSelected={memo.id === selectedMemoId}
-                    onSelect={() => { setSelectedMemoId(memo.id); setIsEditing(false); }}
-                    onDelete={() => handleDeleteMemo(memo.id, memo)}
-                  />
+                      <MemoCard
+                        key={memo.id}
+                        memo={memo}
+                        isSelected={memo.id === selectedMemoId}
+                        onSelect={() => { setSelectedMemoId(memo.id); setIsEditing(false); }}
+                        onDelete={() => handleDeleteMemo(memo.id, memo)}
+                      />
                 ))
               )}
             </div>
