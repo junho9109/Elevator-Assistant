@@ -86,13 +86,12 @@ export default async function runApp(
   const port = parseInt(process.env.PORT || '3000', 10);
 
   server.listen(
-    {
-      port,
-      host: "127.0.0.1",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    }
-  );
+  {
+    port,
+    host: "0.0.0.0",
+  },
+  () => {
+    log(`serving on port ${port}`);
+  }
+);
 }
