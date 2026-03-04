@@ -3,8 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { ChevronDown } from "lucide-react";
 
-// ==================== 일반건축물 연장 규칙 (1단계 / 2단계 정확히 구분) ====================
+// ==================== 일반건축물 연장 규칙 ====================
 const generalRules = {
   stage1: [
     {
@@ -66,20 +67,30 @@ export default function PrecisionInspectionPage() {
   const [inspectionCount, setInspectionCount] = useState("");
   const [cycle, setCycle] = useState("");
   const [specialSituation, setSpecialSituation] = useState("");
-  const [stage, setStage] = useState(""); // "stage1" 또는 "stage2"
+  const [stage, setStage] = useState("");
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
+
+  // 상단 도우미 안내창
+  const [showHelper, setShowHelper] = useState(true);
+
+  // 하단 스와이프 안내창
+  const [showSwipeGuide, setShowSwipeGuide] = useState(true);
 
   const isApartmentOrCollective = buildingType === "apartment" || buildingType === "collective";
   const isGeneral = buildingType === "general";
 
+  // 상단 도우미 2초 후 자동 숨김
   useEffect(() => {
-    if (isApartmentOrCollective) {
-      setSpecialSituation("construction_delay");
-    } else {
-      setSpecialSituation("");
-    }
-  }, [buildingType]);
+    const timer = setTimeout(() => setShowHelper(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 하단 스와이프 안내창 2초 후 자동 숨김
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSwipeGuide(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleCalculate = () => {
     setError("");
@@ -90,13 +101,11 @@ export default function PrecisionInspectionPage() {
       return;
     }
 
-    // 공동주택·집합건축물 + 네 번째 검사 = 연장 불가능
     if (isApartmentOrCollective && inspectionCount === "fourth") {
       setError("⚠️ 공동주택·집합건축물은 서면동의서로 이미 3년 유예를 받은 상태입니다.\n네 번째 정밀안전검사에서는 추가 연장이 불가능합니다.");
       return;
     }
 
-    // 공동주택·집합건축물인 경우 → 3년 처리
     if (isApartmentOrCollective) {
       setResult({
         extensionPeriod: "3년",
@@ -106,26 +115,53 @@ export default function PrecisionInspectionPage() {
       return;
     }
 
-    // 일반건축물 처리
     if (isGeneral) {
       const rules = stage === "stage1" ? generalRules.stage1 : generalRules.stage2;
       const matched = rules.find(rule => rule.specialSituation === specialSituation);
-
       if (!matched) {
         setError("해당 단계·사유에 맞는 규정이 없습니다.");
         return;
       }
-
       setResult(matched);
       return;
     }
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-8">정밀안전검사 조건부합격 연장 안내</h1>
+    <div className="p-6 max-w-4xl mx-auto relative min-h-screen">
+      <h1 className="text-2xl font-bold mb-8 text-center">판정결과</h1>
 
-      <div className="space-y-6">
+      {/* 상단 도우미 안내창 */}
+      <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 z-50 transition-all duration-700 ${showHelper ? 'opacity-100 -translate-y-1/2' : 'opacity-0 -translate-y-[140%] pointer-events-none'}`}>
+        <Card className="w-[420px] shadow-2xl border-blue-200 bg-white">
+          <CardHeader>
+            <CardTitle className="text-xl text-blue-700">판정결과</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-gray-600">
+            건축물 유형, 검사 회차, 단계, 사유를 선택하면<br />
+            연장 기간과 필요 서류를 자동으로 정리해 드립니다.
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 상단 도우미 다시 보기 버튼 */}
+      {!showHelper && (
+        <button
+          onClick={() => setShowHelper(true)}
+          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-white shadow-xl border border-gray-200 hover:border-blue-400 text-blue-600 p-4 rounded-full transition-all hover:scale-110"
+        >
+          <ChevronDown className="w-7 h-7" />
+        </button>
+      )}
+
+      {/* 하단 스와이프 안내창 */}
+      {showSwipeGuide && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-white/95 backdrop-blur-md shadow-2xl border border-gray-200 px-6 py-3 rounded-2xl text-center text-sm text-gray-700 flex items-center gap-2">
+          👆 스와이프하여 페이지 전환
+        </div>
+      )}
+
+      <div className="space-y-6 mt-4">
         {/* 1. 건축물 유형 */}
         <div>
           <Label>1. 건축물 유형</Label>
@@ -164,7 +200,6 @@ export default function PrecisionInspectionPage() {
           </Select>
         </div>
 
-        {/* 단계 선택 (일반건축물만) */}
         {isGeneral && (
           <div>
             <Label>단계 선택</Label>
@@ -178,7 +213,6 @@ export default function PrecisionInspectionPage() {
           </div>
         )}
 
-        {/* 4. 사유 */}
         <div>
           <Label>4. 사유</Label>
           <Select 

@@ -1,115 +1,88 @@
-import { useState, ReactNode } from "react";
-import { motion, AnimatePresence, PanInfo } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { useState, useEffect } from "react";
+import { ChevronDown } from "lucide-react";
 
+// props 타입 + 기본값 + 안전장치
 interface SwipeNavigatorProps {
-  pages: ReactNode[];
-  pageNames: string[];
+  pages?: React.ReactNode[];      // optional + 기본값 아래에서 처리
+  pageNames?: string[];           // optional + 기본값 아래에서 처리
 }
 
-export default function SwipeNavigator({ pages, pageNames }: SwipeNavigatorProps) {
-  const [currentPage, setCurrentPage] = useState(0);
-  const [direction, setDirection] = useState(0);
+export default function SwipeNavigator(props: SwipeNavigatorProps) {
+  // props가 없거나 undefined일 때 기본값 강제 적용
+  const pages = props.pages ?? [];
+  const pageNames = props.pageNames ?? ["페이지 로딩 중..."]; // 최소 1개라도 보이게
 
-  const swipeThreshold = 50;
-  const swipeVelocityThreshold = 500;
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [showNav, setShowNav] = useState(true);
 
-  const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    const { offset, velocity } = info;
-    
-    if (offset.x > swipeThreshold || velocity.x > swipeVelocityThreshold) {
-      if (currentPage > 0) {
-        setDirection(-1);
-        setCurrentPage(currentPage - 1);
+  useEffect(() => {
+    const timer = setTimeout(() => setShowNav(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    const startX = e.touches[0].clientX;
+
+    const handleTouchEnd = (e2: TouchEvent) => {
+      const endX = e2.changedTouches[0].clientX;
+      const diff = startX - endX;
+
+      if (diff > 50 && currentIndex < pages.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      } else if (diff < -50 && currentIndex > 0) {
+        setCurrentIndex(currentIndex - 1);
       }
-    } else if (offset.x < -swipeThreshold || velocity.x < -swipeVelocityThreshold) {
-      if (currentPage < pages.length - 1) {
-        setDirection(1);
-        setCurrentPage(currentPage + 1);
-      }
-    }
+
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
+
+    document.addEventListener("touchend", handleTouchEnd);
   };
 
-  const goToPage = (index: number) => {
-    setDirection(index > currentPage ? 1 : -1);
-    setCurrentPage(index);
-  };
-
-  const variants = {
-    enter: (direction: number) => ({
-      x: direction > 0 ? "100%" : "-100%",
-      opacity: 0
-    }),
-    center: {
-      x: 0,
-      opacity: 1
-    },
-    exit: (direction: number) => ({
-      x: direction < 0 ? "100%" : "-100%",
-      opacity: 0
-    })
-  };
+  // 에러 방지: pageNames가 배열인지 최종 확인
+  const safePageNames = Array.isArray(pageNames) ? pageNames : ["로딩 중"];
 
   return (
-    <div className="relative w-full min-h-screen overflow-hidden">
-      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 flex gap-2 bg-background/80 backdrop-blur-sm rounded-full px-4 py-2 shadow-lg border border-border">
-        {pageNames.map((name, index) => (
-          <button
-            key={index}
-            onClick={() => goToPage(index)}
-            className={cn(
-              "px-3 py-1 rounded-full text-sm font-medium transition-all",
-              currentPage === index
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-accent"
-            )}
-            data-testid={`nav-${name}`}
-          >
-            {name}
-          </button>
-        ))}
+    <div className="relative min-h-screen" onTouchStart={handleTouchStart}>
+      {/* 네비게이션 */}
+      <div
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-700 ${
+          showNav ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full pointer-events-none"
+        }`}
+      >
+        <div className="bg-white shadow-md border-b p-3">
+          <div className="flex justify-center gap-6 text-sm font-medium">
+            {safePageNames.map((name, i) => (
+              <button
+                key={i}
+                className={`pb-1 px-3 ${
+                  i === currentIndex
+                    ? "border-b-2 border-blue-600 text-blue-600 font-semibold"
+                    : "text-gray-600 hover:text-blue-600"
+                }`}
+                onClick={() => setCurrentIndex(i)}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 flex gap-2">
-        {pages.map((_, index) => (
-          <button
-            key={index}
-            onClick={() => goToPage(index)}
-            className={cn(
-              "w-2 h-2 rounded-full transition-all",
-              currentPage === index
-                ? "bg-primary w-6"
-                : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
-            )}
-            data-testid={`dot-${index}`}
-          />
-        ))}
-      </div>
-
-      <AnimatePresence initial={false} custom={direction} mode="wait">
-        <motion.div
-          key={currentPage}
-          custom={direction}
-          variants={variants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          transition={{
-            x: { type: "spring", stiffness: 300, damping: 30 },
-            opacity: { duration: 0.2 }
-          }}
-          drag="x"
-          dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={0.2}
-          onDragEnd={handleDragEnd}
-          className="w-full min-h-screen overflow-auto"
+      {/* 다시 보기 버튼 */}
+      {!showNav && (
+        <button
+          onClick={() => setShowNav(true)}
+          className="fixed top-2 left-1/2 -translate-x-1/2 z-50 bg-white shadow-lg border border-gray-200 hover:border-blue-400 text-blue-600 px-4 py-2 rounded-full transition-all hover:scale-105 flex items-center gap-2 text-sm"
         >
-          {pages[currentPage]}
-        </motion.div>
-      </AnimatePresence>
+          <ChevronDown className="h-4 w-4 rotate-180" />
+          네비게이션 열기
+        </button>
+      )}
 
-      <div className="fixed bottom-16 left-1/2 transform -translate-x-1/2 z-40 text-xs text-muted-foreground bg-background/60 backdrop-blur-sm px-3 py-1 rounded-full">
-        ← 스와이프하여 페이지 전환 →
+      {/* 페이지 콘텐츠 */}
+      <div className="pt-16">
+        {pages[currentIndex] || <div className="p-8 text-center text-gray-500">페이지 로딩 중...</div>}
       </div>
     </div>
   );

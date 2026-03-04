@@ -42,7 +42,14 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
+    port: 3000,  // ← 강제 3000 포트
     allowedHosts: true,
+    hmr: {
+      host: "localhost",
+      port: 3000,
+      protocol: "ws",
+      clientPort: 3000
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],
