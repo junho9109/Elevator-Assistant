@@ -79,6 +79,7 @@ export default function PrecisionInspectionPage() {
 
   const isApartmentOrCollective = buildingType === "apartment" || buildingType === "collective";
   const isGeneral = buildingType === "general";
+  const hasBasicSelection = buildingType && inspectionCount && cycle; // 1~3번 모두 선택했는지
 
   // 상단 도우미 2초 후 자동 숨김
   useEffect(() => {
@@ -86,9 +87,9 @@ export default function PrecisionInspectionPage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // 하단 스와이프 안내창 2초 후 자동 숨김
+  // 하단 스와이프 안내창 5초 후 자동 숨김
   useEffect(() => {
-    const timer = setTimeout(() => setShowSwipeGuide(false), 2000);
+    const timer = setTimeout(() => setShowSwipeGuide(false), 5000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -116,6 +117,10 @@ export default function PrecisionInspectionPage() {
     }
 
     if (isGeneral) {
+      if (!stage) {
+        setError("일반건축물은 단계를 선택해야 합니다.");
+        return;
+      }
       const rules = stage === "stage1" ? generalRules.stage1 : generalRules.stage2;
       const matched = rules.find(rule => rule.specialSituation === specialSituation);
       if (!matched) {
@@ -200,7 +205,8 @@ export default function PrecisionInspectionPage() {
           </Select>
         </div>
 
-        {isGeneral && (
+        {/* 단계 선택 (일반건축물만) */}
+        {isGeneral && hasBasicSelection && (
           <div>
             <Label>단계 선택</Label>
             <Select value={stage} onValueChange={setStage}>
@@ -213,31 +219,50 @@ export default function PrecisionInspectionPage() {
           </div>
         )}
 
+        {/* 4. 사유 */}
         <div>
           <Label>4. 사유</Label>
           <Select 
             value={specialSituation} 
             onValueChange={setSpecialSituation}
-            disabled={isApartmentOrCollective || (isGeneral && !stage)}
+            disabled={!hasBasicSelection} // 1~3번 모두 선택해야 활성화
           >
             <SelectTrigger>
-              <SelectValue placeholder={isGeneral && !stage ? "단계를 먼저 선택하세요" : "선택하세요"} />
+              <SelectValue 
+                placeholder={
+                  !hasBasicSelection 
+                    ? "유형·회차·주기를 먼저 선택하세요"
+                    : isGeneral && !stage 
+                      ? "단계를 선택하면 사유 목록이 업데이트됩니다"
+                      : "선택하세요"
+                } 
+              />
             </SelectTrigger>
             <SelectContent>
               {isApartmentOrCollective ? (
                 <SelectItem value="construction_delay">공사 지연</SelectItem>
-              ) : isGeneral && stage === "stage1" ? (
+              ) : isGeneral && hasBasicSelection ? (
                 <>
-                  <SelectItem value="safety_evaluation">안전성평가 미완료</SelectItem>
-                  <SelectItem value="construction_delay">공사 지연</SelectItem>
-                </>
-              ) : isGeneral && stage === "stage2" ? (
-                <>
-                  <SelectItem value="full_replacement">전체교체 예정</SelectItem>
-                  <SelectItem value="partial_replacement">부분교체 예정</SelectItem>
-                  <SelectItem value="redevelopment">재개발·재건축 철거 예정</SelectItem>
-                  <SelectItem value="mobility">국민 이동편의 보장 필요</SelectItem>
-                  <SelectItem value="director_judgment">공단 이사장 인정 현장</SelectItem>
+                  {/* stage가 없으면 기본 2개만 보이게 */}
+                  {!stage ? (
+                    <>
+                      <SelectItem value="safety_evaluation">안전성평가 미완료</SelectItem>
+                      <SelectItem value="construction_delay">공사 지연</SelectItem>
+                    </>
+                  ) : stage === "stage1" ? (
+                    <>
+                      <SelectItem value="safety_evaluation">안전성평가 미완료</SelectItem>
+                      <SelectItem value="construction_delay">공사 지연</SelectItem>
+                    </>
+                  ) : (
+                    <>
+                      <SelectItem value="full_replacement">전체교체 예정</SelectItem>
+                      <SelectItem value="partial_replacement">부분교체 예정</SelectItem>
+                      <SelectItem value="redevelopment">재개발·재건축 철거 예정</SelectItem>
+                      <SelectItem value="mobility">국민 이동편의 보장 필요</SelectItem>
+                      <SelectItem value="director_judgment">공단 이사장 인정 현장</SelectItem>
+                    </>
+                  )}
                 </>
               ) : null}
             </SelectContent>
