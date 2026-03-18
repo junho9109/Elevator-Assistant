@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "ae8e9e12-cd03-4c96-b2ac-cb26b4c2a0fc"
+      }
+    },
+    "owner": "junho91",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ae8e9e12-cd03-4c96-b2ac-cb26b4c2a0fc"
+    },
+    "android": {},
+    "ios": {}
+  }
+}
