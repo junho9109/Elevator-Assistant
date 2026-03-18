@@ -4,17 +4,22 @@ const config: CapacitorConfig = {
   appId: 'com.junho.elevatorassistant',
   appName: '엘리베이터 도우미',
   webDir: 'dist/public',
+  bundledWebRuntime: false,
   server: {
     androidScheme: 'https',
-    hostname: 'your-app-domain.com'  // 나중에 배포할 도메인
+    cleartext: true,  // 개발 중에만 true (배포 시 false로 변경)
+    // hostname: 'your-app-domain.com'  ← 이 줄 주석 처리하거나 삭제
   },
   plugins: {
-    LiveUpdates: {
-      enabled: true,
-      appId: 'your-live-updates-app-id',  // 아래에서 발급받음
-      channel: 'production'  // 또는 'staging' 등
-    }
-  }
+    SplashScreen: {
+      launchShowDuration: 0,
+    },
+  },
+  // OTA 관련 설정 (Capgo 또는 EAS 사용 중이라면)
+  // updates: {
+  //   url: 'https://u.expo.dev/여기-프로젝트-ID',
+  //   fallbackToCacheTimeout: 0,
+  // },
 };
 
 export default config;
