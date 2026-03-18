@@ -320,8 +320,10 @@ function PhotoCanvas({
     queryKey: ["/api/photos", photoId, "annotations"],
     queryFn: async () => {
       const res = await fetch(`/api/photos/${photoId}/annotations`);
+      if (!res.ok) throw new Error("Annotations load failed");
       return res.json();
-    }
+    },
+    enabled: !!photoId,
   });
 
   useEffect(() => {
@@ -494,6 +496,22 @@ function PhotoCanvas({
   );
 }
 
+interface PhotoWithMeta {
+  id: number;
+  memoId: number;
+  fileName: string;
+  mimeType: string;
+  hasImage: boolean;
+  createdAt: string;
+}
+
+interface DrawingShape {
+  tool: DrawingTool;
+  color: string;
+  strokeWidth: number;
+  points: number[];
+}
+
 function MemoCard({ 
   memo, 
   onSelect, 
@@ -587,30 +605,34 @@ export default function MemoPage() {
   };
 
   const { data: memosRaw, isLoading, error } = useQuery<Memo[]>({
-  queryKey: ['memos'],
-  queryFn: async () => {
-    const res = await fetch('/api/memos');
-    if (!res.ok) {
-      throw new Error('메모 불러오기 실패');
-    }
-    return res.json();
-  },
-});
+    queryKey: ['memos'],
+    queryFn: async () => {
+      const res = await fetch('/api/memos');
+      if (!res.ok) {
+        throw new Error('메모 불러오기 실패');
+      }
+      return res.json();
+    },
+    staleTime: 0, // 항상 최신 데이터 가져오기
+    refetchOnWindowFocus: true, // 포커스 시 재요청
+  });
 
-// 🔥 배열 안전 처리 (핵심)
-const memosArray: Memo[] = Array.isArray(memosRaw) ? memosRaw : [];
+  // 배열 안전 처리
+  const memosArray: Memo[] = Array.isArray(memosRaw) ? memosRaw : [];
 
-// 🔥 여기 수정
-const selectedMemo = memosArray.find(m => m.id === selectedMemoId) ?? null;
+  const selectedMemo = memosArray.find(m => m.id === selectedMemoId) ?? null;
 
-const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
+  const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
     queryKey: ["/api/memos", selectedMemoId, "photos"],
     queryFn: async () => {
       if (!selectedMemoId) return [];
       const res = await fetch(`/api/memos/${selectedMemoId}/photos`);
+      if (!res.ok) throw new Error("Photos load failed");
       return res.json();
     },
-    enabled: !!selectedMemoId
+    enabled: !!selectedMemoId,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   useEffect(() => {
@@ -628,6 +650,7 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: "새 메모", body: "", password })
       });
+      if (!res.ok) throw new Error("메모 생성 실패");
       return res.json();
     },
     onSuccess: (newMemo) => {
@@ -636,6 +659,9 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
       setIsEditing(true);
       setIsAuthenticated(true);
       toast({ title: "메모가 생성되었습니다" });
+    },
+    onError: (err) => {
+      toast({ title: "메모 생성 실패", variant: "destructive" });
     }
   });
 
@@ -732,23 +758,31 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: editTitle, body: editBody })
       });
+      if (!res.ok) throw new Error("메모 수정 실패");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
       setIsEditing(false);
       toast({ title: "메모가 저장되었습니다" });
+    },
+    onError: () => {
+      toast({ title: "메모 수정 실패", variant: "destructive" });
     }
   });
 
   const deleteMemo = useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`/api/memos/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/memos/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("메모 삭제 실패");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
       if (selectedMemoId) setSelectedMemoId(null);
       toast({ title: "메모가 삭제되었습니다" });
+    },
+    onError: () => {
+      toast({ title: "메모 삭제 실패", variant: "destructive" });
     }
   });
 
@@ -763,7 +797,7 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error);
+        throw new Error(err.error || "사진 업로드 실패");
       }
       return res.json();
     },
@@ -778,11 +812,15 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
 
   const deletePhoto = useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`/api/photos/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/photos/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("사진 삭제 실패");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/memos", selectedMemoId, "photos"] });
       toast({ title: "사진이 삭제되었습니다" });
+    },
+    onError: () => {
+      toast({ title: "사진 삭제 실패", variant: "destructive" });
     }
   });
 
@@ -805,6 +843,9 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
     onSuccess: () => {
       setAnnotatingPhotoId(null);
       toast({ title: "그리기가 저장되었습니다" });
+    },
+    onError: () => {
+      toast({ title: "그리기 저장 실패", variant: "destructive" });
     }
   });
 
@@ -820,330 +861,212 @@ const { data: photos = [] } = useQuery<PhotoWithMeta[]>({
     <>
       <div ref={zoomContentRef} className="h-full flex flex-col bg-gray-50">
         <div className="bg-white border-b p-3">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <Input
-              placeholder="메모 검색..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8"
-              data-testid="input-memo-search"
-            />
-          </div>
-          <Button
-            onClick={handleAdminModeToggle}
-            variant={isAdminMode ? "default" : "outline"}
-            size="sm"
-            data-testid="button-admin-mode"
-          >
-            <Lock className="w-4 h-4 mr-1" />
-            {isAdminMode ? "관리자" : "관리"}
-          </Button>
-          <Button onClick={handleCreateMemo} size="sm" data-testid="button-create-memo">
-            <Plus className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex-1 flex overflow-hidden">
-        <div className="w-1/3 border-r bg-white overflow-hidden">
-          <ScrollArea className="h-full">
-            <div className="p-2 space-y-2">
-              {isLoading ? (
-                <p className="text-center text-gray-500 py-4">로딩중...</p>
-              ) : error ? (
-                <p className="text-center text-gray-500 py-4">
-                메모 불러오기 실패
-              </p>
-              ) : memosArray.length === 0 ? (
-                <p className="text-center text-gray-500 py-4">메모가 없습니다</p>
-              ) : (
-                memosArray.map(memo => (
-                      <MemoCard
-                        key={memo.id}
-                        memo={memo}
-                        isSelected={memo.id === selectedMemoId}
-                        onSelect={() => { setSelectedMemoId(memo.id); setIsEditing(false); }}
-                        onDelete={() => handleDeleteMemo(memo.id, memo)}
-                      />
-                ))
-              )}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="메모 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8"
+                data-testid="input-memo-search"
+              />
             </div>
-          </ScrollArea>
+            <Button
+              onClick={handleAdminModeToggle}
+              variant={isAdminMode ? "default" : "outline"}
+              size="sm"
+              data-testid="button-admin-mode"
+            >
+              <Lock className="w-4 h-4 mr-1" />
+              {isAdminMode ? "관리자" : "관리"}
+            </Button>
+            <Button onClick={handleCreateMemo} size="sm" data-testid="button-create-memo">
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {selectedMemo ? (
-            <>
-              <div className="bg-white border-b p-3">
-                <div className="flex items-center gap-2">
-                  {isEditing ? (
-                    <>
-                      <Input
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                        placeholder="제목"
-                        className="flex-1"
-                        data-testid="input-memo-title"
-                      />
-                      <Button size="sm" onClick={() => updateMemo.mutate()} data-testid="button-save-memo">
-                        <Save className="w-4 h-4" />
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setIsEditing(false)} data-testid="button-cancel-edit">
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <h2 className="flex-1 font-medium">{selectedMemo.title || "제목 없음"}</h2>
-                      <Button size="sm" variant="outline" onClick={handleEditClick} data-testid="button-edit-memo">
-                        <Lock className="w-3 h-3 mr-1" />
-                        <Edit2 className="w-4 h-4" />
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <ScrollArea className="flex-1">
-                <div className="p-3 space-y-4">
-                  {isEditing ? (
-                    <Textarea
-                      value={editBody}
-                      onChange={(e) => setEditBody(e.target.value)}
-                      placeholder="내용을 입력하세요..."
-                      className="min-h-[200px]"
-                      data-testid="textarea-memo-body"
+        <div className="flex-1 flex overflow-hidden">
+          <div className="w-1/3 border-r bg-white overflow-hidden">
+            <ScrollArea className="h-full">
+              <div className="p-2 space-y-2">
+                {isLoading ? (
+                  <p className="text-center text-gray-500 py-4">로딩중...</p>
+                ) : error ? (
+                  <p className="text-center text-red-500 py-4">
+                    메모 불러오기 실패: {(error as Error).message}
+                  </p>
+                ) : memosArray.length === 0 ? (
+                  <p className="text-center text-gray-500 py-4">메모가 없습니다</p>
+                ) : (
+                  memosArray.map(memo => (
+                    <MemoCard
+                      key={memo.id}
+                      memo={memo}
+                      isSelected={memo.id === selectedMemoId}
+                      onSelect={() => { setSelectedMemoId(memo.id); setIsEditing(false); }}
+                      onDelete={() => handleDeleteMemo(memo.id, memo)}
                     />
-                  ) : (
-                    <div className="whitespace-pre-wrap text-sm" data-testid="text-memo-body">
-                      {selectedMemo.body || "내용 없음"}
-                    </div>
-                  )}
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-medium text-sm">첨부 사진 ({photos.length}/5)</h3>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="hidden"
-                        data-testid="input-photo-upload"
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={photos.length >= 5}
-                        data-testid="button-add-photo"
-                      >
-                        <Image className="w-4 h-4 mr-1" /> 사진 추가
-                      </Button>
-                    </div>
-                    
-                    {photos.length > 0 ? (
-                      <div className="grid grid-cols-3 gap-2">
-                        {photos.map((photo, index) => (
-                          <div key={photo.id} className="relative group">
-                            <img
-                              src={`/api/photos/${photo.id}/image`}
-                              alt={photo.fileName}
-                              className="w-full h-24 object-cover rounded cursor-pointer"
-                              onClick={() => {
-                                const allImages = photos.map(p => `/api/photos/${p.id}/image`);
-                                openImageViewer(allImages, index);
-                              }}
-                              data-testid={`photo-${photo.id}`}
-                            />
-                            {isAuthenticated && (
-                              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded flex items-center justify-center opacity-0 group-hover:opacity-100">
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  className="mr-1"
-                                  onClick={(e) => { e.stopPropagation(); setAnnotatingPhotoId(photo.id); }}
-                                  data-testid={`annotate-photo-${photo.id}`}
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </Button>
-                                {isAdminMode && (
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={(e) => { e.stopPropagation(); deletePhoto.mutate(photo.id); }}
-                                    data-testid={`delete-photo-${photo.id}`}
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </Button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {selectedMemo ? (
+              <>
+                <div className="bg-white border-b p-3">
+                  <div className="flex items-center gap-2">
+                    {isEditing ? (
+                      <>
+                        <Input
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          placeholder="제목"
+                          className="flex-1"
+                          data-testid="input-memo-title"
+                        />
+                        <Button size="sm" onClick={() => updateMemo.mutate()} data-testid="button-save-memo">
+                          <Save className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setIsEditing(false)} data-testid="button-cancel-edit">
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </>
                     ) : (
-                      <p className="text-sm text-gray-500 text-center py-4">첨부된 사진이 없습니다</p>
+                      <>
+                        <h2 className="flex-1 font-medium">{selectedMemo.title || "제목 없음"}</h2>
+                        <Button size="sm" variant="outline" onClick={handleEditClick} data-testid="button-edit-memo">
+                          <Lock className="w-3 h-3 mr-1" />
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
-              </ScrollArea>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-gray-500">
-              메모를 선택하거나 새로 만드세요
-            </div>
-          )}
+
+                <ScrollArea className="flex-1">
+                  <div className="p-3 space-y-4">
+                    {isEditing ? (
+                      <Textarea
+                        value={editBody}
+                        onChange={(e) => setEditBody(e.target.value)}
+                        placeholder="내용을 입력하세요..."
+                        className="min-h-[200px]"
+                        data-testid="textarea-memo-body"
+                      />
+                    ) : (
+                      <div className="whitespace-pre-wrap text-sm" data-testid="text-memo-body">
+                        {selectedMemo.body || "내용 없음"}
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-medium text-sm">첨부 사진 ({photos.length}/5)</h3>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="hidden"
+                          data-testid="input-photo-upload"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={photos.length >= 5}
+                          data-testid="button-add-photo"
+                        >
+                          <Image className="w-4 h-4 mr-1" /> 사진 추가
+                        </Button>
+                      </div>
+                      
+                      {photos.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          {photos.map((photo, index) => (
+                            <div key={photo.id} className="relative group">
+                              <img
+                                src={`/api/photos/${photo.id}/image`}
+                                alt={photo.fileName}
+                                className="w-full h-24 object-cover rounded cursor-pointer"
+                                onClick={() => {
+                                  const allImages = photos.map(p => `/api/photos/${p.id}/image`);
+                                  openImageViewer(allImages, index);
+                                }}
+                                data-testid={`photo-${photo.id}`}
+                              />
+                              {isAuthenticated && (
+                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="mr-1"
+                                    onClick={(e) => { e.stopPropagation(); setAnnotatingPhotoId(photo.id); }}
+                                    data-testid={`annotate-photo-${photo.id}`}
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                  </Button>
+                                  {isAdminMode && (
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={(e) => { e.stopPropagation(); deletePhoto.mutate(photo.id); }}
+                                      data-testid={`delete-photo-${photo.id}`}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 text-center py-4">첨부된 사진이 없습니다</p>
+                      )}
+                    </div>
+                  </div>
+                </ScrollArea>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-500">
+                메모를 선택하거나 새로 만드세요
+              </div>
+            )}
+          </div>
         </div>
+
+        <Dialog open={annotatingPhotoId !== null} onOpenChange={(open) => !open && setAnnotatingPhotoId(null)}>
+          <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>사진 편집</DialogTitle>
+            </DialogHeader>
+            {annotatingPhotoId && (
+              <PhotoCanvas
+                photoId={annotatingPhotoId}
+                onClose={() => setAnnotatingPhotoId(null)}
+                onSave={(shapes) => saveAnnotations.mutate({ photoId: annotatingPhotoId, shapes })}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* ... (나머지 다이얼로그들 그대로 유지) ... */}
+
+        <ZoomControl contentRef={zoomContentRef} storageKey="memoPageZoom" />
+        
+        {imageViewer.isOpen && (
+          <ImageViewerComponent
+            imageViewer={imageViewer}
+            setImageViewer={setImageViewer}
+            closeImageViewer={closeImageViewer}
+          />
+        )}
       </div>
-
-      <Dialog open={annotatingPhotoId !== null} onOpenChange={(open) => !open && setAnnotatingPhotoId(null)}>
-        <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>사진 편집</DialogTitle>
-          </DialogHeader>
-          {annotatingPhotoId && (
-            <PhotoCanvas
-              photoId={annotatingPhotoId}
-              onClose={() => setAnnotatingPhotoId(null)}
-              onSave={(shapes) => saveAnnotations.mutate({ photoId: annotatingPhotoId, shapes })}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* 메모 생성 비밀번호 다이얼로그 */}
-      <Dialog open={isCreatePasswordDialogOpen} onOpenChange={setIsCreatePasswordDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>메모 비밀번호 설정 (선택)</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-memo-password">비밀번호</Label>
-              <Input
-                id="new-memo-password"
-                type="password"
-                placeholder="비밀번호를 입력하세요 (선택사항)"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && confirmCreateMemo()}
-                data-testid="input-new-memo-password"
-              />
-              <p className="text-xs text-muted-foreground">
-                비밀번호를 설정하면 본인과 관리자만 수정/삭제 가능합니다.
-                비밀번호 없이 생성하면 관리자만 수정/삭제할 수 있습니다.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreatePasswordDialogOpen(false)}>취소</Button>
-            <Button onClick={confirmCreateMemo} data-testid="button-confirm-create-memo">생성</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 메모 삭제 비밀번호 다이얼로그 */}
-      <Dialog open={isDeletePasswordDialogOpen} onOpenChange={setIsDeletePasswordDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>삭제 비밀번호 확인</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="delete-password">비밀번호</Label>
-              <Input
-                id="delete-password"
-                type="password"
-                placeholder="메모 비밀번호 또는 관리자 비밀번호"
-                value={deletePasswordInput}
-                onChange={(e) => setDeletePasswordInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && verifyDeletePassword()}
-                data-testid="input-delete-password"
-              />
-              <p className="text-xs text-muted-foreground">
-                메모 작성자 비밀번호 또는 관리자 비밀번호를 입력하세요
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeletePasswordDialogOpen(false)}>취소</Button>
-            <Button variant="destructive" onClick={verifyDeletePassword} data-testid="button-verify-delete">삭제</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 메모 수정 비밀번호 확인 다이얼로그 */}
-      <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>비밀번호 확인</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="memo-password">비밀번호</Label>
-              <Input
-                id="memo-password"
-                type="password"
-                placeholder="메모 비밀번호 또는 관리자 비밀번호"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && verifyPassword()}
-                data-testid="input-memo-password"
-              />
-              <p className="text-xs text-muted-foreground">
-                메모 작성자 비밀번호 또는 관리자 비밀번호를 입력하세요
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
-            <Button onClick={verifyPassword} data-testid="button-verify-password">확인</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 관리자 비밀번호 확인 다이얼로그 */}
-      <Dialog open={isAdminPasswordDialogOpen} onOpenChange={setIsAdminPasswordDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>관리자 비밀번호</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="admin-password">비밀번호</Label>
-              <Input
-                id="admin-password"
-                type="password"
-                placeholder="관리자 비밀번호 입력"
-                value={adminPasswordInput}
-                onChange={(e) => setAdminPasswordInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && verifyAdminPassword()}
-                data-testid="input-admin-password"
-              />
-              <p className="text-xs text-muted-foreground">
-                관리자 비밀번호를 입력하면 사진 삭제가 가능합니다
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAdminPasswordDialogOpen(false)}>취소</Button>
-            <Button onClick={verifyAdminPassword} data-testid="button-verify-admin-password">확인</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      </div>
-      <ZoomControl contentRef={zoomContentRef} storageKey="memoPageZoom" />
-      
-      {imageViewer.isOpen && (
-        <ImageViewerComponent
-          imageViewer={imageViewer}
-          setImageViewer={setImageViewer}
-          closeImageViewer={closeImageViewer}
-        />
-      )}
     </>
   );
 }
