@@ -18,6 +18,11 @@ jobs:
       - name: Install root dependencies
         run: npm install --ignore-scripts
 
+      - name: Run database seed
+        run: npm run db:seed
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
       - name: Install client dependencies & build
         run: |
           cd client
