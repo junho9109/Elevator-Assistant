@@ -3,7 +3,7 @@
   "appName": "엘리베이터 도우미",
   "webDir": "dist/public",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
     "url": "https://elevator-assistant-production.up.railway.app",
     "cleartext": true
   }
