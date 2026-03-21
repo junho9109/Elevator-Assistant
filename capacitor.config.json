@@ -4,5 +4,7 @@
   "webDir": "dist/public",
   "server": {
     "androidScheme": "https"
+    "url": "https://elevator-assistant-production.up.railway.app",
+    "cleartext": true
   }
 }
