@@ -27,6 +27,7 @@ jobs:
         run: |
           cd client
           npm install
+          cd ..
           npm run build
 
       - name: Setup Java
