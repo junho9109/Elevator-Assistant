@@ -36,6 +36,9 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: Check build output
+        run: ls -la dist/public/
+
       - name: Sync Capacitor
         run: npx cap sync android
 
