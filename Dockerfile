@@ -3,11 +3,11 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
-
-RUN npm ci --ignore-scripts
+RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm vite build
+RUN npx esbuild server/index-prod.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js
 
 EXPOSE 3000
 
