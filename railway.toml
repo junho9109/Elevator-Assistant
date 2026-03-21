@@ -1,17 +1,5 @@
 [build]
 builder = "NIXPACKS"
 
-[build.nixpacksPlan.providers]
-node = "20"
-
-[build.nixpacksPlan.phases.setup]
-nixPkgs = ["nodejs_20"]
-
-[build.nixpacksPlan.phases.install]
-cmds = ["npm install"]
-
-[build.nixpacksPlan.phases.build]
-cmds = ["npm run build"]
-
 [deploy]
 startCommand = "npm run start"
