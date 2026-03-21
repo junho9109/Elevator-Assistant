@@ -1,18 +1,46 @@
 {
   "expo": {
+    "name": "Elevator Assistant",
+    "slug": "elevator-assistant",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.junho.elevatorassistant"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-updates"
+    ],
     "extra": {
       "eas": {
         "projectId": "ae8e9e12-cd03-4c96-b2ac-cb26b4c2a0fc"
       }
     },
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/ae8e9e12-cd03-4c96-b2ac-cb26b4c2a0fc",
+      "fallbackToCacheTimeout": 0
+    },
     "owner": "junho91",
     "runtimeVersion": {
       "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/ae8e9e12-cd03-4c96-b2ac-cb26b4c2a0fc"
-    },
-    "android": {},
-    "ios": {}
+    }
   }
 }
