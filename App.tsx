@@ -11,7 +11,6 @@ import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
-import * as Updates from 'expo-updates';  // 추가
 import { useToast } from "@/hooks/use-toast";
 
 function MainApp() {
@@ -49,26 +48,11 @@ function App() {
   const { toast } = useToast();
 
   const handleRefresh = async () => {
-    // 1. React Query 캐시 무시
     queryClient.invalidateQueries({ queryKey: ["standards"] });
     queryClient.invalidateQueries({ queryKey: ["hotspots"] });
-
-    // 2. Expo OTA 강제 체크
-    try {
-      const update = await Updates.checkForUpdateAsync();
-      if (update.isAvailable) {
-        await Updates.fetchUpdateAsync();
-        await Updates.reloadAsync();
-        toast({
-          title: "업데이트 완료",
-          description: "최신 버전으로 새로고침되었습니다."
-        });
-      } else {
-        toast({
-          title: "이미 최신 버전입니다"
-        });
-      }
-    } catch (err) {
+    toast({
+      title: "새로고침 완료"
+    });
       console.error(err);
       // fallback
       const url = new URL(window.location.href);
