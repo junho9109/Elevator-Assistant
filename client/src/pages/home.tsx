@@ -120,9 +120,10 @@ export default function Home() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clickX = (e.clientX - rect.left) * scaleX;
+    const clickY = (e.clientY - rect.top) * scaleY;
     hotspots.forEach(hotspot => {
       const btnX = (parseFloat(hotspot.left) / 100) * canvas.width;
       const btnY = (parseFloat(hotspot.top) / 100) * canvas.height;
