@@ -202,7 +202,6 @@ export default function Home() {
             </div>
           </div>
         </div>
-      </div>
 
       {/* 정의된 ref를 ZoomControl에 전달 */}
       <ZoomControl contentRef={zoomContentRef} storageKey="homePageZoom" />
