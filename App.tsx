@@ -53,12 +53,6 @@ function App() {
     toast({
       title: "새로고침 완료"
     });
-      console.error(err);
-      // fallback
-      const url = new URL(window.location.href);
-      url.searchParams.set('v', Date.now().toString());
-      window.location.href = url.toString();
-    }
   };
 
   return (
