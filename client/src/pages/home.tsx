@@ -59,7 +59,10 @@ export default function Home() {
 
   const displayItems = useMemo(() => {
     if (isSearching) return fuse.search(searchTerm).map(r => r.item);
-    if (activeButtonId) return standards.filter(s => s.hotspotId === activeButtonId);
+    if (activeButtonId) {
+    const activeHotspot = hotspots.find(h => h.id === activeButtonId);
+    if (activeHotspot) return standards.filter(s => s.categoryId === activeHotspot.categoryId);
+    }
     return standards;
   }, [standards, searchTerm, isSearching, activeButtonId, fuse]);
 
@@ -88,25 +91,25 @@ export default function Home() {
         // 버튼 배경 (원형)
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, 42, 0, Math.PI * 2);
-        ctx.fillStyle = activeButtonId === hotspot.id ? "#2563eb" : "#1e2937";
-        ctx.shadowColor = "rgba(0,0,0,0.5)";
-        ctx.shadowBlur = 12;
+        const isActive = activeButtonId === hotspot.id;
+        const radius = 20;
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = isActive ? "#2563eb" : "rgba(30,41,55,0.85)";
+        ctx.shadowColor = "rgba(0,0,0,0.4)";
+        ctx.shadowBlur = 6;
         ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 4;
+        ctx.shadowOffsetY = 2;
         ctx.fill();
         ctx.restore();
-
         // 버튼 테두리
         ctx.beginPath();
-        ctx.arc(x, y, 42, 0, Math.PI * 2);
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 4;
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = isActive ? "#93c5fd" : "#ffffff";
+        ctx.lineWidth = isActive ? 3 : 1.5;
         ctx.stroke();
-
         // 버튼 라벨
         ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 15px sans-serif";
+        ctx.font = "bold 8px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(hotspot.label, x, y);
@@ -129,7 +132,7 @@ export default function Home() {
       const btnY = (parseFloat(hotspot.top) / 100) * canvas.height;
 
       const distance = Math.hypot(clickX - btnX, clickY - btnY);
-      if (distance < 50) {
+      if (distance < 25) {
         setActiveButtonId(hotspot.id);
       }
     });
@@ -167,10 +170,9 @@ export default function Home() {
         </div>
 
         {/* 선택된 버튼의 표준화 목록 */}
-        {activeButton && (
-          <div className="p-6 bg-white rounded-xl shadow border border-gray-200">
+        <div className="p-6 bg-white rounded-xl shadow border border-gray-200">
             <h2 className="text-2xl font-bold mb-6">
-              {activeButton.label} 기준 목록
+              {activeButton ? '${activeButton.label} 기준 목록' : "전체 기준 목록"}
             </h2>
 
             <div className="relative mb-6">
@@ -199,7 +201,7 @@ export default function Home() {
               )}
             </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* 정의된 ref를 ZoomControl에 전달 */}
