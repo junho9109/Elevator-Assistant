@@ -254,7 +254,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="relative w-full aspect-[4/3] sm:aspect-[3/2] md:aspect-[16/9] rounded-2xl overflow-hidden shadow-2xl border border-gray-200 mb-8">
+        <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-2xl border border-gray-200 mb-8">
           <canvas ref={canvasRef} className="w-full h-full cursor-pointer" onClick={handleCanvasClick} />
         </div>
 

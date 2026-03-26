@@ -72,10 +72,10 @@ export default function PrecisionInspectionPage() {
   const [error, setError] = useState("");
 
   // 상단 도우미 안내창
-  const [showHelper, setShowHelper] = useState(true);
+  const [showHelper, setShowHelper] = useState(false);
 
   // 하단 스와이프 안내창
-  const [showSwipeGuide, setShowSwipeGuide] = useState(true);
+  const [showSwipeGuide, setShowSwipeGuide] = useState(false);
 
   const isApartmentOrCollective = buildingType === "apartment" || buildingType === "collective";
   const isGeneral = buildingType === "general";
