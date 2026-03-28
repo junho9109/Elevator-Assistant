@@ -430,7 +430,7 @@ export default function JudgmentPage() {
   const [subType, setSubType] = useState<string>("전기식(MR)");
   const [inspectionDate, setInspectionDate] = useState("");
   const [permitDate, setPermitDate] = useState("");
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["1.1", "1.2", "1.3", "1.4", "1.5"]));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<Record<string, ResultType>>(() => {
     const saved = localStorage.getItem("judgmentResults");
     return saved ? JSON.parse(saved) : {};
