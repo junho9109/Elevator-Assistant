@@ -7,6 +7,7 @@ import Home from "@/pages/home";
 import JudgmentPage from "@/pages/judgment";
 import PrecisionInspectionPage from "@/pages/precision-inspection";
 import MemoPage from "@/pages/memo";
+import SafetyPage from "@/pages/safety";
 import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
 import { Button } from "@/components/ui/button";
@@ -20,13 +21,15 @@ function MainApp() {
         <Home key="home" />,
         <JudgmentPage key="judgment" />,
         <PrecisionInspectionPage key="precision" />,
-        <MemoPage key="memo" />
+        <MemoPage key="memo" />,
+        <SafetyPage key="safety" />
       ]}
       pageNames={[
         "기술자료조회",
         "판정결과(도우미)",
         "정밀안전검사",
-        "메모"
+        "메모",
+        "안전보건관리"
       ]}
     />
   );
@@ -39,6 +42,7 @@ function Router() {
       <Route path="/judgment" component={JudgmentPage} />
       <Route path="/precision" component={PrecisionInspectionPage} />
       <Route path="/memo" component={MemoPage} />
+      <Route path="/safety" component={SafetyPage} />
       <Route component={NotFound} />
     </Switch>
   );
