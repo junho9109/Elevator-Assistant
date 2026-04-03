@@ -726,6 +726,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try { const d = insertJudgmentResultSchema.parse(req.body); res.status(201).json(await storage.upsertJudgmentResult(d)); } catch (error) { res.status(400).json({ error: "Invalid judgment result data" }); }
   });
 
+
+  // PPE routes
+  app.get("/api/ppe", async (req, res) => {
+    try { res.json(await storage.getAllPpeItems()); } catch (error) { handleError(res, error, "Failed to fetch PPE items"); }
+  });
+  app.post("/api/ppe", async (req, res) => {
+    try { const d = insertPpeItemSchema.parse(req.body); res.status(201).json(await storage.createPpeItem(d)); } catch (error) { res.status(400).json({ error: "Invalid PPE data" }); }
+  });
+  app.delete("/api/ppe/:id", async (req, res) => {
+    try { await storage.deletePpeItem(parseInt(req.params.id)); res.status(204).send(); } catch (error) { res.status(500).json({ error: "Failed to delete PPE item" }); }
+  });
+
+  // Near miss routes
+  app.get("/api/near-misses", async (req, res) => {
+    try { res.json(await storage.getAllNearMisses()); } catch (error) { handleError(res, error, "Failed to fetch near misses"); }
+  });
+  app.post("/api/near-misses", async (req, res) => {
+    try { const d = insertNearMissSchema.parse(req.body); res.status(201).json(await storage.createNearMiss(d)); } catch (error) { res.status(400).json({ error: "Invalid near miss data" }); }
+  });
+  app.delete("/api/near-misses/:id", async (req, res) => {
+    try { await storage.deleteNearMiss(parseInt(req.params.id)); res.status(204).send(); } catch (error) { res.status(500).json({ error: "Failed to delete near miss" }); }
+  });
+
+  // Judgment results routes
+  app.get("/api/judgment-results/:sessionId", async (req, res) => {
+    try { res.json(await storage.getJudgmentResults(req.params.sessionId)); } catch (error) { handleError(res, error, "Failed to fetch judgment results"); }
+  });
+  app.post("/api/judgment-results", async (req, res) => {
+    try { const d = insertJudgmentResultSchema.parse(req.body); res.status(201).json(await storage.upsertJudgmentResult(d)); } catch (error) { res.status(400).json({ error: "Invalid judgment result data" }); }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
