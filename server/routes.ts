@@ -596,7 +596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/custom-items", async (req, res) => {
     try {
-      const validatedData = insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema.parse(req.body);
+      const validatedData = insertCustomInspectionItemSchema.parse(req.body)
       const item = await storage.createCustomInspectionItem(validatedData);
       res.status(201).json(item);
     } catch (error) {
