@@ -234,3 +234,59 @@ export const insertCustomInspectionItemSchema = createInsertSchema(customInspect
 
 export type InsertCustomInspectionItem = z.infer<typeof insertCustomInspectionItemSchema>;
 export type CustomInspectionItem = typeof customInspectionItems.$inferSelect;
+
+// PPE (개인보호구) 테이블
+export const ppeItems = pgTable("ppe_items", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  issuedDate: varchar("issued_date", { length: 10 }),
+  expiryDate: varchar("expiry_date", { length: 10 }),
+  standard: text("standard"),
+  howToWear: text("how_to_wear"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertPpeItemSchema = createInsertSchema(ppeItems).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPpeItem = z.infer<typeof insertPpeItemSchema>;
+export type PpeItem = typeof ppeItems.$inferSelect;
+
+// 아차사고 테이블
+export const nearMisses = pgTable("near_misses", {
+  id: serial("id").primaryKey(),
+  date: varchar("date", { length: 10 }).notNull(),
+  disasterType: text("disaster_type").notNull(),
+  workType: text("work_type").notNull(),
+  description: text("description").notNull(),
+  imageUrls: text("image_urls").array(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertNearMissSchema = createInsertSchema(nearMisses).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  imageUrls: z.array(z.string()).nullable().optional(),
+});
+export type InsertNearMiss = z.infer<typeof insertNearMissSchema>;
+export type NearMiss = typeof nearMisses.$inferSelect;
+
+// 판정결과 저장 테이블
+export const judgmentResults = pgTable("judgment_results", {
+  id: serial("id").primaryKey(),
+  sessionId: varchar("session_id", { length: 50 }).notNull(),
+  itemId: varchar("item_id", { length: 50 }).notNull(),
+  result: varchar("result", { length: 20 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertJudgmentResultSchema = createInsertSchema(judgmentResults).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertJudgmentResult = z.infer<typeof insertJudgmentResultSchema>;
+export type JudgmentResult = typeof judgmentResults.$inferSelect;

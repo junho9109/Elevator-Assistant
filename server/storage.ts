@@ -1,4 +1,5 @@
 import { 
+  head -5 server/storage.ts
   type User, 
   type InsertUser,
   type Category,
@@ -22,6 +23,15 @@ import {
   type InspectionItemEdit,
   type InsertInspectionItemEdit,
   type CustomInspectionItem,
+  type PpeItem,
+  type InsertPpeItem,
+  type NearMiss as NearMissType,
+  type InsertNearMiss,
+  type JudgmentResult,
+  type InsertJudgmentResult,
+  ppeItems,
+  nearMisses,
+  judgmentResults,
   type InsertCustomInspectionItem,
   users,
   categories,
@@ -399,6 +409,48 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCustomInspectionItem(itemId: string): Promise<void> {
     await db.delete(customInspectionItems).where(eq(customInspectionItems.itemId, itemId));
+  }
+// PPE methods
+  async getAllPpeItems(): Promise<PpeItem[]> {
+    return await db.select().from(ppeItems).orderBy(ppeItems.createdAt);
+  }
+  async createPpeItem(item: InsertPpeItem): Promise<PpeItem> {
+    const [created] = await db.insert(ppeItems).values(item).returning();
+    return created;
+  }
+  async deletePpeItem(id: number): Promise<void> {
+    await db.delete(ppeItems).where(eq(ppeItems.id, id));
+  }
+
+  // Near miss methods
+  async getAllNearMisses(): Promise<NearMiss[]> {
+    return await db.select().from(nearMisses).orderBy(nearMisses.createdAt);
+  }
+  async createNearMiss(item: InsertNearMiss): Promise<NearMiss> {
+    const [created] = await db.insert(nearMisses).values(item).returning();
+    return created;
+  }
+  async deleteNearMiss(id: number): Promise<void> {
+    await db.delete(nearMisses).where(eq(nearMisses.id, id));
+  }
+
+  // Judgment results methods
+  async getJudgmentResults(sessionId: string): Promise<JudgmentResult[]> {
+    return await db.select().from(judgmentResults).where(eq(judgmentResults.sessionId, sessionId));
+  }
+  async upsertJudgmentResult(data: InsertJudgmentResult): Promise<JudgmentResult> {
+    const existing = await db.select().from(judgmentResults)
+      .where(eq(judgmentResults.sessionId, data.sessionId))
+      .where(eq(judgmentResults.itemId, data.itemId));
+    if (existing.length > 0) {
+      const [updated] = await db.update(judgmentResults)
+        .set({ result: data.result, updatedAt: new Date() })
+        .where(eq(judgmentResults.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(judgmentResults).values(data).returning();
+    return created;
   }
 }
 

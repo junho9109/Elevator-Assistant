@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
-import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema } from "@shared/schema";
+import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema } from "@shared/schema";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -596,7 +596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/custom-items", async (req, res) => {
     try {
-      const validatedData = insertCustomInspectionItemSchema.parse(req.body);
+      const validatedData = insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema.parse(req.body);
       const item = await storage.createCustomInspectionItem(validatedData);
       res.status(201).json(item);
     } catch (error) {
@@ -612,6 +612,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       handleError(res, error, "Failed to fetch custom items");
     }
+  });
+
+// PPE routes
+  app.get("/api/ppe", async (req, res) => {
+    try {
+      const items = await storage.getAllPpeItems();
+      res.json(items);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch PPE items");
+    }
+  });
+
+  app.post("/api/ppe", async (req, res) => {
+    try {
+      const validatedData = insertPpeItemSchema.parse(req.body);
+      const item = await storage.createPpeItem(validatedData);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid PPE data" });
+    }
+  });
+
+  app.delete("/api/ppe/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deletePpeItem(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete PPE item" });
+    }
+  });
+
+  // Near miss routes
+  app.get("/api/near-misses", async (req, res) => {
+    try {
+      const items = await storage.getAllNearMisses();
+      res.json(items);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch near misses");
+    }
+  });
+
+  app.post("/api/near-misses", async (req, res) => {
+    try {
+      const validatedData = insertNearMissSchema.parse(req.body);
+      const item = await storage.createNearMiss(validatedData);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid near miss data" });
+    }
+  });
+
+  app.delete("/api/near-misses/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteNearMiss(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete near miss" });
+    }
+  });
+
+  // Judgment results routes
+  app.get("/api/judgment-results/:sessionId", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const results = await storage.getJudgmentResults(sessionId);
+      res.json(results);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch judgment results");
+    }
+  });
+
+  app.post("/api/judgment-results", async (req, res) => {
+    try {
+      const validatedData = insertJudgmentResultSchema.parse(req.body);
+      const result = await storage.upsertJudgmentResult(validatedData);
+      res.status(201).json(result);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid judgment result data" });
+    }
+  });
+
+
+  // PPE routes
+  app.get("/api/ppe", async (req, res) => {
+    try { res.json(await storage.getAllPpeItems()); } catch (error) { handleError(res, error, "Failed to fetch PPE items"); }
+  });
+  app.post("/api/ppe", async (req, res) => {
+    try { const d = insertPpeItemSchema.parse(req.body); res.status(201).json(await storage.createPpeItem(d)); } catch (error) { res.status(400).json({ error: "Invalid PPE data" }); }
+  });
+  app.delete("/api/ppe/:id", async (req, res) => {
+    try { await storage.deletePpeItem(parseInt(req.params.id)); res.status(204).send(); } catch (error) { res.status(500).json({ error: "Failed to delete PPE item" }); }
+  });
+
+  // Near miss routes
+  app.get("/api/near-misses", async (req, res) => {
+    try { res.json(await storage.getAllNearMisses()); } catch (error) { handleError(res, error, "Failed to fetch near misses"); }
+  });
+  app.post("/api/near-misses", async (req, res) => {
+    try { const d = insertNearMissSchema.parse(req.body); res.status(201).json(await storage.createNearMiss(d)); } catch (error) { res.status(400).json({ error: "Invalid near miss data" }); }
+  });
+  app.delete("/api/near-misses/:id", async (req, res) => {
+    try { await storage.deleteNearMiss(parseInt(req.params.id)); res.status(204).send(); } catch (error) { res.status(500).json({ error: "Failed to delete near miss" }); }
+  });
+
+  // Judgment results routes
+  app.get("/api/judgment-results/:sessionId", async (req, res) => {
+    try { res.json(await storage.getJudgmentResults(req.params.sessionId)); } catch (error) { handleError(res, error, "Failed to fetch judgment results"); }
+  });
+  app.post("/api/judgment-results", async (req, res) => {
+    try { const d = insertJudgmentResultSchema.parse(req.body); res.status(201).json(await storage.upsertJudgmentResult(d)); } catch (error) { res.status(400).json({ error: "Invalid judgment result data" }); }
   });
 
   const httpServer = createServer(app);
