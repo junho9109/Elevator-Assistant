@@ -1,5 +1,4 @@
 import { 
-  head -5 server/storage.ts
   type User, 
   type InsertUser,
   type Category,
