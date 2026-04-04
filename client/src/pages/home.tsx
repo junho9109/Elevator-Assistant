@@ -19,11 +19,11 @@ type Message = { role: "user" | "assistant"; content: string; time: string; };
 
 const QUICK_QUESTIONS = [
   "오늘 안전 체크리스트",
-  "엘리베이터 정밀안전검사란?",
-  "과속조절기 점검 방법",
+  "UCMP 기준 알려줘",
   "피트 안전 기준",
-  "승강장문 잠금장치 기준",
-  "카 추락방지 장치란?",
+  "과속조절기 점검 방법",
+  "최근 개정 기준 요약",
+  "승강장문 잠금 기준",
 ];
 
 function getRuleBasedAnswer(question: string): string {
@@ -68,8 +68,16 @@ function getRuleBasedAnswer(question: string): string {
     return `⚙️ **기계실 주요 점검 항목**\n\n**권상기/구동기**\n• 권상기 고정 상태 (철골/내력벽 위)\n• 전자-기계 브레이크 작동\n• 오버밸런스(균형량) 확인\n\n**제어반**\n• 주개폐기 차단 시 운동 방지\n• 조명: 작업부 200lx, 비상운전 50lx\n• 콘센트 1개 이상\n\n**자동구출운전**\n• 정전 시 카 층 이동 확인\n• 비상발전기 연동 상태`;
   }
 
+  if (q.includes("ucmp") || q.includes("개문출발") || q.includes("문출발")) {
+    return `개문출발방지장치 (UCMP)\n\n작동 원리\n카가 층에 정지하지 않은 상태에서 승강장문이 열리면 즉시 카를 정지시키는 장치입니다.\n\n점검 기준\n• 이중브레이크와 로프브레이크 동시 작동 금지\n• 정밀안전검사 시 100% 및 무부하 조건 모두 시험\n• 기존 승강기 추가 설치 시 안전성 평가 대상\n\n2025 개정\n기존 설치 승강기까지 의무 확대 적용 중입니다. 미설치 시 조건부합격 또는 사용중지 처분 가능합니다.`;
+  }
+
+  if (q.includes("개정") || q.includes("최근 기준") || q.includes("변경")) {
+    return `2025년 주요 개정 기준 요약\n\n안전장치\n• UCMP 기존 승강기 의무화 확대\n• 카 비상조명 작동시간: 1시간 → 2시간\n• 자동구출운전 확인 방법 구체화\n\n환경 기준\n• 피트 조명: 10lx → 20lx 강화\n• 기계실 에어컨 자가증발식 허용 (조건부)\n\n구조 기준\n• 피트 사다리 발판 규격 명확화\n• 승강로 유리벽 접합유리 기준 강화\n\n검사 시 위 항목을 우선적으로 확인하시기 바랍니다.`;
+  }
+
   // 기본 답변
-  return `🤖 **엘리베이터 안전 비서입니다**\n\n아래 주제에 대해 답변할 수 있어요:\n\n• 정밀안전검사 절차\n• 과속조절기/추락방지 장치\n• 피트/승강장문 기준\n• 오늘의 안전 체크리스트\n• 응급처치/CPR\n• 개인보호구(PPE)\n• 기계실 점검 항목\n\n위 빠른 질문을 눌러보거나 직접 입력해보세요!`;
+  return `답변 가능한 주제\n\n• 정밀안전검사 절차 및 기준\n• UCMP / 추락방지 장치\n• 피트 / 승강장문 기준\n• 2025년 개정 기준 요약\n• 오늘의 안전 체크리스트\n• 응급처치 / CPR\n• 개인보호구 (PPE)\n• 기계실 점검 항목\n\n빠른 질문을 눌러보거나 직접 입력해보세요.`;
 }
 
 function formatTime(): string {
@@ -145,7 +153,26 @@ export default function Home() {
 
   // 채팅
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: `안녕하세요! 👋 엘리베이터 안전 비서입니다.\n\n검사 기준, 안전 절차, 응급처치 등 궁금한 것을 물어보세요.\n아래 빠른 질문을 눌러보세요!`, time: formatTime() }
+    {
+      role: "assistant",
+      content: `엘리베이터 안전 비서입니다.\n\n오늘의 주요 안전 정보를 확인하세요.`,
+      time: formatTime()
+    },
+    {
+      role: "assistant",
+      content: `최근 빈도 높은 사고 유형 (2024~2025)\n\n1위  승강장문 열림 주행 — 문닫힘 안전장치 불량\n2위  피트 추락 — 최하층 정지장치 미작동\n3위  카 상부 끼임 — 점검운전 중 안전스위치 미사용\n\n위 3가지는 정기검사 시 집중 점검 항목입니다.`,
+      time: formatTime()
+    },
+    {
+      role: "assistant",
+      content: `2025년 주요 개정 기준\n\n• 개문출발방지장치(UCMP) 기존 승강기 의무화 확대\n• 피트 조명 기준 강화: 피트 전 구간 10lx → 20lx\n• 카 비상조명 작동시간 연장: 1시간 → 2시간\n• 자동구출운전 작동 확인 방법 구체화\n\n검사 시 해당 항목 반드시 확인하세요.`,
+      time: formatTime()
+    },
+    {
+      role: "assistant",
+      content: `궁금한 기준이나 점검 방법을 질문하거나, 아래 빠른 질문을 눌러보세요.`,
+      time: formatTime()
+    }
   ]);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -546,7 +573,7 @@ export default function Home() {
       {/* 탭 */}
       <div className="bg-card border-b border-border px-4">
         <div className="max-w-2xl mx-auto flex">
-          {[{key:"chat",label:"💬 비서"},{key:"map",label:"🗺️ 기술자료"}].map(tab => (
+          {[{key:"chat",label:"비서"},{key:"map",label:"기술자료"}].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab===tab.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {tab.label}
             </button>
@@ -573,7 +600,15 @@ export default function Home() {
                       ? "bg-primary text-primary-foreground rounded-tr-sm"
                       : "bg-card border border-border rounded-tl-sm"
                   }`}>
-                    {msg.content}
+                    {msg.content.split('\n').map((line, i) => {
+                    const isBold = /^[0-9]+(위|\.) /.test(line) || /^•/.test(line);
+                    return (
+                      <span key={i}>
+                        {i > 0 && <br />}
+                        {isBold ? <span className="font-medium">{line}</span> : line}
+                      </span>
+                    );
+                  })}
                   </div>
                   <span className="text-xs text-muted-foreground px-1">{msg.time}</span>
                 </div>
