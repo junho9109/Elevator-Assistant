@@ -1237,7 +1237,7 @@ export default function JudgmentPage() {
                        sectionCustomItems.length > 0;
     
     return (
-      <div key={section.id} className={cn("border-b border-border", depth === 0 && "bg-slate-50")}>
+      <div key={section.id} className={cn("border-b border-border", depth === 0 && "bg-muted/30")}>
         <button
           className={cn(
             "w-full flex items-center gap-2 p-3 text-left hover:bg-accent/50 transition-colors",
@@ -1280,7 +1280,7 @@ export default function JudgmentPage() {
     <>
       <div ref={zoomContentRef} className="min-h-screen bg-background p-4 md:p-8 font-sans text-foreground">
         <div className="mx-auto max-w-5xl bg-card rounded-3xl shadow-2xl border border-border overflow-hidden">
-          <div className="p-6 border-b border-border bg-slate-50">
+          <div className="p-6 border-b border-border bg-muted/30">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
@@ -1410,7 +1410,7 @@ export default function JudgmentPage() {
         </div>
 
         <div className="overflow-hidden">
-          <div className="flex items-center justify-end gap-2 p-2 bg-slate-50 border-b border-border">
+          <div className="flex items-center justify-end gap-2 p-2 bg-muted/30 border-b border-border">
             <Button 
               variant="outline" 
               size="sm" 
@@ -1766,14 +1766,14 @@ export default function JudgmentPage() {
                             placeholder="작성자"
                             value={newComment.author}
                             onChange={(e) => setNewComment(prev => ({ ...prev, author: e.target.value }))}
-                            className="w-24 bg-white"
+                            className="w-24 bg-card"
                             data-testid="input-comment-author"
                           />
                           <Input
                             placeholder="댓글 내용"
                             value={newComment.content}
                             onChange={(e) => setNewComment(prev => ({ ...prev, content: e.target.value }))}
-                            className="flex-1 bg-white"
+                            className="flex-1 bg-card"
                             onKeyDown={(e) => {
                               if (e.key === "Enter" && newComment.author && newComment.content) {
                                 createComment.mutate();
@@ -1800,7 +1800,7 @@ export default function JudgmentPage() {
                     ) : (
                       <div className="space-y-2">
                         {itemComments.map((comment: any) => (
-                          <div key={comment.id} className="p-3 bg-white border rounded-lg">
+                          <div key={comment.id} className="p-3 bg-card border rounded-lg">
                             <div className="flex items-center justify-between mb-1">
                               <span className="font-medium text-sm">{comment.author}</span>
                               <div className="flex items-center gap-2">
