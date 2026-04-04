@@ -1237,7 +1237,7 @@ export default function JudgmentPage() {
                        sectionCustomItems.length > 0;
     
     return (
-      <div key={section.id} className={cn("border-b border-border", depth === 0 && "bg-muted/30")}>
+      <div key={section.id} className={cn("border-b border-border")}>
         <button
           className={cn(
             "w-full flex items-center gap-2 p-3 text-left hover:bg-accent/50 transition-colors",
@@ -1410,7 +1410,7 @@ export default function JudgmentPage() {
         </div>
 
         <div className="overflow-hidden">
-          <div className="flex items-center justify-end gap-2 p-2 bg-muted/30 border-b border-border">
+          <div className="flex items-center justify-end gap-2 p-2 bg-card border-b border-border">
             <Button 
               variant="outline" 
               size="sm" 
@@ -1834,7 +1834,7 @@ export default function JudgmentPage() {
         </DialogContent>
       </Dialog>
       </div>
-      <ZoomControl contentRef={zoomContentRef} storageKey="judgmentPageZoom" />
+
 
       {/* Image Viewer Portal */}
       {imageViewer.isOpen && createPortal(
