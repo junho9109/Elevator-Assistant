@@ -1428,7 +1428,7 @@ export default function JudgmentPage() {
               전체 접기
             </Button>
           </div>
-          <div className="bg-slate-100 border-b border-border">
+          <div className="bg-muted/50 border-b border-border">
             <div className="flex items-center">
               <div className="flex-1 p-3 font-semibold text-center border-r border-border">검사기준</div>
               <div className="w-12 p-3 text-xs font-semibold text-center border-r border-border">적합</div>
