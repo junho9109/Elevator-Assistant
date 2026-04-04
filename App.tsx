@@ -10,9 +10,6 @@ import MemoPage from "@/pages/memo";
 import SafetyPage from "@/pages/safety";
 import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
-import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
 function MainApp() {
   return (
@@ -25,11 +22,11 @@ function MainApp() {
         <SafetyPage key="safety" />
       ]}
       pageNames={[
-        "기술자료조회",
-        "판정결과(도우미)",
-        "정밀안전검사",
+        "비서",
+        "판정결과",
+        "정밀검사",
         "메모",
-        "안전보건관리"
+        "안전보건"
       ]}
     />
   );
@@ -49,32 +46,11 @@ function Router() {
 }
 
 function App() {
-  const { toast } = useToast();
-
-  const handleRefresh = async () => {
-    queryClient.invalidateQueries({ queryKey: ["standards"] });
-    queryClient.invalidateQueries({ queryKey: ["hotspots"] });
-    toast({
-      title: "새로고침 완료"
-    });
-  };
-
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Router />
-
-        {/* 플로팅 강제 OTA 새로고침 버튼 */}
-        <Button
-          variant="outline"
-          size="icon"
-          className="fixed bottom-6 right-6 z-50 rounded-full shadow-lg bg-white hover:bg-blue-50 border border-gray-300 hover:border-blue-400 transition-all hover:scale-110"
-          onClick={handleRefresh}
-          title="OTA 업데이트 강제 체크 + 새로고침"
-        >
-          <RefreshCw className="h-5 w-5" />
-        </Button>
       </TooltipProvider>
     </QueryClientProvider>
   );

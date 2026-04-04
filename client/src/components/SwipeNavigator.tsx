@@ -1,108 +1,82 @@
-import { useState, useEffect } from "react";
-import { ChevronDown } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 
 interface SwipeNavigatorProps {
   pages: React.ReactNode[];
   pageNames: string[];
 }
 
+const PAGE_ICONS = ["💬", "⚖️", "🔍", "📝", "🦺"];
+
 export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavigatorProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [showNav, setShowNav] = useState(true);
-  const [isFixed, setIsFixed] = useState(false);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
 
-  // currentIndex가 바뀔 때마다 (버튼 클릭/스와이프 모두 포함) 타이머 재시작
-  useEffect(() => {
-    if (isFixed) return; // 고정 상태면 숨김 타이머 실행 안 함
-
-    // 페이지 변경 시 무조건 먼저 보이게 초기화
-    setShowNav(true);
-
-    const timer = setTimeout(() => {
-      setShowNav(false);
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [currentIndex, isFixed]);
-
-  // 터치 스와이프 기능 (기존 유지)
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    const startX = e.touches[0].clientX;
-
-    const handleTouchEnd = (e2: TouchEvent) => {
-      const endX = e2.changedTouches[0].clientX;
-      const diff = startX - endX;
-
-      if (diff > 50 && currentIndex < pages.length - 1) {
-        setCurrentIndex(currentIndex + 1);
-      } else if (diff < -50 && currentIndex > 0) {
-        setCurrentIndex(currentIndex - 1);
-      }
-
-      document.removeEventListener("touchend", handleTouchEnd);
-    };
-
-    document.addEventListener("touchend", handleTouchEnd);
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
   };
 
-  // 네비게이션 열기 버튼 클릭 시 고정 모드 ON
-  const openNav = () => {
-    setShowNav(true);
-    setIsFixed(true);
-  };
-
-  // 페이지 버튼 클릭 시 고정 해제 (필요 시)
-  const changePage = (newIndex: number) => {
-    setCurrentIndex(newIndex);
-    setIsFixed(false); // 페이지 이동 시 고정 해제 → 타이머 재시작
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    const dx = touchStartX.current - e.changedTouches[0].clientX;
+    const dy = Math.abs(touchStartY.current - e.changedTouches[0].clientY);
+    if (Math.abs(dx) > 60 && dy < 80) {
+      if (dx > 0 && currentIndex < pages.length - 1) setCurrentIndex(i => i + 1);
+      else if (dx < 0 && currentIndex > 0) setCurrentIndex(i => i - 1);
+    }
   };
 
   return (
-    <div className="relative min-h-screen" onTouchStart={handleTouchStart}>
-      {/* 네비게이션 영역 */}
+    <div className="flex flex-col h-screen bg-background">
+      {/* 페이지 */}
       <div
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-700 ${
-          showNav ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-full pointer-events-none"
-        }`}
+        className="flex-1 overflow-hidden relative"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
       >
-        <div className="bg-white shadow-md border-b p-3">
-          <div className="flex justify-center gap-6 text-sm font-medium">
-            {Array.isArray(pageNames) && pageNames.length > 0 ? (
-              pageNames.map((name: string, i: number) => (
-                <button
-                  key={i}
-                  className={`pb-1 px-3 ${
-                    i === currentIndex
-                      ? "border-b-2 border-blue-600 text-blue-600 font-semibold"
-                      : "text-gray-600 hover:text-blue-600"
-                  }`}
-                  onClick={() => changePage(i)}  // ← 여기서 고정 해제 + 타이머 재시작
-                >
-                  {name}
-                </button>
-              ))
-            ) : (
-              <span className="text-gray-500">네비게이션 로딩 중...</span>
-            )}
+        {pages.map((page, i) => (
+          <div
+            key={i}
+            className="absolute inset-0 overflow-y-auto transition-opacity duration-200"
+            style={{
+              opacity: currentIndex === i ? 1 : 0,
+              pointerEvents: currentIndex === i ? "auto" : "none",
+              zIndex: currentIndex === i ? 1 : 0,
+            }}
+          >
+            {page}
           </div>
-        </div>
+        ))}
       </div>
 
-      {/* 숨김 상태에서 다시 보기 버튼 */}
-      {!showNav && (
-        <button
-          onClick={openNav}
-          className="fixed top-2 left-1/2 -translate-x-1/2 z-50 bg-white shadow-lg border border-gray-200 hover:border-blue-400 text-blue-600 px-4 py-2 rounded-full transition-all hover:scale-105 flex items-center gap-2 text-sm"
-          title="네비게이션 다시 보기"
-        >
-          <ChevronDown className="h-4 w-4 rotate-180" />
-          네비게이션 열기
-        </button>
-      )}
-
-      {/* 현재 페이지 콘텐츠 */}
-      <div className="pt-16">
-        {pages[currentIndex] || <div className="p-8 text-center text-gray-500">페이지 로딩 중...</div>}
+      {/* 하단 탭바 - 애플 스타일 */}
+      <div
+        className="flex-shrink-0 border-t border-border bg-card/80"
+        style={{ backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <div className="flex">
+          {pageNames.map((name, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentIndex(i)}
+              className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all duration-150 ${
+                currentIndex === i
+                  ? "text-primary"
+                  : "text-muted-foreground"
+              }`}
+            >
+              <span className={`text-xl transition-transform duration-150 ${currentIndex === i ? "scale-110" : "scale-100"}`}>
+                {PAGE_ICONS[i] || "📄"}
+              </span>
+              <span className={`text-[10px] font-medium tracking-tight ${currentIndex === i ? "font-semibold" : ""}`}>
+                {name.length > 5 ? name.slice(0, 5) + "…" : name}
+              </span>
+              {currentIndex === i && (
+                <div className="w-1 h-1 rounded-full bg-primary mt-0.5" />
+              )}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
