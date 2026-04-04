@@ -1,11 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 
 interface SwipeNavigatorProps {
   pages: React.ReactNode[];
   pageNames: string[];
 }
-
-const PAGE_ICONS = ["💬", "⚖️", "🔍", "📝", "🦺"];
 
 export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavigatorProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -49,7 +47,7 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
         ))}
       </div>
 
-      {/* 하단 탭바 - 애플 스타일 */}
+      {/* 하단 탭바 */}
       <div
         className="flex-shrink-0 border-t border-border bg-card/80"
         style={{ backdropFilter: "saturate(180%) blur(20px)", WebkitBackdropFilter: "saturate(180%) blur(20px)", paddingBottom: "env(safe-area-inset-bottom)" }}
@@ -59,20 +57,15 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
             <button
               key={i}
               onClick={() => setCurrentIndex(i)}
-              className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all duration-150 ${
-                currentIndex === i
-                  ? "text-primary"
-                  : "text-muted-foreground"
+              className={`flex-1 flex flex-col items-center justify-center py-3 transition-all duration-150 ${
+                currentIndex === i ? "text-primary" : "text-muted-foreground"
               }`}
             >
-              <span className={`text-xl transition-transform duration-150 ${currentIndex === i ? "scale-110" : "scale-100"}`}>
-                {PAGE_ICONS[i] || "📄"}
-              </span>
-              <span className={`text-[10px] font-medium tracking-tight ${currentIndex === i ? "font-semibold" : ""}`}>
-                {name.length > 5 ? name.slice(0, 5) + "…" : name}
+              <span className={`text-xs font-medium tracking-tight ${currentIndex === i ? "font-semibold" : ""}`}>
+                {name}
               </span>
               {currentIndex === i && (
-                <div className="w-1 h-1 rounded-full bg-primary mt-0.5" />
+                <div className="w-4 h-0.5 rounded-full bg-primary mt-1" />
               )}
             </button>
           ))}

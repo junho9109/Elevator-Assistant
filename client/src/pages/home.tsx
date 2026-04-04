@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { ZoomControl } from "@/components/ZoomControl";
 import defaultStructureImg from "@assets/structure_1764142259144.png";
 import Fuse from "fuse.js";
-import { Search, RefreshCw, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, ChevronDown } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -198,7 +198,24 @@ export default function Home() {
     }, 600);
   }, []);
 
-  // Canvas 그리기
+  // 리더라인 설정 (핫스팟별 카드 오프셋)
+  const getCardOffset = (hotspot: Hotspot, canvasW: number, canvasH: number) => {
+    const x = (parseFloat(hotspot.left) / 100) * canvasW;
+    const y = (parseFloat(hotspot.top) / 100) * canvasH;
+    const cardW = 72;
+    const cardH = 26;
+    const lineLen = 55;
+    // 위치에 따라 카드 방향 자동 결정
+    const goLeft = x > canvasW * 0.55;
+    const goUp = y > canvasH * 0.6;
+    const dx = goLeft ? -lineLen : lineLen;
+    const dy = goUp ? -lineLen * 0.6 : lineLen * 0.6;
+    const cardX = goLeft ? x + dx - cardW : x + dx;
+    const cardY = y + dy - cardH / 2;
+    return { dx, dy, cardX, cardY, cardW, cardH, lineEndX: x + dx, lineEndY: y + dy };
+  };
+
+  // Canvas 그리기 (리더라인 + 카드형 태그)
   const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -210,30 +227,84 @@ export default function Home() {
       canvas.width = img.width;
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
+
       hotspots.forEach((hotspot) => {
         const x = (parseFloat(hotspot.left) / 100) * canvas.width;
         const y = (parseFloat(hotspot.top) / 100) * canvas.height;
         const isActive = activeButtonId === hotspot.id;
-        const radius = 20;
+        const { dx, dy, cardX, cardY, cardW, cardH, lineEndX, lineEndY } = getCardOffset(hotspot, canvas.width, canvas.height);
+
+        // 활성화 시 부품 하이라이트 (은은한 원형 글로우)
+        if (isActive) {
+          ctx.save();
+          const grd = ctx.createRadialGradient(x, y, 0, x, y, 35);
+          grd.addColorStop(0, "rgba(37,99,235,0.18)");
+          grd.addColorStop(1, "rgba(37,99,235,0)");
+          ctx.fillStyle = grd;
+          ctx.beginPath();
+          ctx.arc(x, y, 35, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // 앵커 점 (부품 위치 표시)
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = isActive ? "#2563eb" : editMode ? "rgba(234,88,12,0.85)" : "rgba(30,41,55,0.85)";
-        ctx.shadowColor = "rgba(0,0,0,0.4)";
-        ctx.shadowBlur = 6;
-        ctx.shadowOffsetY = 2;
+        ctx.arc(x, y, editMode ? 5 : 4, 0, Math.PI * 2);
+        ctx.fillStyle = isActive ? "#2563eb" : editMode ? "#ea580c" : "#475569";
+        ctx.shadowColor = isActive ? "rgba(37,99,235,0.5)" : "rgba(0,0,0,0.3)";
+        ctx.shadowBlur = isActive ? 8 : 4;
         ctx.fill();
         ctx.restore();
+
+        // 리더라인
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = isActive ? "#93c5fd" : editMode ? "#fed7aa" : "#ffffff";
-        ctx.lineWidth = isActive ? 3 : 1.5;
+        ctx.moveTo(x, y);
+        // 꺾인 선 (L자형)
+        ctx.lineTo(x + dx * 0.5, y + dy);
+        ctx.lineTo(lineEndX, lineEndY);
+        ctx.strokeStyle = isActive ? "rgba(37,99,235,0.7)" : editMode ? "rgba(234,88,12,0.6)" : "rgba(71,85,105,0.5)";
+        ctx.lineWidth = isActive ? 1.5 : 1;
+        ctx.setLineDash(isActive ? [] : [4, 3]);
         ctx.stroke();
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 8px sans-serif";
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // 카드 배경
+        const r = 6;
+        ctx.save();
+        ctx.shadowColor = isActive ? "rgba(37,99,235,0.25)" : "rgba(0,0,0,0.12)";
+        ctx.shadowBlur = isActive ? 10 : 5;
+        ctx.shadowOffsetY = 2;
+        ctx.beginPath();
+        ctx.moveTo(cardX + r, cardY);
+        ctx.lineTo(cardX + cardW - r, cardY);
+        ctx.quadraticCurveTo(cardX + cardW, cardY, cardX + cardW, cardY + r);
+        ctx.lineTo(cardX + cardW, cardY + cardH - r);
+        ctx.quadraticCurveTo(cardX + cardW, cardY + cardH, cardX + cardW - r, cardY + cardH);
+        ctx.lineTo(cardX + r, cardY + cardH);
+        ctx.quadraticCurveTo(cardX, cardY + cardH, cardX, cardY + cardH - r);
+        ctx.lineTo(cardX, cardY + r);
+        ctx.quadraticCurveTo(cardX, cardY, cardX + r, cardY);
+        ctx.closePath();
+        ctx.fillStyle = isActive ? "#2563eb" : editMode ? "#ea580c" : "rgba(255,255,255,0.92)";
+        ctx.fill();
+
+        // 카드 테두리
+        ctx.strokeStyle = isActive ? "#1d4ed8" : editMode ? "#c2410c" : "rgba(203,213,225,0.8)";
+        ctx.lineWidth = isActive ? 0 : 0.8;
+        ctx.stroke();
+        ctx.restore();
+
+        // 카드 텍스트
+        ctx.save();
+        ctx.fillStyle = isActive ? "#ffffff" : editMode ? "#ffffff" : "#1e293b";
+        ctx.font = `${isActive ? "600" : "500"} 10px -apple-system, 'Pretendard', sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(hotspot.label, x, y);
+        ctx.fillText(hotspot.label, cardX + cardW / 2, cardY + cardH / 2);
+        ctx.restore();
       });
     };
   }, [hotspots, activeButtonId, structureImg, editMode]);
@@ -270,9 +341,13 @@ export default function Home() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     hotspots.forEach(hotspot => {
-      const btnX = (parseFloat(hotspot.left) / 100) * canvas.width;
-      const btnY = (parseFloat(hotspot.top) / 100) * canvas.height;
-      if (Math.hypot(px - btnX, py - btnY) < 25 && !editMode) setActiveButtonId(hotspot.id);
+      const x = (parseFloat(hotspot.left) / 100) * canvas.width;
+      const y = (parseFloat(hotspot.top) / 100) * canvas.height;
+      const { cardX, cardY, cardW, cardH } = getCardOffset(hotspot, canvas.width, canvas.height);
+      // 앵커점 또는 카드 영역 클릭 감지
+      const hitAnchor = Math.hypot(px - x, py - y) < 20;
+      const hitCard = px >= cardX && px <= cardX + cardW && py >= cardY && py <= cardY + cardH;
+      if ((hitAnchor || hitCard) && !editMode) setActiveButtonId(hotspot.id);
     });
   };
 
@@ -406,9 +481,7 @@ export default function Home() {
               <p className="text-xs text-muted-foreground">규칙 기반 안내 시스템</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => { queryClient.invalidateQueries({ queryKey: ["standards"] }); queryClient.invalidateQueries({ queryKey: ["hotspots"] }); }}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+
         </div>
       </div>
 
