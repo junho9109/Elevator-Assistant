@@ -162,6 +162,12 @@ export default function Home() {
   const [structureImg, setStructureImg] = useState<string>(() => localStorage.getItem("structureImg") || defaultStructureImg);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  // 카드 오프셋 (핫스팟 id → 카드 중심의 캔버스 % 위치)
+  const [cardOffsets, setCardOffsets] = useState<Record<number, {cx: number, cy: number}>>(() => {
+    try { return JSON.parse(localStorage.getItem("cardOffsets") || "{}"); } catch { return {}; }
+  });
+  const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
+  const [cardDragOffset, setCardDragOffset] = useState({ x: 0, y: 0 });
   const [showAddHotspot, setShowAddHotspot] = useState(false);
   const [newHotspotLabel, setNewHotspotLabel] = useState("");
   const [deleteHotspotConfirm, setDeleteHotspotConfirm] = useState<Hotspot | null>(null);
@@ -198,22 +204,34 @@ export default function Home() {
     }, 600);
   }, []);
 
-  // 리더라인 설정 (핫스팟별 카드 오프셋)
-  const getCardOffset = (hotspot: Hotspot, canvasW: number, canvasH: number) => {
+  // 리더라인 설정 (카드 오프셋 저장값 우선, 없으면 자동 계산)
+  const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {
     const x = (parseFloat(hotspot.left) / 100) * canvasW;
     const y = (parseFloat(hotspot.top) / 100) * canvasH;
     const cardW = 72;
     const cardH = 26;
-    const lineLen = 55;
-    // 위치에 따라 카드 방향 자동 결정
-    const goLeft = x > canvasW * 0.55;
-    const goUp = y > canvasH * 0.6;
-    const dx = goLeft ? -lineLen : lineLen;
-    const dy = goUp ? -lineLen * 0.6 : lineLen * 0.6;
-    const cardX = goLeft ? x + dx - cardW : x + dx;
-    const cardY = y + dy - cardH / 2;
-    return { dx, dy, cardX, cardY, cardW, cardH, lineEndX: x + dx, lineEndY: y + dy };
-  };
+
+    let cardCX: number, cardCY: number;
+
+    if (cardOffsets[hotspot.id]) {
+      // 저장된 카드 위치 사용
+      cardCX = (cardOffsets[hotspot.id].cx / 100) * canvasW;
+      cardCY = (cardOffsets[hotspot.id].cy / 100) * canvasH;
+    } else {
+      // 자동 계산
+      const lineLen = 55;
+      const goLeft = x > canvasW * 0.55;
+      const goUp = y > canvasH * 0.6;
+      const dx = goLeft ? -lineLen : lineLen;
+      const dy = goUp ? -lineLen * 0.6 : lineLen * 0.6;
+      cardCX = x + dx + (goLeft ? -cardW / 2 : cardW / 2);
+      cardCY = y + dy;
+    }
+
+    const cardX = cardCX - cardW / 2;
+    const cardY = cardCY - cardH / 2;
+    return { cardX, cardY, cardW, cardH, cardCX, cardCY };
+  }, [cardOffsets]);
 
   // Canvas 그리기 (리더라인 + 카드형 태그)
   const drawCanvas = useCallback(() => {
@@ -232,7 +250,7 @@ export default function Home() {
         const x = (parseFloat(hotspot.left) / 100) * canvas.width;
         const y = (parseFloat(hotspot.top) / 100) * canvas.height;
         const isActive = activeButtonId === hotspot.id;
-        const { dx, dy, cardX, cardY, cardW, cardH, lineEndX, lineEndY } = getCardOffset(hotspot, canvas.width, canvas.height);
+        const { cardX, cardY, cardW, cardH, cardCX, cardCY } = getCardOffset(hotspot, canvas.width, canvas.height);
 
         // 활성화 시 부품 하이라이트 (은은한 원형 글로우)
         if (isActive) {
@@ -257,14 +275,13 @@ export default function Home() {
         ctx.fill();
         ctx.restore();
 
-        // 리더라인
+        // 리더라인 (앵커 → 카드 중심)
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(x, y);
-        // 꺾인 선 (L자형)
-        ctx.lineTo(x + dx * 0.5, y + dy);
-        ctx.lineTo(lineEndX, lineEndY);
-        ctx.strokeStyle = isActive ? "rgba(37,99,235,0.7)" : editMode ? "rgba(234,88,12,0.6)" : "rgba(71,85,105,0.5)";
+        ctx.lineTo(cardCX, y);
+        ctx.lineTo(cardCX, cardCY);
+        ctx.strokeStyle = isActive ? "rgba(37,99,235,0.7)" : editMode ? "rgba(234,88,12,0.6)" : "rgba(71,85,105,0.45)";
         ctx.lineWidth = isActive ? 1.5 : 1;
         ctx.setLineDash(isActive ? [] : [4, 3]);
         ctx.stroke();
@@ -356,6 +373,17 @@ export default function Home() {
     const { px, py } = getCanvasCoords(e);
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // 카드 드래그 감지 (앵커보다 먼저 체크)
+    for (const hotspot of hotspots) {
+      const { cardX, cardY, cardW, cardH, cardCX, cardCY } = getCardOffset(hotspot, canvas.width, canvas.height);
+      if (px >= cardX && px <= cardX + cardW && py >= cardY && py <= cardY + cardH) {
+        setDraggingCardId(hotspot.id);
+        setCardDragOffset({ x: px - cardCX, y: py - cardCY });
+        return;
+      }
+    }
+
     hotspots.forEach(hotspot => {
       const btnX = (parseFloat(hotspot.left) / 100) * canvas.width;
       const btnY = (parseFloat(hotspot.top) / 100) * canvas.height;
@@ -367,7 +395,28 @@ export default function Home() {
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!editMode || draggingId === null) return;
+    if (!editMode) return;
+
+    // 카드 드래그 이동
+    if (draggingCardId !== null) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+      const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+      const newCX = px - cardDragOffset.x;
+      const newCY = py - cardDragOffset.y;
+      setCardOffsets(prev => ({
+        ...prev,
+        [draggingCardId]: {
+          cx: (newCX / canvas.width) * 100,
+          cy: (newCY / canvas.height) * 100,
+        }
+      }));
+      return;
+    }
+
+    if (draggingId === null) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -398,7 +447,16 @@ export default function Home() {
   };
 
   const handleMouseUp = async (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!editMode || draggingId === null) return;
+    if (!editMode) return;
+
+    // 카드 드래그 종료 - localStorage 저장
+    if (draggingCardId !== null) {
+      localStorage.setItem("cardOffsets", JSON.stringify(cardOffsets));
+      setDraggingCardId(null);
+      return;
+    }
+
+    if (draggingId === null) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -620,7 +678,7 @@ export default function Home() {
             <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-lg border border-border">
               <canvas ref={canvasRef} className={`w-full h-full ${editMode ? "cursor-move" : "cursor-pointer"}`}
                 onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); }} />
+                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { localStorage.setItem("cardOffsets", JSON.stringify(cardOffsets)); setDraggingCardId(null); } }} />
             </div>
 
             {/* 표준화 목록 */}
