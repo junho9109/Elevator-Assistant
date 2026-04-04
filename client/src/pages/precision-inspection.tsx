@@ -138,11 +138,11 @@ export default function PrecisionInspectionPage() {
 
       {/* 상단 도우미 안내창 */}
       <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 z-50 transition-all duration-700 ${showHelper ? 'opacity-100 -translate-y-1/2' : 'opacity-0 -translate-y-[140%] pointer-events-none'}`}>
-        <Card className="w-[420px] shadow-2xl border-blue-200 bg-white">
+        <Card className="w-[420px] shadow-2xl border-primary/30 bg-card">
           <CardHeader>
             <CardTitle className="text-xl text-blue-700">판정결과</CardTitle>
           </CardHeader>
-          <CardContent className="text-sm text-gray-600">
+          <CardContent className="text-sm text-muted-foreground 600">
             건축물 유형, 검사 회차, 단계, 사유를 선택하면<br />
             연장 기간과 필요 서류를 자동으로 정리해 드립니다.
           </CardContent>
@@ -153,7 +153,7 @@ export default function PrecisionInspectionPage() {
       {!showHelper && (
         <button
           onClick={() => setShowHelper(true)}
-          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-white shadow-xl border border-gray-200 hover:border-blue-400 text-blue-600 p-4 rounded-full transition-all hover:scale-110"
+          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-card shadow-xl border border-border hover:border-primary text-primary p-4 rounded-full transition-all hover:scale-110"
         >
           <ChevronDown className="w-7 h-7" />
         </button>
@@ -161,7 +161,7 @@ export default function PrecisionInspectionPage() {
 
       {/* 하단 스와이프 안내창 */}
       {showSwipeGuide && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-white/95 backdrop-blur-md shadow-2xl border border-gray-200 px-6 py-3 rounded-2xl text-center text-sm text-gray-700 flex items-center gap-2">
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-card/95 backdrop-blur-md shadow-2xl border border-border px-6 py-3 rounded-2xl text-center text-sm text-muted-foreground 700 flex items-center gap-2">
           👆 스와이프하여 페이지 전환
         </div>
       )}
@@ -287,14 +287,14 @@ export default function PrecisionInspectionPage() {
             <CardContent className="space-y-6">
               <div>
                 <h3 className="font-semibold text-lg mb-2">연장 가능 기간</h3>
-                <p className="text-3xl font-bold text-blue-600">{result.extensionPeriod}</p>
+                <p className="text-3xl font-bold text-primary">{result.extensionPeriod}</p>
               </div>
 
               <div>
                 <h3 className="font-semibold mb-3">필요 서류</h3>
                 <ul className="space-y-2">
                   {result.requiredDocs.map((doc: string, i: number) => (
-                    <li key={i} className="flex items-center gap-3 bg-gray-50 p-4 rounded-xl text-sm">
+                    <li key={i} className="flex items-center gap-3 bg-background p-4 rounded-xl text-sm">
                       ✓ {doc}
                     </li>
                   ))}

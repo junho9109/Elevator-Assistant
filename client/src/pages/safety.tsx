@@ -30,24 +30,24 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
   return (
     <div className="relative">
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <div className="flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer hover:border-blue-400 bg-white" onClick={() => setShow(!show)}>
+      <div className="flex items-center gap-2 border border-border rounded-xl px-3 py-2 cursor-pointer hover:border-primary bg-card" onClick={() => setShow(!show)}>
         <Calendar className="h-4 w-4 text-gray-400" />
         <span className={value ? "text-gray-900 text-sm" : "text-gray-400 text-sm"}>{value || "날짜 선택"}</span>
         {value && <button className="ml-auto text-gray-400" onClick={e => { e.stopPropagation(); onChange(""); }}><X className="h-3 w-3" /></button>}
       </div>
       {show && (
-        <div className="absolute z-50 mt-1 bg-white border rounded-xl shadow-xl p-4 w-72">
+        <div className="absolute z-50 mt-1 bg-card border border-border rounded-xl shadow-xl p-4 w-72">
           <div className="flex items-center justify-between mb-3">
-            <button onClick={() => { if (viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); }} className="p-1 hover:bg-gray-100 rounded">◀</button>
+            <button onClick={() => { if (viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); }} className="p-1 hover:bg-muted rounded">◀</button>
             <span className="font-semibold text-sm">{viewYear}년 {months[viewMonth]}</span>
-            <button onClick={() => { if (viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1); }} className="p-1 hover:bg-gray-100 rounded">▶</button>
+            <button onClick={() => { if (viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1); }} className="p-1 hover:bg-muted rounded">▶</button>
           </div>
           <div className="grid grid-cols-7 text-center text-xs text-gray-500 mb-1">{["일","월","화","수","목","금","토"].map(d=><div key={d}>{d}</div>)}</div>
           <div className="grid grid-cols-7 text-center text-sm">
             {blanks.map(i=><div key={`b${i}`}/>)}
             {days.map(day=>{
               const dateStr=`${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-              return <button key={day} onClick={()=>selectDay(day)} className={`p-1 rounded-full hover:bg-blue-100 ${value===dateStr?"bg-blue-500 text-white":""}`}>{day}</button>;
+              return <button key={day} onClick={()=>selectDay(day)} className={`p-1 rounded-full hover:bg-primary/20 ${value===dateStr?"bg-primary text-primary-foreground":""}`}>{day}</button>;
             })}
           </div>
         </div>
@@ -103,12 +103,12 @@ export default function SafetyPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+    <div className="min-h-screen bg-background p-4 md:p-6">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold mb-6 flex items-center gap-2"><Shield className="h-6 w-6 text-blue-600"/>안전보건관리</h1>
-        <div className="flex gap-2 mb-6 bg-white rounded-xl p-1 shadow border">
+        <div className="flex gap-2 mb-6 bg-card rounded-xl p-1 shadow-sm border border-border">
           {[{key:"ppe",label:"🦺 보호구"},{key:"guide",label:"🩺 응급처치"},{key:"nearmiss",label:"⚠️ 아차사고"}].map(tab=>(
-            <button key={tab.key} onClick={()=>setActiveTab(tab.key as any)} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab===tab.key?"bg-blue-600 text-white":"text-gray-600 hover:bg-gray-100"}`}>{tab.label}</button>
+            <button key={tab.key} onClick={()=>setActiveTab(tab.key as any)} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab===tab.key?"bg-primary text-primary-foreground":"text-muted-foreground hover:bg-muted"}`}>{tab.label}</button>
           ))}
         </div>
 
@@ -123,7 +123,7 @@ export default function SafetyPage() {
               const days=getDaysUntilExpiry(ppe.expiryDate);
               const isExpired=days<0; const isSoon=days<=30;
               return (
-                <div key={ppe.id} className={`bg-white rounded-xl shadow border overflow-hidden ${isExpired?"border-red-400":isSoon?"border-orange-400":""}`}>
+                <div key={ppe.id} className={`bg-card rounded-xl shadow-sm border border-border overflow-hidden ${isExpired?"border-red-400":isSoon?"border-orange-400":""}`}>
                   <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedPPE(expandedPPE===ppe.id?null:ppe.id)}>
                     <div>
                       <div className="flex items-center gap-2">
@@ -131,7 +131,7 @@ export default function SafetyPage() {
                         {isExpired&&<Badge variant="destructive" className="text-xs">만료됨</Badge>}
                         {!isExpired&&isSoon&&<Badge className="text-xs bg-orange-500">D-{days}</Badge>}
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">지급일: {ppe.issuedDate||"-"} | 만료일: {ppe.expiryDate||"-"}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">지급일: {ppe.issuedDate||"-"} | 만료일: {ppe.expiryDate||"-"}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={e=>{e.stopPropagation();deletePpe.mutate(ppe.id);}} className="text-red-400 hover:text-red-600 p-1"><X className="h-4 w-4"/></button>
@@ -139,9 +139,9 @@ export default function SafetyPage() {
                     </div>
                   </div>
                   {expandedPPE===ppe.id&&(
-                    <div className="px-4 pb-4 border-t pt-3 bg-gray-50 space-y-2">
-                      <div className="text-sm"><span className="font-medium text-gray-600">기준:</span> {ppe.standard}</div>
-                      <div className="text-sm"><span className="font-medium text-gray-600">착용 방법:</span><p className="whitespace-pre-line mt-1 text-gray-700">{ppe.howToWear}</p></div>
+                    <div className="px-4 pb-4 border-t border-border pt-3 bg-muted/30 space-y-2">
+                      <div className="text-sm"><span className="font-medium text-muted-foreground">기준:</span> {ppe.standard}</div>
+                      <div className="text-sm"><span className="font-medium text-muted-foreground">착용 방법:</span><p className="whitespace-pre-line mt-1 text-gray-700">{ppe.howToWear}</p></div>
                     </div>
                   )}
                 </div>
@@ -153,7 +153,7 @@ export default function SafetyPage() {
         {activeTab==="guide" && (
           <div className="space-y-4">
             {guides.map(g=>(
-              <div key={g.id} className="bg-white rounded-xl shadow border overflow-hidden">
+              <div key={g.id} className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
                 <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedGuide(expandedGuide===g.id?null:g.id)}>
                   <div className="flex items-center gap-3"><span className="text-2xl">{g.icon}</span><span className="font-semibold">{g.title}</span></div>
                   {expandedGuide===g.id?<ChevronUp className="h-4 w-4 text-gray-400"/>:<ChevronDown className="h-4 w-4 text-gray-400"/>}
@@ -172,7 +172,7 @@ export default function SafetyPage() {
             </div>
             {nearMisses.length===0&&<div className="text-center py-12 text-gray-400"><AlertTriangle className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>등록된 아차사고가 없습니다.</p></div>}
             {nearMisses.map(nm=>(
-              <div key={nm.id} className="bg-white rounded-xl shadow border overflow-hidden">
+              <div key={nm.id} className="bg-card rounded-xl shadow-sm border border-border overflow-hidden">
                 <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedNM(expandedNM===nm.id?null:nm.id)}>
                   <div>
                     <div className="flex items-center gap-2"><Badge variant="outline" className="text-xs">{nm.disasterType}</Badge><Badge variant="outline" className="text-xs">{nm.workType}</Badge></div>
@@ -184,7 +184,7 @@ export default function SafetyPage() {
                   </div>
                 </div>
                 {expandedNM===nm.id&&(
-                  <div className="px-4 pb-4 border-t pt-3 bg-gray-50 space-y-3">
+                  <div className="px-4 pb-4 border-t border-border pt-3 bg-muted/30 space-y-3">
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{nm.description}</p>
                     {nm.imageUrls&&nm.imageUrls.length>0&&<div className="grid grid-cols-3 gap-2">{nm.imageUrls.map((img,i)=><img key={i} src={img} alt={`사진 ${i+1}`} className="rounded-lg w-full h-20 object-cover border"/>)}</div>}
                   </div>
@@ -197,19 +197,19 @@ export default function SafetyPage() {
 
       {showAddPPE&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowAddPPE(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
-            <div className="flex justify-between items-center p-6 border-b"><h2 className="text-xl font-bold">보호구 등록</h2><button onClick={()=>setShowAddPPE(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
-            <div className="p-6 space-y-4">
+          <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-border" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">보호구 등록</h2><button onClick={()=>setShowAddPPE(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
+            <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">보호구 선택</label>
-                <select className="w-full border rounded-lg px-3 py-2 text-sm" value={selectedDef.name} onChange={e=>{const d=PPE_DEFAULTS.find(p=>p.name===e.target.value)||PPE_DEFAULTS[0];setSelectedDef(d);setPpeForm(p=>({...p,name:d.name,standard:d.standard,howToWear:d.howToWear}));}}>
+                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={selectedDef.name} onChange={e=>{const d=PPE_DEFAULTS.find(p=>p.name===e.target.value)||PPE_DEFAULTS[0];setSelectedDef(d);setPpeForm(p=>({...p,name:d.name,standard:d.standard,howToWear:d.howToWear}));}}>
                   {PPE_DEFAULTS.map(p=><option key={p.name}>{p.name}</option>)}
                 </select>
               </div>
               <DatePicker label="지급일" value={ppeForm.issuedDate} onChange={v=>setPpeForm(p=>({...p,issuedDate:v}))}/>
               <DatePicker label="인증만료일" value={ppeForm.expiryDate} onChange={v=>setPpeForm(p=>({...p,expiryDate:v}))}/>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">기준</label><Input value={ppeForm.standard} onChange={e=>setPpeForm(p=>({...p,standard:e.target.value}))}/></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">착용 방법</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm min-h-[100px] resize-y" value={ppeForm.howToWear} onChange={e=>setPpeForm(p=>({...p,howToWear:e.target.value}))}/></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">착용 방법</label><textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[100px] resize-y focus:outline-none focus:ring-2 focus:ring-primary/50" value={ppeForm.howToWear} onChange={e=>setPpeForm(p=>({...p,howToWear:e.target.value}))}/></div>
               <div className="flex gap-3 pt-2">
                 <Button variant="outline" className="flex-1" onClick={()=>setShowAddPPE(false)}>취소</Button>
                 <Button className="flex-1" onClick={()=>createPpe.mutate(ppeForm)} disabled={createPpe.isPending}>{createPpe.isPending?"저장 중...":"저장"}</Button>
@@ -221,13 +221,13 @@ export default function SafetyPage() {
 
       {showAddNM&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowAddNM(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
-            <div className="flex justify-between items-center p-6 border-b"><h2 className="text-xl font-bold">아차사고 등록</h2><button onClick={()=>setShowAddNM(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
-            <div className="p-6 space-y-4">
+          <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-border" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">아차사고 등록</h2><button onClick={()=>setShowAddNM(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
+            <div className="p-5 space-y-4">
               <DatePicker label="발생일" value={nmForm.date} onChange={v=>setNmForm(p=>({...p,date:v}))}/>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">재해 유형</label><select className="w-full border rounded-lg px-3 py-2 text-sm" value={nmForm.disasterType} onChange={e=>setNmForm(p=>({...p,disasterType:e.target.value}))}>{DISASTER_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">작업 유형</label><select className="w-full border rounded-lg px-3 py-2 text-sm" value={nmForm.workType} onChange={e=>setNmForm(p=>({...p,workType:e.target.value}))}>{WORK_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">사고 내용 *</label><textarea className="w-full border rounded-lg px-3 py-2 text-sm min-h-[100px] resize-y" placeholder="어떤 상황이었는지 자세히 기술해주세요" value={nmForm.description} onChange={e=>setNmForm(p=>({...p,description:e.target.value}))}/></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">재해 유형</label><select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={nmForm.disasterType} onChange={e=>setNmForm(p=>({...p,disasterType:e.target.value}))}>{DISASTER_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">작업 유형</label><select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={nmForm.workType} onChange={e=>setNmForm(p=>({...p,workType:e.target.value}))}>{WORK_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">사고 내용 *</label><textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[100px] resize-y focus:outline-none focus:ring-2 focus:ring-primary/50" placeholder="어떤 상황이었는지 자세히 기술해주세요" value={nmForm.description} onChange={e=>setNmForm(p=>({...p,description:e.target.value}))}/></div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">사진 첨부 (최대 5장)</label>
                 <input type="file" accept="image/*" multiple className="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700" onChange={handleNMImage}/>

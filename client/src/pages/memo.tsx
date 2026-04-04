@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ZoomControl } from "@/components/ZoomControl";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -431,7 +430,7 @@ function PhotoCanvas({
 
   return (
     <div className="flex flex-col h-full" ref={containerRef}>
-      <div className="flex flex-wrap gap-2 p-2 bg-gray-100 rounded-t-lg">
+      <div className="flex flex-wrap gap-2 p-2 bg-muted/50 rounded-t-lg">
         <Button variant={tool === "freehand" ? "default" : "outline"} size="sm" onClick={() => setTool("freehand")} data-testid="tool-freehand">
           <Pencil className="w-4 h-4" />
         </Button>
@@ -484,7 +483,7 @@ function PhotoCanvas({
         </Stage>
       </div>
 
-      <div className="flex gap-2 p-2 bg-gray-100 rounded-b-lg justify-end">
+      <div className="flex gap-2 p-2 bg-muted/50 rounded-b-lg justify-end">
         <Button variant="outline" onClick={onClose} data-testid="button-cancel-annotation">
           <X className="w-4 h-4 mr-1" /> 취소
         </Button>
@@ -525,7 +524,7 @@ function MemoCard({
 }) {
   return (
     <Card 
-      className={`cursor-pointer transition-all ${isSelected ? 'ring-2 ring-blue-500' : 'hover:bg-gray-50'}`}
+      className={`cursor-pointer transition-all ${isSelected ? 'ring-2 ring-blue-500' : 'hover:bg-background'}`}
       onClick={onSelect}
       data-testid={`memo-card-${memo.id}`}
     >
@@ -546,7 +545,7 @@ function MemoCard({
         </div>
       </CardHeader>
       <CardContent className="p-3 pt-0">
-        <p className="text-xs text-gray-500 line-clamp-2">{memo.body || "내용 없음"}</p>
+        <p className="text-xs text-muted-foreground line-clamp-2">{memo.body || "내용 없음"}</p>
         <p className="text-xs text-gray-400 mt-1">
           {new Date(memo.createdAt).toLocaleDateString('ko-KR')}
         </p>
@@ -859,8 +858,8 @@ export default function MemoPage() {
 
   return (
     <>
-      <div ref={zoomContentRef} className="h-full flex flex-col bg-gray-50">
-        <div className="bg-white border-b p-3">
+      <div ref={zoomContentRef} className="h-full flex flex-col bg-background">
+        <div className="bg-card border-b p-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -888,17 +887,17 @@ export default function MemoPage() {
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          <div className="w-1/3 border-r bg-white overflow-hidden">
+          <div className="w-1/3 border-r bg-card overflow-hidden">
             <ScrollArea className="h-full">
               <div className="p-2 space-y-2">
                 {isLoading ? (
-                  <p className="text-center text-gray-500 py-4">로딩중...</p>
+                  <p className="text-center text-muted-foreground py-4">로딩중...</p>
                 ) : error ? (
                   <p className="text-center text-red-500 py-4">
                     메모 불러오기 실패: {(error as Error).message}
                   </p>
                 ) : memosArray.length === 0 ? (
-                  <p className="text-center text-gray-500 py-4">메모가 없습니다</p>
+                  <p className="text-center text-muted-foreground py-4">메모가 없습니다</p>
                 ) : (
                   memosArray.map(memo => (
                     <MemoCard
@@ -917,7 +916,7 @@ export default function MemoPage() {
           <div className="flex-1 flex flex-col overflow-hidden">
             {selectedMemo ? (
               <>
-                <div className="bg-white border-b p-3">
+                <div className="bg-card border-b p-3">
                   <div className="flex items-center gap-2">
                     {isEditing ? (
                       <>
@@ -1026,14 +1025,14 @@ export default function MemoPage() {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-500 text-center py-4">첨부된 사진이 없습니다</p>
+                        <p className="text-sm text-muted-foreground text-center py-4">첨부된 사진이 없습니다</p>
                       )}
                     </div>
                   </div>
                 </ScrollArea>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-gray-500">
+              <div className="flex-1 flex items-center justify-center text-muted-foreground">
                 메모를 선택하거나 새로 만드세요
               </div>
             )}
@@ -1057,7 +1056,7 @@ export default function MemoPage() {
 
         {/* ... (나머지 다이얼로그들 그대로 유지) ... */}
 
-        <ZoomControl contentRef={zoomContentRef} storageKey="memoPageZoom" />
+        
         
         {imageViewer.isOpen && (
           <ImageViewerComponent

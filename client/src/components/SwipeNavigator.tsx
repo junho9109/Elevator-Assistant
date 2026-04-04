@@ -41,8 +41,45 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
               pointerEvents: currentIndex === i ? "auto" : "none",
               zIndex: currentIndex === i ? 1 : 0,
             }}
+            onTouchStart={(e) => {
+              if (e.touches.length === 2) {
+                e.currentTarget.dataset.pinchDist = String(Math.hypot(
+                  e.touches[0].clientX - e.touches[1].clientX,
+                  e.touches[0].clientY - e.touches[1].clientY
+                ));
+                e.currentTarget.dataset.pinchScale = e.currentTarget.dataset.pinchScale || "1";
+              }
+            }}
+            onTouchMove={(e) => {
+              if (e.touches.length === 2) {
+                const prev = parseFloat(e.currentTarget.dataset.pinchDist || "1");
+                const curr = Math.hypot(
+                  e.touches[0].clientX - e.touches[1].clientX,
+                  e.touches[0].clientY - e.touches[1].clientY
+                );
+                const prevScale = parseFloat(e.currentTarget.dataset.pinchScale || "1");
+                const newScale = Math.min(4, Math.max(0.8, prevScale * (curr / prev)));
+                e.currentTarget.dataset.pinchScale = String(newScale);
+                e.currentTarget.dataset.pinchDist = String(curr);
+                const inner = e.currentTarget.firstElementChild as HTMLElement;
+                if (inner) inner.style.transform = `scale(${newScale})`;
+                if (inner) inner.style.transformOrigin = "center top";
+              }
+            }}
+            onTouchEnd={(e) => {
+              if (e.touches.length < 2) {
+                const scale = parseFloat(e.currentTarget.dataset.pinchScale || "1");
+                if (scale < 1.05) {
+                  e.currentTarget.dataset.pinchScale = "1";
+                  const inner = e.currentTarget.firstElementChild as HTMLElement;
+                  if (inner) { inner.style.transform = "scale(1)"; }
+                }
+              }
+            }}
           >
-            {page}
+            <div style={{ minHeight: "100%", transformOrigin: "center top", transition: "transform 0.1s" }}>
+              {page}
+            </div>
           </div>
         ))}
       </div>
