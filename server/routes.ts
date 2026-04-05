@@ -757,6 +757,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try { const d = insertJudgmentResultSchema.parse(req.body); res.status(201).json(await storage.upsertJudgmentResult(d)); } catch (error) { res.status(400).json({ error: "Invalid judgment result data" }); }
   });
 
+
+  // App settings routes
+  app.get("/api/settings/:key", async (req, res) => {
+    try {
+      const value = await storage.getSetting(req.params.key);
+      res.json({ key: req.params.key, value });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get setting" });
+    }
+  });
+  app.post("/api/settings", async (req, res) => {
+    try {
+      const { key, value } = req.body;
+      await storage.setSetting(key, value);
+      res.json({ key, value });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save setting" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

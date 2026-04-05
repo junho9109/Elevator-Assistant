@@ -28,18 +28,22 @@ import {
   type InsertNearMiss,
   type JudgmentResult,
   type InsertJudgmentResult,
+  type AppSetting,
   ppeItems,
   nearMisses,
   judgmentResults,
+  appSettings,
   type PpeItem,
   type InsertPpeItem,
   type NearMiss as NearMissType,
   type InsertNearMiss,
   type JudgmentResult,
   type InsertJudgmentResult,
+  type AppSetting,
   ppeItems,
   nearMisses,
   judgmentResults,
+  appSettings,
   type InsertCustomInspectionItem,
   users,
   categories,
@@ -462,4 +466,18 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
+  // App settings methods
+  async getSetting(key: string): Promise<string | null> {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    return row ? row.value : null;
+  }
+  async setSetting(key: string, value: string): Promise<void> {
+    const existing = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    if (existing.length > 0) {
+      await db.update(appSettings).set({ value, updatedAt: new Date() }).where(eq(appSettings.key, key));
+    } else {
+      await db.insert(appSettings).values({ key, value });
+    }
+  }
+}
 export const storage = new DatabaseStorage();

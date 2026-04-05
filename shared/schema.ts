@@ -290,3 +290,13 @@ export const insertJudgmentResultSchema = createInsertSchema(judgmentResults).om
 });
 export type InsertJudgmentResult = z.infer<typeof insertJudgmentResultSchema>;
 export type JudgmentResult = typeof judgmentResults.$inferSelect;
+
+// 앱 설정 저장 테이블 (구조도 이미지, 카드 위치 등)
+export const appSettings = pgTable("app_settings", {
+  id: serial("id").primaryKey(),
+  key: varchar("key", { length: 100 }).notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type AppSetting = typeof appSettings.$inferSelect;

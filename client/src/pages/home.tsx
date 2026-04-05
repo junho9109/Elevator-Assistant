@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import { ZoomControl } from "@/components/ZoomControl";
 import defaultStructureImg from "@assets/structure_1764142259144.png";
 import Fuse from "fuse.js";
 import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User } from "lucide-react";
@@ -186,13 +185,11 @@ export default function Home() {
   const [deleteConfirm, setDeleteConfirm] = useState<Standard | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [editMode, setEditMode] = useState(false);
-  const [structureImg, setStructureImg] = useState<string>(() => localStorage.getItem("structureImg") || defaultStructureImg);
+  const [structureImg, setStructureImg] = useState<string>(defaultStructureImg);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   // 카드 오프셋 (핫스팟 id → 카드 중심의 캔버스 % 위치)
-  const [cardOffsets, setCardOffsets] = useState<Record<number, {cx: number, cy: number}>>(() => {
-    try { return JSON.parse(localStorage.getItem("cardOffsets") || "{}"); } catch { return {}; }
-  });
+  const [cardOffsets, setCardOffsets] = useState<Record<number, {cx: number, cy: number}>>({});
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
   const [cardDragOffset, setCardDragOffset] = useState({ x: 0, y: 0 });
   const [showAddHotspot, setShowAddHotspot] = useState(false);
@@ -211,6 +208,18 @@ export default function Home() {
   }, [standards, searchTerm, activeButtonId, fuse, hotspots]);
 
   const activeButton = hotspots.find(h => h.id === activeButtonId);
+
+  // 서버에서 설정 로드
+  useEffect(() => {
+    fetch("/api/settings/cardOffsets")
+      .then(r => r.json())
+      .then(d => { if (d.value) setCardOffsets(JSON.parse(d.value)); })
+      .catch(() => {});
+    fetch("/api/settings/structureImg")
+      .then(r => r.json())
+      .then(d => { if (d.value) setStructureImg(d.value); })
+      .catch(() => {});
+  }, []);
 
   // 채팅 스크롤
   useEffect(() => {
@@ -362,7 +371,11 @@ export default function Home() {
     reader.onload = (ev) => {
       const result = ev.target?.result as string;
       setStructureImg(result);
-      localStorage.setItem("structureImg", result);
+      fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "structureImg", value: result })
+      }).catch(() => {});
       toast({ title: "구조도 이미지가 변경되었습니다." });
     };
     reader.readAsDataURL(file);
@@ -476,9 +489,13 @@ export default function Home() {
   const handleMouseUp = async (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!editMode) return;
 
-    // 카드 드래그 종료 - localStorage 저장
+    // 카드 드래그 종료 - 서버 저장
     if (draggingCardId !== null) {
-      localStorage.setItem("cardOffsets", JSON.stringify(cardOffsets));
+      fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) })
+      }).catch(() => {});
       setDraggingCardId(null);
       return;
     }
@@ -713,7 +730,7 @@ export default function Home() {
             <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-lg border border-border">
               <canvas ref={canvasRef} className={`w-full h-full ${editMode ? "cursor-move" : "cursor-pointer"}`}
                 onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { localStorage.setItem("cardOffsets", JSON.stringify(cardOffsets)); setDraggingCardId(null); } }} />
+                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) }) }).catch(() => {}); setDraggingCardId(null); } }} />
             </div>
 
             {/* 표준화 목록 */}
@@ -746,7 +763,6 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <ZoomControl contentRef={zoomContentRef} storageKey="homePageZoom" />
         </div>
       )}
 
