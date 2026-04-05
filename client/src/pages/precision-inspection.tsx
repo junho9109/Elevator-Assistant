@@ -150,21 +150,10 @@ export default function PrecisionInspectionPage() {
       </div>
 
       {/* 상단 도우미 다시 보기 버튼 */}
-      {!showHelper && (
-        <button
-          onClick={() => setShowHelper(true)}
-          className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-card shadow-xl border border-border hover:border-primary text-primary p-4 rounded-full transition-all hover:scale-110"
-        >
-          <ChevronDown className="w-7 h-7" />
-        </button>
-      )}
+
 
       {/* 하단 스와이프 안내창 */}
-      {showSwipeGuide && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 bg-card/95 backdrop-blur-md shadow-2xl border border-border px-6 py-3 rounded-2xl text-center text-sm text-muted-foreground 700 flex items-center gap-2">
-          👆 스와이프하여 페이지 전환
-        </div>
-      )}
+
 
       <div className="space-y-6 mt-4">
         {/* 1. 건축물 유형 */}
