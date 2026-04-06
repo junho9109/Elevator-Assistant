@@ -603,7 +603,7 @@ export default function Home() {
         <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full">
 
           {/* 메시지 목록 */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 {msg.role === "assistant" && (
@@ -612,7 +612,7 @@ export default function Home() {
                   </div>
                 )}
                 <div className={`max-w-[80%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1`}>
-                  <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
+                  <div className={`rounded-2xl px-4 py-3.5 text-sm leading-loose whitespace-pre-line ${
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground rounded-tr-sm"
                       : "bg-card border border-border rounded-tl-sm"
@@ -627,7 +627,7 @@ export default function Home() {
                     );
                   })}
                   </div>
-                  <span className="text-xs text-muted-foreground px-1">{msg.time}</span>
+                  <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
                 </div>
                 {msg.role === "user" && (
                   <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-1">
