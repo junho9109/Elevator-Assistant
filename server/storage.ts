@@ -464,7 +464,7 @@ export class DatabaseStorage implements IStorage {
     const [created] = await db.insert(judgmentResults).values(data).returning();
     return created;
   }
-}
+
 
   // App settings methods
   async getSetting(key: string): Promise<string | null> {
