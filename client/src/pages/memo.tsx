@@ -653,7 +653,7 @@ export default function MemoPage() {
       return res.json();
     },
     onSuccess: (newMemo) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
+      queryClient.invalidateQueries({ queryKey: ["memos"] });
       setSelectedMemoId(newMemo.id);
       setIsEditing(true);
       setIsAuthenticated(true);
@@ -761,7 +761,7 @@ export default function MemoPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
+      queryClient.invalidateQueries({ queryKey: ["memos"] });
       setIsEditing(false);
       toast({ title: "메모가 저장되었습니다" });
     },
@@ -776,7 +776,7 @@ export default function MemoPage() {
       if (!res.ok) throw new Error("메모 삭제 실패");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
+      queryClient.invalidateQueries({ queryKey: ["memos"] });
       if (selectedMemoId) setSelectedMemoId(null);
       toast({ title: "메모가 삭제되었습니다" });
     },
