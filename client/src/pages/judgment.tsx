@@ -768,7 +768,10 @@ export default function JudgmentPage() {
     fetch(`/api/inspection-revisions/${item.id}`)
       .then(r => r.json())
       .then(data => {
-        setRevisions(Array.isArray(data) ? data : []);
+        const revData = Array.isArray(data) ? data : [];
+        setRevisions(revData);
+        // 캐시에도 저장 (일반 모드 표시용)
+        setRevisionsCache(prev => ({...prev, [item.id]: revData}));
         setRevisionsLoading(false);
       })
       .catch(() => { setRevisions([]); setRevisionsLoading(false); });
@@ -1822,20 +1825,35 @@ export default function JudgmentPage() {
                   )}
 
                   {/* 개정 이력 보기 - 일반 모드 */}
-                  {!isAdminMode && revisionsCache[detailItem?.id || ""] && revisionsCache[detailItem?.id || ""].length > 0 && (
+                  {!isAdminMode && (
                     <div className="border border-border rounded-xl p-4 bg-muted/20">
                       <h3 className="font-medium text-sm mb-3">📅 개정 이력</h3>
-                      <div className="space-y-2">
-                        {revisionsCache[detailItem?.id || ""].map((rev, idx) => (
-                          <div key={idx} className="text-xs flex gap-2 items-start">
-                            <span className="text-muted-foreground w-16 shrink-0">{rev.effectiveDate}</span>
-                            <span className={rev.introductionType === "new" ? "text-blue-500" : "text-amber-500"}>
-                              {rev.introductionType === "new" ? "신규" : "개정"}
-                            </span>
-                            <span className="text-foreground">{rev.description}</span>
-                          </div>
-                        ))}
-                      </div>
+                      {revisionsLoading ? (
+                        <p className="text-xs text-muted-foreground">로딩 중...</p>
+                      ) : revisions.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">등록된 개정 이력이 없습니다.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {revisions.map((rev, idx) => (
+                            <div key={idx} className="border border-border rounded-lg p-3 bg-card space-y-1">
+                              <div className="flex gap-2 items-center">
+                                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${rev.introductionType === "new" ? "bg-blue-500/20 text-blue-500" : "bg-amber-500/20 text-amber-500"}`}>
+                                  {rev.introductionType === "new" ? "신규" : "개정"}
+                                </span>
+                                {rev.effectiveDate && (
+                                  <span className="text-xs text-muted-foreground">적용일: {rev.effectiveDate}</span>
+                                )}
+                                {rev.expiryDate && (
+                                  <span className="text-xs text-muted-foreground">만료일: {rev.expiryDate}</span>
+                                )}
+                              </div>
+                              {rev.description && (
+                                <p className="text-xs text-foreground">{rev.description}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
