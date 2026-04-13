@@ -1115,12 +1115,12 @@ export default function MemoPage() {
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
                 value={deletePasswordInput}
                 onChange={e => setDeletePasswordInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && confirmDelete()}
+                onKeyDown={e => e.key === "Enter" && verifyDeletePassword()}
               />
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDeletePasswordDialogOpen(false)}>취소</Button>
-              <Button variant="destructive" onClick={confirmDelete}>삭제</Button>
+              <Button variant="destructive" onClick={verifyDeletePassword}>삭제</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1138,12 +1138,12 @@ export default function MemoPage() {
                 className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
                 value={adminPasswordInput}
                 onChange={e => setAdminPasswordInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && confirmAdminMode()}
+                onKeyDown={e => e.key === "Enter" && verifyAdminPassword()}
               />
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsAdminPasswordDialogOpen(false)}>취소</Button>
-              <Button onClick={confirmAdminMode}>확인</Button>
+              <Button onClick={verifyAdminPassword}>확인</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
