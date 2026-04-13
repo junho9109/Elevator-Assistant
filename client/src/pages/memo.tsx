@@ -1054,7 +1054,99 @@ export default function MemoPage() {
           </DialogContent>
         </Dialog>
 
-        {/* ... (나머지 다이얼로그들 그대로 유지) ... */}
+        {/* 메모 생성 비밀번호 다이얼로그 */}
+        <Dialog open={isCreatePasswordDialogOpen} onOpenChange={setIsCreatePasswordDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>새 메모 비밀번호 설정</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <p className="text-sm text-muted-foreground">비밀번호를 설정하면 수정/삭제 시 필요합니다. (선택사항)</p>
+              <input
+                type="password"
+                placeholder="비밀번호 (선택)"
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && confirmCreateMemo()}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsCreatePasswordDialogOpen(false)}>취소</Button>
+              <Button onClick={confirmCreateMemo}>만들기</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 메모 수정 비밀번호 다이얼로그 */}
+        <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>비밀번호 확인</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <input
+                type="password"
+                placeholder="비밀번호 입력"
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
+                value={passwordInput}
+                onChange={e => setPasswordInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && verifyPassword()}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
+              <Button onClick={verifyPassword}>확인</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 메모 삭제 비밀번호 다이얼로그 */}
+        <Dialog open={isDeletePasswordDialogOpen} onOpenChange={setIsDeletePasswordDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>삭제 확인</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <p className="text-sm text-muted-foreground">삭제하려면 비밀번호를 입력하세요.</p>
+              <input
+                type="password"
+                placeholder="비밀번호 입력"
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
+                value={deletePasswordInput}
+                onChange={e => setDeletePasswordInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && confirmDelete()}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDeletePasswordDialogOpen(false)}>취소</Button>
+              <Button variant="destructive" onClick={confirmDelete}>삭제</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 관리자 비밀번호 다이얼로그 */}
+        <Dialog open={isAdminPasswordDialogOpen} onOpenChange={setIsAdminPasswordDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>관리자 모드</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <input
+                type="password"
+                placeholder="관리자 비밀번호 입력"
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
+                value={adminPasswordInput}
+                onChange={e => setAdminPasswordInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && confirmAdminMode()}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsAdminPasswordDialogOpen(false)}>취소</Button>
+              <Button onClick={confirmAdminMode}>확인</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         
         
