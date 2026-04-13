@@ -485,7 +485,6 @@ export class DatabaseStorage implements IStorage {
       await db.insert(appSettings).values({ key, value });
     }
   }
-}
   // Inspection item revisions
   async getItemRevisions(itemId: string): Promise<InspectionItemRevision[]> {
     return await db.select().from(inspectionItemRevisions)
