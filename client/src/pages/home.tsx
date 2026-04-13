@@ -13,7 +13,7 @@ import {
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
 
-// ==================== 규칙 기반 AI 비서 ====================
+// ==================== 규칙 기반 AI 챗봇 ====================
 type Message = { role: "user" | "assistant"; content: string; time: string; };
 
 const QUICK_QUESTIONS = [
@@ -154,7 +154,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: `엘리베이터 안전 비서입니다.\n\n오늘의 주요 안전 정보를 확인하세요.`,
+      content: `엘리베이터 안전 챗봇입니다.\n\n오늘의 주요 안전 정보를 확인하세요.`,
       time: formatTime()
     },
     {
@@ -579,7 +579,7 @@ export default function Home() {
               <Bot className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-semibold text-sm">엘리베이터 안전 비서</h1>
+              <h1 className="font-semibold text-sm">엘리베이터 안전 챗봇</h1>
               <p className="text-xs text-muted-foreground">규칙 기반 안내 시스템</p>
             </div>
           </div>
@@ -590,7 +590,7 @@ export default function Home() {
       {/* 탭 */}
       <div className="bg-card border-b border-border px-4">
         <div className="max-w-2xl mx-auto flex">
-          {[{key:"chat",label:"비서"},{key:"map",label:"기술자료"}].map(tab => (
+          {[{key:"chat",label:"챗봇"},{key:"map",label:"기술자료"}].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab===tab.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {tab.label}
             </button>

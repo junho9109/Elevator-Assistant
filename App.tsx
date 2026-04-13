@@ -22,7 +22,7 @@ function MainApp() {
         <SafetyPage key="safety" />
       ]}
       pageNames={[
-        "비서",
+        "챗봇",
         "판정결과",
         "정밀검사",
         "메모",
