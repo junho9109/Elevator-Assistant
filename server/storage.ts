@@ -29,10 +29,13 @@ import {
   type JudgmentResult,
   type InsertJudgmentResult,
   type AppSetting,
+  type InspectionItemRevision,
+  type InsertInspectionItemRevision,
   ppeItems,
   nearMisses,
   judgmentResults,
   appSettings,
+  inspectionItemRevisions,
   type PpeItem,
   type InsertPpeItem,
   type NearMiss as NearMissType,
@@ -40,10 +43,13 @@ import {
   type JudgmentResult,
   type InsertJudgmentResult,
   type AppSetting,
+  type InspectionItemRevision,
+  type InsertInspectionItemRevision,
   ppeItems,
   nearMisses,
   judgmentResults,
   appSettings,
+  inspectionItemRevisions,
   type InsertCustomInspectionItem,
   users,
   categories,
@@ -478,6 +484,23 @@ export class DatabaseStorage implements IStorage {
     } else {
       await db.insert(appSettings).values({ key, value });
     }
+  }
+}
+  // Inspection item revisions
+  async getItemRevisions(itemId: string): Promise<InspectionItemRevision[]> {
+    return await db.select().from(inspectionItemRevisions)
+      .where(eq(inspectionItemRevisions.itemId, itemId))
+      .orderBy(inspectionItemRevisions.effectiveDate);
+  }
+  async createItemRevision(data: InsertInspectionItemRevision): Promise<InspectionItemRevision> {
+    const [created] = await db.insert(inspectionItemRevisions).values(data).returning();
+    return created;
+  }
+  async deleteItemRevision(id: number): Promise<void> {
+    await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.id, id));
+  }
+  async deleteAllItemRevisions(itemId: string): Promise<void> {
+    await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.itemId, itemId));
   }
 }
 export const storage = new DatabaseStorage();

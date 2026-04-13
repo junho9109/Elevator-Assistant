@@ -458,6 +458,8 @@ export default function JudgmentPage() {
   const [detailItem, setDetailItem] = useState<InspectionItem | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [newComment, setNewComment] = useState({ author: "", content: "" });
+  const [revisions, setRevisions] = useState<{id?:number; effectiveDate:string; expiryDate:string; introductionType:string; description:string}[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const detailScrollRef = useRef<HTMLDivElement>(null);
@@ -761,6 +763,15 @@ export default function JudgmentPage() {
   const handleOpenDetail = (item: InspectionItem) => {
     setDetailItem(item);
     setIsDetailDialogOpen(true);
+    // 개정 이력 로드
+    setRevisionsLoading(true);
+    fetch(`/api/inspection-revisions/${item.id}`)
+      .then(r => r.json())
+      .then(data => {
+        setRevisions(Array.isArray(data) ? data : []);
+        setRevisionsLoading(false);
+      })
+      .catch(() => { setRevisions([]); setRevisionsLoading(false); });
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1702,7 +1713,133 @@ export default function JudgmentPage() {
                 onTouchEnd={handleDragEnd}
               >
                 <div className="space-y-6 pr-4">
-                  {/* 사진 섹션 */}
+                  {/* 개정 이력 섹션 - 관리자 모드에서만 편집 가능 */}
+                  {isAdminMode && (
+                    <div className="border border-border rounded-xl p-4 bg-muted/20">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-medium text-sm">📅 개정 이력 관리</h3>
+                        <button
+                          className="text-xs text-primary border border-primary rounded-lg px-2 py-1 hover:bg-primary/10"
+                          onClick={() => setRevisions(prev => [...prev, { effectiveDate: "", expiryDate: "", introductionType: "revision", description: "" }])}
+                        >
+                          + 개정 추가
+                        </button>
+                      </div>
+                      {revisionsLoading ? (
+                        <p className="text-xs text-muted-foreground">로딩 중...</p>
+                      ) : revisions.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">등록된 개정 이력이 없습니다.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {revisions.map((rev, idx) => (
+                            <div key={idx} className="border border-border rounded-lg p-3 bg-card space-y-2">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs font-medium text-muted-foreground">개정 {idx + 1}</span>
+                                <button
+                                  className="text-xs text-destructive hover:underline"
+                                  onClick={async () => {
+                                    if (rev.id) {
+                                      await fetch(`/api/inspection-revisions/${rev.id}`, { method: "DELETE" });
+                                    }
+                                    setRevisions(prev => prev.filter((_, i) => i !== idx));
+                                  }}
+                                >삭제</button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-xs text-muted-foreground">적용일 (건축허가일 이후)</label>
+                                  <input
+                                    type="date"
+                                    className="w-full text-xs border border-border rounded px-2 py-1 bg-card mt-1"
+                                    value={rev.effectiveDate}
+                                    onChange={e => setRevisions(prev => prev.map((r, i) => i === idx ? {...r, effectiveDate: e.target.value} : r))}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-muted-foreground">만료일 (이후 해당없음)</label>
+                                  <input
+                                    type="date"
+                                    className="w-full text-xs border border-border rounded px-2 py-1 bg-card mt-1"
+                                    value={rev.expiryDate}
+                                    onChange={e => setRevisions(prev => prev.map((r, i) => i === idx ? {...r, expiryDate: e.target.value} : r))}
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground">유형</label>
+                                <select
+                                  className="w-full text-xs border border-border rounded px-2 py-1 bg-card mt-1"
+                                  value={rev.introductionType}
+                                  onChange={e => setRevisions(prev => prev.map((r, i) => i === idx ? {...r, introductionType: e.target.value} : r))}
+                                >
+                                  <option value="revision">개정 (종전 기준 적용)</option>
+                                  <option value="new">신규 (이전엔 해당없음)</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground">설명 (선택)</label>
+                                <input
+                                  type="text"
+                                  className="w-full text-xs border border-border rounded px-2 py-1 bg-card mt-1"
+                                  placeholder="예: 2024년 개정 - UCMP 의무화"
+                                  value={rev.description}
+                                  onChange={e => setRevisions(prev => prev.map((r, i) => i === idx ? {...r, description: e.target.value} : r))}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                          <button
+                            className="w-full text-sm bg-primary text-primary-foreground rounded-lg py-2 hover:bg-primary/90"
+                            onClick={async () => {
+                              if (!detailItem) return;
+                              // 기존 이력 삭제 후 재저장
+                              await fetch(`/api/inspection-revisions/item/${detailItem.id}`, { method: "DELETE" });
+                              for (const rev of revisions) {
+                                if (rev.effectiveDate) {
+                                  await fetch("/api/inspection-revisions", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                      itemId: detailItem.id,
+                                      effectiveDate: rev.effectiveDate || null,
+                                      expiryDate: rev.expiryDate || null,
+                                      introductionType: rev.introductionType || null,
+                                      description: rev.description || null,
+                                    })
+                                  });
+                                }
+                              }
+                              // 캐시 업데이트
+                              setRevisionsCache(prev => ({...prev, [detailItem.id]: revisions}));
+                              alert("저장되었습니다.");
+                            }}
+                          >
+                            개정 이력 저장
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 개정 이력 보기 - 일반 모드 */}
+                  {!isAdminMode && revisionsCache[detailItem?.id || ""] && revisionsCache[detailItem?.id || ""].length > 0 && (
+                    <div className="border border-border rounded-xl p-4 bg-muted/20">
+                      <h3 className="font-medium text-sm mb-3">📅 개정 이력</h3>
+                      <div className="space-y-2">
+                        {revisionsCache[detailItem?.id || ""].map((rev, idx) => (
+                          <div key={idx} className="text-xs flex gap-2 items-start">
+                            <span className="text-muted-foreground w-16 shrink-0">{rev.effectiveDate}</span>
+                            <span className={rev.introductionType === "new" ? "text-blue-500" : "text-amber-500"}>
+                              {rev.introductionType === "new" ? "신규" : "개정"}
+                            </span>
+                            <span className="text-foreground">{rev.description}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+              {/* 사진 섹션 */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-medium flex items-center gap-2">

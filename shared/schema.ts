@@ -300,3 +300,21 @@ export const appSettings = pgTable("app_settings", {
 });
 
 export type AppSetting = typeof appSettings.$inferSelect;
+
+// 검사항목 개정 이력 테이블 (복수 개정일 지원)
+export const inspectionItemRevisions = pgTable("inspection_item_revisions", {
+  id: serial("id").primaryKey(),
+  itemId: varchar("item_id", { length: 50 }).notNull(),
+  effectiveDate: varchar("effective_date", { length: 20 }),
+  expiryDate: varchar("expiry_date", { length: 20 }),
+  introductionType: varchar("introduction_type", { length: 20 }),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertInspectionItemRevisionSchema = createInsertSchema(inspectionItemRevisions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertInspectionItemRevision = z.infer<typeof insertInspectionItemRevisionSchema>;
+export type InspectionItemRevision = typeof inspectionItemRevisions.$inferSelect;

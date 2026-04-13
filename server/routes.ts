@@ -758,6 +758,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
 
+
+  // Inspection item revisions routes
+  app.get("/api/inspection-revisions/:itemId", async (req, res) => {
+    try {
+      const revisions = await storage.getItemRevisions(req.params.itemId);
+      res.json(revisions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch revisions" });
+    }
+  });
+  app.post("/api/inspection-revisions", async (req, res) => {
+    try {
+      const revision = await storage.createItemRevision(req.body);
+      res.status(201).json(revision);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to create revision" });
+    }
+  });
+  app.delete("/api/inspection-revisions/:id", async (req, res) => {
+    try {
+      await storage.deleteItemRevision(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete revision" });
+    }
+  });
+  app.delete("/api/inspection-revisions/item/:itemId", async (req, res) => {
+    try {
+      await storage.deleteAllItemRevisions(req.params.itemId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete revisions" });
+    }
+  });
+
   // App settings routes
   app.get("/api/settings/:key", async (req, res) => {
     try {
