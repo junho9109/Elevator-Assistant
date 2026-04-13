@@ -22,7 +22,7 @@
   --color-input: hsl(0 0% 96%);
   --color-ring: hsl(211 100% 50%);
   --radius: 0.875rem;
-  --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'Roboto Mono', monospace;
 }
 
