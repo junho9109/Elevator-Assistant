@@ -1300,7 +1300,7 @@ export default function JudgmentPage() {
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
                   E
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight">판정결과(도우미)</h1>
+                <h1 className="text-2xl font-bold tracking-tight">검사가이드</h1>
               </div>
             <div className="flex items-center gap-2">
               {isAdminMode && (

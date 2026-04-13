@@ -134,13 +134,13 @@ export default function PrecisionInspectionPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto relative min-h-screen">
-      <h1 className="text-2xl font-bold mb-8 text-center">판정결과</h1>
+      <h1 className="text-2xl font-bold mb-8 text-center">정밀안전검사 안내</h1>
 
       {/* 상단 도우미 안내창 */}
       <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 z-50 transition-all duration-700 ${showHelper ? 'opacity-100 -translate-y-1/2' : 'opacity-0 -translate-y-[140%] pointer-events-none'}`}>
         <Card className="w-[420px] shadow-2xl border-primary/30 bg-card">
           <CardHeader>
-            <CardTitle className="text-xl text-blue-700">판정결과</CardTitle>
+            <CardTitle className="text-xl text-blue-700">정밀안전검사 안내</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground 600">
             건축물 유형, 검사 회차, 단계, 사유를 선택하면<br />
