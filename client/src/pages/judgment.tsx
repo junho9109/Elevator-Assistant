@@ -1166,7 +1166,7 @@ export default function JudgmentPage() {
         key={item.id} 
         className={cn(
           "border-b border-border last:border-b-0",
-          hasCustomEdit && "bg-green-50 border-l-4 border-l-green-500"
+          false
         )}
       >
         <div className="flex items-start gap-2 p-3">
@@ -1189,7 +1189,7 @@ export default function JudgmentPage() {
           >
             {item.text}
             {hasCustomEdit && (
-              <span className="ml-2 text-xs text-green-600 font-medium">(수정됨)</span>
+              <span className="ml-2 text-xs text-muted-foreground font-medium">(수정됨)</span>
             )}
           </div>
           <button
