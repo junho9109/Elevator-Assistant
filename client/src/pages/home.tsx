@@ -333,15 +333,8 @@ ${latest.year || latest.stdr_year}년 현황
       }
       if ((q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.age.length > 0) {
         const ageData = accidentStats.age;
-        const lines = ageData.map((a: any) => `• ${a.age_group || a.ageGroup || a.age}: ${a.acc_cnt || a.accidentCount || a.count || "-"}건`).join("
-");
-        answer = `공공데이터 기준 연령별 승강기 안전사고
-
-${lines}
-
-고령자(65세 이상) 사고 비율이 높으므로 점검 시 고령자 이용 구간 안전장치를 집중 확인하세요.
-
-출처: 행정안전부 통계연보`;
+        const lines = ageData.map((a: any) => `• ${a.age_group || a.ageGroup || a.age}: ${a.acc_cnt || a.accidentCount || a.count || "-"}건`).join("\n");
+        answer = `공공데이터 기준 연령별 승강기 안전사고\n\n${lines}\n\n고령자(65세 이상) 사고 비율이 높으므로 점검 시 고령자 이용 구간 안전장치를 집중 확인하세요.\n\n출처: 행정안전부 통계연보`;
       }
       setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime() }]);
       setIsTyping(false);
