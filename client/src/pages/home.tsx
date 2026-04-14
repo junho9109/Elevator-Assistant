@@ -18,6 +18,8 @@ type Message = { role: "user" | "assistant"; content: string; time: string; };
 
 const QUICK_QUESTIONS = [
   "오늘 안전 체크리스트",
+  "최신 사고 통계",
+  "연령별 사고 현황",
   "UCMP 기준 알려줘",
   "피트 안전 기준",
   "과속조절기 점검 방법",
@@ -69,6 +71,32 @@ function getRuleBasedAnswer(question: string): string {
 
   if (q.includes("ucmp") || q.includes("개문출발") || q.includes("문출발")) {
     return `개문출발방지장치 (UCMP)\n\n작동 원리\n카가 층에 정지하지 않은 상태에서 승강장문이 열리면 즉시 카를 정지시키는 장치입니다.\n\n점검 기준\n• 이중브레이크와 로프브레이크 동시 작동 금지\n• 정밀안전검사 시 100% 및 무부하 조건 모두 시험\n• 기존 승강기 추가 설치 시 안전성 평가 대상\n\n2025 개정\n기존 설치 승강기까지 의무 확대 적용 중입니다. 미설치 시 조건부합격 또는 사용중지 처분 가능합니다.`;
+  }
+
+  if (q.includes("통계") || q.includes("사고 현황") || q.includes("최신 사고")) {
+    return `승강기 안전사고 통계
+
+실시간 공공데이터를 불러오는 중입니다.
+잠시 후 "최신 사고 통계"를 다시 눌러보세요.
+
+최근 주요 사고 유형
+1위  승강장문 열림 주행
+2위  피트 추락
+3위  카 상부 끼임
+
+출처: 행정안전부 국가승강기정보센터`;
+  }
+
+  if (q.includes("연령") || q.includes("나이") || q.includes("고령")) {
+    return `연령별 승강기 안전사고
+
+실시간 공공데이터를 불러오는 중입니다.
+잠시 후 "연령별 사고 현황"을 다시 눌러보세요.
+
+고령자(65세 이상) 사고 비율이 가장 높으며,
+주로 승하차 시 발 끼임, 문 사이 끼임 사고가 많습니다.
+
+출처: 행정안전부 국가승강기정보센터`;
   }
 
   if (q.includes("개정") || q.includes("최근 기준") || q.includes("변경")) {
@@ -175,6 +203,7 @@ export default function Home() {
   ]);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [accidentStats, setAccidentStats] = useState<{yearly: any[], age: any[]}>({ yearly: [], age: [] });
 
   // 구조도/표준화
   const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
@@ -209,6 +238,54 @@ export default function Home() {
 
   const activeButton = hotspots.find(h => h.id === activeButtonId);
 
+  // 공공데이터 통계 로드
+  useEffect(() => {
+    fetch("/api/elevator-accidents/yearly")
+      .then(r => r.json())
+      .then(data => {
+        const items = data?.response?.body?.items?.item || [];
+        setAccidentStats(prev => ({ ...prev, yearly: Array.isArray(items) ? items : [items] }));
+      })
+      .catch(() => {});
+
+    fetch("/api/elevator-accidents/age")
+      .then(r => r.json())
+      .then(data => {
+        const items = data?.response?.body?.items?.item || [];
+        setAccidentStats(prev => ({ ...prev, age: Array.isArray(items) ? items : [items] }));
+      })
+      .catch(() => {});
+  }, []);
+
+  // 통계 로드 완료 시 초기 메시지 업데이트
+  useEffect(() => {
+    if (accidentStats.yearly.length > 0) {
+      const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
+      if (latest) {
+        const year = latest.year || latest.stdr_year || "";
+        const total = latest.tot_acc_cnt || latest.totalAccidentCount || "-";
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[1] = {
+            role: "assistant",
+            content: `최근 승강기 안전사고 통계 (${year}년, 행정안전부)
+
+• 전체 사고: ${total}건
+• 승객용: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || "-"}건
+• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || "-"}건
+
+빈도 높은 사고 유형
+1위  승강장문 열림 주행 — 문닫힘 안전장치 불량
+2위  피트 추락 — 최하층 정지장치 미작동
+3위  카 상부 끼임 — 점검운전 중 안전스위치 미사용`,
+            time: updated[1]?.time || formatTime()
+          };
+          return updated;
+        });
+      }
+    }
+  }, [accidentStats.yearly]);
+
   // 서버에서 설정 로드
   useEffect(() => {
     fetch("/api/settings/cardOffsets")
@@ -234,11 +311,42 @@ export default function Home() {
     setInputText("");
     setIsTyping(true);
     setTimeout(() => {
-      const answer = getRuleBasedAnswer(text);
+      let answer = getRuleBasedAnswer(text);
+      // 사고 통계 질문 시 실시간 데이터 반영
+      const q = text.toLowerCase();
+      if ((q.includes("사고") || q.includes("통계") || q.includes("연도별")) && accidentStats.yearly.length > 0) {
+        const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
+        const prev = accidentStats.yearly[accidentStats.yearly.length - 2];
+        if (latest) {
+          answer = `공공데이터 기준 최신 승강기 안전사고 통계
+
+${latest.year || latest.stdr_year}년 현황
+• 승객용 엘리베이터: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || "-"}건
+• 화물용 엘리베이터: ${latest.freight_elvtr_acc_cnt || latest.freightElevatorAccidentCount || "-"}건
+• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || "-"}건
+• 합계: ${latest.tot_acc_cnt || latest.totalAccidentCount || "-"}건${prev ? `
+
+전년(${prev.year || prev.stdr_year}년) 대비 추이를 확인하시려면 검사가이드 페이지를 참고하세요.` : ""}
+
+출처: 행정안전부 통계연보`;
+        }
+      }
+      if ((q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.age.length > 0) {
+        const ageData = accidentStats.age;
+        const lines = ageData.map((a: any) => `• ${a.age_group || a.ageGroup || a.age}: ${a.acc_cnt || a.accidentCount || a.count || "-"}건`).join("
+");
+        answer = `공공데이터 기준 연령별 승강기 안전사고
+
+${lines}
+
+고령자(65세 이상) 사고 비율이 높으므로 점검 시 고령자 이용 구간 안전장치를 집중 확인하세요.
+
+출처: 행정안전부 통계연보`;
+      }
       setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime() }]);
       setIsTyping(false);
     }, 600);
-  }, []);
+  }, [accidentStats]);
 
   // 리더라인 설정 (카드 오프셋 저장값 우선, 없으면 자동 계산)
   const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {

@@ -793,6 +793,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+  // 공공데이터 API 프록시 - 연도별 승강기 안전사고
+  app.get("/api/elevator-accidents/yearly", async (req, res) => {
+    try {
+      const apiKey = process.env.PUBLIC_DATA_API_KEY_YEARLY || process.env.PUBLIC_DATA_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API key not configured" });
+      const url = `http://apis.data.go.kr/1741000/ElevatorSafetyAccidentsByYear/getElevatorSafetyAccidentsByYear?serviceKey=${apiKey}&pageNo=1&numOfRows=20&type=json`;
+      const response = await fetch(url);
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch yearly accident data" });
+    }
+  });
+
+  // 공공데이터 API 프록시 - 연령별 승강기 안전사고
+  app.get("/api/elevator-accidents/age", async (req, res) => {
+    try {
+      const apiKey = process.env.PUBLIC_DATA_API_KEY_AGE || process.env.PUBLIC_DATA_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API key not configured" });
+      const url = `http://apis.data.go.kr/1741000/ElevatorSafetyAccidentsByAge/getElevatorSafetyAccidentsByAge?serviceKey=${apiKey}&pageNo=1&numOfRows=20&type=json`;
+      const response = await fetch(url);
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch age accident data" });
+    }
+  });
+
   // App settings routes
   app.get("/api/settings/:key", async (req, res) => {
     try {
