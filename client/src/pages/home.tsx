@@ -243,16 +243,16 @@ export default function Home() {
     fetch("/api/elevator-accidents/yearly")
       .then(r => r.json())
       .then(data => {
-        const items = data?.response?.body?.items?.item || [];
-        setAccidentStats(prev => ({ ...prev, yearly: Array.isArray(items) ? items : [items] }));
+        const rows = data?.ElevatorSafetyAccidentsByYear?.[1]?.row || [];
+        setAccidentStats(prev => ({ ...prev, yearly: rows }));
       })
       .catch(() => {});
 
     fetch("/api/elevator-accidents/age")
       .then(r => r.json())
       .then(data => {
-        const items = data?.response?.body?.items?.item || [];
-        setAccidentStats(prev => ({ ...prev, age: Array.isArray(items) ? items : [items] }));
+        const rows = data?.ElevatorSafetyAccidentsByAge?.[1]?.row || [];
+        setAccidentStats(prev => ({ ...prev, age: rows }));
       })
       .catch(() => {});
   }, []);
@@ -333,8 +333,16 @@ ${latest.year || latest.stdr_year}년 현황
       }
       if ((q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.age.length > 0) {
         const ageData = accidentStats.age;
-        const lines = ageData.map((a: any) => `• ${a.age_group || a.ageGroup || a.age}: ${a.acc_cnt || a.accidentCount || a.count || "-"}건`).join("\n");
-        answer = `공공데이터 기준 연령별 승강기 안전사고\n\n${lines}\n\n고령자(65세 이상) 사고 비율이 높으므로 점검 시 고령자 이용 구간 안전장치를 집중 확인하세요.\n\n출처: 행정안전부 통계연보`;
+        const latest = ageData[ageData.length - 1];
+        const year = latest.wrttimeid;
+        const tot = parseInt(latest.tot);
+        const child = parseInt(latest.old14_lss);
+        const adult = parseInt(latest.old15_mor_old64_lss);
+        const elder = parseInt(latest.old65_mor);
+        const childPct = Math.round(child/tot*100);
+        const adultPct = Math.round(adult/tot*100);
+        const elderPct = Math.round(elder/tot*100);
+        answer = `행정안전부 연령별 사고 통계 (${year}년)\n\n• 14세 이하: ${child}명 (${childPct}%)\n• 15~64세: ${adult}명 (${adultPct}%)\n• 65세 이상: ${elder}명 (${elderPct}%)\n• 합계: ${tot}명\n\n고령자(65세 이상) 비율이 ${elderPct}%로 가장 높습니다.\n점검 시 고령자 이용 구간 안전장치를 집중 확인하세요.\n\n출처: 행정안전부 통계연보`;
       }
       setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime() }]);
       setIsTyping(false);
