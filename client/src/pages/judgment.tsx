@@ -1294,13 +1294,13 @@ export default function JudgmentPage() {
     <>
       <div ref={zoomContentRef} className="min-h-screen bg-background font-sans text-foreground">
         <div className="bg-card border-b border-border overflow-hidden">
-          <div className="p-4 border-b border-border bg-muted/30">
+          <div className="p-3 border-b border-border bg-muted/30">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
+                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
                   E
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight">검사가이드</h1>
+                <h1 className="text-lg font-bold tracking-tight">검사가이드</h1>
               </div>
             <div className="flex items-center gap-2">
               {isAdminMode && (
@@ -1424,7 +1424,7 @@ export default function JudgmentPage() {
         </div>
 
         <div className="overflow-hidden">
-          <div className="flex items-center justify-end gap-2 p-2 bg-card border-b border-border">
+          <div className="flex items-center justify-end gap-1.5 p-1.5 bg-card border-b border-border">
             <Button 
               variant="outline" 
               size="sm" 

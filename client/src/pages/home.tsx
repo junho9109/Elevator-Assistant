@@ -681,15 +681,15 @@ ${latest.year || latest.stdr_year}년 현황
     <div className="min-h-screen bg-background flex flex-col">
 
       {/* 헤더 */}
-      <div className="sticky top-0 z-40 bg-card border-b border-border px-4 py-3">
+      <div className="sticky top-0 z-40 bg-card border-b border-border px-3 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-              <Bot className="h-4 w-4 text-primary-foreground" />
+            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+              <Bot className="h-3 w-3 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-semibold text-sm">엘리베이터 안전 챗봇</h1>
-              <p className="text-xs text-muted-foreground">규칙 기반 안내 시스템</p>
+              <h1 className="font-semibold text-xs">엘리베이터 안전 챗봇</h1>
+              <p className="text-[10px] text-muted-foreground">규칙 기반 안내 시스템</p>
             </div>
           </div>
 
@@ -700,7 +700,7 @@ ${latest.year || latest.stdr_year}년 현황
       <div className="bg-card border-b border-border px-4">
         <div className="flex">
           {[{key:"chat",label:"챗봇"},{key:"map",label:"기술자료"}].map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab===tab.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab===tab.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {tab.label}
             </button>
           ))}
