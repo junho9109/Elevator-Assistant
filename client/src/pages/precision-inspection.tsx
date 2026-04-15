@@ -133,7 +133,7 @@ export default function PrecisionInspectionPage() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto relative min-h-screen">
+    <div className="p-3 relative min-h-screen">
       <h1 className="text-2xl font-bold mb-8 text-center">정밀안전검사 안내</h1>
 
       {/* 상단 도우미 안내창 */}

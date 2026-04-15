@@ -682,7 +682,7 @@ ${latest.year || latest.stdr_year}년 현황
 
       {/* 헤더 */}
       <div className="sticky top-0 z-40 bg-card border-b border-border px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
               <Bot className="h-4 w-4 text-primary-foreground" />
@@ -698,7 +698,7 @@ ${latest.year || latest.stdr_year}년 현황
 
       {/* 탭 */}
       <div className="bg-card border-b border-border px-4">
-        <div className="max-w-2xl mx-auto flex">
+        <div className="flex">
           {[{key:"chat",label:"챗봇"},{key:"map",label:"기술자료"}].map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab===tab.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {tab.label}
@@ -709,7 +709,7 @@ ${latest.year || latest.stdr_year}년 현황
 
       {/* ==================== 채팅 탭 ==================== */}
       {activeTab === "chat" && (
-        <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full">
+        <div className="flex-1 flex flex-col w-full">
 
           {/* 메시지 목록 */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
@@ -802,7 +802,7 @@ ${latest.year || latest.stdr_year}년 현황
       {/* ==================== 기술자료 탭 ==================== */}
       {activeTab === "map" && (
         <div className="flex-1 overflow-y-auto" ref={zoomContentRef}>
-          <div className="max-w-4xl mx-auto p-4 space-y-4">
+          <div className="p-3 space-y-3">
 
             {/* 편집 모드 툴바 */}
             <div className="flex items-center justify-between">

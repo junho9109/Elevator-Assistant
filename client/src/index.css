@@ -59,6 +59,12 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     letter-spacing: -0.01em;
+    font-size: 15px;
+    overflow-x: hidden;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
   }
   button, [role="button"] {
     -webkit-tap-highlight-color: transparent;

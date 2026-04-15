@@ -103,8 +103,8 @@ export default function SafetyPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6">
-      <div className="max-w-2xl mx-auto">
+    <div className="min-h-screen bg-background p-3">
+      <div className="w-full">
         <h1 className="text-2xl font-bold mb-6 flex items-center gap-2"><Shield className="h-6 w-6 text-blue-600"/>안전보건관리</h1>
         <div className="flex gap-2 mb-6 bg-card rounded-xl p-1 shadow-sm border border-border">
           {[{key:"ppe",label:"🦺 보호구"},{key:"guide",label:"🩺 응급처치"},{key:"nearmiss",label:"⚠️ 아차사고"}].map(tab=>(

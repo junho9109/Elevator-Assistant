@@ -1292,9 +1292,9 @@ export default function JudgmentPage() {
 
   return (
     <>
-      <div ref={zoomContentRef} className="min-h-screen bg-background p-4 md:p-8 font-sans text-foreground">
-        <div className="mx-auto max-w-5xl bg-card rounded-3xl shadow-2xl border border-border overflow-hidden">
-          <div className="p-6 border-b border-border bg-muted/30">
+      <div ref={zoomContentRef} className="min-h-screen bg-background font-sans text-foreground">
+        <div className="bg-card border-b border-border overflow-hidden">
+          <div className="p-4 border-b border-border bg-muted/30">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20">
