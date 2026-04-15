@@ -10,19 +10,8 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
-    const dx = touchStartX.current - e.changedTouches[0].clientX;
-    const dy = Math.abs(touchStartY.current - e.changedTouches[0].clientY);
-    if (Math.abs(dx) > 60 && dy < 80) {
-      if (dx > 0 && currentIndex < pages.length - 1) setCurrentIndex(i => i + 1);
-      else if (dx < 0 && currentIndex > 0) setCurrentIndex(i => i - 1);
-    }
-  };
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {};
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {};
 
   return (
     <div className="flex flex-col h-screen bg-background">
