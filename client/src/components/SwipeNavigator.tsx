@@ -15,6 +15,9 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
 
   return (
     <div className="flex flex-col bg-background" style={{height: "100dvh"}}>
+      {/* 상단 safe-area 패딩 */}
+      <div style={{height: "env(safe-area-inset-top)", backgroundColor: "var(--color-card)"}} />
+
       {/* 페이지 */}
       <div
         className="flex-1 overflow-hidden relative"
@@ -25,7 +28,6 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
           <div
             key={i}
             className="absolute inset-0 overflow-y-auto transition-opacity duration-200"
-            style={{paddingTop: "env(safe-area-inset-top)"}}
             style={{
               opacity: currentIndex === i ? 1 : 0,
               pointerEvents: currentIndex === i ? "auto" : "none",
@@ -84,7 +86,7 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
             <button
               key={i}
               onClick={() => setCurrentIndex(i)}
-              className={`flex-1 flex flex-col items-center justify-center py-3 transition-all duration-150 ${
+              className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-all duration-150 ${
                 currentIndex === i ? "text-primary" : "text-muted-foreground"
               }`}
             >
@@ -92,7 +94,7 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
                 {name}
               </span>
               {currentIndex === i && (
-                <div className="w-4 h-0.5 rounded-full bg-primary mt-1" />
+                <div className="w-4 h-0.5 rounded-full bg-primary mt-0.5" />
               )}
             </button>
           ))}
