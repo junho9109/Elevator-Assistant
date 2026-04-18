@@ -396,67 +396,7 @@ export default function PrecisionInspectionPage() {
         {result && (
           <div className="space-y-3">
 
-            {/* 판정 요약 카드 */}
-            <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                <span className="text-sm font-bold text-primary">판정 결과</span>
-              </div>
-              <p className="text-xs text-muted-foreground mb-1">적용 검사: <span className="text-foreground font-medium">{result.inspectionType}</span></p>
-              <p className="text-xs text-muted-foreground mb-3">판정 유형: <span className="text-foreground font-medium">{result.judgment}</span></p>
-
-              {/* 날짜 계산 결과 */}
-              {result.dates && (
-                <div className="bg-card rounded-xl p-3 space-y-2 border border-border">
-                  <p className="text-xs text-muted-foreground">📅 정밀안전검사일: <span className="font-semibold text-foreground">{formatDate(result.base)}</span></p>
-                  {result.initialMonths > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      최초 조건부합격 만료: <span className="font-semibold text-foreground">{formatDate(addMonths(result.base, result.initialMonths))}</span>
-                      <span className="text-muted-foreground ml-1">(+{result.initialMonths}개월)</span>
-                    </p>
-                  )}
-                  {/* 1단계 주기별 확인일 */}
-                  {result.dates.checks && (
-                    <div className="border-t border-border pt-2 space-y-1">
-                      <p className="text-xs font-medium text-foreground">📋 주기별 확인일 (6개월 주기)</p>
-                      {result.dates.checks.map((d: Date, i: number) => (
-                        <p key={i} className="text-xs text-muted-foreground pl-2">
-                          {i+1}차 확인: <span className="font-semibold text-foreground">{formatDate(d)}</span>
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {result.dates.first && (
-                    <div className="border-t border-border pt-2 space-y-1">
-                      <p className="text-xs font-medium text-foreground">📋 {result.dates.label}</p>
-                      <p className="text-xs text-muted-foreground pl-2">
-                        1차 확인: <span className="font-semibold text-foreground">{formatDate(result.dates.first)}</span>
-                        <span className="text-muted-foreground ml-1">(+{monthsDiff(result.base, result.dates.first)}개월)</span>
-                      </p>
-                    </div>
-                  )}
-                  <div className="border-t border-border pt-2">
-                    <p className="text-xs text-muted-foreground">🏁 최종 이행 마감일</p>
-                    <p className="text-xl font-bold text-primary">{formatDate(result.dates.deadline)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      정밀안전검사일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* 날짜 계산 불가 (재난, 2단계 등) */}
-              {!result.dates && (
-                <div className="bg-card rounded-xl p-3 border border-border">
-                  <p className="text-xs text-muted-foreground mb-1">📅 검사일: <span className="font-semibold text-foreground">{formatDate(result.base)}</span></p>
-                  <p className="text-xs text-amber-500 font-medium">이행기간: 상황에 따라 결정 (아래 행정절차 참고)</p>
-                </div>
-              )}
-
-              <p className="text-xs text-muted-foreground mt-2">근거: {result.basis}</p>
-            </div>
-
-            {/* 필요서류 */}
+            {/* 1. 필요서류 */}
             <div className="bg-card border border-border rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <FileText className="h-4 w-4 text-primary" />
@@ -480,39 +420,108 @@ export default function PrecisionInspectionPage() {
               )}
             </div>
 
-            {/* 이행기간 구성 (1단계) */}
-            {result.cycleDetail && (
+            {/* 2. 이행기간 + 행정절차 통합 (주기별) */}
+            {result.cycleDetail ? (
+              // 1단계: 주기별로 이행기간과 행정절차를 함께 표시
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 p-4 border-b border-border">
+                  <ClipboardList className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold">이행기간 및 행정처리 (주기별)</span>
+                </div>
+                <p className="text-xs text-muted-foreground px-4 py-2 bg-muted/20">
+                  선택하신 주기: <span className="font-semibold text-foreground">{cycle === "6m" ? "6개월" : cycle === "1y" ? "1년" : "2년"}</span>
+                </p>
+
+                {/* 주기별 상세 */}
+                {Object.entries(result.cycleDetail).map(([k, v]: any) => {
+                  const isSelected = (k === "6개월 주기" && cycle === "6m") ||
+                                     (k === "1년 주기" && cycle === "1y") ||
+                                     (k === "2년 주기" && cycle === "2y");
+                  return (
+                    <div key={k} className={`border-b border-border last:border-0 ${isSelected ? "bg-primary/5" : ""}`}>
+                      <div className={`px-4 py-3`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          {isSelected && <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full font-medium">선택됨</span>}
+                          <p className="text-xs font-semibold text-primary">{k}</p>
+                        </div>
+                        <p className="text-xs text-foreground mb-2">{v}</p>
+
+                        {/* 선택된 주기의 날짜 계산 */}
+                        {isSelected && result.dates && (
+                          <div className="bg-card border border-border rounded-lg p-3 mt-2 space-y-1.5">
+                            <p className="text-xs text-muted-foreground">📅 정밀안전검사일: <span className="font-semibold text-foreground">{formatDate(result.base)}</span></p>
+                            <p className="text-xs text-muted-foreground">⏱ 최초 조건부합격 만료: <span className="font-semibold text-foreground">{formatDate(addMonths(result.base, 2))}</span> (+2개월)</p>
+                            {result.dates.checks && result.dates.checks.map((d: Date, i: number) => (
+                              <p key={i} className="text-xs text-muted-foreground pl-2">
+                                {i+1}차 확인: <span className="font-semibold text-foreground">{formatDate(d)}</span>
+                              </p>
+                            ))}
+                            {result.dates.first && (
+                              <p className="text-xs text-muted-foreground pl-2">
+                                1차 확인: <span className="font-semibold text-foreground">{formatDate(result.dates.first)}</span>
+                                <span className="ml-1">(+{monthsDiff(result.base, result.dates.first)}개월)</span>
+                              </p>
+                            )}
+                            <div className="border-t border-border pt-1.5 mt-1">
+                              <p className="text-[10px] text-muted-foreground">🏁 최종 이행 마감일</p>
+                              <p className="text-base font-bold text-primary">{formatDate(result.dates.deadline)}</p>
+                              <p className="text-[10px] text-muted-foreground">정밀안전검사일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 선택된 주기의 행정절차 */}
+                        {isSelected && (
+                          <div className="mt-2 space-y-1">
+                            <p className="text-[10px] font-semibold text-muted-foreground mt-2 mb-1">▸ 행정 처리 절차</p>
+                            {result.adminProcess.map((step: string, i: number) => (
+                              <p key={i} className="text-xs leading-relaxed text-foreground pl-2">{step}</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-[10px] text-muted-foreground px-4 py-2">※ 최초 2개월 조건부합격 → 이행계획서 제출 → 주기별 확인 → 최종 판정</p>
+              </div>
+            ) : (
+              // 일반: 이행기간 + 행정절차 분리 표시
               <div className="bg-card border border-border rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Info className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-semibold">이행기간 구성 (주기별)</span>
+                  <ClipboardList className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold">이행기간 및 행정 처리 절차</span>
                 </div>
-                <div className="space-y-2">
-                  {Object.entries(result.cycleDetail).map(([k, v]: any) => (
-                    <div key={k} className="bg-muted/30 rounded-lg p-2.5">
-                      <p className="text-xs font-semibold text-primary">{k}</p>
-                      <p className="text-xs text-foreground mt-0.5">{v}</p>
+                {/* 날짜 계산 */}
+                {result.dates && (
+                  <div className="bg-muted/30 rounded-lg p-3 mb-3 space-y-1.5">
+                    <p className="text-xs text-muted-foreground">📅 검사일: <span className="font-semibold text-foreground">{formatDate(result.base)}</span></p>
+                    {result.initialMonths > 0 && (
+                      <p className="text-xs text-muted-foreground">⏱ 최초 조건부합격 만료: <span className="font-semibold text-foreground">{formatDate(addMonths(result.base, result.initialMonths))}</span> (+{result.initialMonths}개월)</p>
+                    )}
+                    <div className="border-t border-border pt-1.5">
+                      <p className="text-[10px] text-muted-foreground">🏁 최종 이행 마감일</p>
+                      <p className="text-base font-bold text-primary">{formatDate(result.dates.deadline)}</p>
+                      <p className="text-[10px] text-muted-foreground">검사일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후</p>
                     </div>
+                  </div>
+                )}
+                {!result.dates && (
+                  <div className="bg-amber-500/10 rounded-lg p-3 mb-3">
+                    <p className="text-xs text-amber-500 font-medium">📅 검사일: {formatDate(result.base)}</p>
+                    <p className="text-xs text-amber-500 mt-1">이행기간은 상황에 따라 결정됩니다 (아래 절차 참고)</p>
+                  </div>
+                )}
+                {/* 행정절차 */}
+                <div className="space-y-1.5">
+                  {result.adminProcess.map((step: string, i: number) => (
+                    <p key={i} className="text-xs leading-relaxed text-foreground pl-1">{step}</p>
                   ))}
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">※ 최초 2개월 조건부합격 → 이행계획서 제출 → 주기별 확인 → 최종 판정</p>
               </div>
             )}
 
-            {/* 행정 처리 절차 */}
-            <div className="bg-card border border-border rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <ClipboardList className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">행정 처리 절차</span>
-              </div>
-              <div className="space-y-2">
-                {result.adminProcess.map((step: string, i: number) => (
-                  <p key={i} className="text-xs leading-relaxed text-foreground pl-1">{step}</p>
-                ))}
-              </div>
-            </div>
-
-            {/* 주의사항 */}
+            {/* 3. 주의사항 */}
             {result.note && (
               <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
                 <div className="flex items-center gap-1.5 mb-1">
@@ -522,7 +531,6 @@ export default function PrecisionInspectionPage() {
                 <p className="text-xs text-foreground">{result.note}</p>
               </div>
             )}
-
             {result.warning && (
               <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3">
                 <div className="flex items-center gap-1.5 mb-1">
@@ -532,6 +540,19 @@ export default function PrecisionInspectionPage() {
                 <p className="text-xs text-foreground">{result.warning}</p>
               </div>
             )}
+
+            {/* 4. 판정 결과 (맨 아래) */}
+            <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+                <span className="text-sm font-bold text-primary">판정 결과 요약</span>
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">적용 검사: <span className="text-foreground font-medium">{result.inspectionType}</span></p>
+                <p className="text-xs text-muted-foreground">판정 유형: <span className="text-foreground font-medium">{result.judgment}</span></p>
+                <p className="text-xs text-muted-foreground">근거 법령: <span className="text-foreground font-medium">{result.basis}</span></p>
+              </div>
+            </div>
 
             {/* 출처 */}
             <p className="text-[10px] text-muted-foreground text-center pb-4">
