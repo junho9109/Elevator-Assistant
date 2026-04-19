@@ -187,12 +187,12 @@ export default function Home() {
     },
     {
       role: "assistant",
-      content: `최근 빈도 높은 사고 유형 (2024~2025)\n\n1위  승강장문 열림 주행 — 문닫힘 안전장치 불량\n2위  피트 추락 — 최하층 정지장치 미작동\n3위  카 상부 끼임 — 점검운전 중 안전스위치 미사용\n\n위 3가지는 정기검사 시 집중 점검 항목입니다.`,
+      content: `통계 데이터 로딩 중...`,
       time: formatTime()
     },
     {
       role: "assistant",
-      content: `2025년 주요 개정 기준\n\n• 개문출발방지장치(UCMP) 기존 승강기 의무화 확대\n• 피트 조명 기준 강화: 피트 전 구간 10lx → 20lx\n• 카 비상조명 작동시간 연장: 1시간 → 2시간\n• 자동구출운전 작동 확인 방법 구체화\n\n검사 시 해당 항목 반드시 확인하세요.`,
+      content: `2024년 주요 개정 기준 (검사규정 개정)\n\n• 개문출발방지장치(UCMP): 기존 승강기 의무 확대 적용\n• 승강로 조명 강화: 카 지붕 1m 상부 50lx, 전 구간 20lx 이상\n• 카 비상조명: 정전 후 2시간 이상 작동 의무\n• 자동구출운전: 비상발전기 연동 시 각 엘리베이터 전원 차단 시 작동 확인\n• 피트 정지장치: 깊이 1.6m 초과 시 상·하부 2개소 설치\n\n검사 시 해당 항목 반드시 확인하세요.`,
       time: formatTime()
     },
     {
@@ -259,7 +259,7 @@ export default function Home() {
 
   // 통계 로드 완료 시 초기 메시지 업데이트
   useEffect(() => {
-    if (accidentStats.yearly.length > 0) {
+    if (accidentStats.yearly.length > 0 && messages[1]?.content === "통계 데이터 로딩 중...") {
       const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
       if (latest) {
         const year = latest.year || latest.stdr_year || "";
