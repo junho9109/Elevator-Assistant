@@ -204,6 +204,7 @@ export default function Home() {
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [accidentStats, setAccidentStats] = useState<{yearly: any[], age: any[]}>({ yearly: [], age: [] });
+  const [statsLoaded, setStatsLoaded] = useState(false);
 
   // 구조도/표준화
   const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
@@ -240,26 +241,20 @@ export default function Home() {
 
   // 공공데이터 통계 로드
   useEffect(() => {
-    fetch("/api/elevator-accidents/yearly")
-      .then(r => r.json())
-      .then(data => {
-        const rows = data?.ElevatorSafetyAccidentsByYear?.[1]?.row || [];
-        setAccidentStats(prev => ({ ...prev, yearly: rows }));
-      })
-      .catch(() => {});
-
-    fetch("/api/elevator-accidents/age")
-      .then(r => r.json())
-      .then(data => {
-        const rows = data?.ElevatorSafetyAccidentsByAge?.[1]?.row || [];
-        setAccidentStats(prev => ({ ...prev, age: rows }));
-      })
-      .catch(() => {});
+    Promise.all([
+      fetch("/api/elevator-accidents/yearly").then(r => r.json()).catch(() => null),
+      fetch("/api/elevator-accidents/age").then(r => r.json()).catch(() => null),
+    ]).then(([yearlyData, ageData]) => {
+      const yearly = yearlyData?.ElevatorSafetyAccidentsByYear?.[1]?.row || [];
+      const age = ageData?.ElevatorSafetyAccidentsByAge?.[1]?.row || [];
+      setAccidentStats({ yearly, age });
+      setStatsLoaded(true);
+    });
   }, []);
 
   // 통계 로드 완료 시 초기 메시지 업데이트
   useEffect(() => {
-    if (accidentStats.yearly.length > 0 && messages[1]?.content === "통계 데이터 로딩 중...") {
+    if (statsLoaded && accidentStats.yearly.length > 0) {
       const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
       if (latest) {
         const year = latest.year || latest.stdr_year || "";
