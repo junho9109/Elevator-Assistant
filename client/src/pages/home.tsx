@@ -239,17 +239,32 @@ export default function Home() {
 
   const activeButton = hotspots.find(h => h.id === activeButtonId);
 
-  // 공공데이터 통계 로드
+  // 공공데이터 통계 로드 - 서버 요약 API 사용
   useEffect(() => {
-    Promise.all([
-      fetch("/api/elevator-accidents/yearly").then(r => r.json()).catch(() => null),
-      fetch("/api/elevator-accidents/age").then(r => r.json()).catch(() => null),
-    ]).then(([yearlyData, ageData]) => {
-      const yearly = yearlyData?.ElevatorSafetyAccidentsByYear?.[1]?.row || [];
-      const age = ageData?.ElevatorSafetyAccidentsByAge?.[1]?.row || [];
-      setAccidentStats({ yearly, age });
-      setStatsLoaded(true);
-    });
+    fetch("/api/stats-summary")
+      .then(r => r.json())
+      .then(data => {
+        if (data.message) {
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[1] = {
+              role: "assistant",
+              content: data.message,
+              time: updated[1]?.time || formatTime()
+            };
+            return updated;
+          });
+        }
+        setStatsLoaded(true);
+        // accidentStats도 업데이트 (질문 답변용)
+        if (data.year) {
+          setAccidentStats({
+            yearly: [{ wrttimeid: data.year, safe_acci_smry: data.total, safe_acci_only_passenger: data.passenger, safe_acci_only_freight: data.freight, safe_acci_escalator: data.escalator, expcas_death: data.deaths, expcas_serious_injury: data.serious }],
+            age: []
+          });
+        }
+      })
+      .catch(() => { setStatsLoaded(true); });
   }, []);
 
   // 통계 로드 완료 시 초기 메시지 업데이트

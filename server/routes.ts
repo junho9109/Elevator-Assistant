@@ -794,6 +794,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
 
+
+  // 통계 요약 API - 서버에서 공공데이터 가공 후 제공
+  app.get("/api/stats-summary", async (req, res) => {
+    try {
+      const apiKey = process.env.PUBLIC_DATA_API_KEY_YEARLY || process.env.PUBLIC_DATA_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API key not configured" });
+
+      const [yearlyRes, ageRes] = await Promise.all([
+        fetch(`http://apis.data.go.kr/1741000/ElevatorSafetyAccidentsByYear/getElevatorSafetyAccidentsByYear?serviceKey=${apiKey}&pageNo=1&numOfRows=20&type=json`),
+        fetch(`http://apis.data.go.kr/1741000/ElevatorSafetyAccidentsByAge/getElevatorSafetyAccidentsByAge?serviceKey=${apiKey}&pageNo=1&numOfRows=20&type=json`),
+      ]);
+
+      const yearlyData = await yearlyRes.json();
+      const ageData = await ageRes.json();
+
+      const yearly = yearlyData?.ElevatorSafetyAccidentsByYear?.[1]?.row || [];
+      const age = ageData?.ElevatorSafetyAccidentsByAge?.[1]?.row || [];
+
+      const latest = yearly[yearly.length - 1];
+      const prev = yearly[yearly.length - 2];
+      const latestAge = age[age.length - 1];
+
+      if (!latest) return res.status(404).json({ error: "No data" });
+
+      const total = parseInt(latest.safe_acci_smry);
+      const prevTotal = prev ? parseInt(prev.safe_acci_smry) : null;
+      const trend = prevTotal
+        ? (total < prevTotal
+          ? `전년(${prev.wrttimeid}년, ${prevTotal}건) 대비 ${prevTotal - total}건 감소`
+          : `전년(${prev.wrttimeid}년, ${prevTotal}건) 대비 ${total - prevTotal}건 증가`)
+        : "";
+
+      const elderPct = latestAge
+        ? Math.round(parseInt(latestAge.old65_mor) / parseInt(latestAge.tot) * 100)
+        : 0;
+
+      res.json({
+        year: latest.wrttimeid,
+        total: latest.safe_acci_smry,
+        passenger: latest.safe_acci_only_passenger,
+        freight: latest.safe_acci_only_freight,
+        escalator: latest.safe_acci_escalator,
+        deaths: latest.expcas_death,
+        serious: latest.expcas_serious_injury,
+        trend,
+        elderPct,
+        message: `행정안전부 승강기 안전사고 통계 (${latest.wrttimeid}년)\n\n• 전체 사고: ${latest.safe_acci_smry}건 (${trend})\n• 승객용 엘리베이터: ${latest.safe_acci_only_passenger}건\n• 화물용 엘리베이터: ${latest.safe_acci_only_freight}건\n• 에스컬레이터: ${latest.safe_acci_escalator}건\n• 사망: ${latest.expcas_death}명 / 중상: ${latest.expcas_serious_injury}명${elderPct > 0 ? `\n• 65세 이상 피해 비율: ${elderPct}%` : ""}\n\n빈도 높은 사고 유형\n1위  승강장문 열림 주행 — 문닫힘 안전장치 불량\n2위  피트 추락 — 최하층 정지장치 미작동\n3위  카 상부 끼임 — 점검운전 중 안전스위치 미사용`
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stats" });
+    }
+  });
+
   // 공공데이터 API 프록시 - 연도별 승강기 안전사고
   app.get("/api/elevator-accidents/yearly", async (req, res) => {
     try {
