@@ -1427,18 +1427,7 @@ export default function JudgmentPage() {
                 className="text-xs"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="completionDate" className="text-xs">완성검사(설치검사)일</Label>
-              <Input
-                id="completionDate"
-                type="date"
-                value={completionDate}
-                onChange={(e) => setCompletionDate(e.target.value)}
-                data-testid="input-completion-date"
-                className="text-xs"
-              />
-              <p className="text-[10px] text-muted-foreground">※ 2012.3.14 이전 설치 시 종전 정밀안전검사기준 적용</p>
-            </div>
+
             <div className="space-y-2">
               <Label htmlFor="inspectionDate" className="text-xs">검사기준 적용일 (개정고시 적용일)</Label>
               <Input
