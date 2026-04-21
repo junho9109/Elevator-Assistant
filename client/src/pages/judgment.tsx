@@ -1380,19 +1380,20 @@ export default function JudgmentPage() {
               </Button>
             </div>
           </div>
-          <p className="text-muted-foreground text-sm mb-6">
-            승강기 종류를 선택하고 건축허가일자 또는 검사기준 적용일을 입력하면 해당 기준의 적용 여부를 확인할 수 있습니다.
+          <p className="text-xs text-muted-foreground mb-3">
+            승강기 종류와 날짜를 입력하면 검사기준 적용 여부를 자동으로 판정합니다.
           </p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div className="space-y-2">
-              <Label>승강기 종류</Label>
-              <Select 
-                value={equipmentType} 
+
+          {/* 승강기 종류 선택 */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">승강기 종류</Label>
+              <Select
+                value={equipmentType}
                 onValueChange={(value) => handleEquipmentTypeChange(value as EquipmentType)}
               >
-                <SelectTrigger data-testid="select-equipment-type">
-                  <SelectValue placeholder="승강기 종류 선택" />
+                <SelectTrigger className="text-xs h-9" data-testid="select-equipment-type">
+                  <SelectValue placeholder="종류 선택" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="엘리베이터">엘리베이터</SelectItem>
@@ -1402,12 +1403,12 @@ export default function JudgmentPage() {
                 </SelectContent>
               </Select>
             </div>
-            {EQUIPMENT_SUBTYPES[equipmentType].length > 0 && (
-              <div className="space-y-2">
-                <Label>세부 종류</Label>
+            {EQUIPMENT_SUBTYPES[equipmentType]?.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">세부 종류</Label>
                 <Select value={subType} onValueChange={setSubType}>
-                  <SelectTrigger data-testid="select-sub-type">
-                    <SelectValue placeholder="세부 종류 선택" />
+                  <SelectTrigger className="text-xs h-9" data-testid="select-sub-type">
+                    <SelectValue placeholder="세부 선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {EQUIPMENT_SUBTYPES[equipmentType].map((type) => (
@@ -1419,47 +1420,62 @@ export default function JudgmentPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="permitDate" className="text-xs">건축허가일자</Label>
+          {/* 날짜 입력 */}
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">건축허가일자</Label>
               <Input
                 id="permitDate"
                 type="date"
                 value={permitDate}
-                onChange={(e) => setPermitDate(e.target.value)}
+                onChange={(e) => { setPermitDate(e.target.value); setInstallType(""); }}
                 data-testid="input-permit-date"
-                className="text-xs"
+                className="text-xs h-9"
               />
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="inspectionDate" className="text-xs">검사기준 적용일 (개정고시 적용일)</Label>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">검사기준 적용일</Label>
               <Input
                 id="inspectionDate"
                 type="date"
                 value={inspectionDate}
-                onChange={(e) => setInspectionDate(e.target.value)}
+                onChange={(e) => { setInspectionDate(e.target.value); setInstallType(""); }}
                 data-testid="input-inspection-date"
+                className="text-xs h-9"
               />
             </div>
           </div>
-          
-          {(permitDate || inspectionDate) && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="text-sm text-blue-800 space-y-1">
-                {permitDate && (
-                  <p>건축허가일: <strong>{permitDate}</strong></p>
-                )}
-                {inspectionDate && (
-                  <p>검사기준 적용일: <strong>{inspectionDate}</strong></p>
-                )}
-                <p className="text-xs text-blue-600 mt-2">
-                  {permitDate && inspectionDate 
-                    ? "두 날짜 중 더 늦은 날짜를 기준으로 적용 여부가 판정됩니다."
-                    : "이 날짜를 기준으로 검사기준 적용 여부가 표시됩니다."}
-                </p>
-              </div>
+
+          {/* 건축허가일과 검사기준적용일이 다를 때 교체 유형 선택 */}
+          {permitDate && inspectionDate && permitDate !== inspectionDate && (
+            <div className="mb-2 space-y-1">
+              <Label className="text-xs font-semibold">교체 구분</Label>
+              <Select value={installType} onValueChange={(v) => setInstallType(v as "전면교체" | "수시교체")}>
+                <SelectTrigger className="text-xs h-9">
+                  <SelectValue placeholder="교체 유형을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="전면교체">전면교체 (승강기 전체 교체)</SelectItem>
+                  <SelectItem value="수시교체">수시교체 (부품 일부 교체·개조)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">건축허가일과 검사기준 적용일이 다른 경우 선택하세요</p>
             </div>
+          )}
+
+          {/* 기준일 안내 */}
+          {(permitDate || inspectionDate) && (
+            <div className="p-2.5 bg-blue-500/10 rounded-lg border border-blue-500/20 text-xs space-y-0.5 mb-2">
+              {permitDate && <p className="text-foreground">건축허가일: <strong>{permitDate}</strong></p>}
+              {inspectionDate && <p className="text-foreground">검사기준 적용일: <strong>{inspectionDate}</strong></p>}
+              {installType && <p className="text-primary font-medium">교체 구분: {installType}</p>}
+              <p className="text-[10px] text-blue-500 mt-1">
+                {permitDate && inspectionDate && permitDate !== inspectionDate
+                  ? `${permitDate > inspectionDate ? permitDate : inspectionDate} 기준으로 판정됩니다.`
+                  : "입력된 날짜 기준으로 검사항목 적용 여부가 판정됩니다."}
+              </p>
+            </div>
+          )}
           )}
         </div>
 
