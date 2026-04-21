@@ -430,6 +430,8 @@ export default function JudgmentPage() {
   const [subType, setSubType] = useState<string>("전기식(MR)");
   const [inspectionDate, setInspectionDate] = useState("");
   const [permitDate, setPermitDate] = useState("");
+  const [completionDate, setCompletionDate] = useState(""); // 완성검사(설치검사)일
+  const [standardDate] = useState("2017-01-28"); // 고시시행일 (2016-143호)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<Record<string, ResultType>>(() => {
     const saved = localStorage.getItem("judgmentResults");
@@ -974,16 +976,31 @@ export default function JudgmentPage() {
   };
 
   const referenceDate = useMemo(() => {
+    // 기준일 우선순위: 검사기준 적용일 > 건축허가일
+    // (승강기 안전검사기준 2016-143호 부칙 제2조: 건축허가분부터 적용)
     if (permitDate && inspectionDate) {
       const permit = new Date(permitDate);
       const inspection = new Date(inspectionDate);
-      // 두 날짜 중 더 늦은 날짜를 기준으로 적용 여부 판정
       return permit > inspection ? permit : inspection;
     }
-    if (permitDate) return new Date(permitDate);
     if (inspectionDate) return new Date(inspectionDate);
+    if (permitDate) return new Date(permitDate);
     return null;
   }, [inspectionDate, permitDate]);
+
+  // 기준일 체계 안내 텍스트
+  const referenceDateInfo = useMemo(() => {
+    if (!referenceDate && !completionDate) return null;
+    const items = [];
+    if (permitDate) items.push(`건축허가일: ${permitDate}`);
+    if (inspectionDate) items.push(`검사기준 적용일: ${inspectionDate}`);
+    if (completionDate) {
+      const comp = new Date(completionDate);
+      const cutoff = new Date("2012-03-14");
+      items.push(`완성검사일: ${completionDate}${comp <= cutoff ? " (종전기준 적용)" : ""}`);
+    }
+    return items;
+  }, [permitDate, inspectionDate, completionDate, referenceDate]);
 
   const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => {
     if (!referenceDate) return "applicable";
@@ -1383,17 +1400,30 @@ export default function JudgmentPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="permitDate">건축허가일자</Label>
+              <Label htmlFor="permitDate" className="text-xs">건축허가일자</Label>
               <Input
                 id="permitDate"
                 type="date"
                 value={permitDate}
                 onChange={(e) => setPermitDate(e.target.value)}
                 data-testid="input-permit-date"
+                className="text-xs"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="inspectionDate">검사기준 적용일</Label>
+              <Label htmlFor="completionDate" className="text-xs">완성검사(설치검사)일</Label>
+              <Input
+                id="completionDate"
+                type="date"
+                value={completionDate}
+                onChange={(e) => setCompletionDate(e.target.value)}
+                data-testid="input-completion-date"
+                className="text-xs"
+              />
+              <p className="text-[10px] text-muted-foreground">※ 2012.3.14 이전 설치 시 종전 정밀안전검사기준 적용</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inspectionDate" className="text-xs">검사기준 적용일 (개정고시 적용일)</Label>
               <Input
                 id="inspectionDate"
                 type="date"
