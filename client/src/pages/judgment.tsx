@@ -439,8 +439,9 @@ export default function JudgmentPage() {
   const [subType, setSubType] = useState<string>("전기식(MR)");
   const [inspectionDate, setInspectionDate] = useState("");
   const [permitDate, setPermitDate] = useState("");
-  const [completionDate, setCompletionDate] = useState(""); // 완성검사(설치검사)일
-  const [standardDate] = useState("2017-01-28"); // 고시시행일 (2016-143호)
+  const [completionDate, setCompletionDate] = useState("");
+  const [installType, setInstallType] = useState<"" | "전면교체" | "수시교체">("");
+  const [standardDate] = useState("2017-01-28");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<Record<string, ResultType>>(() => {
     const saved = localStorage.getItem("judgmentResults");
