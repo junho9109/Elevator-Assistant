@@ -399,14 +399,23 @@ function PhotoList({
   );
 }
 
+interface RevisionEntry {
+  id?: number;
+  revisionDate: string;
+  description: string;
+}
 interface CustomItemEdit {
   id: string;
   text?: string;
+  permitEffectiveDate?: string;   // 건축허가일 이후 적용일
+  standardEffectiveDate?: string; // 설치검사일(검사기준 적용일) 이후 적용일
+  revisions?: RevisionEntry[];    // 개정 이력 (최대 10개)
+  customWarning?: string;
+  fixedResult?: ResultType;
+  // 하위호환
   effectiveDate?: string;
   expiryDate?: string;
   introductionType?: "new" | "revision";
-  customWarning?: string;
-  fixedResult?: ResultType;
 }
 
 type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
@@ -453,7 +462,10 @@ export default function JudgmentPage() {
     sectionId: "",
     text: "",
     effectiveDate: "",
-    introductionType: "" as "" | "new" | "revision"
+    introductionType: "" as "" | "new" | "revision",
+    permitEffectiveDate: "",
+    standardEffectiveDate: "",
+    revisions: [] as RevisionEntry[]
   });
 
   // Item detail dialog state (photos & comments)
@@ -634,9 +646,11 @@ export default function JudgmentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: edit.text || null,
-          effectiveDate: edit.effectiveDate || null,
+          effectiveDate: edit.permitEffectiveDate || edit.standardEffectiveDate || edit.effectiveDate || null,
           expiryDate: edit.expiryDate || null,
           introductionType: edit.introductionType || null,
+          permitEffectiveDate: edit.permitEffectiveDate || null,
+          standardEffectiveDate: edit.standardEffectiveDate || null,
           customWarning: edit.customWarning || null,
         })
       });
@@ -845,6 +859,9 @@ export default function JudgmentPage() {
       effectiveDate: existingEdit?.effectiveDate ?? item.effectiveDate ?? "",
       expiryDate: existingEdit?.expiryDate ?? item.expiryDate ?? "",
       introductionType: existingEdit?.introductionType ?? item.introductionType,
+      permitEffectiveDate: (existingEdit as any)?.permitEffectiveDate ?? "",
+      standardEffectiveDate: (existingEdit as any)?.standardEffectiveDate ?? "",
+      revisions: [] as RevisionEntry[],
       customWarning: existingEdit?.customWarning ?? "",
       fixedResult: existingEdit?.fixedResult ?? results[item.id],
     });

@@ -305,10 +305,11 @@ export type AppSetting = typeof appSettings.$inferSelect;
 export const inspectionItemRevisions = pgTable("inspection_item_revisions", {
   id: serial("id").primaryKey(),
   itemId: varchar("item_id", { length: 50 }).notNull(),
+  revisionDate: varchar("revision_date", { length: 20 }),
+  description: text("description"),
   effectiveDate: varchar("effective_date", { length: 20 }),
   expiryDate: varchar("expiry_date", { length: 20 }),
   introductionType: varchar("introduction_type", { length: 20 }),
-  description: text("description"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
