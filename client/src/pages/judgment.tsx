@@ -1476,7 +1476,6 @@ export default function JudgmentPage() {
               </p>
             </div>
           )}
-          )}
         </div>
 
         <div className="overflow-hidden">
