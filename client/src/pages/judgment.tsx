@@ -465,6 +465,7 @@ export default function JudgmentPage() {
     introductionType: "" as "" | "new" | "revision",
     permitEffectiveDate: "",
     standardEffectiveDate: "",
+    standardDates: [] as string[],
     revisions: [] as RevisionEntry[]
   });
 
@@ -649,8 +650,9 @@ export default function JudgmentPage() {
           effectiveDate: edit.permitEffectiveDate || edit.standardEffectiveDate || edit.effectiveDate || null,
           expiryDate: edit.expiryDate || null,
           introductionType: edit.introductionType || null,
-          permitEffectiveDate: edit.permitEffectiveDate || null,
-          standardEffectiveDate: edit.standardEffectiveDate || null,
+          permitEffectiveDate: (edit as any).permitEffectiveDate || null,
+          standardEffectiveDate: (edit as any).standardDates?.[0] || (edit as any).standardEffectiveDate || null,
+          standardDates: JSON.stringify((edit as any).standardDates || []),
           customWarning: edit.customWarning || null,
         })
       });
@@ -861,6 +863,7 @@ export default function JudgmentPage() {
       introductionType: existingEdit?.introductionType ?? item.introductionType,
       permitEffectiveDate: (existingEdit as any)?.permitEffectiveDate ?? "",
       standardEffectiveDate: (existingEdit as any)?.standardEffectiveDate ?? "",
+      standardDates: (existingEdit as any)?.standardDates ?? [],
       revisions: [] as RevisionEntry[],
       customWarning: existingEdit?.customWarning ?? "",
       fixedResult: existingEdit?.fixedResult ?? results[item.id],
