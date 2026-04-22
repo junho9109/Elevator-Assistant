@@ -274,7 +274,7 @@ export default function Home() {
       const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
       if (latest) {
         const year = latest.year || latest.stdr_year || "";
-        const total = latest.tot_acc_cnt || latest.totalAccidentCount || "-";
+        const total = latest.tot_acc_cnt || latest.totalAccidentCount || latest.safe_acci_smry || "-";
         setMessages(prev => {
           const updated = [...prev];
           updated[1] = {
@@ -282,8 +282,8 @@ export default function Home() {
             content: `최근 승강기 안전사고 통계 (${year}년, 행정안전부)
 
 • 전체 사고: ${total}건
-• 승객용: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || "-"}건
-• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || "-"}건
+• 승객용: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || latest.safe_acci_only_passenger || "-"}건
+• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || latest.safe_acci_escalator || "-"}건
 
 빈도 높은 사고 유형
 1위  승강장문 열림 주행 — 문닫힘 안전장치 불량
@@ -332,10 +332,10 @@ export default function Home() {
           answer = `공공데이터 기준 최신 승강기 안전사고 통계
 
 ${latest.year || latest.stdr_year}년 현황
-• 승객용 엘리베이터: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || "-"}건
+• 승객용 엘리베이터: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || latest.safe_acci_only_passenger || "-"}건
 • 화물용 엘리베이터: ${latest.freight_elvtr_acc_cnt || latest.freightElevatorAccidentCount || "-"}건
-• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || "-"}건
-• 합계: ${latest.tot_acc_cnt || latest.totalAccidentCount || "-"}건${prev ? `
+• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || latest.safe_acci_escalator || "-"}건
+• 합계: ${latest.tot_acc_cnt || latest.totalAccidentCount || latest.safe_acci_smry || "-"}건${prev ? `
 
 전년(${prev.year || prev.stdr_year}년) 대비 추이를 확인하시려면 검사가이드 페이지를 참고하세요.` : ""}
 
