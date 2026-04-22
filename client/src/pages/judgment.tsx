@@ -1590,47 +1590,62 @@ export default function JudgmentPage() {
                 data-testid="input-edit-item-text"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-item-effective-date">적용일 (시행일)</Label>
-                <Input
-                  id="edit-item-effective-date"
-                  type="date"
-                  value={editForm.effectiveDate || ""}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, effectiveDate: e.target.value }))}
-                  data-testid="input-edit-item-effective-date"
-                />
-                <p className="text-xs text-muted-foreground">이 날짜 이후에 적용되는 기준</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-item-expiry-date">만료일</Label>
-                <Input
-                  id="edit-item-expiry-date"
-                  type="date"
-                  value={editForm.expiryDate || ""}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, expiryDate: e.target.value }))}
-                  data-testid="input-edit-item-expiry-date"
-                />
-                <p className="text-xs text-muted-foreground">이 날짜 이후에는 해당없음 처리</p>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-permit-effective-date">건축허가일자 이후 적용</Label>
+              <Input
+                id="edit-permit-effective-date"
+                type="date"
+                value={editForm.permitEffectiveDate || ""}
+                onChange={(e) => setEditForm(prev => ({ ...prev, permitEffectiveDate: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">이 날짜 이후 건축허가분부터 적용되는 기준</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-item-intro-type">도입 유형</Label>
-              <Select
-                value={editForm.introductionType || ""}
-                onValueChange={(value) => setEditForm(prev => ({ 
-                  ...prev, 
-                  introductionType: value as "new" | "revision" | undefined 
-                }))}
-              >
-                <SelectTrigger id="edit-item-intro-type" data-testid="select-edit-item-intro-type">
-                  <SelectValue placeholder="선택 안함" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="new">신규</SelectItem>
-                  <SelectItem value="revision">개정</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center justify-between">
+                <Label>검사기준 적용일 (개정)</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditForm(prev => ({
+                    ...prev,
+                    standardDates: [...(prev.standardDates || []), ""]
+                  }))}
+                  disabled={(editForm.standardDates || []).length >= 5}
+                >
+                  + 추가
+                </Button>
+              </div>
+              {(editForm.standardDates || []).length === 0 && (
+                <p className="text-xs text-muted-foreground">추가 버튼을 눌러 검사기준 적용일을 추가하세요.</p>
+              )}
+              {(editForm.standardDates || []).map((date, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <Input
+                    type="date"
+                    value={date}
+                    onChange={(e) => {
+                      const newDates = [...(editForm.standardDates || [])];
+                      newDates[idx] = e.target.value;
+                      setEditForm(prev => ({ ...prev, standardDates: newDates }));
+                    }}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const newDates = (editForm.standardDates || []).filter((_, i) => i !== idx);
+                      setEditForm(prev => ({ ...prev, standardDates: newDates }));
+                    }}
+                    className="text-destructive px-2"
+                  >
+                    ✕
+                  </Button>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground">최대 5개. 해당 날짜 이후 설치검사분부터 적용.</p>
             </div>
             <div className="space-y-2">
               <Label>판정 결과</Label>
