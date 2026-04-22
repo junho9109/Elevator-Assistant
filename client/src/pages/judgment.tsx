@@ -409,6 +409,7 @@ interface CustomItemEdit {
   text?: string;
   permitEffectiveDate?: string;   // 건축허가일 이후 적용일
   standardEffectiveDate?: string; // 설치검사일(검사기준 적용일) 이후 적용일
+  standardDatesWithMemo?: {date: string; memo: string}[]; // 날짜+메모
   revisions?: RevisionEntry[];    // 개정 이력 (최대 10개)
   customWarning?: string;
   fixedResult?: ResultType;
@@ -874,6 +875,18 @@ export default function JudgmentPage() {
     if (!isAdminMode) return;
     const existingEdit = customEdits[item.id];
     setEditingItem(item);
+    const dates: string[] = (() => {
+      if ((existingEdit as any)?.standardDates?.length > 0) return (existingEdit as any).standardDates;
+      const dbItem = baseItemMap[item.id];
+      if (dbItem?.standardDates) {
+        try {
+          const parsed = JSON.parse(dbItem.standardDates);
+          if (parsed.length > 0) return parsed;
+        } catch {}
+      }
+      if (item.effectiveDate) return [item.effectiveDate];
+      return [];
+    })();
     setEditForm({
       id: item.id,
       text: existingEdit?.text ?? item.text,
@@ -882,26 +895,15 @@ export default function JudgmentPage() {
       introductionType: existingEdit?.introductionType ?? item.introductionType,
       permitEffectiveDate: (existingEdit as any)?.permitEffectiveDate ?? baseItemMap[item.id]?.permitEffectiveDate ?? "",
       standardEffectiveDate: (existingEdit as any)?.standardEffectiveDate ?? "",
-      standardDates: (() => {
-        // 1. 저장된 편집값 우선
-        if ((existingEdit as any)?.standardDates?.length > 0) return (existingEdit as any).standardDates;
-        // 2. DB baseItemMap에서 가져오기
-        const dbItem = baseItemMap[item.id];
-        if (dbItem?.standardDates) {
-          try {
-            const parsed = JSON.parse(dbItem.standardDates);
-            if (parsed.length > 0) return parsed;
-          } catch {}
-        }
-        // 3. 기존 effectiveDate가 있으면 그걸로
-        if (item.effectiveDate) return [item.effectiveDate];
-        return [];
-      })(),
+      standardDates: dates,
+      standardDatesWithMemo: dates.map(d => ({ date: d, memo: "" })),
       revisions: [] as RevisionEntry[],
       customWarning: existingEdit?.customWarning ?? "",
       fixedResult: existingEdit?.fixedResult ?? results[item.id],
     });
-    setIsEditItemDialogOpen(true);
+    // 통합 다이얼로그: detailItem도 설정해서 사진/댓글도 같이 표시
+    setDetailItem(item);
+    setIsDetailDialogOpen(true);
   };
 
   const handleSaveItemEdit = () => {
@@ -1578,149 +1580,7 @@ export default function JudgmentPage() {
       </Dialog>
 
       {/* Edit Item Dialog */}
-      <Dialog open={isEditItemDialogOpen} onOpenChange={setIsEditItemDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>검사 항목 수정</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-item-id">항목 ID</Label>
-              <Input
-                id="edit-item-id"
-                value={editForm.id}
-                disabled
-                className="bg-muted"
-                data-testid="input-edit-item-id"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-item-text">검사 내용</Label>
-              <Textarea
-                id="edit-item-text"
-                value={editForm.text || ""}
-                onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
-                rows={4}
-                data-testid="input-edit-item-text"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-permit-effective-date">건축허가일자 이후 적용</Label>
-              <Input
-                id="edit-permit-effective-date"
-                type="date"
-                value={editForm.permitEffectiveDate || ""}
-                onChange={(e) => setEditForm(prev => ({ ...prev, permitEffectiveDate: e.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground">이 날짜 이후 건축허가분부터 적용되는 기준</p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>검사기준 적용일 (개정)</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditForm(prev => ({
-                    ...prev,
-                    standardDates: [...(prev.standardDates || []), ""]
-                  }))}
-                  disabled={(editForm.standardDates || []).length >= 5}
-                >
-                  + 추가
-                </Button>
-              </div>
-              {(editForm.standardDates || []).length === 0 && (
-                <p className="text-xs text-muted-foreground">추가 버튼을 눌러 검사기준 적용일을 추가하세요.</p>
-              )}
-              {(editForm.standardDates || []).map((date, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                  <Input
-                    type="date"
-                    value={date}
-                    onChange={(e) => {
-                      const newDates = [...(editForm.standardDates || [])];
-                      newDates[idx] = e.target.value;
-                      setEditForm(prev => ({ ...prev, standardDates: newDates }));
-                    }}
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      const newDates = (editForm.standardDates || []).filter((_, i) => i !== idx);
-                      setEditForm(prev => ({ ...prev, standardDates: newDates }));
-                    }}
-                    className="text-destructive px-2"
-                  >
-                    ✕
-                  </Button>
-                </div>
-              ))}
-              <p className="text-xs text-muted-foreground">최대 5개. 해당 날짜 이후 설치검사분부터 적용.</p>
-            </div>
-            <div className="space-y-2">
-              <Label>판정 결과</Label>
-              <div className="flex gap-2 flex-wrap">
-                {(["적합", "부적합", "시정권고", "해당없음", "종전"] as ResultType[]).map((resultType) => (
-                  <Button
-                    key={resultType}
-                    type="button"
-                    variant={editForm.fixedResult === resultType ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setEditForm(prev => ({ 
-                      ...prev, 
-                      fixedResult: prev.fixedResult === resultType ? undefined : resultType 
-                    }))}
-                    data-testid={`edit-result-${resultType}`}
-                  >
-                    {resultType}
-                  </Button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">선택 시 해당 결과가 고정 적용됩니다</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-item-custom-warning">※ 안내문구 (선택사항)</Label>
-              <Textarea
-                id="edit-item-custom-warning"
-                value={editForm.customWarning || ""}
-                onChange={(e) => setEditForm(prev => ({ ...prev, customWarning: e.target.value }))}
-                placeholder="이 항목에 표시할 특별 안내문구를 입력하세요"
-                rows={2}
-                data-testid="input-edit-item-custom-warning"
-              />
-              <p className="text-xs text-muted-foreground">입력 시 해당 항목 하단에 파란색 안내문구로 표시됩니다</p>
-            </div>
-          </div>
-          <DialogFooter className="flex gap-2">
-            {customEdits[editForm.id] && (
-              <Button 
-                variant="destructive" 
-                onClick={() => {
-                  setCustomEdits(prev => {
-                    const newEdits = { ...prev };
-                    delete newEdits[editForm.id];
-                    return newEdits;
-                  });
-                  setIsEditItemDialogOpen(false);
-                  toast({
-                    title: "수정 초기화",
-                    description: "원본 데이터로 복원되었습니다.",
-                  });
-                }}
-                data-testid="button-reset-item-edit"
-              >
-                초기화
-              </Button>
-            )}
-            <Button variant="outline" onClick={() => setIsEditItemDialogOpen(false)}>취소</Button>
-            <Button onClick={handleSaveItemEdit} data-testid="button-save-item-edit">저장</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
 
       {/* 항목 추가 다이얼로그 */}
       <Dialog open={isAddItemDialogOpen} onOpenChange={setIsAddItemDialogOpen}>
@@ -1802,6 +1662,111 @@ export default function JudgmentPage() {
           </DialogHeader>
           {detailItem && (
             <div className="flex-1 overflow-hidden flex flex-col">
+              {/* 관리자 편집 섹션 */}
+              {isAdminMode && editingItem?.id === detailItem.id && (
+                <div className="border border-primary/30 rounded-xl p-4 bg-primary/5 space-y-4 mb-4">
+                  <h3 className="font-semibold text-sm text-primary">✏️ 항목 수정</h3>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">검사 내용</label>
+                    <Textarea
+                      value={editForm.text || ""}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">건축허가일자 이후 적용</label>
+                    <Input
+                      type="date"
+                      value={editForm.permitEffectiveDate || ""}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, permitEffectiveDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-muted-foreground">검사기준 적용일 (개정)</label>
+                      <Button type="button" variant="outline" size="sm"
+                        onClick={() => setEditForm(prev => ({
+                          ...prev,
+                          standardDatesWithMemo: [...(prev.standardDatesWithMemo || []), { date: "", memo: "" }],
+                          standardDates: [...(prev.standardDates || []), ""]
+                        }))}
+                        disabled={(editForm.standardDatesWithMemo || []).length >= 5}
+                      >+ 추가</Button>
+                    </div>
+                    {(editForm.standardDatesWithMemo || []).map((entry, idx) => (
+                      <div key={idx} className="border border-border rounded-lg p-3 bg-card space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="date"
+                            value={entry.date}
+                            onChange={(e) => {
+                              const arr = [...(editForm.standardDatesWithMemo || [])];
+                              arr[idx] = { ...arr[idx], date: e.target.value };
+                              const dates = arr.map(a => a.date);
+                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr, standardDates: dates }));
+                            }}
+                            className="flex-1"
+                          />
+                          <Button type="button" variant="ghost" size="sm"
+                            onClick={() => {
+                              const arr = (editForm.standardDatesWithMemo || []).filter((_, i) => i !== idx);
+                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr, standardDates: arr.map(a => a.date) }));
+                            }}
+                            className="text-destructive px-2"
+                          >✕</Button>
+                        </div>
+                        <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                          <span className="mt-1">→</span>
+                          <Textarea
+                            value={entry.memo}
+                            onChange={(e) => {
+                              const arr = [...(editForm.standardDatesWithMemo || [])];
+                              arr[idx] = { ...arr[idx], memo: e.target.value };
+                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr }));
+                            }}
+                            placeholder="적용 내용, 종전 기준 등 메모 (복사/붙여넣기 가능)"
+                            rows={3}
+                            className="flex-1 text-xs"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    {(editForm.standardDatesWithMemo || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground">추가 버튼을 눌러 검사기준 적용일을 추가하세요.</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">판정 결과 고정</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {(["적합","부적합","시정권고","해당없음","종전"] as ResultType[]).map(r => (
+                        <Button key={r} type="button" size="sm"
+                          variant={editForm.fixedResult === r ? "default" : "outline"}
+                          onClick={() => setEditForm(prev => ({ ...prev, fixedResult: prev.fixedResult === r ? undefined : r }))}
+                        >{r}</Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">※ 안내문구 (선택사항)</label>
+                    <Textarea
+                      value={editForm.customWarning || ""}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, customWarning: e.target.value }))}
+                      placeholder="이 항목에 표시할 특별 안내문구"
+                      rows={2}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    {customEdits[editForm.id] && (
+                      <Button variant="destructive" size="sm" onClick={() => {
+                        setCustomEdits(prev => { const n = {...prev}; delete n[editForm.id]; return n; });
+                        toast({ title: "수정 초기화", description: "원본 데이터로 복원되었습니다." });
+                      }}>초기화</Button>
+                    )}
+                    <Button size="sm" onClick={handleSaveItemEdit}>저장</Button>
+                  </div>
+                </div>
+              )}
               <div className="p-3 bg-muted rounded-lg text-sm mb-4">
                 {detailItem.text}
               </div>
