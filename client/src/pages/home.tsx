@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_1764142259144.png";
 import Fuse from "fuse.js";
@@ -888,7 +889,7 @@ ${latest.year || latest.stdr_year}년 현황
       {/* ==================== 모달들 ==================== */}
 
       {/* 표준화 상세 */}
-      {selectedStandard && (
+      {selectedStandard && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setSelectedStandard(null)}>
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-start p-5 border-b border-border">
