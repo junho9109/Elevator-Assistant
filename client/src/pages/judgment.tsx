@@ -672,7 +672,9 @@ export default function JudgmentPage() {
           introductionType: edit.introductionType || null,
           permitEffectiveDate: (edit as any).permitEffectiveDate || null,
           standardEffectiveDate: (edit as any).standardDates?.[0] || (edit as any).standardEffectiveDate || null,
-          standardDates: JSON.stringify((edit as any).standardDates || []),
+          standardDates: JSON.stringify((edit as any).standardDatesWithMemo?.length > 0
+            ? (edit as any).standardDatesWithMemo
+            : ((edit as any).standardDates || []).map((d: string) => ({ date: d, memo: "" }))),
           customWarning: edit.customWarning || null,
         })
       });
@@ -896,7 +898,12 @@ export default function JudgmentPage() {
       permitEffectiveDate: (existingEdit as any)?.permitEffectiveDate ?? baseItemMap[item.id]?.permitEffectiveDate ?? "",
       standardEffectiveDate: (existingEdit as any)?.standardEffectiveDate ?? "",
       standardDates: dates,
-      standardDatesWithMemo: dates.map(d => ({ date: d, memo: "" })),
+      standardDatesWithMemo: (() => {
+        // 저장된 편집값에 memo가 있으면 그대로, 없으면 빈 memo로
+        const saved = (existingEdit as any)?.standardDatesWithMemo;
+        if (saved?.length > 0) return saved;
+        return dates.map(d => ({ date: d, memo: "" }));
+      })(),
       revisions: [] as RevisionEntry[],
       customWarning: existingEdit?.customWarning ?? "",
       fixedResult: existingEdit?.fixedResult ?? results[item.id],
