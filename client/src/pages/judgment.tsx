@@ -880,9 +880,23 @@ export default function JudgmentPage() {
       effectiveDate: existingEdit?.effectiveDate ?? item.effectiveDate ?? "",
       expiryDate: existingEdit?.expiryDate ?? item.expiryDate ?? "",
       introductionType: existingEdit?.introductionType ?? item.introductionType,
-      permitEffectiveDate: (existingEdit as any)?.permitEffectiveDate ?? "",
+      permitEffectiveDate: (existingEdit as any)?.permitEffectiveDate ?? baseItemMap[item.id]?.permitEffectiveDate ?? "",
       standardEffectiveDate: (existingEdit as any)?.standardEffectiveDate ?? "",
-      standardDates: (existingEdit as any)?.standardDates ?? [],
+      standardDates: (() => {
+        // 1. 저장된 편집값 우선
+        if ((existingEdit as any)?.standardDates?.length > 0) return (existingEdit as any).standardDates;
+        // 2. DB baseItemMap에서 가져오기
+        const dbItem = baseItemMap[item.id];
+        if (dbItem?.standardDates) {
+          try {
+            const parsed = JSON.parse(dbItem.standardDates);
+            if (parsed.length > 0) return parsed;
+          } catch {}
+        }
+        // 3. 기존 effectiveDate가 있으면 그걸로
+        if (item.effectiveDate) return [item.effectiveDate];
+        return [];
+      })(),
       revisions: [] as RevisionEntry[],
       customWarning: existingEdit?.customWarning ?? "",
       fixedResult: existingEdit?.fixedResult ?? results[item.id],
