@@ -987,7 +987,7 @@ ${latest.year || latest.stdr_year}년 현황
       )}
       {/* 표준화 상세 */}
       {selectedStandard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setSelectedStandard(null)}>
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",backgroundColor:"rgba(0,0,0,0.6)",padding:"16px"}} onClick={() => setSelectedStandard(null)}>
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-start p-5 border-b border-border">
               <h2 className="text-lg font-semibold pr-4">{selectedStandard.title}</h2>
