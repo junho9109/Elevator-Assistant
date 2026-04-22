@@ -597,6 +597,24 @@ export default function JudgmentPage() {
     }
   });
 
+  // 검사기준 DB 데이터 조회
+  const { data: baseItems = [] } = useQuery<any[]>({
+    queryKey: ["/api/inspection-base-items"],
+    queryFn: async () => {
+      const res = await fetch("/api/inspection-base-items");
+      if (!res.ok) throw new Error("Failed to fetch base items");
+      return res.json();
+    },
+    staleTime: 1000 * 60 * 60, // 1시간 캐시
+  });
+
+  // baseItems를 itemId로 빠르게 조회할 수 있는 맵
+  const baseItemMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    baseItems.forEach(item => { map[item.itemId] = item; });
+    return map;
+  }, [baseItems]);
+
   // Sync custom items from server - use JSON stringified value as dependency to prevent infinite loops
   const serverCustomItemsJson = JSON.stringify(serverCustomItems);
   useEffect(() => {
