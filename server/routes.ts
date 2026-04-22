@@ -894,6 +894,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 검사기준 DB API
+  app.get("/api/inspection-base-items", async (req, res) => {
+    try {
+      const items = await storage.getInspectionBaseItems();
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inspection base items" });
+    }
+  });
+
+  app.get("/api/inspection-base-items/:itemId", async (req, res) => {
+    try {
+      const item = await storage.getInspectionBaseItem(req.params.itemId);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inspection base item" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

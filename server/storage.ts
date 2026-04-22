@@ -62,7 +62,8 @@ import {
   judgmentPhotos,
   judgmentComments,
   inspectionItemEdits,
-  customInspectionItems
+  customInspectionItems,
+  inspectionBaseItems
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, or, asc } from "drizzle-orm";
@@ -498,6 +499,15 @@ export class DatabaseStorage implements IStorage {
   async deleteItemRevision(id: number): Promise<void> {
     await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.id, id));
   }
+  async getInspectionBaseItems(): Promise<any[]> {
+    return await db.select().from(inspectionBaseItems).orderBy(inspectionBaseItems.sortOrder);
+  }
+
+  async getInspectionBaseItem(itemId: string): Promise<any> {
+    const result = await db.select().from(inspectionBaseItems).where(eq(inspectionBaseItems.itemId, itemId)).limit(1);
+    return result[0];
+  }
+
   async deleteAllItemRevisions(itemId: string): Promise<void> {
     await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.itemId, itemId));
   }

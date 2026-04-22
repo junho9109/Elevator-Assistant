@@ -319,3 +319,29 @@ export const insertInspectionItemRevisionSchema = createInsertSchema(inspectionI
 });
 export type InsertInspectionItemRevision = z.infer<typeof insertInspectionItemRevisionSchema>;
 export type InspectionItemRevision = typeof inspectionItemRevisions.$inferSelect;
+
+// ── 검사기준 항목 DB 저장 테이블 ──
+// 정적 파일 대신 DB에서 검사기준을 관리
+export const inspectionBaseItems = pgTable("inspection_base_items", {
+  id: serial("id").primaryKey(),
+  itemId: varchar("item_id", { length: 50 }).notNull().unique(),  // e.g. "1.2.1.1-가"
+  sectionId: varchar("section_id", { length: 50 }).notNull(),     // e.g. "1.2.1.1"
+  sectionTitle: varchar("section_title", { length: 200 }),        // e.g. "[1.2.1.1] 주개폐기"
+  parentSectionId: varchar("parent_section_id", { length: 50 }),  // e.g. "1.2.1"
+  text: text("text").notNull(),                                   // 검사 내용
+  sortOrder: integer("sort_order").default(0),                    // 정렬 순서
+  permitEffectiveDate: varchar("permit_effective_date", { length: 20 }),  // 건축허가일 기준 적용일
+  standardDates: text("standard_dates"),                          // 검사기준 적용일 목록 (JSON)
+  equipmentTypes: varchar("equipment_types", { length: 200 }),    // 적용 승강기 종류 (JSON)
+  isActive: varchar("is_active", { length: 5 }).default("true"),  // 활성 여부
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertInspectionBaseItemSchema = createInsertSchema(inspectionBaseItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertInspectionBaseItem = z.infer<typeof insertInspectionBaseItemSchema>;
+export type InspectionBaseItem = typeof inspectionBaseItems.$inferSelect;
