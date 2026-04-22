@@ -573,6 +573,11 @@ export default function JudgmentPage() {
     // Build map from server edits (server is source of truth)
     const serverEditsMap: Record<string, CustomItemEdit> = {};
     for (const edit of parsedEdits) {
+      const parsedDates = (() => {
+        try { return JSON.parse((edit as any).standardDates || "[]"); } catch { return []; }
+      })();
+      const datesWithMemo = parsedDates.map((d: any) => typeof d === "object" ? d : { date: d, memo: "" });
+      const datesOnly = datesWithMemo.map((d: any) => d.date);
       serverEditsMap[edit.itemId] = {
         id: edit.itemId,
         text: edit.text || undefined,
@@ -580,6 +585,9 @@ export default function JudgmentPage() {
         expiryDate: edit.expiryDate || undefined,
         introductionType: edit.introductionType as "new" | "revision" | undefined,
         customWarning: edit.customWarning || undefined,
+        permitEffectiveDate: (edit as any).permitEffectiveDate || undefined,
+        standardDates: datesOnly,
+        standardDatesWithMemo: datesWithMemo,
       };
     }
     // Server edits take precedence over local edits
