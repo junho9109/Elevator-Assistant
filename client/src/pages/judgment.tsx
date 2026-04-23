@@ -1712,7 +1712,7 @@ export default function JudgmentPage() {
                           standardDatesWithMemo: [...(prev.standardDatesWithMemo || []), { date: "", memo: "" }],
                           standardDates: [...(prev.standardDates || []), ""]
                         }))}
-                        disabled={(editForm.standardDatesWithMemo || []).length >= 5}
+                        disabled={(editForm.standardDatesWithMemo || []).length >= 20}
                       >+ 추가</Button>
                     </div>
                     {(editForm.standardDatesWithMemo || []).map((entry, idx) => (
