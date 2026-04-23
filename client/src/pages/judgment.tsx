@@ -606,6 +606,9 @@ export default function JudgmentPage() {
     }
   });
 
+  // 각 항목별 댓글 수 캐시
+  const [itemCommentCounts, setItemCommentCounts] = useState<Record<string, number>>({});
+
   // 검사기준 DB 데이터 조회
   const { data: baseItems = [] } = useQuery<any[]>({
     queryKey: ["/api/inspection-base-items"],
