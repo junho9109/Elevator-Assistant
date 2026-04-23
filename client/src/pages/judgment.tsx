@@ -1278,6 +1278,9 @@ export default function JudgmentPage() {
             {hasCustomEdit && (
               <span className="ml-2 text-xs text-muted-foreground font-medium">(수정됨)</span>
             )}
+            {itemCommentCounts[item.id] > 0 && (
+              <span className="ml-1 text-xs font-medium text-orange-500">(댓글 {itemCommentCounts[item.id]})</span>
+            )}
           </div>
           <button
             onClick={() => handleOpenDetail(item)}
@@ -1901,40 +1904,38 @@ export default function JudgmentPage() {
                       댓글 ({itemComments.length})
                     </h3>
                     
-                    {/* 댓글 작성 폼 */}
-                    {isAdminMode && (
-                      <div className="space-y-2 mb-4 p-3 bg-muted rounded-lg">
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="작성자"
-                            value={newComment.author}
-                            onChange={(e) => setNewComment(prev => ({ ...prev, author: e.target.value }))}
-                            className="w-24 bg-card"
-                            data-testid="input-comment-author"
-                          />
-                          <Input
-                            placeholder="댓글 내용"
-                            value={newComment.content}
-                            onChange={(e) => setNewComment(prev => ({ ...prev, content: e.target.value }))}
-                            className="flex-1 bg-card"
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && newComment.author && newComment.content) {
-                                createComment.mutate();
-                              }
-                            }}
-                            data-testid="input-comment-content"
-                          />
-                          <Button
-                            size="sm"
-                            onClick={() => createComment.mutate()}
-                            disabled={!newComment.author || !newComment.content}
-                            data-testid="button-submit-comment"
-                          >
-                            등록
-                          </Button>
-                        </div>
+                    {/* 댓글 작성 폼 - 누구나 입력 가능 */}
+                    <div className="space-y-2 mb-4 p-3 bg-muted rounded-lg">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="작성자"
+                          value={newComment.author}
+                          onChange={(e) => setNewComment(prev => ({ ...prev, author: e.target.value }))}
+                          className="w-24 bg-card"
+                          data-testid="input-comment-author"
+                        />
+                        <Input
+                          placeholder="댓글 내용"
+                          value={newComment.content}
+                          onChange={(e) => setNewComment(prev => ({ ...prev, content: e.target.value }))}
+                          className="flex-1 bg-card"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && newComment.author && newComment.content) {
+                              createComment.mutate();
+                            }
+                          }}
+                          data-testid="input-comment-content"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => createComment.mutate()}
+                          disabled={!newComment.author || !newComment.content}
+                          data-testid="button-submit-comment"
+                        >
+                          등록
+                        </Button>
                       </div>
-                    )}
+                    </div>
 
                     {itemComments.length === 0 ? (
                       <div className="text-center py-6 text-muted-foreground text-sm">
