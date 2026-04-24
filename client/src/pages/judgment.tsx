@@ -409,7 +409,7 @@ interface CustomItemEdit {
   text?: string;
   permitEffectiveDate?: string;   // 건축허가일 이후 적용일
   standardEffectiveDate?: string; // 설치검사일(검사기준 적용일) 이후 적용일
-  standardDatesWithMemo?: {date: string; memo: string}[]; // 날짜+메모
+  standardDatesWithMemo?: {date: string; memo: string; label?: string}[]; // 날짜+메모
   revisions?: RevisionEntry[];    // 개정 이력 (최대 10개)
   customWarning?: string;
   fixedResult?: ResultType;
@@ -1717,6 +1717,25 @@ export default function JudgmentPage() {
                     </div>
                     {(editForm.standardDatesWithMemo || []).map((entry, idx) => (
                       <div key={idx} className="border border-border rounded-lg p-3 bg-card space-y-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Input
+                            placeholder={`개정 ${idx + 1}`}
+                            value={entry.label || ""}
+                            onChange={(e) => {
+                              const arr = [...(editForm.standardDatesWithMemo || [])];
+                              arr[idx] = { ...arr[idx], label: e.target.value };
+                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr }));
+                            }}
+                            className="flex-1 text-xs font-semibold"
+                          />
+                          <Button type="button" variant="ghost" size="sm"
+                            onClick={() => {
+                              const arr = (editForm.standardDatesWithMemo || []).filter((_, i) => i !== idx);
+                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr, standardDates: arr.map(a => a.date) }));
+                            }}
+                            className="text-destructive px-2"
+                          >✕</Button>
+                        </div>
                         <div className="flex items-center gap-2">
                           <Input
                             type="date"
@@ -1729,13 +1748,6 @@ export default function JudgmentPage() {
                             }}
                             className="flex-1"
                           />
-                          <Button type="button" variant="ghost" size="sm"
-                            onClick={() => {
-                              const arr = (editForm.standardDatesWithMemo || []).filter((_, i) => i !== idx);
-                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr, standardDates: arr.map(a => a.date) }));
-                            }}
-                            className="text-destructive px-2"
-                          >✕</Button>
                         </div>
                         <div className="flex items-start gap-2 text-xs text-muted-foreground">
                           <span className="mt-1">→</span>
@@ -1826,7 +1838,7 @@ export default function JudgmentPage() {
                             {datesWithMemo.map((entry, idx) => (
                               <div key={idx} className="border border-border rounded-lg p-3 bg-card">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">개정 {idx + 1}</span>
+                                  <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{entry.label || `개정 ${idx + 1}`}</span>
                                   <span className="text-xs font-medium">{entry.date}</span>
                                 </div>
                                 {entry.memo && (
@@ -1842,7 +1854,7 @@ export default function JudgmentPage() {
                           <div className="space-y-1">
                             {dates.map((date, idx) => (
                               <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-lg">
-                                <span className="text-xs font-semibold text-amber-600">개정 {idx + 1}</span>
+                                <span className="text-xs font-semibold text-amber-600">{date.label || `개정 ${idx + 1}`}</span>
                                 <span className="text-xs">{date}</span>
                               </div>
                             ))}
