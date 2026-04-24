@@ -1327,11 +1327,6 @@ export default function JudgmentPage() {
             ※ 이 항목은 건축허가일(검사기준 적용일) 기준으로 이후에 개정되어 해당없음을 적용합니다.
           </div>
         )}
-        {(customEdits[item.id] as any)?.standardNote && (
-          <p className="text-xs text-muted-foreground mt-1 pl-1 border-l-2 border-muted">
-            📋 {(customEdits[item.id] as any).standardNote}
-          </p>
-        )}
         {customEdits[item.id]?.customWarning && (
           <div className="px-4 pb-2 text-xs text-blue-600 ml-10 font-medium bg-blue-50 rounded mx-4 p-2 whitespace-pre-wrap">
             ※ {customEdits[item.id].customWarning}
@@ -1821,6 +1816,12 @@ export default function JudgmentPage() {
               )}
               <div className="p-3 bg-muted rounded-lg text-sm mb-4">
                 {detailItem.text}
+                {(customEdits[detailItem.id] as any)?.standardNote && (
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <p className="text-xs text-muted-foreground font-medium mb-1">📋 검사기준</p>
+                    <p className="text-xs text-foreground whitespace-pre-wrap">{(customEdits[detailItem.id] as any).standardNote}</p>
+                  </div>
+                )}
               </div>
               
               <div 
