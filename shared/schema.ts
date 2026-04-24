@@ -205,6 +205,7 @@ export const inspectionItemEdits = pgTable("inspection_item_edits", {
   customWarning: text("custom_warning"),
   permitEffectiveDate: varchar("permit_effective_date", { length: 20 }),
   standardDates: text("standard_dates"),
+  standardNote: text("standard_note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

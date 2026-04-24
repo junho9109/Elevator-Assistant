@@ -412,6 +412,7 @@ interface CustomItemEdit {
   standardDatesWithMemo?: {date: string; memo: string; label?: string}[]; // 날짜+메모
   revisions?: RevisionEntry[];    // 개정 이력 (최대 10개)
   customWarning?: string;
+  standardNote?: string;  // 검사기준 칸
   fixedResult?: ResultType;
   // 하위호환
   effectiveDate?: string;
@@ -585,6 +586,7 @@ export default function JudgmentPage() {
         expiryDate: edit.expiryDate || undefined,
         introductionType: edit.introductionType as "new" | "revision" | undefined,
         customWarning: edit.customWarning || undefined,
+        standardNote: (edit as any).standardNote || undefined,
         permitEffectiveDate: (edit as any).permitEffectiveDate || undefined,
         standardDates: datesOnly,
         standardDatesWithMemo: datesWithMemo,
@@ -687,6 +689,7 @@ export default function JudgmentPage() {
             ? (edit as any).standardDatesWithMemo
             : ((edit as any).standardDates || []).map((d: string) => ({ date: d, memo: "" }))),
           customWarning: edit.customWarning || null,
+          standardNote: (edit as any).standardNote || null,
         })
       });
       if (!res.ok) throw new Error("Failed to save edit");
@@ -917,6 +920,7 @@ export default function JudgmentPage() {
       })(),
       revisions: [] as RevisionEntry[],
       customWarning: existingEdit?.customWarning ?? "",
+      standardNote: (existingEdit as any)?.standardNote ?? "",
       fixedResult: existingEdit?.fixedResult ?? results[item.id],
     });
     // 통합 다이얼로그: detailItem도 설정해서 사진/댓글도 같이 표시
@@ -1323,6 +1327,11 @@ export default function JudgmentPage() {
             ※ 이 항목은 건축허가일(검사기준 적용일) 기준으로 이후에 개정되어 해당없음을 적용합니다.
           </div>
         )}
+        {(customEdits[item.id] as any)?.standardNote && (
+          <p className="text-xs text-muted-foreground mt-1 pl-1 border-l-2 border-muted">
+            📋 {(customEdits[item.id] as any).standardNote}
+          </p>
+        )}
         {customEdits[item.id]?.customWarning && (
           <div className="px-4 pb-2 text-xs text-blue-600 ml-10 font-medium bg-blue-50 rounded mx-4 p-2 whitespace-pre-wrap">
             ※ {customEdits[item.id].customWarning}
@@ -1694,6 +1703,16 @@ export default function JudgmentPage() {
                       onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
                       rows={3}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">검사기준</label>
+                    <Textarea
+                      value={(editForm as any).standardNote || ""}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, standardNote: e.target.value } as any))}
+                      placeholder="검사기준 내용 입력 (예: 엘리베이터 안전기준 14.5.5)"
+                      rows={2}
+                    />
+                    <p className="text-xs text-muted-foreground">입력 시 항목 하단에 회색으로 표시됩니다</p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground">건축허가일자 이후 적용</label>
