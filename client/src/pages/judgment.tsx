@@ -1675,14 +1675,14 @@ export default function JudgmentPage() {
 
       {/* 항목 상세보기 다이얼로그 (사진/댓글) */}
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="text-base">
               항목 상세보기
             </DialogTitle>
           </DialogHeader>
           {detailItem && (
-            <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-y-auto flex flex-col">
               {/* 관리자 편집 섹션 */}
               {isAdminMode && editingItem?.id === detailItem.id && (
                 <div className="border border-primary/30 rounded-xl p-4 bg-primary/5 space-y-4 mb-4">
