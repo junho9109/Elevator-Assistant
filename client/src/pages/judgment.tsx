@@ -413,6 +413,7 @@ interface CustomItemEdit {
   revisions?: RevisionEntry[];    // 개정 이력 (최대 10개)
   customWarning?: string;
   standardNote?: string;  // 검사기준 칸
+  equipmentTypes?: string[];  // 적용 승강기 종류
   fixedResult?: ResultType;
   // 하위호환
   effectiveDate?: string;
@@ -587,6 +588,7 @@ export default function JudgmentPage() {
         introductionType: edit.introductionType as "new" | "revision" | undefined,
         customWarning: edit.customWarning || undefined,
         standardNote: (edit as any).standardNote || undefined,
+        equipmentTypes: (() => { try { return JSON.parse((edit as any).equipmentTypes || "[]"); } catch { return []; } })(),
         permitEffectiveDate: (edit as any).permitEffectiveDate || undefined,
         standardDates: datesOnly,
         standardDatesWithMemo: datesWithMemo,
@@ -690,6 +692,7 @@ export default function JudgmentPage() {
             : ((edit as any).standardDates || []).map((d: string) => ({ date: d, memo: "" }))),
           customWarning: edit.customWarning || null,
           standardNote: (edit as any).standardNote || null,
+          equipmentTypes: JSON.stringify((edit as any).equipmentTypes || []),
         })
       });
       if (!res.ok) throw new Error("Failed to save edit");
@@ -921,6 +924,7 @@ export default function JudgmentPage() {
       revisions: [] as RevisionEntry[],
       customWarning: existingEdit?.customWarning ?? "",
       standardNote: (existingEdit as any)?.standardNote ?? "",
+      equipmentTypes: (existingEdit as any)?.equipmentTypes ?? [],
       fixedResult: existingEdit?.fixedResult ?? results[item.id],
     });
     // 통합 다이얼로그: detailItem도 설정해서 사진/댓글도 같이 표시
@@ -1078,6 +1082,26 @@ export default function JudgmentPage() {
     }
     return items;
   }, [permitDate, inspectionDate, completionDate, referenceDate]);
+
+  // 현재 선택된 승강기 종류 필터키
+  const currentFilterKey = useMemo(() => {
+    if (subType) return `${equipmentType}-${subType}`;
+    return equipmentType;
+  }, [equipmentType, subType]);
+
+  // 항목이 현재 승강기 종류에 해당하는지 확인
+  const isItemApplicable = useCallback((itemId: string): boolean => {
+    const edit = customEdits[itemId];
+    const types: string[] = (edit as any)?.equipmentTypes || [];
+    if (types.length === 0) return true; // 미지정이면 모두 표시
+    return types.some(t => {
+      if (t === currentFilterKey) return true;
+      // 대분류만 체크 (예: "엘리베이터" 선택 시 "엘리베이터-전기식(MR)"도 포함)
+      if (t.startsWith(equipmentType + "-") && !subType) return true;
+      if (t === equipmentType && !subType) return true;
+      return false;
+    });
+  }, [customEdits, currentFilterKey, equipmentType, subType]);
 
   const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => {
     if (!referenceDate) return "applicable";
@@ -1708,6 +1732,32 @@ export default function JudgmentPage() {
                       rows={2}
                     />
                     <p className="text-xs text-muted-foreground">입력 시 항목 하단에 회색으로 표시됩니다</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">적용 승강기 종류 (복수 선택 가능)</label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "엘리베이터-전기식(MR)", "엘리베이터-전기식(MRL)", "엘리베이터-유압식", "엘리베이터-경사형",
+                        "에스컬레이터", "무빙워크", "덤웨이터", "휠체어리프트-수직형", "휠체어리프트-경사형"
+                      ].map(type => {
+                        const selected = ((editForm as any).equipmentTypes || []).includes(type);
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => {
+                              const cur: string[] = (editForm as any).equipmentTypes || [];
+                              const next = selected ? cur.filter(t => t !== type) : [...cur, type];
+                              setEditForm(prev => ({ ...prev, equipmentTypes: next } as any));
+                            }}
+                            className={`text-xs px-2 py-1 rounded-full border transition-colors ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border"}`}
+                          >
+                            {type}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground">선택 안 하면 전체 종류에 표시됩니다</p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground">건축허가일자 이후 적용</label>
