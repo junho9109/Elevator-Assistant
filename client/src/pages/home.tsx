@@ -358,13 +358,21 @@ export default function Home() {
       let answer = getRuleBasedAnswer(text);
       let searchResults: SearchResult[] | undefined;
 
-      // 키워드 검색: 규칙 기반 답변이 없을 때 표준화+검사기준 검색
-      if (answer === "" || answer === getRuleBasedAnswer("")) {
-        const results = searchAllData(text, standards);
-        if (results.length > 0) {
-          searchResults = results;
-          answer = `"${text}"에 대한 검색 결과 ${results.length}건을 찾았습니다. 아래 항목을 눌러 자세한 내용을 확인하세요.`;
+      // 키워드 검색: 항상 표준화+검사기준에서 검색해서 관련 항목 표시
+      const results = searchAllData(text, standards);
+      if (results.length > 0) {
+        searchResults = results;
+        // 규칙 기반 답변이 없으면 검색 결과 안내 메시지
+        if (!answer) {
+          answer = `"${text}"에 대한 검색 결과 ${results.length}건입니다. 아래 항목을 눌러 자세한 내용을 확인하세요.`;
+        } else {
+          // 규칙 기반 답변이 있어도 관련 자료 함께 표시
+          answer += `
+
+📎 관련 자료 ${results.length}건을 찾았습니다. 아래를 눌러 확인하세요.`;
         }
+      } else if (!answer) {
+        answer = `"${text}"에 대한 검색 결과가 없습니다. 다른 키워드로 검색해보세요.`;
       }
       // 사고 통계 질문 시 실시간 데이터 반영
       const q = text.toLowerCase();
@@ -791,6 +799,33 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                   })}
                   </div>
                   <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
+                  {msg.searchResults && msg.searchResults.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {msg.searchResults.map((r: SearchResult, ri: number) => (
+                        <button
+                          key={ri}
+                          onClick={() => sendMessage(r.query)}
+                          className={`text-xs px-3 py-2 rounded-xl border text-left hover:opacity-80 transition-opacity ${
+                            r.type === "standard"
+                              ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30"
+                              : "border-amber-400 bg-amber-50 dark:bg-amber-950/30"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white ${
+                              r.type === "standard" ? "bg-blue-500" : "bg-amber-500"
+                            }`}>
+                              {r.type === "standard" ? "표준화" : "검사기준"}
+                            </span>
+                          </div>
+                          <div className="font-medium text-foreground text-xs leading-tight">{r.title}</div>
+                          {r.content && (
+                            <div className="text-muted-foreground text-[10px] mt-0.5 leading-tight line-clamp-2">{r.content}</div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {msg.role === "user" && (
                   <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-1">
