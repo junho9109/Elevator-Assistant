@@ -326,13 +326,13 @@ export default function Home() {
         if (latest) {
           answer = `공공데이터 기준 최신 승강기 안전사고 통계
 
-${latest.year || latest.stdr_year}년 현황
+${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 • 승객용 엘리베이터: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || latest.safe_acci_only_passenger || "-"}건
 • 화물용 엘리베이터: ${latest.freight_elvtr_acc_cnt || latest.freightElevatorAccidentCount || "-"}건
 • 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || latest.safe_acci_escalator || "-"}건
 • 합계: ${latest.tot_acc_cnt || latest.totalAccidentCount || latest.safe_acci_smry || "-"}건${prev ? `
 
-전년(${prev.year || prev.stdr_year}년) 대비 추이를 확인하시려면 검사가이드 페이지를 참고하세요.` : ""}
+전년(${prev.wrttimeid || prev.year || prev.stdr_year}년) 대비 추이를 확인하시려면 검사가이드 페이지를 참고하세요.` : ""}
 
 출처: 행정안전부 통계연보`;
         }

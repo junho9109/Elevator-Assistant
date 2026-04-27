@@ -612,6 +612,7 @@ export default function JudgmentPage() {
 
   // 각 항목별 댓글 수 캐시
   const [itemCommentCounts, setItemCommentCounts] = useState<Record<string, number>>({});
+  const [editSectionExpanded, setEditSectionExpanded] = useState(false);
 
   // 검사기준 DB 데이터 조회
   const { data: baseItems = [] } = useQuery<any[]>({
@@ -1713,8 +1714,15 @@ export default function JudgmentPage() {
             <div className="flex-1 overflow-y-auto flex flex-col">
               {/* 관리자 편집 섹션 */}
               {isAdminMode && editingItem?.id === detailItem.id && (
-                <div className="border border-primary/30 rounded-xl p-4 bg-primary/5 space-y-4 mb-4">
-                  <h3 className="font-semibold text-sm text-primary">✏️ 항목 수정</h3>
+                <div className="border border-primary/30 rounded-xl bg-primary/5 mb-4">
+                  <button
+                    className="w-full flex items-center justify-between p-4 text-left"
+                    onClick={() => setEditSectionExpanded(prev => !prev)}
+                  >
+                    <h3 className="font-semibold text-sm text-primary">✏️ 항목 수정</h3>
+                    <span className="text-xs text-primary">{editSectionExpanded ? "▲ 접기" : "▼ 펼치기"}</span>
+                  </button>
+                  {editSectionExpanded && <div className="px-4 pb-4 space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground">검사 내용</label>
                     <Textarea
@@ -1862,14 +1870,15 @@ export default function JudgmentPage() {
                     )}
                     <Button size="sm" onClick={handleSaveItemEdit}>저장</Button>
                   </div>
+                  </div>}
                 </div>
               )}
               <div className="p-3 bg-muted rounded-lg text-sm mb-4">
-                {detailItem.text}
+                <p className="leading-relaxed">{detailItem.text}</p>
                 {(customEdits[detailItem.id] as any)?.standardNote && (
                   <div className="mt-2 pt-2 border-t border-border">
                     <p className="text-xs text-muted-foreground font-medium mb-1">📋 검사기준</p>
-                    <p className="text-xs text-foreground whitespace-pre-wrap">{(customEdits[detailItem.id] as any).standardNote}</p>
+                    <p className="text-xs text-foreground whitespace-pre-wrap max-h-24 overflow-y-auto">{(customEdits[detailItem.id] as any).standardNote}</p>
                   </div>
                 )}
               </div>
