@@ -7,6 +7,15 @@ interface SwipeNavigatorProps {
 
 export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavigatorProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // 외부에서 페이지 전환 가능하도록 전역 이벤트 등록
+  useState(() => {
+    const handler = (e: any) => {
+      if (typeof e.detail?.index === "number") setCurrentIndex(e.detail.index);
+    };
+    window.addEventListener("navigatePage", handler);
+    return () => window.removeEventListener("navigatePage", handler);
+  });
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 

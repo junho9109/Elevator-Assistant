@@ -481,6 +481,24 @@ export default function JudgmentPage() {
   const [revisionsLoading, setRevisionsLoading] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      const itemId = e.detail?.itemId;
+      if (!itemId) return;
+      setHighlightedItemId(itemId);
+      // 해당 항목으로 스크롤
+      setTimeout(() => {
+        const el = document.getElementById(`item-${itemId}`);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 100);
+      // 3초 후 하이라이트 제거
+      setTimeout(() => setHighlightedItemId(null), 3000);
+    };
+    window.addEventListener("highlightInspectionItem", handler);
+    return () => window.removeEventListener("highlightInspectionItem", handler);
+  }, []);
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const dragStart = useRef({ y: 0, scrollTop: 0 });

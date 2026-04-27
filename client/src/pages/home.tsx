@@ -228,11 +228,6 @@ export default function Home() {
       role: "assistant",
       content: `통계 데이터 로딩 중...`,
       time: formatTime()
-    },
-    {
-      role: "assistant",
-      content: `궁금한 기준이나 점검 방법을 질문하거나, 아래 빠른 질문을 눌러보세요.`,
-      time: formatTime()
     }
   ]);
   const [inputText, setInputText] = useState("");
@@ -804,7 +799,18 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                       {msg.searchResults.map((r: SearchResult, ri: number) => (
                         <button
                           key={ri}
-                          onClick={() => sendMessage(r.query)}
+                          onClick={() => {
+                            if (r.type === "inspection") {
+                              // 검사가이드 페이지(index 1)로 이동
+                              window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 1 } }));
+                              // 해당 항목 하이라이트 이벤트
+                              setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent("highlightInspectionItem", { detail: { itemId: r.query } }));
+                              }, 300);
+                            } else {
+                              sendMessage(r.query);
+                            }
+                          }}
                           className={`text-xs px-3 py-2 rounded-xl border text-left hover:opacity-80 transition-opacity ${
                             r.type === "standard"
                               ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30"
