@@ -273,7 +273,7 @@ export default function Home() {
     if (statsLoaded && accidentStats.yearly.length > 0) {
       const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
       if (latest) {
-        const year = latest.year || latest.stdr_year || "";
+        const year = latest.wrttimeid || latest.year || latest.stdr_year || "";
         const total = latest.tot_acc_cnt || latest.totalAccidentCount || latest.safe_acci_smry || "-";
         setMessages(prev => {
           const updated = [...prev];
