@@ -216,6 +216,7 @@ export default function Home() {
 
   // 탭
   const [activeTab, setActiveTab] = useState<"chat" | "map">("chat");
+  const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
 
   // 채팅
   const [messages, setMessages] = useState<Message[]>([
@@ -778,6 +779,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                   </div>
                 )}
                 <div className={`max-w-[80%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1.5`}>
+                  {msg.content && (
                   <div className={`rounded-2xl px-4 py-3.5 text-sm leading-loose whitespace-pre-line ${
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground rounded-tr-sm"
@@ -793,24 +795,14 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                     );
                   })}
                   </div>
+                )}
                   <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
                   {msg.searchResults && msg.searchResults.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-1">
                       {msg.searchResults.map((r: SearchResult, ri: number) => (
                         <button
                           key={ri}
-                          onClick={() => {
-                            if (r.type === "inspection") {
-                              // 검사가이드 페이지(index 1)로 이동
-                              window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 1 } }));
-                              // 해당 항목 하이라이트 이벤트
-                              setTimeout(() => {
-                                window.dispatchEvent(new CustomEvent("highlightInspectionItem", { detail: { itemId: r.query } }));
-                              }, 300);
-                            } else {
-                              sendMessage(r.query);
-                            }
-                          }}
+                          onClick={() => setSelectedSearchResult(r)}
                           className={`text-xs px-3 py-2 rounded-xl border text-left hover:opacity-80 transition-opacity ${
                             r.type === "standard"
                               ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30"
@@ -1069,6 +1061,41 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
           </div>
         </div>
       )}
+      {/* 검색결과 팝업 */}
+      {selectedSearchResult && createPortal(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setSelectedSearchResult(null)}>
+          <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100% - 32px)",maxWidth:"512px",maxHeight:"85vh",overflowY:"auto",zIndex:10000}} className="bg-card rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start p-5 border-b border-border">
+              <div>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${selectedSearchResult.type === "standard" ? "bg-blue-500" : "bg-amber-500"}`}>
+                  {selectedSearchResult.type === "standard" ? "표준화" : "검사기준"}
+                </span>
+                <h2 className="text-base font-semibold mt-2 pr-4">{selectedSearchResult.title}</h2>
+              </div>
+              <button onClick={() => setSelectedSearchResult(null)} className="text-muted-foreground hover:text-foreground p-1 shrink-0"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>
+              {selectedSearchResult.type === "inspection" && (
+                <button
+                  className="w-full mt-3 text-sm bg-primary text-primary-foreground rounded-xl py-2.5 hover:bg-primary/90"
+                  onClick={() => {
+                    setSelectedSearchResult(null);
+                    window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 1 } }));
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent("highlightInspectionItem", { detail: { itemId: selectedSearchResult.query } }));
+                    }, 400);
+                  }}
+                >
+                  검사가이드에서 보기 →
+                </button>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* 표준화 상세 */}
       {selectedStandard && createPortal(
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setSelectedStandard(null)}>
