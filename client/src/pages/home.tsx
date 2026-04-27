@@ -13,15 +13,58 @@ import {
   useCreateHotspot, useUpdateHotspot, useDeleteHotspot,
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
+import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 
 // ==================== 규칙 기반 AI 챗봇 ====================
-type Message = { role: "user" | "assistant"; content: string; time: string; };
+type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
+type SearchResult = { type: "standard" | "inspection"; title: string; content: string; query: string; };
 
 const QUICK_QUESTIONS = [
   "오늘 안전 체크리스트",
   "최신 사고 통계",
   "연령별 사고 현황",
 ];
+
+// 키워드로 표준화+검사기준 검색
+function searchAllData(keyword: string, standards: any[]): SearchResult[] {
+  const kw = keyword.toLowerCase().trim();
+  if (!kw || kw.length < 2) return [];
+  const results: SearchResult[] = [];
+
+  // 표준화 검색
+  standards.forEach(s => {
+    if ((s.title || "").toLowerCase().includes(kw) || (s.body || "").toLowerCase().includes(kw)) {
+      results.push({
+        type: "standard",
+        title: s.title,
+        content: s.body ? s.body.slice(0, 100) + (s.body.length > 100 ? "..." : "") : "",
+        query: s.title
+      });
+    }
+  });
+
+  // 검사기준 검색 (INSPECTION_DATA_MR)
+  const searchSection = (sections: any[]) => {
+    sections.forEach(sec => {
+      if (sec.items) {
+        sec.items.forEach((item: any) => {
+          if ((item.text || "").toLowerCase().includes(kw) || (item.id || "").toLowerCase().includes(kw)) {
+            results.push({
+              type: "inspection",
+              title: `[${item.id}] ${sec.title || ""}`,
+              content: item.text ? item.text.slice(0, 100) + (item.text.length > 100 ? "..." : "") : "",
+              query: item.id
+            });
+          }
+        });
+      }
+      if (sec.subsections) searchSection(sec.subsections);
+    });
+  };
+  searchSection(INSPECTION_DATA_MR);
+
+  return results.slice(0, 10); // 최대 10개
+}
 
 function getRuleBasedAnswer(question: string): string {
   const q = question.toLowerCase();
@@ -313,6 +356,16 @@ export default function Home() {
     setIsTyping(true);
     setTimeout(() => {
       let answer = getRuleBasedAnswer(text);
+      let searchResults: SearchResult[] | undefined;
+
+      // 키워드 검색: 규칙 기반 답변이 없을 때 표준화+검사기준 검색
+      if (answer === "" || answer === getRuleBasedAnswer("")) {
+        const results = searchAllData(text, standards);
+        if (results.length > 0) {
+          searchResults = results;
+          answer = `"${text}"에 대한 검색 결과 ${results.length}건을 찾았습니다. 아래 항목을 눌러 자세한 내용을 확인하세요.`;
+        }
+      }
       // 사고 통계 질문 시 실시간 데이터 반영
       const q = text.toLowerCase();
       if ((q.includes("사고") || q.includes("통계") || q.includes("연도별")) && accidentStats.yearly.length > 0) {
@@ -345,10 +398,10 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         const elderPct = Math.round(elder/tot*100);
         answer = `행정안전부 연령별 사고 통계 (${year}년)\n\n• 14세 이하: ${child}명 (${childPct}%)\n• 15~64세: ${adult}명 (${adultPct}%)\n• 65세 이상: ${elder}명 (${elderPct}%)\n• 합계: ${tot}명\n\n고령자(65세 이상) 비율이 ${elderPct}%로 가장 높습니다.\n점검 시 고령자 이용 구간 안전장치를 집중 확인하세요.\n\n출처: 행정안전부 통계연보`;
       }
-      setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime() }]);
+      setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime(), searchResults }]);
       setIsTyping(false);
     }, 600);
-  }, [accidentStats]);
+  }, [accidentStats, standards]);
 
   // 리더라인 설정 (카드 오프셋 저장값 우선, 없으면 자동 계산)
   const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {
