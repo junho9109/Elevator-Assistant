@@ -193,11 +193,6 @@ export default function Home() {
     },
     {
       role: "assistant",
-      content: `2024년 주요 개정 기준 (검사규정 개정)\n\n• 개문출발방지장치(UCMP): 기존 승강기 의무 확대 적용\n• 승강로 조명 강화: 카 지붕 1m 상부 50lx, 전 구간 20lx 이상\n• 카 비상조명: 정전 후 2시간 이상 작동 의무\n• 자동구출운전: 비상발전기 연동 시 각 엘리베이터 전원 차단 시 작동 확인\n• 피트 정지장치: 깊이 1.6m 초과 시 상·하부 2개소 설치\n\n검사 시 해당 항목 반드시 확인하세요.`,
-      time: formatTime()
-    },
-    {
-      role: "assistant",
       content: `궁금한 기준이나 점검 방법을 질문하거나, 아래 빠른 질문을 눌러보세요.`,
       time: formatTime()
     }
