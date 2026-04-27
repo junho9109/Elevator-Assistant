@@ -21,11 +21,6 @@ const QUICK_QUESTIONS = [
   "오늘 안전 체크리스트",
   "최신 사고 통계",
   "연령별 사고 현황",
-  "UCMP 기준 알려줘",
-  "피트 안전 기준",
-  "과속조절기 점검 방법",
-  "최근 개정 기준 요약",
-  "승강장문 잠금 기준",
 ];
 
 function getRuleBasedAnswer(question: string): string {
