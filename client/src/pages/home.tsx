@@ -215,6 +215,7 @@ export default function Home() {
   const chatInputRef = useRef<HTMLInputElement>(null);
 
   // 탭
+  const [activeTab, setActiveTab] = useState<"chat" | "map">("chat");
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
 
   // 채팅
@@ -753,9 +754,19 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         </div>
       </div>
 
+      {/* 탭 */}
+      <div className="bg-card border-b border-border px-4">
+        <div className="flex">
+          {[{key:"chat",label:"챗봇"},{key:"map",label:"기술자료"}].map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab===tab.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* ==================== 채팅 탭 ==================== */}
-      {(
+      {activeTab === "chat" && (
         <div className="flex-1 flex flex-col w-full">
 
           {/* 메시지 목록 */}
