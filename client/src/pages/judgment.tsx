@@ -488,13 +488,26 @@ export default function JudgmentPage() {
       const itemId = e.detail?.itemId;
       if (!itemId) return;
       setHighlightedItemId(itemId);
+      // 해당 항목이 속한 섹션 모두 펼치기
+      setExpandedSections(prev => {
+        const newSet = new Set(prev);
+        // itemId가 "5.1.1" 형태면 "5", "5.1" 등 부모 섹션 모두 펼침
+        const parts = itemId.split(".");
+        for (let i = 1; i <= parts.length; i++) {
+          newSet.add(parts.slice(0, i).join("."));
+        }
+        // 전체 섹션도 펼치기
+        const allIds = collectAllSectionIds(INSPECTION_DATA_MR);
+        allIds.forEach(id => newSet.add(id));
+        return newSet;
+      });
       // 해당 항목으로 스크롤
       setTimeout(() => {
         const el = document.getElementById(`item-${itemId}`);
         if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 100);
+      }, 300);
       // 3초 후 하이라이트 제거
-      setTimeout(() => setHighlightedItemId(null), 3000);
+      setTimeout(() => setHighlightedItemId(null), 4000);
     };
     window.addEventListener("highlightInspectionItem", handler);
     return () => window.removeEventListener("highlightInspectionItem", handler);
