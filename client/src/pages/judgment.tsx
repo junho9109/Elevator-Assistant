@@ -503,9 +503,21 @@ export default function JudgmentPage() {
         allIds.forEach(id => newSet.add(id));
         return newSet;
       });
-      // pendingScrollId에 저장 → useEffect에서 처리
-      pendingScrollId.current = itemId;
-      // 3초 후 하이라이트 제거
+      // 섹션 펼친 후 렌더링 완료되면 스크롤
+      let retries = 0;
+      const scrollLoop = setInterval(() => {
+        const el = document.getElementById(`item-${itemId}`);
+        const page = document.getElementById("swipe-page-1");
+        if (el && page) {
+          const elTop = el.getBoundingClientRect().top;
+          const pageTop = page.getBoundingClientRect().top;
+          page.scrollTo({ top: page.scrollTop + elTop - pageTop - 100, behavior: "smooth" });
+          clearInterval(scrollLoop);
+        } else if (retries++ > 30) {
+          clearInterval(scrollLoop);
+        }
+      }, 100);
+      // 4초 후 하이라이트 제거
       setTimeout(() => setHighlightedItemId(null), 4000);
     };
     window.addEventListener("highlightInspectionItem", handler);
@@ -1100,35 +1112,7 @@ export default function JudgmentPage() {
   };
 
   const referenceDate = useMemo(() => {
-    // highlightedItemId 변경 시 해당 항목으로 스크롤
-  useEffect(() => {
-    if (!highlightedItemId) return;
-    pendingScrollId.current = highlightedItemId;
-
-    const doScroll = () => {
-      const itemId = pendingScrollId.current;
-      if (!itemId) return;
-      const el = document.getElementById(`item-${itemId}`);
-      const pageContainer = document.getElementById("swipe-page-1");
-      if (el && pageContainer) {
-        // el의 top 위치를 pageContainer 기준으로 계산
-        const elTop = el.getBoundingClientRect().top;
-        const containerTop = pageContainer.getBoundingClientRect().top;
-        const scrollTarget = pageContainer.scrollTop + elTop - containerTop - 80;
-        pageContainer.scrollTo({ top: Math.max(0, scrollTarget), behavior: "smooth" });
-        pendingScrollId.current = null;
-      } else {
-        // 아직 렌더링 안 됨 - 재시도
-        requestAnimationFrame(doScroll);
-      }
-    };
-
-    // 섹션 펼치기 렌더링 완료 후 스크롤
-    const timer = setTimeout(() => requestAnimationFrame(doScroll), 500);
-    return () => clearTimeout(timer);
-  }, [highlightedItemId]);
-
-  // 기준일 우선순위: 검사기준 적용일 > 건축허가일
+    // 기준일 우선순위: 검사기준 적용일 > 건축허가일
     // (승강기 안전검사기준 2016-143호 부칙 제2조: 건축허가분부터 적용)
     if (permitDate && inspectionDate) {
       const permit = new Date(permitDate);
