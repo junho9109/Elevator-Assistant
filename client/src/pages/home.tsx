@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import defaultStructureImg from "@assets/structure_1764142259144.png";
+import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
 import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -754,19 +754,10 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         </div>
       </div>
 
-      {/* 탭 */}
-      <div className="bg-card border-b border-border px-4">
-        <div className="flex">
-          {[{key:"chat",label:"챗봇"},{key:"map",label:"기술자료"}].map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)} className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab===tab.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+
 
       {/* ==================== 채팅 탭 ==================== */}
-      {activeTab === "chat" && (
+      {(
         <div className="flex-1 flex flex-col w-full">
 
           {/* 메시지 목록 */}
@@ -881,82 +872,6 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
               >
                 <Send className="h-4 w-4" />
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== 기술자료 탭 ==================== */}
-      {activeTab === "map" && (
-        <div className="flex-1 overflow-y-auto" ref={zoomContentRef}>
-          <div className="p-3 space-y-3">
-
-            {/* 편집 모드 툴바 */}
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">구조도 & 기술자료</h2>
-              <div className="flex gap-2">
-                <Button variant={editMode ? "default" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
-                  <Settings className="h-4 w-4 mr-1" />{editMode ? "편집 중" : "편집"}
-                </Button>
-                <Button size="sm" onClick={openAddModal}>
-                  <Plus className="h-4 w-4 mr-1" />추가
-                </Button>
-              </div>
-            </div>
-
-            {editMode && (
-              <div className="p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-xl flex flex-wrap gap-2 items-center text-sm">
-                <span className="text-orange-700 dark:text-orange-300 font-medium">✏️ 버튼을 드래그해서 이동</span>
-                <label className="flex items-center gap-1 cursor-pointer bg-white dark:bg-card border border-orange-300 rounded-lg px-2 py-1 text-xs text-orange-700 dark:text-orange-300 hover:bg-orange-50">
-                  <ImageIcon className="h-3 w-3" />구조도 변경
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-                </label>
-                <Button size="sm" variant="outline" className="text-xs h-7 border-orange-300 text-orange-700" onClick={() => setShowAddHotspot(true)}>
-                  <Plus className="h-3 w-3 mr-1" />버튼 추가
-                </Button>
-                {hotspots.map(h => (
-                  <Button key={h.id} size="sm" variant="outline" className="text-xs h-7 border-red-300 text-red-600" onClick={() => setDeleteHotspotConfirm(h)}>
-                    <Trash2 className="h-3 w-3 mr-1" />{h.label}
-                  </Button>
-                ))}
-              </div>
-            )}
-
-            {/* 구조도 */}
-            <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-lg border border-border">
-              <canvas ref={canvasRef} className={`w-full h-full ${editMode ? "cursor-move" : "cursor-pointer"}`}
-                onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) }) }).catch(() => {}); setDraggingCardId(null); } }} />
-            </div>
-
-            {/* 표준화 목록 */}
-            <div className="bg-card rounded-2xl border border-border overflow-hidden">
-              <div className="p-4 border-b border-border">
-                <h3 className="font-semibold mb-3">
-                  {activeButton ? `${activeButton.label} 기준 목록` : "전체 기준 목록"}
-                </h3>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="기준 검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 bg-secondary border-0" />
-                </div>
-              </div>
-              <div className="divide-y divide-border">
-                {displayItems.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-10 text-sm">기준이 없습니다</p>
-                ) : (
-                  displayItems.map(standard => (
-                    <div key={standard.id} className="p-4 hover:bg-muted/50 cursor-pointer transition-colors" onClick={() => setSelectedStandard(standard)}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-sm mb-1 truncate">{standard.title}</h4>
-                          {standard.standardNumber && <Badge variant="outline" className="text-xs mb-1">{standard.standardNumber}</Badge>}
-                          <p className="text-muted-foreground text-xs leading-relaxed line-clamp-2">{standard.body}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
             </div>
           </div>
         </div>
