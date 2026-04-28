@@ -52,7 +52,7 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
             results.push({
               type: "inspection",
               title: `[${item.id}] ${sec.title || ""}`,
-              content: item.text ? item.text.slice(0, 100) + (item.text.length > 100 ? "..." : "") : "",
+              content: item.text || "",
               query: item.id
             });
           }
@@ -143,7 +143,7 @@ function getRuleBasedAnswer(question: string): string {
   }
 
   // 기본 답변
-  return `답변 가능한 주제\n\n• 정밀안전검사 절차 및 기준\n• UCMP / 추락방지 장치\n• 피트 / 승강장문 기준\n• 2025년 개정 기준 요약\n• 오늘의 안전 체크리스트\n• 응급처치 / CPR\n• 개인보호구 (PPE)\n• 기계실 점검 항목\n\n빠른 질문을 눌러보거나 직접 입력해보세요.`;
+  return "";
 }
 
 function formatTime(): string {
