@@ -894,6 +894,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 항목별 댓글 수 일괄 조회
+  app.get("/api/judgment-items/comment-counts", async (req, res) => {
+    try {
+      const counts = await storage.getItemCommentCounts();
+      res.json(counts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch comment counts" });
+    }
+  });
+
   // 검사기준 DB API
   app.get("/api/inspection-base-items", async (req, res) => {
     try {

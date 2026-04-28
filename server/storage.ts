@@ -499,6 +499,15 @@ export class DatabaseStorage implements IStorage {
   async deleteItemRevision(id: number): Promise<void> {
     await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.id, id));
   }
+  async getItemCommentCounts(): Promise<Record<string, number>> {
+    const result = await db.select().from(judgmentComments);
+    const counts: Record<string, number> = {};
+    for (const row of result) {
+      counts[row.itemId] = (counts[row.itemId] || 0) + 1;
+    }
+    return counts;
+  }
+
   async getInspectionBaseItems(): Promise<any[]> {
     return await db.select().from(inspectionBaseItems).orderBy(inspectionBaseItems.sortOrder);
   }

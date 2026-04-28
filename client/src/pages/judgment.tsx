@@ -656,6 +656,18 @@ export default function JudgmentPage() {
 
   // 각 항목별 댓글 수 캐시
   const [itemCommentCounts, setItemCommentCounts] = useState<Record<string, number>>({});
+
+  // 페이지 로드 시 전체 댓글 수 불러오기
+  useEffect(() => {
+    fetch("/api/judgment-items/comment-counts")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && typeof data === "object") {
+          setItemCommentCounts(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [editSectionExpanded, setEditSectionExpanded] = useState(false);
 
   // 검사기준 DB 데이터 조회
