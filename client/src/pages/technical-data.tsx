@@ -2,7 +2,7 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_1764142259144.png";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -13,167 +13,30 @@ import {
   useCreateHotspot, useUpdateHotspot, useDeleteHotspot,
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
-import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 
-// ==================== 규칙 기반 AI 챗봇 ====================
-type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
-type SearchResult = { type: "standard" | "inspection"; title: string; content: string; query: string; };
+const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", permitDate: "", inspectionDate: "", inspectionYear: "", images: [] as string[] };
 
-const QUICK_QUESTIONS = [
-  "오늘 안전 체크리스트",
-  "최신 사고 통계",
-  "연령별 사고 현황",
-];
-
-// 키워드로 표준화+검사기준 검색
-function searchAllData(keyword: string, standards: any[]): SearchResult[] {
-  const kw = keyword.toLowerCase().trim();
-  if (!kw || kw.length < 2) return [];
-  const results: SearchResult[] = [];
-
-  // 표준화 검색
-  standards.forEach(s => {
-    if ((s.title || "").toLowerCase().includes(kw) || (s.body || "").toLowerCase().includes(kw)) {
-      results.push({
-        type: "standard",
-        title: s.title,
-        content: s.body ? s.body.slice(0, 100) + (s.body.length > 100 ? "..." : "") : "",
-        query: s.title
-      });
-    }
-  });
-
-  // 검사기준 검색 (INSPECTION_DATA_MR)
-  const searchSection = (sections: any[]) => {
-    sections.forEach(sec => {
-      if (sec.items) {
-        sec.items.forEach((item: any) => {
-          if ((item.text || "").toLowerCase().includes(kw) || (item.id || "").toLowerCase().includes(kw)) {
-            results.push({
-              type: "inspection",
-              title: `[${item.id}] ${sec.title || ""}`,
-              content: item.text || "",
-              query: item.id
-            });
-          }
-        });
-      }
-      if (sec.subsections) searchSection(sec.subsections);
-    });
-  };
-  searchSection(INSPECTION_DATA_MR);
-
-  return results.slice(0, 10); // 최대 10개
-}
-
-function getRuleBasedAnswer(question: string): string {
-  const q = question.toLowerCase();
-
-  if (q.includes("정밀안전검사") || q.includes("정밀 안전")) {
-    return `📋 **정밀안전검사란?**\n\n엘리베이터 설치 후 일정 기간이 지나면 의무적으로 받아야 하는 심층 검사입니다.\n\n**검사 주기**\n• 설치 후 15년 이상: 3년마다\n• 3회 이상 정밀안전검사 후: 조건에 따라 연장 가능\n\n**검사 항목**\n• 기계실/구동기/제어반\n• 승강로/승강장문\n• 카 내부/카 상부\n• 피트 및 완충기\n• 안전회로 전반\n\n검사가이드 페이지에서 자세한 체크리스트를 확인하세요! ✅`;
-  }
-
-  if (q.includes("과속조절기") || q.includes("조속기")) {
-    return `⚙️ **과속조절기 점검 방법**\n\n**점검 항목**\n1. 과속조절기 전기안전장치 작동 확인\n2. 로프 마모·파단 상태 확인\n3. 봉인 상태 확인 (조정 가능형)\n4. 추락방지안전장치 연동 확인\n\n**판정 기준**\n• 전기안전장치 작동 시 엘리베이터 정지 → 적합\n• 로프 마모가 기준 초과 → 교체 필요\n• 봉인 훼손 시 → 부적합\n\n관련 기준: KS B 6932`;
-  }
-
-  if (q.includes("피트") || q.includes("pit")) {
-    return `🔧 **피트 안전 기준**\n\n**피트 출입 안전**\n• 깊이 2.5m 초과 시 출입문 설치 필수\n• 사다리: 알루미늄/부식방지 철재\n• 발판 폭 280mm, 깊이 25~30mm\n\n**피트 내 장치**\n• 정지장치: 피트 바닥 및 출입문에서 손 닿는 위치\n• 깊이 1.6m 초과 시 상/하부 2개소 설치\n• 점검운전 조작반: 피난공간 0.3m 이내\n\n**피트 환경**\n• 누수 없고 청결 유지 필수\n• 배수설비 원칙적 불가 (소방용 제외)`;
-  }
-
-  if (q.includes("승강장문") || q.includes("문잠금") || q.includes("잠금장치")) {
-    return `🚪 **승강장문 잠금장치 기준**\n\n**기본 요건**\n• 잠금장치 덮개는 투명 재질\n• 카가 잠금해제구간 밖에 있을 때 문 열림 방지\n• 비상잠금해제: 삼각열쇠로 외부 해제 가능\n\n**전기안전장치**\n• 문 닫힘·잠금 상태 전기적 확인 필수\n• 접점 개방 시 카 즉시 정지\n\n**틈새 기준**\n• 문짝 간 틈새: 테이퍼 게이지로 측정\n• 승강장문 측면 폭: 카 출입구보다 50mm 초과 금지`;
-  }
-
-  if (q.includes("추락방지") || q.includes("안전장치") || q.includes("비상정지")) {
-    return `🛡️ **카 추락방지안전장치**\n\n**작동 원리**\n과속조절기 작동 → 추락방지안전장치 작동 → 카 하강 정지\n\n**점검 기준**\n• 작동 시 카 수평도: 5% 이하\n• 전기안전장치 연동 확인\n• 작동 후 정상 운행 복귀 확인\n\n**관련 기준**\n• KS B 6930\n• 엘리베이터 안전기준 10.2.2.1.6`;
-  }
-
-  if (q.includes("오늘") || q.includes("체크리스트") || q.includes("점검")) {
-    const today = new Date();
-    const days = ["일", "월", "화", "수", "목", "금", "토"];
-    const dateStr = `${today.getMonth()+1}월 ${today.getDate()}일 (${days[today.getDay()]})`;
-    return `📅 **${dateStr} 안전 체크리스트**\n\n**작업 전 필수 확인**\n☐ 개인보호구(안전모, 안전화, 안전대) 착용\n☐ 주개폐기 위치 및 상태 확인\n☐ 피트 출입 전 정지장치 작동\n☐ 카 상부 작업 시 점검운전 스위치 ON\n\n**정기 점검 항목**\n☐ 승강장문 잠금장치 작동 확인\n☐ 비상통화장치 통화 테스트\n☐ 과속조절기 봉인 상태 확인\n☐ 완충기 상태 및 오일 레벨\n\n안전한 하루 되세요! 💪`;
-  }
-
-  if (q.includes("안전대") || q.includes("안전모") || q.includes("보호구") || q.includes("ppe")) {
-    return `🦺 **개인보호구(PPE) 안내**\n\n**필수 착용 보호구**\n• 안전모: KS G 6062 / EN 397\n• 안전화: KS F 4412 / S1P 이상\n• 안전대: KS G 6008 / EN 361\n\n**착용 주의사항**\n• 충격받은 안전모는 즉시 교체\n• 안전대 전신하네스 모든 버클 체결\n• 랜야드 앵커포인트 연결 확인\n\n안전보건관리 페이지에서 보호구 만료일을 관리하세요! ⚠️`;
-  }
-
-  if (q.includes("cpr") || q.includes("심폐소생") || q.includes("응급")) {
-    return `❤️ **심폐소생술(CPR) 요약**\n\n1️⃣ 반응 확인 → 119 신고\n2️⃣ 기도 확보 (머리 뒤로, 턱 올림)\n3️⃣ 가슴압박 30회\n   • 깊이 5~6cm\n   • 속도 100~120회/분\n4️⃣ 인공호흡 2회\n5️⃣ 30:2 반복\n\n⚡ AED 도착 시 즉시 사용!\n\n자세한 내용은 안전보건관리 → 응급처치 페이지를 확인하세요.`;
-  }
-
-  if (q.includes("기계실") || q.includes("권상기") || q.includes("브레이크")) {
-    return `⚙️ **기계실 주요 점검 항목**\n\n**권상기/구동기**\n• 권상기 고정 상태 (철골/내력벽 위)\n• 전자-기계 브레이크 작동\n• 오버밸런스(균형량) 확인\n\n**제어반**\n• 주개폐기 차단 시 운동 방지\n• 조명: 작업부 200lx, 비상운전 50lx\n• 콘센트 1개 이상\n\n**자동구출운전**\n• 정전 시 카 층 이동 확인\n• 비상발전기 연동 상태`;
-  }
-
-  if (q.includes("ucmp") || q.includes("개문출발") || q.includes("문출발")) {
-    return `개문출발방지장치 (UCMP)\n\n작동 원리\n카가 층에 정지하지 않은 상태에서 승강장문이 열리면 즉시 카를 정지시키는 장치입니다.\n\n점검 기준\n• 이중브레이크와 로프브레이크 동시 작동 금지\n• 정밀안전검사 시 100% 및 무부하 조건 모두 시험\n• 기존 승강기 추가 설치 시 안전성 평가 대상\n\n2025 개정\n기존 설치 승강기까지 의무 확대 적용 중입니다. 미설치 시 조건부합격 또는 사용중지 처분 가능합니다.`;
-  }
-
-  if (q.includes("통계") || q.includes("사고 현황") || q.includes("최신 사고")) {
-    return `승강기 안전사고 통계
-
-실시간 공공데이터를 불러오는 중입니다.
-잠시 후 "최신 사고 통계"를 다시 눌러보세요.
-
-최근 주요 사고 유형
-1위  승강장문 열림 주행
-2위  피트 추락
-3위  카 상부 끼임
-
-출처: 행정안전부 국가승강기정보센터`;
-  }
-
-  if (q.includes("연령") || q.includes("나이") || q.includes("고령")) {
-    return `연령별 승강기 안전사고
-
-실시간 공공데이터를 불러오는 중입니다.
-잠시 후 "연령별 사고 현황"을 다시 눌러보세요.
-
-고령자(65세 이상) 사고 비율이 가장 높으며,
-주로 승하차 시 발 끼임, 문 사이 끼임 사고가 많습니다.
-
-출처: 행정안전부 국가승강기정보센터`;
-  }
-
-  if (q.includes("개정") || q.includes("최근 기준") || q.includes("변경")) {
-    return `2025년 주요 개정 기준 요약\n\n안전장치\n• UCMP 기존 승강기 의무화 확대\n• 카 비상조명 작동시간: 1시간 → 2시간\n• 자동구출운전 확인 방법 구체화\n\n환경 기준\n• 피트 조명: 10lx → 20lx 강화\n• 기계실 에어컨 자가증발식 허용 (조건부)\n\n구조 기준\n• 피트 사다리 발판 규격 명확화\n• 승강로 유리벽 접합유리 기준 강화\n\n검사 시 위 항목을 우선적으로 확인하시기 바랍니다.`;
-  }
-
-  // 기본 답변
-  return "";
-}
-
-function formatTime(): string {
-  const now = new Date();
-  return `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
-}
-
-// ==================== DatePicker ====================
-function DatePicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  const [show, setShow] = useState(false);
-  const [viewYear, setViewYear] = useState(() => value ? parseInt(value.split("-")[0]) : new Date().getFullYear());
-  const [viewMonth, setViewMonth] = useState(() => value ? parseInt(value.split("-")[1]) - 1 : new Date().getMonth());
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
-  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const blanks = Array.from({ length: firstDay }, (_, i) => i);
+function DatePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
   const months = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const blanks = Array(firstDay).fill(null);
+  const days = Array.from({length: daysInMonth}, (_, i) => i + 1);
   const selectDay = (day: number) => {
     onChange(`${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`);
-    setShow(false);
+    setOpen(false);
   };
   return (
     <div className="relative">
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <div className="flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer hover:border-primary bg-card" onClick={() => setShow(!show)}>
+      <div className="flex items-center border border-border rounded-lg px-3 py-2 bg-card cursor-pointer" onClick={() => setOpen(!open)}>
+        <span className="flex-1 text-sm">{value || "날짜 선택"}</span>
         <Calendar className="h-4 w-4 text-muted-foreground" />
-        <span className={`text-sm ${value ? "text-foreground" : "text-muted-foreground"}`}>{value || "날짜 선택"}</span>
-        {value && <button className="ml-auto text-muted-foreground" onClick={e => { e.stopPropagation(); onChange(""); }}><X className="h-3 w-3" /></button>}
       </div>
-      {show && (
+      {open && (
         <div className="absolute z-50 mt-1 bg-card border rounded-xl shadow-xl p-4 w-72">
           <div className="flex items-center justify-between mb-3">
             <button onClick={() => { if (viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); }} className="p-1 hover:bg-muted rounded">◀</button>
@@ -182,7 +45,7 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
           </div>
           <div className="grid grid-cols-7 text-center text-xs text-muted-foreground mb-1">{["일","월","화","수","목","금","토"].map(d=><div key={d}>{d}</div>)}</div>
           <div className="grid grid-cols-7 text-center text-sm">
-            {blanks.map(i=><div key={`b${i}`}/>)}
+            {blanks.map((_,i)=><div key={`b${i}`}/>)}
             {days.map(day=>{
               const dateStr=`${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
               return <button key={day} onClick={()=>selectDay(day)} className={`p-1 rounded-full hover:bg-primary/20 ${value===dateStr?"bg-primary text-primary-foreground":""}`}>{day}</button>;
@@ -194,10 +57,7 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
-const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", permitDate: "", inspectionDate: "", inspectionYear: "", images: [] as string[] };
-
-// ==================== 메인 ====================
-export default function Home() {
+export default function TechnicalDataPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: standards = [] } = useStandards();
@@ -211,32 +71,7 @@ export default function Home() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const zoomContentRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<HTMLInputElement>(null);
 
-  // 탭
-  const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
-
-  // 채팅
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: `엘리베이터 안전 챗봇입니다.\n\n오늘의 주요 안전 정보를 확인하세요.`,
-      time: formatTime()
-    },
-    {
-      role: "assistant",
-      content: `통계 데이터 로딩 중...`,
-      time: formatTime()
-    }
-  ]);
-  const [inputText, setInputText] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [accidentStats, setAccidentStats] = useState<{yearly: any[], age: any[]}>({ yearly: [], age: [] });
-  const [statsLoaded, setStatsLoaded] = useState(false);
-
-  // 구조도/표준화
-  const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
   const [selectedStandard, setSelectedStandard] = useState<Standard | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -247,13 +82,13 @@ export default function Home() {
   const [structureImg, setStructureImg] = useState<string>(defaultStructureImg);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  // 카드 오프셋 (핫스팟 id → 카드 중심의 캔버스 % 위치)
   const [cardOffsets, setCardOffsets] = useState<Record<number, {cx: number, cy: number}>>({});
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
   const [cardDragOffset, setCardDragOffset] = useState({ x: 0, y: 0 });
   const [showAddHotspot, setShowAddHotspot] = useState(false);
   const [newHotspotLabel, setNewHotspotLabel] = useState("");
   const [deleteHotspotConfirm, setDeleteHotspotConfirm] = useState<Hotspot | null>(null);
+  const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
 
   const fuse = useMemo(() => new Fuse(standards, { keys: ["title", "body", "standardNumber"], threshold: 0.4 }), [standards]);
 
@@ -268,64 +103,6 @@ export default function Home() {
 
   const activeButton = hotspots.find(h => h.id === activeButtonId);
 
-  // 공공데이터 통계 로드 - 서버 요약 API 사용
-  useEffect(() => {
-    fetch("/api/stats-summary")
-      .then(r => r.json())
-      .then(data => {
-        if (data.message) {
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[1] = {
-              role: "assistant",
-              content: data.message,
-              time: updated[1]?.time || formatTime()
-            };
-            return updated;
-          });
-        }
-        setStatsLoaded(true);
-        // accidentStats도 업데이트 (질문 답변용)
-        if (data.year) {
-          setAccidentStats({
-            yearly: [{ wrttimeid: data.year, safe_acci_smry: data.total, safe_acci_only_passenger: data.passenger, safe_acci_only_freight: data.freight, safe_acci_escalator: data.escalator, expcas_death: data.deaths, expcas_serious_injury: data.serious }],
-            age: []
-          });
-        }
-      })
-      .catch(() => { setStatsLoaded(true); });
-  }, []);
-
-  // 통계 로드 완료 시 초기 메시지 업데이트
-  useEffect(() => {
-    if (statsLoaded && accidentStats.yearly.length > 0) {
-      const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
-      if (latest) {
-        const year = latest.wrttimeid || latest.year || latest.stdr_year || "";
-        const total = latest.tot_acc_cnt || latest.totalAccidentCount || latest.safe_acci_smry || "-";
-        setMessages(prev => {
-          const updated = [...prev];
-          updated[1] = {
-            role: "assistant",
-            content: `최근 승강기 안전사고 통계 (${year}년, 행정안전부)
-
-• 전체 사고: ${total}건
-• 승객용: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || latest.safe_acci_only_passenger || "-"}건
-• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || latest.safe_acci_escalator || "-"}건
-
-빈도 높은 사고 유형
-1위  승강장문 열림 주행 — 문닫힘 안전장치 불량
-2위  피트 추락 — 최하층 정지장치 미작동
-3위  카 상부 끼임 — 점검운전 중 안전스위치 미사용`,
-            time: updated[1]?.time || formatTime()
-          };
-          return updated;
-        });
-      }
-    }
-  }, [accidentStats.yearly]);
-
-  // 서버에서 설정 로드
   useEffect(() => {
     fetch("/api/settings/cardOffsets")
       .then(r => r.json())
@@ -337,76 +114,6 @@ export default function Home() {
       .catch(() => {});
   }, []);
 
-  // 채팅 스크롤
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping]);
-
-  // 메시지 전송
-  const sendMessage = useCallback((text: string) => {
-    if (!text.trim()) return;
-    const userMsg: Message = { role: "user", content: text, time: formatTime() };
-    setMessages(prev => [...prev, userMsg]);
-    setInputText("");
-    setIsTyping(true);
-    setTimeout(() => {
-      let answer = getRuleBasedAnswer(text);
-      let searchResults: SearchResult[] | undefined;
-
-      // 키워드 검색: 항상 표준화+검사기준에서 검색해서 관련 항목 표시
-      const results = searchAllData(text, standards);
-      if (results.length > 0) {
-        searchResults = results;
-        // 규칙 기반 답변이 없으면 검색 결과 안내 메시지
-        if (!answer) {
-          answer = `"${text}"에 대한 검색 결과 ${results.length}건입니다. 아래 항목을 눌러 자세한 내용을 확인하세요.`;
-        } else {
-          // 규칙 기반 답변이 있어도 관련 자료 함께 표시
-          answer += `
-
-📎 관련 자료 ${results.length}건을 찾았습니다. 아래를 눌러 확인하세요.`;
-        }
-      } else if (!answer) {
-        answer = `"${text}"에 대한 검색 결과가 없습니다. 다른 키워드로 검색해보세요.`;
-      }
-      // 사고 통계 질문 시 실시간 데이터 반영
-      const q = text.toLowerCase();
-      if ((q.includes("사고") || q.includes("통계") || q.includes("연도별")) && accidentStats.yearly.length > 0) {
-        const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
-        const prev = accidentStats.yearly[accidentStats.yearly.length - 2];
-        if (latest) {
-          answer = `공공데이터 기준 최신 승강기 안전사고 통계
-
-${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
-• 승객용 엘리베이터: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || latest.safe_acci_only_passenger || "-"}건
-• 화물용 엘리베이터: ${latest.freight_elvtr_acc_cnt || latest.freightElevatorAccidentCount || "-"}건
-• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || latest.safe_acci_escalator || "-"}건
-• 합계: ${latest.tot_acc_cnt || latest.totalAccidentCount || latest.safe_acci_smry || "-"}건${prev ? `
-
-전년(${prev.wrttimeid || prev.year || prev.stdr_year}년) 대비 추이를 확인하시려면 검사가이드 페이지를 참고하세요.` : ""}
-
-출처: 행정안전부 통계연보`;
-        }
-      }
-      if ((q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.age.length > 0) {
-        const ageData = accidentStats.age;
-        const latest = ageData[ageData.length - 1];
-        const year = latest.wrttimeid;
-        const tot = parseInt(latest.tot);
-        const child = parseInt(latest.old14_lss);
-        const adult = parseInt(latest.old15_mor_old64_lss);
-        const elder = parseInt(latest.old65_mor);
-        const childPct = Math.round(child/tot*100);
-        const adultPct = Math.round(adult/tot*100);
-        const elderPct = Math.round(elder/tot*100);
-        answer = `행정안전부 연령별 사고 통계 (${year}년)\n\n• 14세 이하: ${child}명 (${childPct}%)\n• 15~64세: ${adult}명 (${adultPct}%)\n• 65세 이상: ${elder}명 (${elderPct}%)\n• 합계: ${tot}명\n\n고령자(65세 이상) 비율이 ${elderPct}%로 가장 높습니다.\n점검 시 고령자 이용 구간 안전장치를 집중 확인하세요.\n\n출처: 행정안전부 통계연보`;
-      }
-      setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime(), searchResults }]);
-      setIsTyping(false);
-    }, 600);
-  }, [accidentStats, standards]);
-
-  // 리더라인 설정 (카드 오프셋 저장값 우선, 없으면 자동 계산)
   const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {
     const x = (parseFloat(hotspot.left) / 100) * canvasW;
     const y = (parseFloat(hotspot.top) / 100) * canvasH;
@@ -733,150 +440,30 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     } catch { toast({ title: "삭제 실패", variant: "destructive" }); }
   };
 
-  // ==================== 렌더링 ====================
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-
       {/* 헤더 */}
       <div className="sticky top-0 z-40 bg-card border-b border-border px-3 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-              <Bot className="h-3 w-3 text-primary-foreground" />
+              <ImageIcon className="h-3 w-3 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="font-semibold text-xs">엘리베이터 안전 챗봇</h1>
-              <p className="text-[10px] text-muted-foreground">규칙 기반 안내 시스템</p>
+              <h1 className="font-semibold text-xs">기술자료</h1>
+              <p className="text-[10px] text-muted-foreground">구조도 & 표준화 자료</p>
             </div>
           </div>
-
+          {editMode && (
+            <button onClick={() => setShowAddHotspot(true)} className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded-lg">+ 버튼 추가</button>
+          )}
+          <button onClick={() => setEditMode(e => !e)} className="p-1.5 rounded-lg hover:bg-muted">
+            <Settings className="h-4 w-4 text-muted-foreground" />
+          </button>
         </div>
       </div>
 
-
-      {/* ==================== 채팅 탭 ==================== */}
-      {(
-        <div className="flex-1 flex flex-col w-full">
-
-          {/* 메시지 목록 */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                {msg.role === "assistant" && (
-                  <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0 mt-1">
-                    <Bot className="h-3.5 w-3.5 text-primary-foreground" />
-                  </div>
-                )}
-                <div className={`max-w-[80%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1.5`}>
-                  {msg.content && (
-                  <div className={`rounded-2xl px-4 py-3.5 text-sm leading-loose whitespace-pre-line ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-tr-sm"
-                      : "bg-card border border-border rounded-tl-sm"
-                  }`}>
-                    {msg.content.split('\n').map((line, i) => {
-                    const isBold = /^[0-9]+(위|\.) /.test(line) || /^•/.test(line);
-                    return (
-                      <span key={i}>
-                        {i > 0 && <br />}
-                        {isBold ? <span className="font-medium">{line}</span> : line}
-                      </span>
-                    );
-                  })}
-                  </div>
-                )}
-                  <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
-                  {msg.searchResults && msg.searchResults.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {msg.searchResults.map((r: SearchResult, ri: number) => (
-                        <button
-                          key={ri}
-                          onClick={() => setSelectedSearchResult(r)}
-                          className={`text-xs px-3 py-2 rounded-xl border text-left hover:opacity-80 transition-opacity ${
-                            r.type === "standard"
-                              ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30"
-                              : "border-amber-400 bg-amber-50 dark:bg-amber-950/30"
-                          }`}
-                        >
-                          <div className="flex items-center gap-1 mb-1">
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white ${
-                              r.type === "standard" ? "bg-blue-500" : "bg-amber-500"
-                            }`}>
-                              {r.type === "standard" ? "표준화" : "검사기준"}
-                            </span>
-                          </div>
-                          <div className="font-medium text-foreground text-xs leading-tight">{r.title}</div>
-                          {r.content && (
-                            <div className="text-muted-foreground text-[10px] mt-0.5 leading-tight line-clamp-2">{r.content}</div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {msg.role === "user" && (
-                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-1">
-                    <User className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* 타이핑 인디케이터 */}
-            {isTyping && (
-              <div className="flex gap-3 justify-start">
-                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                  <Bot className="h-3.5 w-3.5 text-primary-foreground" />
-                </div>
-                <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3">
-                  <div className="flex gap-1">
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{animationDelay:"0ms"}}/>
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{animationDelay:"150ms"}}/>
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" style={{animationDelay:"300ms"}}/>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* 빠른 질문 */}
-          <div className="px-4 py-2 border-t border-border bg-card">
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-              {QUICK_QUESTIONS.map((q, i) => (
-                <button key={i} onClick={() => sendMessage(q)} className="flex-shrink-0 text-xs bg-secondary text-secondary-foreground rounded-full px-3 py-1.5 hover:bg-primary hover:text-primary-foreground transition-colors">
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 입력창 */}
-          <div className="px-4 py-3 border-t border-border bg-card">
-            <div className="flex gap-2">
-              <input
-                ref={chatInputRef}
-                type="text"
-                value={inputText}
-                onChange={e => setInputText(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage(inputText)}
-                placeholder="궁금한 것을 물어보세요..."
-                className="flex-1 bg-secondary rounded-full px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
-              />
-              <button
-                onClick={() => sendMessage(inputText)}
-                disabled={!inputText.trim() || isTyping}
-                className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 transition-opacity"
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== 기술자료 탭 ==================== */}
-      {activeTab === "map" && (
         <div className="flex-1 overflow-y-auto" ref={zoomContentRef}>
           <div className="p-3 space-y-3">
 
@@ -949,7 +536,6 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
             </div>
           </div>
         </div>
-      )}
 
       {/* ==================== 모달들 ==================== */}
 
@@ -1050,39 +636,6 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
           </div>
         </div>
       )}
-      {/* 검색결과 팝업 */}
-      {selectedSearchResult && createPortal(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setSelectedSearchResult(null)}>
-          <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100% - 32px)",maxWidth:"512px",maxHeight:"85vh",overflowY:"auto",zIndex:10000}} className="bg-card rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} onFocus={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start p-5 border-b border-border">
-              <div>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${selectedSearchResult.type === "standard" ? "bg-blue-500" : "bg-amber-500"}`}>
-                  {selectedSearchResult.type === "standard" ? "표준화" : "검사기준"}
-                </span>
-                <h2 className="text-base font-semibold mt-2 pr-4">{selectedSearchResult.title}</h2>
-              </div>
-              <button onClick={() => setSelectedSearchResult(null)} className="text-muted-foreground hover:text-foreground p-1 shrink-0"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="p-5 space-y-3">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>
-              {selectedSearchResult.type === "inspection" && (
-                <button
-                  className="w-full mt-3 text-sm bg-primary text-primary-foreground rounded-xl py-2.5 hover:bg-primary/90"
-                  onClick={() => {
-                    const targetId = selectedSearchResult.query;
-                    setSelectedSearchResult(null);
-                    // 상세보기 팝업 열기 이벤트
-                    window.dispatchEvent(new CustomEvent("openInspectionDetail", { detail: { itemId: targetId } }));
-                  }}
-                >
-                  항목 상세보기 →
-                </button>
-              )}
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* 표준화 상세 */}
       {selectedStandard && createPortal(
@@ -1112,6 +665,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         </div>,
         document.body
       )}
+
 
     </div>
   );
