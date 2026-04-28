@@ -197,7 +197,7 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
 const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", permitDate: "", inspectionDate: "", inspectionYear: "", images: [] as string[] };
 
 // ==================== 메인 ====================
-export default function Home() {
+export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "map" }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: standards = [] } = useStandards();
@@ -215,7 +215,7 @@ export default function Home() {
   const chatInputRef = useRef<HTMLInputElement>(null);
 
   // 탭
-  const [activeTab, setActiveTab] = useState<"chat" | "map">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "map">(defaultTab as "chat" | "map");
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
 
   // 채팅

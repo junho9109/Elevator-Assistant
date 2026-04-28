@@ -8,6 +8,7 @@ import JudgmentPage from "@/pages/judgment";
 import PrecisionInspectionPage from "@/pages/precision-inspection";
 import MemoPage from "@/pages/memo";
 import SafetyPage from "@/pages/safety";
+import TechnicalDataPage from "@/pages/technical-data";
 import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
 
@@ -16,6 +17,7 @@ function MainApp() {
     <SwipeNavigator
       pages={[
         <Home key="home" />,
+        <TechnicalDataPage key="technical" />,
         <JudgmentPage key="judgment" />,
         <PrecisionInspectionPage key="precision" />,
         <MemoPage key="memo" />,
@@ -23,6 +25,7 @@ function MainApp() {
       ]}
       pageNames={[
         "챗봇",
+        "기술자료",
         "검사가이드",
         "정밀안전검사",
         "메모",
