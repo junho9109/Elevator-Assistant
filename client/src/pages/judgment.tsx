@@ -501,20 +501,21 @@ export default function JudgmentPage() {
         allIds.forEach(id => newSet.add(id));
         return newSet;
       });
-      // 해당 항목으로 스크롤 - swipe-page-1 컨테이너 기준 (검사가이드는 index 1)
+      // 해당 항목으로 스크롤 - swipe-page-1 컨테이너 기준
       const tryScroll = (attempts: number) => {
         const el = document.getElementById(`item-${itemId}`);
         const pageContainer = document.getElementById("swipe-page-1");
         if (el && pageContainer) {
           const containerRect = pageContainer.getBoundingClientRect();
           const elRect = el.getBoundingClientRect();
-          const offset = elRect.top - containerRect.top + pageContainer.scrollTop - (containerRect.height / 2) + (elRect.height / 2);
+          const offset = elRect.top - containerRect.top + pageContainer.scrollTop - 80;
           pageContainer.scrollTo({ top: offset, behavior: "smooth" });
         } else if (attempts > 0) {
-          setTimeout(() => tryScroll(attempts - 1), 200);
+          setTimeout(() => tryScroll(attempts - 1), 300);
         }
       };
-      setTimeout(() => tryScroll(15), 600);
+      // 섹션 펼치기 후 렌더링 완료까지 충분히 대기
+      setTimeout(() => tryScroll(20), 1200);
       // 3초 후 하이라이트 제거
       setTimeout(() => setHighlightedItemId(null), 4000);
     };

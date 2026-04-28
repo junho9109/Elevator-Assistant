@@ -1080,11 +1080,12 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                 <button
                   className="w-full mt-3 text-sm bg-primary text-primary-foreground rounded-xl py-2.5 hover:bg-primary/90"
                   onClick={() => {
+                    const targetId = selectedSearchResult.query;
                     setSelectedSearchResult(null);
                     window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 1 } }));
                     setTimeout(() => {
-                      window.dispatchEvent(new CustomEvent("highlightInspectionItem", { detail: { itemId: selectedSearchResult.query } }));
-                    }, 400);
+                      window.dispatchEvent(new CustomEvent("highlightInspectionItem", { detail: { itemId: targetId } }));
+                    }, 600);
                   }}
                 >
                   검사가이드에서 보기 →
