@@ -1786,8 +1786,11 @@ export default function JudgmentPage() {
       </Dialog>
 
       {/* 항목 상세보기 다이얼로그 (사진/댓글) */}
-      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <Dialog open={isDetailDialogOpen} onOpenChange={(open) => {
+          setIsDetailDialogOpen(open);
+          if (!open) setEditSectionExpanded(false);
+        }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onOpenAutoFocus={e => e.preventDefault()}>
           <DialogHeader className="shrink-0">
             <DialogTitle className="text-base">
               항목 상세보기
