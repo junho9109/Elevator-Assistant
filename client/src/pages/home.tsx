@@ -1082,15 +1082,11 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                   onClick={() => {
                     const targetId = selectedSearchResult.query;
                     setSelectedSearchResult(null);
-                    // 먼저 하이라이트+스크롤 이벤트 발송 (페이지는 이미 DOM에 있음)
-                    window.dispatchEvent(new CustomEvent("highlightInspectionItem", { detail: { itemId: targetId } }));
-                    // 스크롤 완료 후 페이지 전환
-                    setTimeout(() => {
-                      window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 1 } }));
-                    }, 800);
+                    // 상세보기 팝업 열기 이벤트
+                    window.dispatchEvent(new CustomEvent("openInspectionDetail", { detail: { itemId: targetId } }));
                   }}
                 >
-                  검사가이드에서 보기 →
+                  항목 상세보기 →
                 </button>
               )}
             </div>

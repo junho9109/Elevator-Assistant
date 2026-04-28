@@ -523,6 +523,35 @@ export default function JudgmentPage() {
     window.addEventListener("highlightInspectionItem", handler);
     return () => window.removeEventListener("highlightInspectionItem", handler);
   }, []);
+
+  // 챗봇에서 항목 상세보기 열기 이벤트 수신
+  useEffect(() => {
+    const handler = (e: any) => {
+      const itemId = e.detail?.itemId;
+      if (!itemId) return;
+      // 모든 섹션에서 해당 항목 찾기
+      const findItem = (sections: any[]): any => {
+        for (const sec of sections) {
+          if (sec.items) {
+            const found = sec.items.find((it: any) => it.id === itemId);
+            if (found) return found;
+          }
+          if (sec.subsections) {
+            const found = findItem(sec.subsections);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const item = findItem(INSPECTION_DATA_MR);
+      if (item) {
+        setDetailItem(item);
+        setIsDetailDialogOpen(true);
+      }
+    };
+    window.addEventListener("openInspectionDetail", handler);
+    return () => window.removeEventListener("openInspectionDetail", handler);
+  }, []);
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const dragStart = useRef({ y: 0, scrollTop: 0 });
