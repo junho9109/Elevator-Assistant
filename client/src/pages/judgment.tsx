@@ -482,12 +482,14 @@ export default function JudgmentPage() {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+  const pendingScrollId = useRef<string | null>(null);
 
   useEffect(() => {
     const handler = (e: any) => {
       const itemId = e.detail?.itemId;
       if (!itemId) return;
       setHighlightedItemId(itemId);
+      pendingScrollId.current = itemId;
       // 해당 항목이 속한 섹션 모두 펼치기
       setExpandedSections(prev => {
         const newSet = new Set(prev);
@@ -501,24 +503,8 @@ export default function JudgmentPage() {
         allIds.forEach(id => newSet.add(id));
         return newSet;
       });
-      // 해당 항목으로 스크롤 - offsetTop 체인으로 절대 위치 계산
-      const tryScroll = (attempts: number) => {
-        const el = document.getElementById(`item-${itemId}`);
-        const pageContainer = document.getElementById("swipe-page-1");
-        if (el && pageContainer) {
-          // offsetTop 체인으로 스크롤 컨테이너 기준 절대 위치 계산
-          let offsetTop = 0;
-          let cur: HTMLElement | null = el;
-          while (cur && cur !== pageContainer) {
-            offsetTop += cur.offsetTop;
-            cur = cur.offsetParent as HTMLElement | null;
-          }
-          pageContainer.scrollTo({ top: Math.max(0, offsetTop - 100), behavior: "smooth" });
-        } else if (attempts > 0) {
-          setTimeout(() => tryScroll(attempts - 1), 300);
-        }
-      };
-      setTimeout(() => tryScroll(20), 1000);
+      // pendingScrollId에 저장 → useEffect에서 처리
+      pendingScrollId.current = itemId;
       // 3초 후 하이라이트 제거
       setTimeout(() => setHighlightedItemId(null), 4000);
     };
@@ -1114,7 +1100,35 @@ export default function JudgmentPage() {
   };
 
   const referenceDate = useMemo(() => {
-    // 기준일 우선순위: 검사기준 적용일 > 건축허가일
+    // highlightedItemId 변경 시 해당 항목으로 스크롤
+  useEffect(() => {
+    if (!highlightedItemId) return;
+    pendingScrollId.current = highlightedItemId;
+
+    const doScroll = () => {
+      const itemId = pendingScrollId.current;
+      if (!itemId) return;
+      const el = document.getElementById(`item-${itemId}`);
+      const pageContainer = document.getElementById("swipe-page-1");
+      if (el && pageContainer) {
+        // el의 top 위치를 pageContainer 기준으로 계산
+        const elTop = el.getBoundingClientRect().top;
+        const containerTop = pageContainer.getBoundingClientRect().top;
+        const scrollTarget = pageContainer.scrollTop + elTop - containerTop - 80;
+        pageContainer.scrollTo({ top: Math.max(0, scrollTarget), behavior: "smooth" });
+        pendingScrollId.current = null;
+      } else {
+        // 아직 렌더링 안 됨 - 재시도
+        requestAnimationFrame(doScroll);
+      }
+    };
+
+    // 섹션 펼치기 렌더링 완료 후 스크롤
+    const timer = setTimeout(() => requestAnimationFrame(doScroll), 500);
+    return () => clearTimeout(timer);
+  }, [highlightedItemId]);
+
+  // 기준일 우선순위: 검사기준 적용일 > 건축허가일
     // (승강기 안전검사기준 2016-143호 부칙 제2조: 건축허가분부터 적용)
     if (permitDate && inspectionDate) {
       const permit = new Date(permitDate);
