@@ -501,11 +501,16 @@ export default function JudgmentPage() {
         allIds.forEach(id => newSet.add(id));
         return newSet;
       });
-      // 해당 항목으로 스크롤
-      setTimeout(() => {
+      // 해당 항목으로 스크롤 - 렌더링 완료 후 재시도
+      const tryScroll = (attempts: number) => {
         const el = document.getElementById(`item-${itemId}`);
-        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 300);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        } else if (attempts > 0) {
+          setTimeout(() => tryScroll(attempts - 1), 200);
+        }
+      };
+      setTimeout(() => tryScroll(10), 400);
       // 3초 후 하이라이트 제거
       setTimeout(() => setHighlightedItemId(null), 4000);
     };
