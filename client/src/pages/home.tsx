@@ -743,11 +743,11 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-              <Bot className="h-3 w-3 text-primary-foreground" />
+              {defaultTab === "chat" ? <Bot className="h-3 w-3 text-primary-foreground" /> : <ImageIcon className="h-3 w-3 text-primary-foreground" />}
             </div>
             <div>
-              <h1 className="font-semibold text-xs">엘리베이터 안전 챗봇</h1>
-              <p className="text-[10px] text-muted-foreground">규칙 기반 안내 시스템</p>
+              <h1 className="font-semibold text-xs">{defaultTab === "chat" ? "엘리베이터 안전 챗봇" : "기술자료"}</h1>
+              <p className="text-[10px] text-muted-foreground">{defaultTab === "chat" ? "규칙 기반 안내 시스템" : "구조도 & 표준화 자료"}</p>
             </div>
           </div>
 
@@ -757,7 +757,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 
 
       {/* ==================== 채팅 탭 ==================== */}
-      {(
+      {defaultTab === "chat" && (
         <div className="flex-1 flex flex-col w-full">
 
           {/* 메시지 목록 */}
