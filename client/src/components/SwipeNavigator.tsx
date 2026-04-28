@@ -37,6 +37,8 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
           <div
             key={i}
             className="absolute inset-0 overflow-y-auto transition-opacity duration-200"
+            data-page-index={i}
+            id={`swipe-page-${i}`}
             style={{
               opacity: currentIndex === i ? 1 : 0,
               pointerEvents: currentIndex === i ? "auto" : "none",

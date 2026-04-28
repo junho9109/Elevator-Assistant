@@ -501,30 +501,20 @@ export default function JudgmentPage() {
         allIds.forEach(id => newSet.add(id));
         return newSet;
       });
-      // 해당 항목으로 스크롤 - SwipeNavigator 내부 컨테이너 기준
+      // 해당 항목으로 스크롤 - swipe-page-1 컨테이너 기준 (검사가이드는 index 1)
       const tryScroll = (attempts: number) => {
         const el = document.getElementById(`item-${itemId}`);
-        if (el) {
-          // 스크롤 가능한 부모 컨테이너 찾기
-          let container: Element | null = el.parentElement;
-          while (container) {
-            const style = window.getComputedStyle(container);
-            if (style.overflowY === "auto" || style.overflowY === "scroll") break;
-            container = container.parentElement;
-          }
-          if (container) {
-            const containerRect = container.getBoundingClientRect();
-            const elRect = el.getBoundingClientRect();
-            const offset = elRect.top - containerRect.top + container.scrollTop - (containerRect.height / 2) + (elRect.height / 2);
-            container.scrollTo({ top: offset, behavior: "smooth" });
-          } else {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
+        const pageContainer = document.getElementById("swipe-page-1");
+        if (el && pageContainer) {
+          const containerRect = pageContainer.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          const offset = elRect.top - containerRect.top + pageContainer.scrollTop - (containerRect.height / 2) + (elRect.height / 2);
+          pageContainer.scrollTo({ top: offset, behavior: "smooth" });
         } else if (attempts > 0) {
           setTimeout(() => tryScroll(attempts - 1), 200);
         }
       };
-      setTimeout(() => tryScroll(15), 500);
+      setTimeout(() => tryScroll(15), 600);
       // 3초 후 하이라이트 제거
       setTimeout(() => setHighlightedItemId(null), 4000);
     };
