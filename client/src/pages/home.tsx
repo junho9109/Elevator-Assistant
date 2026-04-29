@@ -411,8 +411,8 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
   const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {
     const x = (parseFloat(hotspot.left) / 100) * canvasW;
     const y = (parseFloat(hotspot.top) / 100) * canvasH;
-    const cardW = 72;
-    const cardH = 26;
+    const cardW = 144;
+    const cardH = 52;
 
     let cardCX: number, cardCY: number;
 
@@ -471,7 +471,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         // 앵커 점 (부품 위치 표시)
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, editMode ? 5 : 4, 0, Math.PI * 2);
+        ctx.arc(x, y, editMode ? 10 : 8, 0, Math.PI * 2);
         ctx.fillStyle = isActive ? "#2563eb" : editMode ? "#ea580c" : "#475569";
         ctx.shadowColor = isActive ? "rgba(37,99,235,0.5)" : "rgba(0,0,0,0.3)";
         ctx.shadowBlur = isActive ? 8 : 4;
@@ -485,7 +485,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         ctx.lineTo(cardCX, y);
         ctx.lineTo(cardCX, cardCY);
         ctx.strokeStyle = isActive ? "rgba(37,99,235,0.7)" : editMode ? "rgba(234,88,12,0.6)" : "rgba(71,85,105,0.45)";
-        ctx.lineWidth = isActive ? 1.5 : 1;
+        ctx.lineWidth = isActive ? 3 : 2;
         ctx.setLineDash(isActive ? [] : [4, 3]);
         ctx.stroke();
         ctx.setLineDash([]);
@@ -569,7 +569,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       const y = (parseFloat(hotspot.top) / 100) * canvas.height;
       const { cardX, cardY, cardW, cardH } = getCardOffset(hotspot, canvas.width, canvas.height);
       // 앵커점 또는 카드 영역 클릭 감지
-      const hitAnchor = Math.hypot(px - x, py - y) < 20;
+      const hitAnchor = Math.hypot(px - x, py - y) < 40;
       const hitCard = px >= cardX && px <= cardX + cardW && py >= cardY && py <= cardY + cardH;
       if ((hitAnchor || hitCard) && !editMode) setActiveButtonId(hotspot.id);
     });
@@ -594,7 +594,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     hotspots.forEach(hotspot => {
       const btnX = (parseFloat(hotspot.left) / 100) * canvas.width;
       const btnY = (parseFloat(hotspot.top) / 100) * canvas.height;
-      if (Math.hypot(px - btnX, py - btnY) < 25) {
+      if (Math.hypot(px - btnX, py - btnY) < 50) {
         setDraggingId(hotspot.id);
         setDragOffset({ x: px - btnX, y: py - btnY });
       }
