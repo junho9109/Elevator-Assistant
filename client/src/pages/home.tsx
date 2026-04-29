@@ -704,17 +704,17 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         <div className="flex-1 flex flex-col w-full">
 
           {/* 메시지 목록 */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 {msg.role === "assistant" && (
-                  <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0 mt-1">
+                  <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0 mt-1">
                     <Bot className="h-3.5 w-3.5 text-primary-foreground" />
                   </div>
                 )}
                 <div className={`max-w-[80%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1.5`}>
                   {msg.content && (
-                  <div className={`rounded-2xl px-4 py-3.5 text-sm leading-loose whitespace-pre-line ${
+                  <div className={`rounded-2xl px-3 py-2.5 text-sm leading-snug whitespace-pre-line ${
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground rounded-tr-sm"
                       : "bg-card border border-border rounded-tl-sm"
@@ -760,7 +760,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                   )}
                 </div>
                 {msg.role === "user" && (
-                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-1">
+                  <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-1">
                     <User className="h-3.5 w-3.5 text-muted-foreground" />
                   </div>
                 )}
