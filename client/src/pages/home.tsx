@@ -222,7 +222,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: `엘리베이터 안전 챗봇입니다.\n\n오늘의 주요 안전 정보를 확인하세요.`,
+      content: `엘리베이터 통합 챗봇입니다.\n\n키워드를 입력하세요. 예시) 비상통화장치, 잠금장치`,
       time: formatTime()
     },
     {
@@ -338,8 +338,13 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       .catch(() => {});
   }, []);
 
-  // 채팅 스크롤
+  // 채팅 스크롤 - 첫 렌더링 제외
+  const isFirstRender = useRef(true);
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
