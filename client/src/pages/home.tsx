@@ -679,7 +679,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 
   // ==================== 렌더링 ====================
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-full bg-background flex flex-col">
 
       {/* 헤더 */}
       <div className="sticky top-0 z-40 bg-card border-b border-border px-3 py-2">
