@@ -245,17 +245,6 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     fetch("/api/stats-summary")
       .then(r => r.json())
       .then(data => {
-        if (data.message) {
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[1] = {
-              role: "assistant",
-              content: data.message,
-              time: updated[1]?.time || formatTime()
-            };
-            return updated;
-          });
-        }
         setStatsLoaded(true);
         // accidentStats도 업데이트 (질문 답변용)
         if (data.year) {
