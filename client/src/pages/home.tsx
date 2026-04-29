@@ -263,34 +263,6 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       .catch(() => { setStatsLoaded(true); });
   }, []);
 
-  // 통계 로드 완료 시 초기 메시지 업데이트
-  useEffect(() => {
-    if (statsLoaded && accidentStats.yearly.length > 0) {
-      const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
-      if (latest) {
-        const year = latest.wrttimeid || latest.year || latest.stdr_year || "";
-        const total = latest.tot_acc_cnt || latest.totalAccidentCount || latest.safe_acci_smry || "-";
-        setMessages(prev => {
-          const updated = [...prev];
-          updated[1] = {
-            role: "assistant",
-            content: `최근 승강기 안전사고 통계 (${year}년, 행정안전부)
-
-• 전체 사고: ${total}건
-• 승객용: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || latest.safe_acci_only_passenger || "-"}건
-• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || latest.safe_acci_escalator || "-"}건
-
-빈도 높은 사고 유형
-1위  승강장문 열림 주행 — 문닫힘 안전장치 불량
-2위  피트 추락 — 최하층 정지장치 미작동
-3위  카 상부 끼임 — 점검운전 중 안전스위치 미사용`,
-            time: updated[1]?.time || formatTime()
-          };
-          return updated;
-        });
-      }
-    }
-  }, [accidentStats.yearly]);
 
   // 서버에서 설정 로드
   useEffect(() => {
