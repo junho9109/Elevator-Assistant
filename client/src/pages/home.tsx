@@ -201,18 +201,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
 
   // 채팅
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: `엘리베이터 통합 챗봇입니다.\n\n키워드를 입력하세요. 예시) 비상통화장치, 잠금장치`,
-      time: formatTime()
-    },
-    {
-      role: "assistant",
-      content: `통계 데이터 로딩 중...`,
-      time: formatTime()
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [accidentStats, setAccidentStats] = useState<{yearly: any[], age: any[]}>({ yearly: [], age: [] });
