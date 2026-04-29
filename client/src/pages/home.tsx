@@ -976,6 +976,182 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
           </div>
         </div>
       )}
+      {/* ==================== 기술자료 탭 ==================== */}
+      {defaultTab === "map" && (
+        <div className="flex-1 overflow-y-auto" ref={zoomContentRef}>
+          <div className="p-3 space-y-3">
+
+            {/* 편집 모드 툴바 */}
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">구조도 & 기술자료</h2>
+              <div className="flex gap-2">
+                <Button variant={editMode ? "default" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
+                  <Settings className="h-4 w-4 mr-1" />{editMode ? "편집 중" : "편집"}
+                </Button>
+                <Button size="sm" onClick={openAddModal}>
+                  <Plus className="h-4 w-4 mr-1" />추가
+                </Button>
+              </div>
+            </div>
+
+            {editMode && (
+              <div className="p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-xl flex flex-wrap gap-2 items-center text-sm">
+                <span className="text-orange-700 dark:text-orange-300 font-medium">✏️ 버튼을 드래그해서 이동</span>
+                <label className="flex items-center gap-1 cursor-pointer bg-white dark:bg-card border border-orange-300 rounded-lg px-2 py-1 text-xs text-orange-700 dark:text-orange-300 hover:bg-orange-50">
+                  <ImageIcon className="h-3 w-3" />구조도 변경
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                </label>
+                <Button size="sm" variant="outline" className="text-xs h-7 border-orange-300 text-orange-700" onClick={() => setShowAddHotspot(true)}>
+                  <Plus className="h-3 w-3 mr-1" />버튼 추가
+                </Button>
+                {hotspots.map(h => (
+                  <Button key={h.id} size="sm" variant="outline" className="text-xs h-7 border-red-300 text-red-600" onClick={() => setDeleteHotspotConfirm(h)}>
+                    <Trash2 className="h-3 w-3 mr-1" />{h.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {/* 구조도 */}
+            <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-lg border border-border">
+              <canvas ref={canvasRef} className={`w-full h-full ${editMode ? "cursor-move" : "cursor-pointer"}`}
+                onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) }) }).catch(() => {}); setDraggingCardId(null); } }} />
+            </div>
+
+            {/* 표준화 목록 */}
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <h3 className="font-semibold mb-3">
+                  {activeButton ? `${activeButton.label} 기준 목록` : "전체 기준 목록"}
+                </h3>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="기준 검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 bg-secondary border-0" />
+                </div>
+              </div>
+              <div className="divide-y divide-border">
+                {displayItems.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-10 text-sm">기준이 없습니다</p>
+                ) : (
+                  displayItems.map(standard => (
+                    <div key={standard.id} className="p-4 hover:bg-muted/50 cursor-pointer transition-colors" onClick={() => setSelectedStandard(standard)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-sm mb-1 truncate">{standard.title}</h4>
+                          {standard.standardNumber && <Badge variant="outline" className="text-xs mb-1">{standard.standardNumber}</Badge>}
+                          <p className="text-muted-foreground text-xs leading-relaxed line-clamp-2">{standard.body}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== 모달들 ==================== */}
+
+      
+      {/* 삭제 확인 */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setDeleteConfirm(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-semibold mb-2">삭제 확인</h2>
+            <p className="text-sm text-muted-foreground mb-6">"{deleteConfirm.title}"을 삭제하시겠습니까?</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteConfirm(null)}>취소</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleDelete}>삭제</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 버튼 추가 */}
+      {showAddHotspot && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddHotspot(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-semibold mb-4">버튼 추가</h2>
+            <Input placeholder="예: 기계실" value={newHotspotLabel} onChange={e => setNewHotspotLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAddHotspot()} className="mb-2" />
+            <p className="text-xs text-muted-foreground mb-4">추가 후 드래그해서 위치 조정하세요.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowAddHotspot(false)}>취소</Button>
+              <Button className="flex-1" onClick={handleAddHotspot}>추가</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 버튼 삭제 확인 */}
+      {deleteHotspotConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setDeleteHotspotConfirm(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-semibold mb-2">버튼 삭제</h2>
+            <p className="text-sm text-muted-foreground mb-6">"{deleteHotspotConfirm.label}" 버튼을 삭제하시겠습니까?</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteHotspotConfirm(null)}>취소</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteHotspot}>삭제</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 추가/수정 모달 */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddModal(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-5 border-b border-border">
+              <h2 className="font-semibold">{editingStandard ? "표준화 수정" : "표준화 추가"}</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-muted-foreground"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">분류</label>
+                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => setForm(prev => ({ ...prev, categoryId: e.target.value }))}>
+                  <option value="">전체</option>
+                  {hotspots.map(h => <option key={h.id} value={h.categoryId ?? ""}>{h.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">표준화명 *</label>
+                <Input placeholder="표준화명 입력" value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">항목 번호</label>
+                <Input placeholder="예: 6.3.2" value={form.standardNumber} onChange={e => setForm(prev => ({ ...prev, standardNumber: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">내용 *</label>
+                <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.body} onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))} />
+              </div>
+              <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
+              <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />
+              <DatePicker label="검사일" value={form.inspectionYear} onChange={v => setForm(prev => ({ ...prev, inspectionYear: v }))} />
+              <div>
+                <label className="block text-sm font-medium mb-1">사진 (최대 10장)</label>
+                <input type="file" accept="image/*" multiple className="w-full text-sm text-muted-foreground file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary" onChange={handleImageUpload} />
+                {form.images.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {form.images.map((img, i) => (
+                      <div key={i} className="relative">
+                        <img src={img} alt="" className="w-full h-20 object-cover rounded-xl border border-border" />
+                        <button className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs" onClick={() => setForm(prev => ({ ...prev, images: prev.images.filter((_, idx) => idx !== i) }))}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowAddModal(false)}>취소</Button>
+                <Button className="flex-1" onClick={handleSubmit}>저장</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 검색결과 팝업 */}
       {selectedSearchResult && createPortal(
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setSelectedSearchResult(null)}>
