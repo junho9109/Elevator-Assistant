@@ -502,6 +502,120 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     return { x: (px / canvas.width) * 100, y: (py / canvas.height) * 100, px, py };
   };
 
+  // 터치 이벤트 → 마우스 이벤트 변환 헬퍼
+  const getTouchCanvasCoords = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0, px: 0, py: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0] || e.changedTouches[0];
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const px = (touch.clientX - rect.left) * scaleX;
+    const py = (touch.clientY - rect.top) * scaleY;
+    return { x: (px / canvas.width) * 100, y: (py / canvas.height) * 100, px, py };
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!editMode) return;
+    e.preventDefault();
+    const { px, py } = getTouchCanvasCoords(e);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    // 카드 드래그 감지
+    for (const hotspot of hotspots) {
+      const { cardX, cardY, cardW, cardH, cardCX, cardCY } = getCardOffset(hotspot, canvas.width, canvas.height);
+      if (px >= cardX && px <= cardX + cardW && py >= cardY && py <= cardY + cardH) {
+        setDraggingCardId(hotspot.id);
+        setCardDragOffset({ x: px - cardCX, y: py - cardCY });
+        return;
+      }
+    }
+
+    // 핀(앵커) 드래그 감지
+    hotspots.forEach(hotspot => {
+      const btnX = (parseFloat(hotspot.left) / 100) * canvas.width;
+      const btnY = (parseFloat(hotspot.top) / 100) * canvas.height;
+      if (Math.hypot(px - btnX, py - btnY) < 50) {
+        setDraggingId(hotspot.id);
+        setDragOffset({ x: px - btnX, y: py - btnY });
+      }
+    });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!editMode) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    const px = (touch.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (touch.clientY - rect.top) * (canvas.height / rect.height);
+
+    // 카드 드래그
+    if (draggingCardId !== null) {
+      const newCX = px - cardDragOffset.x;
+      const newCY = py - cardDragOffset.y;
+      setCardOffsets(prev => ({
+        ...prev,
+        [draggingCardId]: {
+          cx: (newCX / canvas.width) * 100,
+          cy: (newCY / canvas.height) * 100,
+        }
+      }));
+      return;
+    }
+
+    // 핀 드래그
+    if (draggingId !== null) {
+      const x = Math.max(20, Math.min(canvas.width - 20, px - dragOffset.x));
+      const y = Math.max(20, Math.min(canvas.height - 20, py - dragOffset.y));
+      drawCanvas();
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.beginPath();
+      ctx.arc(x, y, 20, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(234,88,12,0.9)";
+      ctx.fill();
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!editMode) return;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.changedTouches[0];
+    const px = (touch.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (touch.clientY - rect.top) * (canvas.height / rect.height);
+
+    // 카드 위치 저장
+    if (draggingCardId !== null) {
+      fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) })
+      }).catch(() => {});
+      setDraggingCardId(null);
+      return;
+    }
+
+    // 핀 위치 저장
+    if (draggingId !== null) {
+      const x = Math.max(20, Math.min(canvas.width - 20, px - dragOffset.x));
+      const y = Math.max(20, Math.min(canvas.height - 20, py - dragOffset.y));
+      const newLeft = (x / canvas.width) * 100;
+      const newTop = (y / canvas.height) * 100;
+      const hotspot = hotspots.find(h => h.id === draggingId);
+      if (hotspot) {
+        updateHotspot.mutate({ id: draggingId, left: String(newLeft), top: String(newTop), label: hotspot.label, categoryId: hotspot.categoryId });
+      }
+      setDraggingId(null);
+    }
+  };
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (draggingId !== null) return;
     const { px, py } = getCanvasCoords(e);
@@ -958,8 +1072,11 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
             {/* 구조도 */}
             <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-lg border border-border">
               <canvas ref={canvasRef} className={`w-full h-full ${editMode ? "cursor-move" : "cursor-pointer"}`}
-                onClick={handleCanvasClick} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) }) }).catch(() => {}); setDraggingCardId(null); } }} />
+                onClick={handleCanvasClick}
+                onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) }) }).catch(() => {}); setDraggingCardId(null); } }}
+                onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+                style={{touchAction: editMode ? "none" : "auto"}} />
             </div>
 
             {/* 표준화 목록 */}
