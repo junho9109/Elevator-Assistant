@@ -786,7 +786,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
           </div>
 
           {/* 빠른 질문 */}
-          <div className="px-4 py-2 border-t border-border bg-card">
+          <div className="px-4 py-2 border-t border-border bg-card shrink-0">
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
               {QUICK_QUESTIONS.map((q, i) => (
                 <button key={i} onClick={() => sendMessage(q)} className="flex-shrink-0 text-xs bg-secondary text-secondary-foreground rounded-full px-3 py-1.5 hover:bg-primary hover:text-primary-foreground transition-colors">
@@ -797,7 +797,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
           </div>
 
           {/* 입력창 */}
-          <div className="px-4 py-3 border-t border-border bg-card">
+          <div className="px-4 py-3 border-t border-border bg-card shrink-0">
             <div className="flex gap-2">
               <input
                 ref={chatInputRef}
