@@ -553,21 +553,24 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     const px = (touch.clientX - rect.left) * (canvas.width / rect.width);
     const py = (touch.clientY - rect.top) * (canvas.height / rect.height);
 
-    // 카드 드래그
+    // 카드 드래그 - 실시간 업데이트
     if (draggingCardId !== null) {
       const newCX = px - cardDragOffset.x;
       const newCY = py - cardDragOffset.y;
-      setCardOffsets(prev => ({
-        ...prev,
+      const newOffsets = {
+        ...cardOffsets,
         [draggingCardId]: {
           cx: (newCX / canvas.width) * 100,
           cy: (newCY / canvas.height) * 100,
         }
-      }));
+      };
+      setCardOffsets(newOffsets);
+      // 실시간 캔버스 재드로우
+      setTimeout(() => drawCanvas(), 0);
       return;
     }
 
-    // 핀 드래그
+    // 핀 드래그 - 실시간 캔버스 업데이트
     if (draggingId !== null) {
       const x = Math.max(20, Math.min(canvas.width - 20, px - dragOffset.x));
       const y = Math.max(20, Math.min(canvas.height - 20, py - dragOffset.y));
@@ -578,6 +581,9 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       ctx.arc(x, y, 20, 0, Math.PI * 2);
       ctx.fillStyle = "rgba(234,88,12,0.9)";
       ctx.fill();
+      ctx.strokeStyle = "#fed7aa";
+      ctx.lineWidth = 3;
+      ctx.stroke();
     }
   };
 
@@ -670,13 +676,15 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       const py = (e.clientY - rect.top) * (canvas.height / rect.height);
       const newCX = px - cardDragOffset.x;
       const newCY = py - cardDragOffset.y;
-      setCardOffsets(prev => ({
-        ...prev,
+      const newOffsets = {
+        ...cardOffsets,
         [draggingCardId]: {
           cx: (newCX / canvas.width) * 100,
           cy: (newCY / canvas.height) * 100,
         }
-      }));
+      };
+      setCardOffsets(newOffsets);
+      setTimeout(() => drawCanvas(), 0);
       return;
     }
 
