@@ -862,10 +862,10 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 
       {/* ==================== 채팅 탭 ==================== */}
       {defaultTab === "chat" && (
-        <div className="flex-1 flex flex-col w-full">
+        <div className="flex-1 flex flex-col w-full overflow-hidden" style={{minHeight:0}}>
 
           {/* 메시지 목록 */}
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+          <div className="overflow-y-auto px-3 py-2 space-y-3" style={{flex:"1 1 0",minHeight:0}}>
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 {msg.role === "assistant" && (
