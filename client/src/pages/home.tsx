@@ -227,11 +227,14 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   // 카드 오프셋 (핫스팟 id → 카드 중심의 캔버스 % 위치)
   const [cardOffsets, setCardOffsets] = useState<Record<number, {cx: number, cy: number}>>({});
+  const cardOffsetsRef = useRef<Record<number, {cx: number, cy: number}>>({});
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
   const [cardDragOffset, setCardDragOffset] = useState({ x: 0, y: 0 });
   const [showAddHotspot, setShowAddHotspot] = useState(false);
   const [newHotspotLabel, setNewHotspotLabel] = useState("");
   const [deleteHotspotConfirm, setDeleteHotspotConfirm] = useState<Hotspot | null>(null);
+
+  useEffect(() => { cardOffsetsRef.current = cardOffsets; }, [cardOffsets]);
 
   const fuse = useMemo(() => new Fuse(standards, { keys: ["title", "body", "standardNumber"], threshold: 0.4 }), [standards]);
 
@@ -677,14 +680,50 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       const newCX = px - cardDragOffset.x;
       const newCY = py - cardDragOffset.y;
       const newOffsets = {
-        ...cardOffsets,
+        ...cardOffsetsRef.current,
         [draggingCardId]: {
           cx: (newCX / canvas.width) * 100,
           cy: (newCY / canvas.height) * 100,
         }
       };
+      cardOffsetsRef.current = newOffsets;
       setCardOffsets(newOffsets);
-      setTimeout(() => drawCanvas(), 0);
+      // 즉시 캔버스 재드로우 (ref 기반)
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        const img = new Image();
+        img.src = structureImg;
+        img.onload = () => {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          hotspots.forEach(h => {
+            const hx = (parseFloat(h.left)/100)*canvas.width;
+            const hy = (parseFloat(h.top)/100)*canvas.height;
+            const co = cardOffsetsRef.current[h.id];
+            const cardCX = co ? (co.cx/100)*canvas.width : hx + 80;
+            const cardCY = co ? (co.cy/100)*canvas.height : hy;
+            const cardW = 144, cardH = 52;
+            const cardX = cardCX - cardW/2, cardY = cardCY - cardH/2;
+            ctx.fillStyle = h.id === draggingCardId ? "#ea580c" : "rgba(255,255,255,0.92)";
+            ctx.strokeStyle = "#cbd5e1";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(cardX, cardY, cardW, cardH, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = h.id === draggingCardId ? "#fff" : "#1e293b";
+            ctx.font = "500 20px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(h.label, cardCX, cardCY);
+            ctx.beginPath();
+            ctx.arc(hx, hy, 8, 0, Math.PI*2);
+            ctx.fillStyle = "#ea580c";
+            ctx.fill();
+          });
+        };
+      }
       return;
     }
 
