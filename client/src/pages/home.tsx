@@ -840,7 +840,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 
   // ==================== 렌더링 ====================
   return (
-    <div className="h-full bg-background flex flex-col">
+    <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",backgroundColor:"var(--background)"}}>
 
       {/* 헤더 */}
       <div className="sticky top-0 z-40 bg-card border-b border-border px-3 py-2">
@@ -862,10 +862,10 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 
       {/* ==================== 채팅 탭 ==================== */}
       {defaultTab === "chat" && (
-        <div className="flex-1 flex flex-col w-full overflow-hidden" style={{minHeight:0}}>
+        <div className="flex-1 flex flex-col w-full">
 
           {/* 메시지 목록 */}
-          <div className="overflow-y-auto px-3 py-2 space-y-3" style={{flex:"1 1 0",minHeight:0}}>
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 {msg.role === "assistant" && (
