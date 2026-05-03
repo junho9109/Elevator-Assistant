@@ -221,7 +221,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const [editingStandard, setEditingStandard] = useState<Standard | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Standard | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [editMode, setEditMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
   const [structureImg, setStructureImg] = useState<string>(defaultStructureImg);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -417,8 +419,8 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         // 앵커 점 (부품 위치 표시)
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, editMode ? 10 : 8, 0, Math.PI * 2);
-        ctx.fillStyle = isActive ? "#2563eb" : editMode ? "#ea580c" : "#475569";
+        ctx.arc(x, y, isAdminMode ? 10 : 8, 0, Math.PI * 2);
+        ctx.fillStyle = isActive ? "#2563eb" : isAdminMode ? "#ea580c" : "#475569";
         ctx.shadowColor = isActive ? "rgba(37,99,235,0.5)" : "rgba(0,0,0,0.3)";
         ctx.shadowBlur = isActive ? 8 : 4;
         ctx.fill();
@@ -430,7 +432,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         ctx.moveTo(x, y);
         ctx.lineTo(cardCX, y);
         ctx.lineTo(cardCX, cardCY);
-        ctx.strokeStyle = isActive ? "rgba(37,99,235,0.7)" : editMode ? "rgba(234,88,12,0.6)" : "rgba(71,85,105,0.45)";
+        ctx.strokeStyle = isActive ? "rgba(37,99,235,0.7)" : isAdminMode ? "rgba(234,88,12,0.6)" : "rgba(71,85,105,0.45)";
         ctx.lineWidth = isActive ? 3 : 2;
         ctx.setLineDash(isActive ? [] : [4, 3]);
         ctx.stroke();
@@ -454,18 +456,18 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         ctx.lineTo(cardX, cardY + r);
         ctx.quadraticCurveTo(cardX, cardY, cardX + r, cardY);
         ctx.closePath();
-        ctx.fillStyle = isActive ? "#2563eb" : editMode ? "#ea580c" : "rgba(255,255,255,0.92)";
+        ctx.fillStyle = isActive ? "#2563eb" : isAdminMode ? "#ea580c" : "rgba(255,255,255,0.92)";
         ctx.fill();
 
         // 카드 테두리
-        ctx.strokeStyle = isActive ? "#1d4ed8" : editMode ? "#c2410c" : "rgba(203,213,225,0.8)";
+        ctx.strokeStyle = isActive ? "#1d4ed8" : isAdminMode ? "#c2410c" : "rgba(203,213,225,0.8)";
         ctx.lineWidth = isActive ? 0 : 0.8;
         ctx.stroke();
         ctx.restore();
 
         // 카드 텍스트
         ctx.save();
-        ctx.fillStyle = isActive ? "#ffffff" : editMode ? "#ffffff" : "#1e293b";
+        ctx.fillStyle = isActive ? "#ffffff" : isAdminMode ? "#ffffff" : "#1e293b";
         ctx.font = `${isActive ? "600" : "500"} 10px -apple-system, 'Pretendard', sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -473,7 +475,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         ctx.restore();
       });
     };
-  }, [hotspots, activeButtonId, structureImg, editMode]);
+  }, [hotspots, activeButtonId, structureImg, isAdminMode]);
 
   useEffect(() => { if (activeTab === "map") drawCanvas(); }, [drawCanvas, activeTab]);
 
@@ -519,7 +521,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
   };
 
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (!editMode) return;
+    if (!isAdminMode) return;
     e.preventDefault();
     const { px, py } = getTouchCanvasCoords(e);
     const canvas = canvasRef.current;
@@ -547,7 +549,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (!editMode) return;
+    if (!isAdminMode) return;
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -591,7 +593,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
   };
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (!editMode) return;
+    if (!isAdminMode) return;
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -637,12 +639,12 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       // 앵커점 또는 카드 영역 클릭 감지
       const hitAnchor = Math.hypot(px - x, py - y) < 40;
       const hitCard = px >= cardX && px <= cardX + cardW && py >= cardY && py <= cardY + cardH;
-      if ((hitAnchor || hitCard) && !editMode) setActiveButtonId(hotspot.id);
+      if ((hitAnchor || hitCard) && !isAdminMode) setActiveButtonId(hotspot.id);
     });
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!editMode) return;
+    if (!isAdminMode) return;
     const { px, py } = getCanvasCoords(e);
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -668,7 +670,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!editMode) return;
+    if (!isAdminMode) return;
 
     // 카드 드래그 이동
     if (draggingCardId !== null) {
@@ -758,7 +760,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
   };
 
   const handleMouseUp = async (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!editMode) return;
+    if (!isAdminMode) return;
 
     // 카드 드래그 종료 - 서버 저장
     if (draggingCardId !== null) {
@@ -1089,8 +1091,8 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">구조도 & 기술자료</h2>
               <div className="flex gap-2">
-                <Button variant={editMode ? "default" : "outline"} size="sm" onClick={() => setEditMode(!editMode)}>
-                  <Settings className="h-4 w-4 mr-1" />{editMode ? "편집 중" : "편집"}
+                <Button variant={isAdminMode ? "default" : "outline"} size="sm" onClick={() => setEditMode(!isAdminMode)}>
+                  <Settings className="h-4 w-4 mr-1" />{isAdminMode ? "편집 중" : "편집"}
                 </Button>
                 <Button size="sm" onClick={openAddModal}>
                   <Plus className="h-4 w-4 mr-1" />추가
@@ -1118,12 +1120,12 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 
             {/* 구조도 */}
             <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-lg border border-border">
-              <canvas ref={canvasRef} className={`w-full h-full ${editMode ? "cursor-move" : "cursor-pointer"}`}
+              <canvas ref={canvasRef} className={`w-full h-full ${isAdminMode ? "cursor-move" : "cursor-pointer"}`}
                 onClick={handleCanvasClick}
                 onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) }) }).catch(() => {}); setDraggingCardId(null); } }}
                 onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
-                style={{touchAction: editMode ? "none" : "auto"}} />
+                style={{touchAction: isAdminMode ? "none" : "auto"}} />
             </div>
 
             {/* 표준화 목록 */}
@@ -1287,6 +1289,51 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                   항목 상세보기 →
                 </button>
               )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 관리자 모드 비밀번호 다이얼로그 */}
+      {isPasswordDialogOpen && createPortal(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setIsPasswordDialogOpen(false)}>
+          <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100% - 64px)",maxWidth:"320px",zIndex:10000}} className="bg-card rounded-2xl shadow-2xl p-6" onClick={e => e.stopPropagation()} onFocus={e => e.stopPropagation()}>
+            <h2 className="font-semibold text-base mb-4">관리자 모드</h2>
+            <input
+              type="password"
+              placeholder="비밀번호 입력"
+              value={adminPassword}
+              onChange={e => setAdminPassword(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  if (adminPassword === "910919") {
+                    setIsAdminMode(true);
+                    setIsPasswordDialogOpen(false);
+                    setAdminPassword("");
+                  } else {
+                    alert("비밀번호가 틀렸습니다.");
+                    setAdminPassword("");
+                  }
+                }
+              }}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background mb-4 outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => { setIsPasswordDialogOpen(false); setAdminPassword(""); }} className="flex-1 py-2 rounded-xl border border-border text-sm">취소</button>
+              <button
+                onClick={() => {
+                  if (adminPassword === "910919") {
+                    setIsAdminMode(true);
+                    setIsPasswordDialogOpen(false);
+                    setAdminPassword("");
+                  } else {
+                    alert("비밀번호가 틀렸습니다.");
+                    setAdminPassword("");
+                  }
+                }}
+                className="flex-1 py-2 rounded-xl bg-primary text-primary-foreground text-sm"
+              >확인</button>
             </div>
           </div>
         </div>,
