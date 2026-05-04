@@ -1091,12 +1091,24 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">구조도 & 기술자료</h2>
               <div className="flex gap-2">
-                <Button variant={isAdminMode ? "default" : "outline"} size="sm" onClick={() => setEditMode(!isAdminMode)}>
+                <Button
+                  variant={isAdminMode ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    if (isAdminMode) {
+                      setIsAdminMode(false);
+                    } else {
+                      setIsPasswordDialogOpen(true);
+                    }
+                  }}
+                >
                   <Settings className="h-4 w-4 mr-1" />{isAdminMode ? "편집 중" : "편집"}
                 </Button>
-                <Button size="sm" onClick={openAddModal}>
-                  <Plus className="h-4 w-4 mr-1" />추가
-                </Button>
+                {isAdminMode && (
+                  <Button size="sm" onClick={openAddModal}>
+                    <Plus className="h-4 w-4 mr-1" />추가
+                  </Button>
+                )}
               </div>
             </div>
 
