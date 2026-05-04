@@ -607,7 +607,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) })
+        body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsetsRef.current) })
       }).catch(() => {});
       setDraggingCardId(null);
       return;
@@ -767,7 +767,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) })
+        body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsetsRef.current) })
       }).catch(() => {});
       setDraggingCardId(null);
       return;
@@ -782,7 +782,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     const newLeft = Math.max(2, Math.min(98, (px / canvas.width) * 100));
     const newTop = Math.max(2, Math.min(98, (py / canvas.height) * 100));
     try {
-      await updateHotspot.mutateAsync({ id: draggingId, hotspot: { left: `${newLeft.toFixed(1)}%`, top: `${newTop.toFixed(1)}%` } });
+      await updateHotspot.mutate({ id: draggingId, left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)), label: hotspot?.label || "", categoryId: hotspot?.categoryId || null });
     } catch { toast({ title: "위치 저장 실패", variant: "destructive" }); }
     setDraggingId(null);
   };
@@ -1135,7 +1135,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
               <canvas ref={canvasRef} className={`w-full h-full ${isAdminMode ? "cursor-move" : "cursor-pointer"}`}
                 onClick={handleCanvasClick}
                 onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsets) }) }).catch(() => {}); setDraggingCardId(null); } }}
+                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsetsRef.current) }) }).catch(() => {}); setDraggingCardId(null); } }}
                 onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
                 style={{touchAction: isAdminMode ? "none" : "auto"}} />
             </div>
