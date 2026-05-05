@@ -781,10 +781,15 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     const py = (e.clientY - rect.top) * (canvas.height / rect.height) - dragOffset.y;
     const newLeft = Math.max(2, Math.min(98, (px / canvas.width) * 100));
     const newTop = Math.max(2, Math.min(98, (py / canvas.height) * 100));
-    try {
-      await updateHotspot.mutate({ id: draggingId, left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)), label: hotspot?.label || "", categoryId: hotspot?.categoryId || null });
-    } catch { toast({ title: "위치 저장 실패", variant: "destructive" }); }
+    const hotspot = hotspots.find(h => h.id === draggingId);
+    if (hotspot) {
+      try {
+        await updateHotspot.mutateAsync({ id: draggingId, left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)), label: hotspot.label, categoryId: hotspot.categoryId });
+        toast({ title: "핀 위치가 저장되었습니다." });
+      } catch { toast({ title: "위치 저장 실패", variant: "destructive" }); }
+    }
     setDraggingId(null);
+    drawCanvas();
   };
 
   const handleAddHotspot = async () => {
