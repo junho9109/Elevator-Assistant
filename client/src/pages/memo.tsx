@@ -577,7 +577,6 @@ export default function MemoPage() {
   const [isDeletePasswordDialogOpen, setIsDeletePasswordDialogOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [newComment, setNewComment] = useState({ author: "", content: "" });
-  const [showDetail, setShowDetail] = useState(false);
   const [isAdminPasswordDialogOpen, setIsAdminPasswordDialogOpen] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const [imageViewer, setImageViewer] = useState<ImageViewerState>({
@@ -862,7 +861,6 @@ export default function MemoPage() {
     <>
       <div ref={zoomContentRef} className="h-full flex flex-col bg-background">
         <div className="bg-card border-b p-3">
-          <h1 className="text-lg font-bold tracking-tight mb-2">메모</h1>
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -889,44 +887,43 @@ export default function MemoPage() {
           </div>
         </div>
 
-        <div className="flex-1 flex overflow-hidden">
-          <div className="w-1/3 border-r bg-card overflow-hidden">
-            <ScrollArea className="h-full">
-              <div className="p-2 space-y-2">
-                {isLoading ? (
-                  <p className="text-center text-muted-foreground py-4">로딩중...</p>
-                ) : error ? (
-                  <p className="text-center text-red-500 py-4">
-                    메모 불러오기 실패: {(error as Error).message}
-                  </p>
-                ) : memosArray.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-4">메모가 없습니다</p>
-                ) : (
-                  memosArray.map(memo => (
-                    <MemoCard
-                      key={memo.id}
-                      memo={memo}
-                      isSelected={memo.id === selectedMemoId}
-                      onSelect={() => { setSelectedMemoId(memo.id); setIsEditing(false); }}
-                      onDelete={() => handleDeleteMemo(memo.id, memo)}
-                    />
-                  ))
-                )}
-              </div>
-            </ScrollArea>
+        <div className="flex-1 overflow-hidden relative">
+          {/* 메모 목록 - 슬라이드 */}
+          <div className={`absolute inset-0 overflow-y-auto bg-background transition-transform duration-200 ${selectedMemoId ? "-translate-x-full" : "translate-x-0"}`}>
+            <div className="p-3 space-y-2">
+              {isLoading ? (
+                <p className="text-center text-muted-foreground py-8">로딩중...</p>
+              ) : error ? (
+                <p className="text-center text-red-500 py-4">메모 불러오기 실패</p>
+              ) : memosArray.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">메모가 없습니다</p>
+              ) : (
+                memosArray.map(memo => (
+                  <div
+                    key={memo.id}
+                    onClick={() => { setSelectedMemoId(memo.id); setIsEditing(false); }}
+                    className="bg-card rounded-xl border border-border p-3 cursor-pointer hover:border-primary/40 transition-colors active:scale-[0.98]"
+                  >
+                    <div className="font-medium text-sm mb-1">{memo.title || "제목 없음"}</div>
+                    <div className="text-xs text-muted-foreground line-clamp-2">{(memo as any).body || ""}</div>
+                    <div className="text-[10px] text-muted-foreground mt-1.5 flex justify-between">
+                      <span>{memo.createdAt ? new Date(memo.createdAt).toLocaleDateString("ko-KR") : ""}</span>
+                      {isAdminMode && <button onClick={e => { e.stopPropagation(); handleDeleteMemo(memo.id, memo); }} className="text-red-400 text-xs">삭제</button>}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
+          {/* 메모 상세 - 슬라이드 */}
+          <div className={`absolute inset-0 flex flex-col bg-background transition-transform duration-200 ${selectedMemoId ? "translate-x-0" : "translate-x-full"}`}>
 
           <div className="flex-1 flex flex-col overflow-hidden">
             {selectedMemo ? (
               <>
                 <div className="bg-card border-b p-3">
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => { setSelectedMemoId(null); setIsEditing(false); }}
-                      className="p-1.5 rounded-lg hover:bg-muted mr-1"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
+                    <button onClick={() => { setSelectedMemoId(null); setIsEditing(false); }} className="p-1.5 rounded-lg hover:bg-muted mr-1 shrink-0"><ChevronLeft className="w-5 h-5" /></button>
                     {isEditing ? (
                       <>
                         <Input
@@ -993,9 +990,7 @@ export default function MemoPage() {
                         </Button>
                       </div>
                       
-                      {isPhotosLoading ? (
-                        <div className="text-center py-4 text-muted-foreground text-sm animate-pulse">사진을 불러오는 중입니다...</div>
-                      ) : photos.length > 0 ? (
+                      {photos.length > 0 ? (
                         <div className="grid grid-cols-3 gap-2">
                           {photos.map((photo, index) => (
                             <div key={photo.id} className="relative group">
@@ -1042,27 +1037,12 @@ export default function MemoPage() {
                   </div>
                 </ScrollArea>
               {/* 댓글 섹션 */}
-              <div className="border-t border-border p-3 shrink-0">
+              <div className="border-t border-border p-3 shrink-0 bg-background">
                 <h3 className="font-medium text-sm mb-2">💬 댓글 ({memoComments.length})</h3>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    placeholder="작성자"
-                    value={newComment.author}
-                    onChange={e => setNewComment(p => ({ ...p, author: e.target.value }))}
-                    className="w-20 text-xs border border-border rounded-lg px-2 py-1.5 bg-background outline-none"
-                  />
-                  <input
-                    placeholder="댓글 내용"
-                    value={newComment.content}
-                    onChange={e => setNewComment(p => ({ ...p, content: e.target.value }))}
-                    onKeyDown={e => e.key === "Enter" && createMemoComment()}
-                    className="flex-1 text-xs border border-border rounded-lg px-2 py-1.5 bg-background outline-none"
-                  />
-                  <button
-                    onClick={createMemoComment}
-                    disabled={!newComment.author || !newComment.content}
-                    className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-lg disabled:opacity-40"
-                  >등록</button>
+                <div className="flex gap-1.5 mb-2">
+                  <input placeholder="작성자" value={newComment.author} onChange={e => setNewComment(p => ({ ...p, author: e.target.value }))} className="w-20 text-xs border border-border rounded-lg px-2 py-1.5 bg-card outline-none" />
+                  <input placeholder="댓글 내용" value={newComment.content} onChange={e => setNewComment(p => ({ ...p, content: e.target.value }))} onKeyDown={e => e.key === "Enter" && createMemoComment()} className="flex-1 text-xs border border-border rounded-lg px-2 py-1.5 bg-card outline-none" />
+                  <button onClick={createMemoComment} disabled={!newComment.author || !newComment.content} className="text-xs bg-primary text-primary-foreground px-2 py-1.5 rounded-lg disabled:opacity-40">등록</button>
                 </div>
                 {memoComments.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-1">등록된 댓글이 없습니다</p>
@@ -1072,25 +1052,21 @@ export default function MemoPage() {
                       <div key={c.id} className="flex items-start justify-between p-2 bg-muted rounded-lg">
                         <div>
                           <span className="text-xs font-medium">{c.author}</span>
-                          <span className="text-xs text-muted-foreground ml-2">{new Date(c.createdAt).toLocaleDateString("ko-KR")}</span>
+                          <span className="text-xs text-muted-foreground ml-1">{new Date(c.createdAt).toLocaleDateString("ko-KR")}</span>
                           <p className="text-xs mt-0.5">{c.content}</p>
                         </div>
-                        {isAdminMode && (
-                          <button onClick={() => deleteMemoComment(c.id)} className="text-red-400 text-xs ml-2 shrink-0">✕</button>
-                        )}
+                        {isAdminMode && <button onClick={() => deleteMemoComment(c.id)} className="text-red-400 text-xs ml-2 shrink-0">✕</button>}
                       </div>
                     ))}
                   </div>
                 )}
               </div>
               </>
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                메모를 선택하거나 새로 만드세요
-              </div>
-            )}
+            ) : null}
           </div>
         </div>
+        </div>
+
 
         <Dialog open={annotatingPhotoId !== null} onOpenChange={(open) => !open && setAnnotatingPhotoId(null)}>
           <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
