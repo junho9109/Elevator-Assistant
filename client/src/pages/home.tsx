@@ -230,6 +230,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   // 카드 오프셋 (핫스팟 id → 카드 중심의 캔버스 % 위치)
   const [cardOffsets, setCardOffsets] = useState<Record<number, {cx: number, cy: number}>>({});
   const cardOffsetsRef = useRef<Record<number, {cx: number, cy: number}>>({});
+  const pinDragPosRef = useRef<{id: number, x: number, y: number} | null>(null);
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
   const [cardDragOffset, setCardDragOffset] = useState({ x: 0, y: 0 });
   const [showAddHotspot, setShowAddHotspot] = useState(false);
@@ -416,10 +417,14 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
           ctx.restore();
         }
 
-        // 앵커 점 (부품 위치 표시)
+        // 앵커 점 - 드래그 중이면 현재 위치로 덮어쓰기
+        const dragPos = pinDragPosRef.current;
+        const isDraggingThis = dragPos && dragPos.id === hotspot.id;
+        const drawX = isDraggingThis ? dragPos.x : x;
+        const drawY = isDraggingThis ? dragPos.y : y;
         ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, isAdminMode ? 10 : 8, 0, Math.PI * 2);
+        ctx.arc(drawX, drawY, isAdminMode ? 10 : 8, 0, Math.PI * 2);
         ctx.fillStyle = isActive ? "#2563eb" : isAdminMode ? "#ea580c" : "#475569";
         ctx.shadowColor = isActive ? "rgba(37,99,235,0.5)" : "rgba(0,0,0,0.3)";
         ctx.shadowBlur = isActive ? 8 : 4;
@@ -429,8 +434,8 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         // 리더라인 (앵커 → 카드 중심)
         ctx.save();
         ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(cardCX, y);
+        ctx.moveTo(drawX, drawY);
+        ctx.lineTo(cardCX, drawY);
         ctx.lineTo(cardCX, cardCY);
         ctx.strokeStyle = isActive ? "rgba(37,99,235,0.7)" : isAdminMode ? "rgba(234,88,12,0.6)" : "rgba(71,85,105,0.45)";
         ctx.lineWidth = isActive ? 3 : 2;
@@ -735,6 +740,9 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     const rect = canvas.getBoundingClientRect();
     const px = (e.clientX - rect.left) * (canvas.width / rect.width) - dragOffset.x;
     const py = (e.clientY - rect.top) * (canvas.height / rect.height) - dragOffset.y;
+    const clampedX = Math.max(20, Math.min(canvas.width - 20, px));
+    const clampedY = Math.max(20, Math.min(canvas.height - 20, py));
+    pinDragPosRef.current = { id: draggingId, x: clampedX, y: clampedY };
     drawCanvas();
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -788,6 +796,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         toast({ title: "핀 위치가 저장되었습니다." });
       } catch { toast({ title: "위치 저장 실패", variant: "destructive" }); }
     }
+    pinDragPosRef.current = null;
     setDraggingId(null);
     drawCanvas();
   };
