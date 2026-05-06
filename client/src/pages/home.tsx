@@ -626,7 +626,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       const newTop = (y / canvas.height) * 100;
       const hotspot = hotspots.find(h => h.id === draggingId);
       if (hotspot) {
-        updateHotspot.mutate({ id: draggingId, left: String(newLeft), top: String(newTop), label: hotspot.label, categoryId: hotspot.categoryId });
+        updateHotspot.mutate({ id: draggingId, hotspot: { left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)) } });
       }
       setDraggingId(null);
     }
@@ -792,7 +792,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     const hotspot = hotspots.find(h => h.id === draggingId);
     if (hotspot) {
       try {
-        await updateHotspot.mutateAsync({ id: draggingId, left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)), label: hotspot.label, categoryId: hotspot.categoryId });
+        await updateHotspot.mutateAsync({ id: draggingId, hotspot: { left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)) } });
         toast({ title: "핀 위치가 저장되었습니다." });
       } catch { toast({ title: "위치 저장 실패", variant: "destructive" }); }
     }
