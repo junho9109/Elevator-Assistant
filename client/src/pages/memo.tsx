@@ -635,6 +635,32 @@ export default function MemoPage() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: memoComments = [], refetch: refetchComments } = useQuery<any[]>({
+    queryKey: ["/api/memos", selectedMemoId, "comments"],
+    queryFn: async () => {
+      if (!selectedMemoId) return [];
+      const res = await fetch(`/api/memos/${selectedMemoId}/comments`);
+      return res.json();
+    },
+    enabled: !!selectedMemoId,
+  });
+
+  const createMemoComment = async () => {
+    if (!newComment.author.trim() || !newComment.content.trim() || !selectedMemoId) return;
+    await fetch(`/api/memos/${selectedMemoId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newComment),
+    });
+    setNewComment({ author: "", content: "" });
+    refetchComments();
+  };
+
+  const deleteMemoComment = async (id: number) => {
+    await fetch(`/api/memo-comments/${id}`, { method: "DELETE" });
+    refetchComments();
+  };
+
   useEffect(() => {
     if (selectedMemo) {
       setEditTitle(selectedMemo.title || "");
