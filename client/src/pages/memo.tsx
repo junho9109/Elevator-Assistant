@@ -921,6 +921,12 @@ export default function MemoPage() {
               <>
                 <div className="bg-card border-b p-3">
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => { setSelectedMemoId(null); setIsEditing(false); }}
+                      className="p-1.5 rounded-lg hover:bg-muted mr-1"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
                     {isEditing ? (
                       <>
                         <Input
