@@ -860,6 +860,7 @@ export default function MemoPage() {
     <>
       <div ref={zoomContentRef} className="h-full flex flex-col bg-background">
         <div className="bg-card border-b p-3">
+          <h1 className="text-lg font-bold tracking-tight mb-2">메모</h1>
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />

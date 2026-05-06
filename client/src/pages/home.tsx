@@ -866,8 +866,8 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
               {defaultTab === "chat" ? <Bot className="h-3 w-3 text-primary-foreground" /> : <ImageIcon className="h-3 w-3 text-primary-foreground" />}
             </div>
             <div>
-              <h1 className="font-semibold text-xs">{defaultTab === "chat" ? "엘리베이터 안전 챗봇" : "기술자료"}</h1>
-              <p className="text-[10px] text-muted-foreground">{defaultTab === "chat" ? "규칙 기반 안내 시스템" : "구조도 & 표준화 자료"}</p>
+              <h1 className="text-lg font-bold tracking-tight">{defaultTab === "chat" ? "챗봇" : "기술자료"}</h1>
+              
             </div>
           </div>
 

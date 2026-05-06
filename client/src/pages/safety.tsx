@@ -105,7 +105,7 @@ export default function SafetyPage() {
   return (
     <div className="min-h-screen bg-background p-3">
       <div className="w-full">
-        <h1 className="text-2xl font-bold mb-6 flex items-center gap-2"><Shield className="h-6 w-6 text-blue-600"/>안전보건관리</h1>
+        <h1 className="text-lg font-bold tracking-tight mb-6 flex items-center gap-2"><Shield className="h-6 w-6 text-blue-600"/>안전보건</h1>
         <div className="flex gap-2 mb-6 bg-card rounded-xl p-1 shadow-sm border border-border">
           {[{key:"ppe",label:"🦺 보호구"},{key:"guide",label:"🩺 응급처치"},{key:"nearmiss",label:"⚠️ 아차사고"}].map(tab=>(
             <button key={tab.key} onClick={()=>setActiveTab(tab.key as any)} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab===tab.key?"bg-primary text-primary-foreground":"text-muted-foreground hover:bg-muted"}`}>{tab.label}</button>
