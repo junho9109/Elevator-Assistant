@@ -1035,6 +1035,48 @@ export default function MemoPage() {
                     </div>
                   </div>
                 </ScrollArea>
+              {/* 댓글 섹션 */}
+              <div className="border-t border-border p-3 shrink-0">
+                <h3 className="font-medium text-sm mb-2">💬 댓글 ({memoComments.length})</h3>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    placeholder="작성자"
+                    value={newComment.author}
+                    onChange={e => setNewComment(p => ({ ...p, author: e.target.value }))}
+                    className="w-20 text-xs border border-border rounded-lg px-2 py-1.5 bg-background outline-none"
+                  />
+                  <input
+                    placeholder="댓글 내용"
+                    value={newComment.content}
+                    onChange={e => setNewComment(p => ({ ...p, content: e.target.value }))}
+                    onKeyDown={e => e.key === "Enter" && createMemoComment()}
+                    className="flex-1 text-xs border border-border rounded-lg px-2 py-1.5 bg-background outline-none"
+                  />
+                  <button
+                    onClick={createMemoComment}
+                    disabled={!newComment.author || !newComment.content}
+                    className="text-xs bg-primary text-primary-foreground px-3 py-1.5 rounded-lg disabled:opacity-40"
+                  >등록</button>
+                </div>
+                {memoComments.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-1">등록된 댓글이 없습니다</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                    {memoComments.map((c: any) => (
+                      <div key={c.id} className="flex items-start justify-between p-2 bg-muted rounded-lg">
+                        <div>
+                          <span className="text-xs font-medium">{c.author}</span>
+                          <span className="text-xs text-muted-foreground ml-2">{new Date(c.createdAt).toLocaleDateString("ko-KR")}</span>
+                          <p className="text-xs mt-0.5">{c.content}</p>
+                        </div>
+                        {isAdminMode && (
+                          <button onClick={() => deleteMemoComment(c.id)} className="text-red-400 text-xs ml-2 shrink-0">✕</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center text-muted-foreground">
