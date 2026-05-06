@@ -604,7 +604,7 @@ export default function JudgmentPage() {
   };
 
   // Fetch photos for selected item
-  const { data: itemPhotos = [] } = useQuery<any[]>({
+  const { data: itemPhotos = [], isLoading: isPhotosLoading } = useQuery<any[]>({
     queryKey: ["/api/judgment-items", detailItem?.id, "photos"],
     queryFn: async () => {
       if (!detailItem) return [];
@@ -2056,7 +2056,11 @@ export default function JudgmentPage() {
                         </>
                       )}
                     </div>
-                    {itemPhotos.length === 0 ? (
+                    {isPhotosLoading ? (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        <div className="animate-pulse">사진을 불러오는 중입니다...</div>
+                      </div>
+                    ) : itemPhotos.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground text-sm">
                         등록된 사진이 없습니다
                         {isAdminMode && <p className="text-xs mt-1">관리자 모드에서 사진을 추가할 수 있습니다</p>}

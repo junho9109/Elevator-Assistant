@@ -985,7 +985,9 @@ export default function MemoPage() {
                         </Button>
                       </div>
                       
-                      {photos.length > 0 ? (
+                      {isPhotosLoading ? (
+                        <div className="text-center py-4 text-muted-foreground text-sm animate-pulse">사진을 불러오는 중입니다...</div>
+                      ) : photos.length > 0 ? (
                         <div className="grid grid-cols-3 gap-2">
                           {photos.map((photo, index) => (
                             <div key={photo.id} className="relative group">
