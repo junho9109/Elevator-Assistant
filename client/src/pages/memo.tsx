@@ -576,6 +576,8 @@ export default function MemoPage() {
   const [deletePasswordInput, setDeletePasswordInput] = useState("");
   const [isDeletePasswordDialogOpen, setIsDeletePasswordDialogOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [newComment, setNewComment] = useState({ author: "", content: "" });
+  const [showDetail, setShowDetail] = useState(false);
   const [isAdminPasswordDialogOpen, setIsAdminPasswordDialogOpen] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const [imageViewer, setImageViewer] = useState<ImageViewerState>({

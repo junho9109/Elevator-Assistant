@@ -57,6 +57,9 @@ import {
   hotspots,
   memos,
   memoPhotos,
+  memoComments,
+  type MemoComment,
+  type InsertMemoComment,
   photoAnnotations,
   standardComments,
   judgmentPhotos,
@@ -506,6 +509,19 @@ export class DatabaseStorage implements IStorage {
       counts[row.itemId] = (counts[row.itemId] || 0) + 1;
     }
     return counts;
+  }
+
+  async getMemoComments(memoId: number): Promise<MemoComment[]> {
+    return await db.select().from(memoComments).where(eq(memoComments.memoId, memoId)).orderBy(memoComments.createdAt);
+  }
+
+  async createMemoComment(data: InsertMemoComment): Promise<MemoComment> {
+    const [comment] = await db.insert(memoComments).values(data).returning();
+    return comment;
+  }
+
+  async deleteMemoComment(id: number): Promise<void> {
+    await db.delete(memoComments).where(eq(memoComments.id, id));
   }
 
   async getInspectionBaseItems(): Promise<any[]> {

@@ -93,6 +93,18 @@ export const memoPhotos = pgTable("memo_photos", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Memo comments
+export const memoComments = pgTable("memo_comments", {
+  id: serial("id").primaryKey(),
+  memoId: integer("memo_id").references(() => memos.id, { onDelete: "cascade" }).notNull(),
+  author: varchar("author", { length: 100 }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertMemoCommentSchema = createInsertSchema(memoComments).omit({ id: true, createdAt: true });
+export type InsertMemoComment = z.infer<typeof insertMemoCommentSchema>;
+export type MemoComment = typeof memoComments.$inferSelect;
+
 export const photoAnnotations = pgTable("photo_annotations", {
   id: serial("id").primaryKey(),
   photoId: integer("photo_id").references(() => memoPhotos.id, { onDelete: 'cascade' }).notNull(),

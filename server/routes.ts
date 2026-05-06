@@ -914,6 +914,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 메모 댓글 API
+  app.get("/api/memos/:memoId/comments", async (req, res) => {
+    try {
+      const comments = await storage.getMemoComments(parseInt(req.params.memoId));
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch memo comments" });
+    }
+  });
+
+  app.post("/api/memos/:memoId/comments", async (req, res) => {
+    try {
+      const comment = await storage.createMemoComment({
+        memoId: parseInt(req.params.memoId),
+        author: req.body.author,
+        content: req.body.content,
+      });
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to create memo comment" });
+    }
+  });
+
+  app.delete("/api/memo-comments/:id", async (req, res) => {
+    try {
+      await storage.deleteMemoComment(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete memo comment" });
+    }
+  });
+
   // 검사기준 DB API
   app.get("/api/inspection-base-items", async (req, res) => {
     try {
