@@ -365,10 +365,10 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 
     let cardCX: number, cardCY: number;
 
-    if (cardOffsets[hotspot.id]) {
-      // 저장된 카드 위치 사용
-      cardCX = (cardOffsets[hotspot.id].cx / 100) * canvasW;
-      cardCY = (cardOffsets[hotspot.id].cy / 100) * canvasH;
+    const offsetKey = hotspot.label;
+    if ((cardOffsets as any)[offsetKey]) {
+      cardCX = ((cardOffsets as any)[offsetKey].cx / 100) * canvasW;
+      cardCY = ((cardOffsets as any)[offsetKey].cy / 100) * canvasH;
     } else {
       // 자동 계산
       const lineLen = 55;
@@ -567,9 +567,11 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     if (draggingCardId !== null) {
       const newCX = px - cardDragOffset.x;
       const newCY = py - cardDragOffset.y;
+      const touchHotspot = hotspots.find(h => h.id === draggingCardId);
+      const touchKey = touchHotspot ? touchHotspot.label : String(draggingCardId);
       const newOffsets = {
         ...cardOffsets,
-        [draggingCardId]: {
+        [touchKey]: {
           cx: (newCX / canvas.width) * 100,
           cy: (newCY / canvas.height) * 100,
         }
@@ -686,9 +688,11 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       const py = (e.clientY - rect.top) * (canvas.height / rect.height);
       const newCX = px - cardDragOffset.x;
       const newCY = py - cardDragOffset.y;
+      const draggingHotspot = hotspots.find(h => h.id === draggingCardId);
+      const draggingKey = draggingHotspot ? draggingHotspot.label : String(draggingCardId);
       const newOffsets = {
         ...cardOffsetsRef.current,
-        [draggingCardId]: {
+        [draggingKey]: {
           cx: (newCX / canvas.width) * 100,
           cy: (newCY / canvas.height) * 100,
         }
@@ -1149,7 +1153,22 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
               <canvas ref={canvasRef} className={`w-full h-full ${isAdminMode ? "cursor-move" : "cursor-pointer"}`}
                 onClick={handleCanvasClick}
                 onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp} onMouseLeave={() => { if (draggingId !== null) setDraggingId(null); if (draggingCardId !== null) { fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsetsRef.current) }) }).catch(() => {}); setDraggingCardId(null); } }}
+                onMouseUp={handleMouseUp} onMouseLeave={async () => {
+                  if (draggingId !== null) {
+                    const canvas = canvasRef.current;
+                    if (canvas && pinDragPosRef.current) {
+                      const newLeft = (pinDragPosRef.current.x / canvas.width) * 100;
+                      const newTop = (pinDragPosRef.current.y / canvas.height) * 100;
+                      updateHotspot.mutate({ id: draggingId, hotspot: { left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)) } });
+                    }
+                    pinDragPosRef.current = null;
+                    setDraggingId(null);
+                  }
+                  if (draggingCardId !== null) {
+                    fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsetsRef.current) }) }).catch(() => {});
+                    setDraggingCardId(null);
+                  }
+                }}
                 onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
                 style={{touchAction: isAdminMode ? "none" : "auto"}} />
             </div>
