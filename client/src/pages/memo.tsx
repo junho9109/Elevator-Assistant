@@ -680,7 +680,7 @@ export default function MemoPage() {
       return res.json();
     },
     onSuccess: (newMemo) => {
-      queryClient.invalidateQueries({ queryKey: ["memos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
       setSelectedMemoId(newMemo.id);
       setIsEditing(true);
       setIsAuthenticated(true);
@@ -788,7 +788,7 @@ export default function MemoPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["memos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
       setIsEditing(false);
       toast({ title: "메모가 저장되었습니다" });
     },
@@ -803,7 +803,7 @@ export default function MemoPage() {
       if (!res.ok) throw new Error("메모 삭제 실패");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["memos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/memos"] });
       if (selectedMemoId) setSelectedMemoId(null);
       toast({ title: "메모가 삭제되었습니다" });
     },
@@ -885,7 +885,7 @@ export default function MemoPage() {
 
   return (
     <>
-      <div ref={zoomContentRef} className="h-full flex flex-col bg-background">
+      <div ref={zoomContentRef} style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",backgroundColor:"var(--background)"}}>
         <div className="bg-card border-b p-3">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
