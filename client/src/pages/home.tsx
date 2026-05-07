@@ -278,12 +278,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       .then(d => {
         if (d.value) {
           const parsed = JSON.parse(d.value);
-          setCardOffsets(parsed);
           cardOffsetsRef.current = parsed;
+          setCardOffsets(parsed);
         }
-        setCardOffsetsLoaded(true);
       })
-      .catch(() => { setCardOffsetsLoaded(true); });
+      .catch(() => {});
     fetch("/api/settings/structureImg")
       .then(r => r.json())
       .then(d => { if (d.value) setStructureImg(d.value); })
@@ -488,9 +487,9 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
         ctx.restore();
       });
     };
-  }, [hotspots, activeButtonId, structureImg, isAdminMode]);
+  }, [hotspots, activeButtonId, structureImg, isAdminMode, cardOffsets]);
 
-  useEffect(() => { if (activeTab === "map" && cardOffsetsLoaded) drawCanvas(); }, [drawCanvas, activeTab, cardOffsetsLoaded]);
+  useEffect(() => { if (activeTab === "map") drawCanvas(); }, [drawCanvas, activeTab]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
