@@ -71,6 +71,11 @@ export default function SafetyPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"ppe"|"guide"|"nearmiss">("ppe");
+  const [empId, setEmpId] = useState("");
+  const [empName, setEmpName] = useState("");
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const isAdmin = empId === "910919" && empName === "노준호";
   const [showAddPPE, setShowAddPPE] = useState(false);
   const [selectedDef, setSelectedDef] = useState(PPE_DEFAULTS[0]);
   const [ppeForm, setPpeForm] = useState({ name: PPE_DEFAULTS[0].name, issuedDate: "", expiryDate: "", standard: PPE_DEFAULTS[0].standard, howToWear: PPE_DEFAULTS[0].howToWear });
@@ -80,10 +85,18 @@ export default function SafetyPage() {
   const [nmForm, setNmForm] = useState({ date:"", disasterType: DISASTER_TYPES[0], workType: WORK_TYPES[0], description:"", images:[] as string[] });
   const [expandedNM, setExpandedNM] = useState<number|null>(null);
 
-  const { data: ppeList = [] } = useQuery<PpeItem[]>({ queryKey: ["/api/ppe"], queryFn: async () => { const r = await fetch("/api/ppe"); return r.json(); } });
+  const { data: ppeList = [] } = useQuery<PpeItem[]>({
+    queryKey: ["/api/ppe", empId, empName],
+    queryFn: async () => {
+      if (!loggedIn) return [];
+      const r = await fetch(`/api/ppe?employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}`);
+      return r.json();
+    },
+    enabled: loggedIn,
+  });
   const { data: nearMisses = [] } = useQuery<NearMiss[]>({ queryKey: ["/api/near-misses"], queryFn: async () => { const r = await fetch("/api/near-misses"); return r.json(); } });
 
-  const createPpe = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/ppe", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(data) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"보호구가 등록되었습니다."}); setShowAddPPE(false); } });
+  const createPpe = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/ppe", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({...data, employeeId: empId, employeeName: empName}) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"보호구가 등록되었습니다."}); setShowAddPPE(false); } });
   const deletePpe = useMutation({ mutationFn: async (id: number) => { await fetch(`/api/ppe/${id}`, {method:"DELETE"}); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"삭제되었습니다."}); } });
   const createNM = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/near-misses", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(data) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/near-misses"]}); toast({title:"아차사고가 등록되었습니다."}); setShowAddNM(false); } });
   const deleteNM = useMutation({ mutationFn: async (id: number) => { await fetch(`/api/near-misses/${id}`, {method:"DELETE"}); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/near-misses"]}); toast({title:"삭제되었습니다."}); } });
@@ -113,9 +126,53 @@ export default function SafetyPage() {
         </div>
 
         {activeTab==="ppe" && (
+          !loggedIn ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
+              <div className="w-full max-w-sm space-y-3">
+                <h2 className="text-center font-semibold text-base mb-4">보호구 조회</h2>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">사번</label>
+                  <input
+                    type="text"
+                    placeholder="사번 입력"
+                    value={empId}
+                    onChange={e => setEmpId(e.target.value)}
+                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">이름</label>
+                  <input
+                    type="text"
+                    placeholder="이름 입력"
+                    value={empName}
+                    onChange={e => setEmpName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        if (!empId || !empName) { setLoginError("사번과 이름을 입력하세요."); return; }
+                        setLoginError(""); setLoggedIn(true);
+                      }
+                    }}
+                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+                {loginError && <p className="text-xs text-red-500">{loginError}</p>}
+                <button
+                  onClick={() => {
+                    if (!empId || !empName) { setLoginError("사번과 이름을 입력하세요."); return; }
+                    setLoginError(""); setLoggedIn(true);
+                  }}
+                  className="w-full bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-medium"
+                >조회</button>
+              </div>
+            </div>
+          ) :
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <p className="text-sm text-gray-500">보호구 지급일 및 인증만료일을 관리합니다.</p>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500">{isAdmin ? "전체 보호구 목록" : `${empName}님의 보호구`}</p>
+                <button onClick={() => { setLoggedIn(false); setEmpId(""); setEmpName(""); }} className="text-xs text-muted-foreground hover:text-foreground">로그아웃</button>
+              </div>
               <Button size="sm" onClick={()=>setShowAddPPE(true)}><Plus className="h-4 w-4 mr-1"/>등록</Button>
             </div>
             {ppeList.length===0 && <div className="text-center py-12 text-gray-400"><Shield className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>등록된 보호구가 없습니다.</p></div>}
@@ -128,6 +185,7 @@ export default function SafetyPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">{ppe.name}</span>
+                  {isAdmin && (ppe as any).employeeName && <span className="text-xs text-muted-foreground ml-2">({(ppe as any).employeeName})</span>}
                         {isExpired&&<Badge variant="destructive" className="text-xs">만료됨</Badge>}
                         {!isExpired&&isSoon&&<Badge className="text-xs bg-orange-500">D-{days}</Badge>}
                       </div>

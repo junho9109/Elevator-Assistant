@@ -617,8 +617,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 // PPE routes
   app.get("/api/ppe", async (req, res) => {
     try {
+      const { employeeId, employeeName } = req.query as { employeeId?: string; employeeName?: string };
+      const isAdmin = employeeId === "910919" && employeeName === "노준호";
       const items = await storage.getAllPpeItems();
-      res.json(items);
+      if (isAdmin) {
+        res.json(items);
+      } else if (employeeId && employeeName) {
+        res.json(items.filter(i => i.employeeId === employeeId && i.employeeName === employeeName));
+      } else {
+        res.json([]);
+      }
     } catch (error) {
       handleError(res, error, "Failed to fetch PPE items");
     }

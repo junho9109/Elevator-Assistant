@@ -254,6 +254,8 @@ export type CustomInspectionItem = typeof customInspectionItems.$inferSelect;
 // PPE (개인보호구) 테이블
 export const ppeItems = pgTable("ppe_items", {
   id: serial("id").primaryKey(),
+  employeeId: varchar("employee_id", { length: 20 }),
+  employeeName: varchar("employee_name", { length: 50 }),
   name: text("name").notNull(),
   issuedDate: varchar("issued_date", { length: 10 }),
   expiryDate: varchar("expiry_date", { length: 10 }),
