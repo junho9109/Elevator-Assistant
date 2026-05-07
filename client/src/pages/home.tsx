@@ -230,6 +230,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   // 카드 오프셋 (핫스팟 id → 카드 중심의 캔버스 % 위치)
   const [cardOffsets, setCardOffsets] = useState<Record<number, {cx: number, cy: number}>>({});
   const cardOffsetsRef = useRef<Record<number, {cx: number, cy: number}>>({});
+  const [cardOffsetsLoaded, setCardOffsetsLoaded] = useState(false);
   const pinDragPosRef = useRef<{id: number, x: number, y: number} | null>(null);
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
   const [cardDragOffset, setCardDragOffset] = useState({ x: 0, y: 0 });
@@ -274,8 +275,15 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   useEffect(() => {
     fetch("/api/settings/cardOffsets")
       .then(r => r.json())
-      .then(d => { if (d.value) setCardOffsets(JSON.parse(d.value)); })
-      .catch(() => {});
+      .then(d => {
+        if (d.value) {
+          const parsed = JSON.parse(d.value);
+          setCardOffsets(parsed);
+          cardOffsetsRef.current = parsed;
+        }
+        setCardOffsetsLoaded(true);
+      })
+      .catch(() => { setCardOffsetsLoaded(true); });
     fetch("/api/settings/structureImg")
       .then(r => r.json())
       .then(d => { if (d.value) setStructureImg(d.value); })
@@ -482,7 +490,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
     };
   }, [hotspots, activeButtonId, structureImg, isAdminMode]);
 
-  useEffect(() => { if (activeTab === "map") drawCanvas(); }, [drawCanvas, activeTab]);
+  useEffect(() => { if (activeTab === "map" && cardOffsetsLoaded) drawCanvas(); }, [drawCanvas, activeTab, cardOffsetsLoaded]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
