@@ -1,0 +1,530 @@
+/**
+ * 2019년 3월 28일 개정 누락 항목 DB 등록
+ * snake_case 컬럼명 사용 (item_id, section_id, ...)
+ * 실행: node seed_missing_2019.mjs
+ */
+import { neon } from "@neondatabase/serverless";
+
+const DATABASE_URL = process.env.DATABASE_URL || 
+  "postgresql://neondb_owner:npg_6LChdHbAT2Bj@ep-solitary-wave-a1hxj0nt-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
+
+const sql = neon(DATABASE_URL);
+
+const items = [
+  // ─── 섹션 6.1 피트 관련 ───
+  {
+    item_id: "6.1.5.1",
+    section_id: "6.1.5",
+    section_title: "6.1.5 피트의 설비",
+    parent_section_id: "6.1",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 피트에는 다음과 같은 장치가 있어야 한다. 가) 16.1.11에 적합하고, 피트 출입문 및 피트 바닥에서 잘 보이고 접근 가능한 정지장치. 1) 피트 깊이가 1.6m 미만인 경우, 정지스위치는 최하층 승강장 바닥에서 수직 위로 0.4m 이내 및 피트 바닥에서 수직 위로 2m 이내에 있어야 한다.",
+    sort_order: 201,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "6.1.9.4",
+    section_id: "6.1.9",
+    section_title: "6.1.9 방수",
+    parent_section_id: "6.1",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 유압식 엘리베이터의 경우, 파워 유니트가 있는 공간 및 피트는 해당 공간에 있는 설비의 모든 유체가 새거나 유출되어도 전 유량을 수용할 수 있도록 스며들지 않는 재질로 설치 및 마감되어야 한다.",
+    sort_order: 202,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: '["유압식"]',
+    is_active: true,
+  },
+  // ─── 섹션 6.3 점검문 ───
+  {
+    item_id: "6.3.3.5",
+    section_id: "6.3.3",
+    section_title: "6.3.3 출입문",
+    parent_section_id: "6.3",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 기계실 출입문은 폭 0.7m 이상, 높이 1.8m 이상의 금속제 문이어야 하며, 기계실 외부로 완전히 열리는 구조이어야 한다. 출입문은 열쇠로 잠글 수 있어야 하며, 승강로 내부에서는 열쇠 없이 열 수 있어야 한다.",
+    sort_order: 203,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 6.4 표시 ───
+  {
+    item_id: "6.4.2.1",
+    section_id: "6.4.2",
+    section_title: "6.4.2 승강기 번호",
+    parent_section_id: "6.4",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 승강기를 식별할 수 있는 고유번호가 승강장문 근처 및 카 내부에 부착되어 있어야 한다.",
+    sort_order: 204,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 6.7 풀리실 ───
+  {
+    item_id: "6.7",
+    section_id: "6.7",
+    section_title: "6.7 풀리실의 구조 및 설비",
+    parent_section_id: "6",
+    text: "[2013.9.15 이후 ~ 2019.3.28 전 건축허가분 종전기준] 승강로 외부의 풀리는 풀리실에 위치하여야 한다. 풀리실은 견고한 벽, 천장, 바닥 및 출입문으로 구획되어야 한다. 풀리실은 엘리베이터 이외의 목적으로 사용되지 않아야 한다.",
+    sort_order: 205,
+    permit_effective_date: "2013-09-15",
+    standard_dates: '["2013-09-15", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 6.5 승강로 ───
+  {
+    item_id: "6.5.1.1",
+    section_id: "6.5.1",
+    section_title: "6.5.1 일반사항",
+    parent_section_id: "6.5",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 승강로에는 1대 이상의 엘리베이터 카가 있을 수 있다.",
+    sort_order: 206,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "6.5.2.2.2",
+    section_id: "6.5.2",
+    section_title: "6.5.2 승강로의 구획",
+    parent_section_id: "6.5",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 폭 0.15m 이상의 승강로 내부 벽 수평 돌출부 또는 수평 빔에는 사람이 서 있지 못하도록 45° 이상의 경사를 이루는 디플렉터(deflector)를 설치해야 한다. 디플렉터는 영구적인 변형이 없어야 하고, 15mm를 초과하는 탄성변형이 없어야 한다.",
+    sort_order: 207,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "6.5.6",
+    section_id: "6.5.6",
+    section_title: "6.5.6 카, 균형추 및 평형추의 주행구간",
+    parent_section_id: "6.5",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 카, 균형추 및 평형추의 끝단 위치는 6.5.7 및 6.5.8에 따른 피난 공간 및 틈새에 관한 기준이 고려되어야 한다.",
+    sort_order: 208,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "6.5.7.3",
+    section_id: "6.5.7",
+    section_title: "6.5.7 상부공간 피난 틈새",
+    parent_section_id: "6.5",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 카 지붕 또는 카 지붕의 설비 위에 어떤 하나의 연속되는 구역이 유효 면적 0.12㎡ 이상(작은 변의 길이 0.25m 이상)이어야 한다. 카가 최고 위치에 있을 때, 그 구역 위로 승강로 천장의 가장 낮은 부분 사이의 수직 틈새는 피난공간의 높이 이상이어야 한다.",
+    sort_order: 209,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "6.5.7.4",
+    section_id: "6.5.7",
+    section_title: "6.5.7 상부공간 피난 틈새",
+    parent_section_id: "6.5",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 유압식 엘리베이터의 경우, 승강로 천장의 가장 낮은 부분과 상승방향으로 주행하는 램-헤드 조립체의 가장 높은 부분 사이의 유효 수직거리는 0.1m 이상이어야 한다.",
+    sort_order: 210,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: '["유압식"]',
+    is_active: true,
+  },
+  // ─── 섹션 6.6 기계실 ───
+  {
+    item_id: "6.6.1.1",
+    section_id: "6.6.1",
+    section_title: "6.6.1 일반사항",
+    parent_section_id: "6.6",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 기계실·기계류 공간 및 풀리실 내에 설치되는 돌출물은 안전상 지장이 없어야 한다.",
+    sort_order: 211,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "6.6.2.1",
+    section_id: "6.6.2",
+    section_title: "6.6.2 안내표지 및 설명서",
+    parent_section_id: "6.6",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 주 개폐기와 조명 스위치를 쉽게 식별할 수 있는 안내표지가 있어야 한다.",
+    sort_order: 212,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 7 승강장문/카문 ───
+  {
+    item_id: "7.1.3",
+    section_id: "7.1",
+    section_title: "7.1 일반사항",
+    parent_section_id: "7",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 승강장문 및 카문이 닫혔을 때, 필수적인 틈새를 제외하고 승강장 출입구 및 카 출입구를 완전히 닫아야 한다.",
+    sort_order: 213,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "7.3.2.1",
+    section_id: "7.3.2",
+    section_title: "7.3.2 가이드",
+    parent_section_id: "7.3",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 승강장문 및 카문은 정상작동 중 이탈, 기계적인 끼임 또는 작동 경로의 끝단에서 지지 구조물로부터의 이탈을 방지하도록 가이드되어야 한다.",
+    sort_order: 214,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "7.5.2.1.2",
+    section_id: "7.5.2",
+    section_title: "7.5.2 동력 작동식 문",
+    parent_section_id: "7.5",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 동력 작동식 수평 개폐식 문의 경우, 문이 닫히는 방향으로 문짝의 앞면에 가해지는 평균 닫힘 운동에너지는 10J 이하이어야 한다. 문 닫힘 하중은 150N 이하이어야 한다.",
+    sort_order: 215,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "7.5.3.5",
+    section_id: "7.5.3",
+    section_title: "7.5.3 승강장문 및 카문의 강도",
+    parent_section_id: "7.5",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 유리가 있는 문·문틀은 KS L 2004에 따른 접합유리가 사용되어야 한다.",
+    sort_order: 216,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2015-07-02", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "7.5.3.9",
+    section_id: "7.5.3",
+    section_title: "7.5.3 승강장문 및 카문의 강도",
+    parent_section_id: "7.5",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 수평 개폐식 승강장문 조립체 및 카문 조립체에는 보기 쉬운 곳에 쉽게 지워지지 않는 방법으로 별표 11에 따른 표시 및 인증번호가 부착되어야 한다.",
+    sort_order: 217,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "7.7.3.2.1",
+    section_id: "7.7.3",
+    section_title: "7.7.3 잠금 및 비상 잠금해제",
+    parent_section_id: "7.7",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 자동 동력작동 수평 개폐식 승강장문에는 어린이의 손이 틈새에 끼이거나 끌려 들어가는 위험을 방지하기 위해 다음 중 하나 이상이 조치되어야 한다: ①틈새 5mm 이하 ②손가락 감지수단 ③틈새 보완 ④기타 동등이상의 수단.",
+    sort_order: 218,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2017-01-28", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "7.9.1.12",
+    section_id: "7.9.1",
+    section_title: "7.9.1 승강장문 잠금",
+    parent_section_id: "7.9",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 승강장문 잠금장치는 별표 11에 따라 안전성이 입증되어야 한다.",
+    sort_order: 219,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "7.15.1",
+    section_id: "7.15",
+    section_title: "7.15 카문의 개방",
+    parent_section_id: "7",
+    text: "[2013.9.15 이후 ~ 2019.3.28 전 건축허가분 종전기준] 엘리베이터가 잠금해제구간(7.8.1)에서 정지하고 있고 도어 개폐장치가 작동 중인 경우를 제외하고, 카문은 자동으로 열림 위치를 유지할 수 없어야 한다.",
+    sort_order: 220,
+    permit_effective_date: "2013-09-15",
+    standard_dates: '["2013-09-15", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 8 카/균형추 ───
+  {
+    item_id: "8.5.3",
+    section_id: "8.5",
+    section_title: "8.5 에이프런",
+    parent_section_id: "8",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 에이프런 하단의 모서리에 대해 5㎠ 면적의 원형 또는 정사각형 모양의 어느 지점에 300N의 힘을 균등하게 분산하여 수직으로 가할 때 에이프런은 에이프런의 장착 부위에 손상을 가하지 않고 힘이 전달되는 방법으로 장착되어야 한다.",
+    sort_order: 221,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "8.6.3",
+    section_id: "8.6",
+    section_title: "8.6 비상구출문",
+    parent_section_id: "8",
+    text: "[2013.9.15 이후 ~ 2019.3.28 전 건축허가분 종전기준] 카가 승강장에 정지 상태로 있을 때 카문이 자동으로 열림 위치를 유지하고 있지 않을 경우, 승강장문에 전망창이 있다면 카문에도 전망창이 있어야 한다.",
+    sort_order: 222,
+    permit_effective_date: "2013-09-15",
+    standard_dates: '["2013-09-15", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "8.6.7.1",
+    section_id: "8.6.7",
+    section_title: "8.6.7 기계적 강도",
+    parent_section_id: "8.6",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 카문이 닫힌 상태에서 5㎠ 면적의 원형이나 사각의 단면에 300N의 힘을 균등하게 분산하여 문짝의 어느 지점에 수직으로 가할 때: 1mm를 초과하는 영구변형이 없어야 하고, 15mm를 초과하는 탄성변형이 없어야 한다.",
+    sort_order: 223,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2015-05-13", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "8.11.3",
+    section_id: "8.11",
+    section_title: "8.11 균형추 및 평형추",
+    parent_section_id: "8",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 정격속도 1m/s를 초과하여 운행 중인 엘리베이터 카문의 개방은 50N 이상의 힘이 요구되어야 한다. 다만, 잠금해제구간에서의 카문 개방력은 제외한다.",
+    sort_order: 224,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "8.13.3.1",
+    section_id: "8.13.3",
+    section_title: "8.13.3 보호수단",
+    parent_section_id: "8.13",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 보호난간 높이: 수평거리 0.3m 초과~0.5m 이하 시 0.7m 이상, 0.5m 초과 시 1.1m 이상. 카 지붕에는 발보호판(높이 0.1m 이상)과 보호난간(카 지붕의 바깥쪽 가장자리에서 승강로 벽까지 수평거리 0.3m 초과 시 설치)이 있어야 한다.",
+    sort_order: 225,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2015-05-13", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 9 현수/보상 ───
+  {
+    item_id: "9.2.3.1",
+    section_id: "9.2.3",
+    section_title: "9.2.3 로프/벨트 단말처리",
+    parent_section_id: "9.2",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 매다는 장치 끝부분은 자체 조임 쐐기형 소켓, 압착링 매듭법(ferrule secured eyes), 나사 소켓(screw-threaded sockets) 또는 안전성이 동등 이상인 기타 방법으로 처리해야 한다.",
+    sort_order: 226,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "9.2.4",
+    section_id: "9.2",
+    section_title: "9.2 권상도르래·풀리 및 직경 비율",
+    parent_section_id: "9",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 현수로프의 안전율은 부속서 Ⅸ에 따라 계산되어야 한다. 어떠한 경우라도 안전율은 12 이상이어야 한다.",
+    sort_order: 227,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2015-05-13", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "9.6.1",
+    section_id: "9.6",
+    section_title: "9.6 보상 수단",
+    parent_section_id: "9",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 정격속도 3.5m/s 이상인 엘리베이터에는 보상 수단이 있어야 한다. 보상로프를 사용하는 경우, 로프 인장장치가 있어야 한다.",
+    sort_order: 228,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 10 추락방지/과속 ───
+  {
+    item_id: "10.2.1.1.2",
+    section_id: "10.2.1",
+    section_title: "10.2.1 추락방지안전장치",
+    parent_section_id: "10.2",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 추락방지안전장치는 별표 5에 따라 안전성이 입증되어야 한다.",
+    sort_order: 229,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "10.2.2.1.7",
+    section_id: "10.2.2",
+    section_title: "10.2.2 과속조절기",
+    parent_section_id: "10.2",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 과속조절기는 별표 4에 따라 안전성이 입증되어야 한다.",
+    sort_order: 230,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "10.4.3.5",
+    section_id: "10.4.3",
+    section_title: "10.4.3 에너지 분산형 완충기",
+    parent_section_id: "10.4",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 에너지 분산형 완충기는 별표 6에 따라 안전성이 입증되어야 한다.",
+    sort_order: 231,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 13 구동기 ───
+  {
+    item_id: "13.1.1.3",
+    section_id: "13.1.1",
+    section_title: "13.1.1 일반사항",
+    parent_section_id: "13.1",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 브레이크 시스템은 전자-기계 브레이크(마찰 형식)가 있어야 한다. 드럼 또는 디스크 제동에 관여하는 브레이크의 모든 기계적 부품은 2세트로 설치되어야 한다.",
+    sort_order: 232,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2017-01-28", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 14 전기설비 ───
+  {
+    item_id: "14.1.2.3",
+    section_id: "14.1.2",
+    section_title: "14.1.2 전기안전장치",
+    parent_section_id: "14.1",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 전기안전장치는 다음과 같은 방법 중 하나에 의해 안전성이 확보되어야 한다: 가) 직접 개방작동 접점(directly-opened contact), 나) 안전회로, 다) 안전 관련 부품을 포함하는 연속 감시 회로.",
+    sort_order: 233,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "14.2.1.5",
+    section_id: "14.2.1",
+    section_title: "14.2.1 엘리베이터 운전제어",
+    parent_section_id: "14.2",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 정전 등으로 인해 정상 운행 중인 엘리베이터가 갑자기 정지되면 자동으로 카를 가장 가까운 승강장으로 운행시키는 수단(자동구출운전 등)이 있어야 한다. (정밀안전검사: 2017.1.28 이후 두 번째 실시하는 정밀안전검사부터 적용)",
+    sort_order: 234,
+    permit_effective_date: "2017-01-28",
+    standard_dates: '["2017-01-28", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  // ─── 섹션 15 전기안전장치 ───
+  {
+    item_id: "15.15",
+    section_id: "15.15",
+    section_title: "15.15 로봇 탑승용 무선통신장치",
+    parent_section_id: "15",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 로봇 탑승용 엘리베이터의 경우, 무선통신장치는 방해전파 차폐, 보안 프로토콜 적용 등 안전요건을 충족하여야 하며, 제조사 인증 서류가 구비되어야 한다.",
+    sort_order: 235,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: '["로봇탑승용"]',
+    is_active: true,
+  },
+  // ─── 섹션 16 운전 제어 ───
+  {
+    item_id: "16.1.1.1",
+    section_id: "16.1.1",
+    section_title: "16.1.1 엘리베이터 운전 제어",
+    parent_section_id: "16.1",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 파이널 리미트 스위치는 우발적인 작동의 위험 없이 가능한 최상층 및 최하층에 근접하여 작동하도록 설치되어야 한다. 카(또는 균형추)가 완충기에 충돌하기 전에 작동되어야 한다.",
+    sort_order: 236,
+    permit_effective_date: "2019-03-28",
+    standard_dates: '["2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "16.2.3.1",
+    section_id: "16.2.3",
+    section_title: "16.2.3 비상통화장치",
+    parent_section_id: "16.2",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 카 내와 외부의 소정의 장소를 연결하는 통화장치는 당해 시설물의 관리인력이 상주하는 장소에 이중으로 설치되어야 한다. 또한, 이와 별도로 시설물 외부로 자동 통화 연결되어 신속한 구조요청이 이루어질 수 있는 통화장치를 갖추어야 한다.",
+    sort_order: 237,
+    permit_effective_date: "2015-05-13",
+    standard_dates: '["2014-07-01", "2015-05-13", "2019-03-28"]',
+    equipment_types: "[]",
+    is_active: true,
+  },
+  {
+    item_id: "16.3.3",
+    section_id: "16.3",
+    section_title: "16.3 피난용 엘리베이터의 추가요건",
+    parent_section_id: "16",
+    text: "[2019.3.28 이후 건축허가분부터 적용] 피난용 엘리베이터의 카: 출입문 유효 폭 900mm 이상, 정격하중 1,000㎏ 이상이어야 한다. 피난용 엘리베이터는 소방관이 조작하여 엘리베이터 문이 닫힌 이후부터 60초 이내에 가장 먼 층에 도착하여야 한다. 운행속도는 1m/s 이상이어야 한다.",
+    sort_order: 238,
+    permit_effective_date: "2014-07-01",
+    standard_dates: '["2014-07-01", "2019-03-28"]',
+    equipment_types: '["피난용"]',
+    is_active: true,
+  },
+];
+
+async function seed() {
+  console.log(`🚀 총 ${items.length}개 항목 DB 등록 시작...\n`);
+  
+  // 먼저 실제 컬럼명 확인
+  try {
+    const cols = await sql`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'inspection_base_items' 
+      ORDER BY ordinal_position
+    `;
+    console.log("📋 실제 컬럼명:", cols.map(c => c.column_name).join(", "));
+    console.log();
+  } catch (e) {
+    console.log("컬럼 조회 실패:", e.message);
+  }
+
+  let ok = 0, fail = 0;
+  for (const item of items) {
+    try {
+      await sql`
+        INSERT INTO inspection_base_items 
+          (item_id, section_id, section_title, parent_section_id, text, 
+           sort_order, permit_effective_date, standard_dates, equipment_types, is_active)
+        VALUES 
+          (${item.item_id}, ${item.section_id}, ${item.section_title}, 
+           ${item.parent_section_id}, ${item.text}, ${item.sort_order}, 
+           ${item.permit_effective_date}, ${item.standard_dates}, 
+           ${item.equipment_types}, ${item.is_active})
+        ON CONFLICT (item_id) DO UPDATE SET
+          text = EXCLUDED.text,
+          section_title = EXCLUDED.section_title,
+          permit_effective_date = EXCLUDED.permit_effective_date,
+          standard_dates = EXCLUDED.standard_dates
+      `;
+      console.log(`✅ ${item.item_id}: ${item.section_title.substring(0, 40)}`);
+      ok++;
+    } catch (e) {
+      console.log(`❌ ${item.item_id}: ${e.message}`);
+      fail++;
+    }
+  }
+  console.log(`\n완료: ${ok}개 등록 성공, ${fail}개 오류`);
+}
+
+seed().catch(console.error);
