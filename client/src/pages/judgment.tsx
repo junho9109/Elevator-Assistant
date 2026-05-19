@@ -459,6 +459,7 @@ export default function JudgmentPage() {
   const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
+  const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
 
   const [customItems, setCustomItems] = useState<(InspectionItem & { sectionId?: string })[]>([]);
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
@@ -1092,7 +1093,7 @@ export default function JudgmentPage() {
     });
     
     setIsAddItemDialogOpen(false);
-    setAddItemForm({ sectionId: "", text: "", effectiveDate: "", introductionType: "" });
+    setAddItemForm({ sectionId: "", text: "", effectiveDate: "", introductionType: "", permitEffectiveDate: "", standardEffectiveDate: "", standardDates: [], revisions: [] });
   };
 
   const handleDeleteCustomItem = (itemId: string) => {
@@ -1118,13 +1119,17 @@ export default function JudgmentPage() {
     });
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // [패치 5] getItemWithEdits - permit_effective_date 우선 사용
+  // ═══════════════════════════════════════════════════════════════════
   const getItemWithEdits = (item: InspectionItem): InspectionItem => {
     const edit = customEdits[item.id];
     if (!edit) return item;
     return {
       ...item,
       text: edit.text ?? item.text,
-      effectiveDate: edit.effectiveDate || item.effectiveDate,
+      // permit_effective_date 우선 → effective_date → 기본값
+      effectiveDate: edit.permitEffectiveDate || edit.effectiveDate || item.effectiveDate,
       expiryDate: edit.expiryDate || item.expiryDate,
       introductionType: edit.introductionType ?? item.introductionType,
     };
@@ -1214,9 +1219,16 @@ export default function JudgmentPage() {
     return "applicable";
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // [패치 1] getAutoResult - "previous" 상태에서 자동 「해당없음」
+  // ═══════════════════════════════════════════════════════════════════
+  // 새 비즈니스 룰:
+  //   건축허가일이 검사기준 시행일 이전이면 적용 의무가 없어
+  //   「해당없음」이 자동 판정됩니다.
+  //   사용자가 직접 「종전」/「적합」을 선택할 수 있습니다.
   const getAutoResult = (item: InspectionItem): ResultType | null => {
     const status = getItemStatus(item);
-    if (status === "previous") return "종전";
+    if (status === "previous") return "해당없음";       // 변경: "종전" → "해당없음"
     if (status === "not-applicable") return "해당없음";
     return null;
   };
@@ -1258,6 +1270,12 @@ export default function JudgmentPage() {
     setExpandedSections(new Set());
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // [패치 4] 자동 결과 적용 useEffect - 사용자 명시 선택 보존
+  // ═══════════════════════════════════════════════════════════════════
+  // "previous" 상태에서 자동 추천은 「해당없음」 이지만,
+  // 사용자가 「종전」/「적합」/「부적합」/「시정권고」를 명시 선택한 경우
+  // 그 선택을 유지합니다.
   useEffect(() => {
     if (!referenceDate) return;
     
@@ -1267,11 +1285,22 @@ export default function JudgmentPage() {
     
     allItems.forEach(originalItem => {
       const item = getItemWithEdits(originalItem);
+      const status = getItemStatus(item);
       const autoResult = getAutoResult(item);
       const currentResult = results[item.id];
       
-      if (autoResult) {
-        // 자동 적용 결과가 있는 경우 (해당없음 또는 종전)
+      if (status === "previous") {
+        // 시행 전 항목: 자동 「해당없음」, 사용자 명시 선택은 보존
+        if (currentResult && currentResult !== "해당없음") {
+          // 사용자 명시 선택 (종전·적합·부적합·시정권고) 보존
+          newResults[item.id] = currentResult;
+        } else {
+          // 사용자 선택 없음 또는 「해당없음」 → 자동 적용
+          newResults[item.id] = "해당없음";
+          if (currentResult !== "해당없음") hasChanges = true;
+        }
+      } else if (autoResult) {
+        // not-applicable 상태 - 자동 「해당없음」 고정
         if (currentResult !== autoResult) {
           newResults[item.id] = autoResult;
           hasChanges = true;
@@ -1279,13 +1308,11 @@ export default function JudgmentPage() {
           newResults[item.id] = currentResult;
         }
       } else {
-        // 검사 대상 (applicable)인 경우
-        // 이전에 자동 적용된 결과(해당없음/종전)는 제거하고, 사용자 선택 결과만 유지
+        // applicable 상태 - 사용자 직접 평가
+        // 이전에 자동 적용된 결과(해당없음·종전)는 제거, 사용자 선택은 유지
         if (currentResult === "해당없음" || currentResult === "종전") {
-          // 자동 적용된 결과였으므로 제거
           hasChanges = true;
         } else if (currentResult) {
-          // 사용자가 선택한 결과(적합/부적합/시정권고)는 유지
           newResults[item.id] = currentResult;
         }
       }
@@ -1315,11 +1342,16 @@ export default function JudgmentPage() {
     }));
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // [패치 2] renderResultButton - "previous" 상태에서 모든 버튼 활성화
+  // ═══════════════════════════════════════════════════════════════════
+  // 새 룰: 시행 전 항목은 모든 판정(적합/부적합/시정권고/해당없음/종전)
+  // 을 사용자가 자유롭게 선택할 수 있어야 합니다.
+  // 「not-applicable」(조문 도입 전)만 「해당없음」 으로 고정됩니다.
   const renderResultButton = (itemId: string, resultType: ResultType, status: "applicable" | "previous" | "not-applicable", autoResult: ResultType | null) => {
     const isSelected = results[itemId] === resultType;
     const isAutoSelected = autoResult === resultType && !results[itemId];
-    const isDisabled = (status === "previous" && resultType !== "종전") || 
-                       (status === "not-applicable" && resultType !== "해당없음");
+    const isDisabled = (status === "not-applicable" && resultType !== "해당없음");
     
     const baseClasses = "px-1.5 py-0.5 text-[10px] rounded border transition-all min-w-[32px] leading-tight";
     
@@ -1423,11 +1455,22 @@ export default function JudgmentPage() {
             </button>
           )}
         </div>
+        {/* ═══════════════════════════════════════════════════════════════
+            [패치 3] "previous" 상태 안내 문구 변경
+            ═══════════════════════════════════════════════════════════════
+            새 룰: 「해당없음」이 자동 판정되며, 사용자가 직접
+            「종전」 또는 「적합」 등을 선택할 수 있습니다.                */}
         {status === "previous" && referenceDate && (
           <div className="px-4 pb-2 text-xs text-amber-600 ml-10">
-            ※ 이 항목은 {item.effectiveDate} 이후 적용되는 기준입니다. 입력하신 날짜({referenceDate.toISOString().split('T')[0]}) 기준으로 「종전」 기준이 자동 적용됩니다.
+            ※ 이 항목은 {item.effectiveDate} 이후 적용되는 기준이므로,
+            입력하신 날짜({referenceDate.toISOString().split('T')[0]})에는 적용 의무가 없어
+            「해당없음」이 자동 판정됩니다.
             <br />
-            단, 현장 상태가 개정된 현행 기준을 이미 충족하고 있는 경우에는 건축허가일자 또는 검사적용 기준일과 관계없이 [적합]으로 판정할 수 있습니다.
+            단, 다음 경우 사용자가 직접 선택할 수 있습니다:
+            <br />
+            · 종전 기준에 따라 설치된 경우 → 「종전」 선택
+            <br />
+            · 현장이 현행 기준을 이미 충족하고 있는 경우 → 「적합」 선택
           </div>
         )}
         {status === "not-applicable" && referenceDate && (
@@ -2003,7 +2046,7 @@ export default function JudgmentPage() {
                             {datesWithMemo.map((entry, idx) => (
                               <div key={idx} className="border border-border rounded-lg p-3 bg-card">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{entry.label || `개정 ${idx + 1}`}</span>
+                                  <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{(entry as any).label || `개정 ${idx + 1}`}</span>
                                   <span className="text-xs font-medium">{entry.date}</span>
                                 </div>
                                 {entry.memo && (
@@ -2017,9 +2060,9 @@ export default function JudgmentPage() {
                           </div>
                         ) : dates.length > 0 ? (
                           <div className="space-y-1">
-                            {dates.map((date, idx) => (
+                            {dates.map((date: any, idx) => (
                               <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-lg">
-                                <span className="text-xs font-semibold text-amber-600">{date.label || `개정 ${idx + 1}`}</span>
+                                <span className="text-xs font-semibold text-amber-600">{`개정 ${idx + 1}`}</span>
                                 <span className="text-xs">{date}</span>
                               </div>
                             ))}
