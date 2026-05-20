@@ -407,7 +407,8 @@ interface RevisionEntry {
 interface CustomItemEdit {
   id: string;
   text?: string;
-  permitEffectiveDate?: string;   // 건축허가일 이후 적용일
+  permitEffectiveDate?: string;   // 건축허가일 이후 적용일 (= P, 현행 시행일)
+  firstIntroducedDate?: string;   // [v2] 최초 도입일 (= F, 해당없음 컷오프)
   standardEffectiveDate?: string; // 설치검사일(검사기준 적용일) 이후 적용일
   standardDatesWithMemo?: {date: string; memo: string; label?: string}[]; // 날짜+메모
   revisions?: RevisionEntry[];    // 개정 이력 (최대 10개)
@@ -662,6 +663,7 @@ export default function JudgmentPage() {
         standardNote: (edit as any).standardNote || undefined,
         equipmentTypes: (() => { try { return JSON.parse((edit as any).equipmentTypes || "[]"); } catch { return []; } })(),
         permitEffectiveDate: (edit as any).permitEffectiveDate || undefined,
+        firstIntroducedDate: (edit as any).firstIntroducedDate || undefined,  // [v2]
         standardDates: datesOnly,
         standardDatesWithMemo: datesWithMemo,
       };
@@ -1145,10 +1147,29 @@ export default function JudgmentPage() {
     }
   };
 
+  // ═══════════════════════════════════════════════════════════════════
+  // [v2 변경 2] referenceDate - 교체구분 반영
+  // ═══════════════════════════════════════════════════════════════════
+  // 옵션 2 룰:
+  //   D1 = D2:                  기준일 = D1 (= D2, 신규/통상 검사)
+  //   D1 ≠ D2 + 전면교체:        기준일 = D2 (새로 설치 시점)
+  //   D1 ≠ D2 + 수시교체:        기준일 = D1 (기존 설치 시점, 교체 항목 별도)
+  //   D1 ≠ D2 + 교체구분 미선택:  기준일 = max(D1, D2) (기존 룰)
   const referenceDate = useMemo(() => {
-    // 기준일 우선순위: 검사기준 적용일 > 건축허가일
-    // (승강기 안전검사기준 2016-143호 부칙 제2조: 건축허가분부터 적용)
     if (permitDate && inspectionDate) {
+      // D1 = D2: 신규/통상
+      if (permitDate === inspectionDate) {
+        return new Date(permitDate);
+      }
+      // D1 ≠ D2 + 전면교체: 새로 설치한 시점 기준
+      if (installType === "전면교체") {
+        return new Date(inspectionDate);
+      }
+      // D1 ≠ D2 + 수시교체: 기존 설치 시점 기준
+      if (installType === "수시교체") {
+        return new Date(permitDate);
+      }
+      // D1 ≠ D2 + 미선택: 더 늦은 일자
       const permit = new Date(permitDate);
       const inspection = new Date(inspectionDate);
       return permit > inspection ? permit : inspection;
@@ -1156,7 +1177,7 @@ export default function JudgmentPage() {
     if (inspectionDate) return new Date(inspectionDate);
     if (permitDate) return new Date(permitDate);
     return null;
-  }, [inspectionDate, permitDate]);
+  }, [inspectionDate, permitDate, installType]);
 
   // 기준일 체계 안내 텍스트
   const referenceDateInfo = useMemo(() => {
@@ -1192,6 +1213,12 @@ export default function JudgmentPage() {
     });
   }, [customEdits, currentFilterKey, equipmentType, subType]);
 
+  // ═══════════════════════════════════════════════════════════════════
+  // [v2 변경 3] getItemStatus - first_introduced_date 체크 추가
+  // ═══════════════════════════════════════════════════════════════════
+  // T < F (조문 도입 전)  → "not-applicable" (해당없음 고정)
+  // F ≤ T < P             → "previous"       (시행 전, 도입 후)
+  // T ≥ P                 → "applicable"     (현행 적용)
   const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => {
     if (!referenceDate) return "applicable";
     
@@ -1201,36 +1228,42 @@ export default function JudgmentPage() {
       if (referenceDate > expiryDate) return "not-applicable";
     }
     
-    // effectiveDate: 이 날짜부터 적용됨
-    // referenceDate >= effectiveDate면 검사 대상 (applicable)
-    // referenceDate < effectiveDate면:
-    //   - "new" 타입: 아직 도입 전이므로 해당없음
-    //   - "revision" 타입: 개정 전 기준 적용 (종전)
+    // [v2] first_introduced_date 체크: 조문 도입 전이면 해당없음 고정
+    const edit = customEdits[item.id];
+    const firstIntroducedDate = (edit as any)?.firstIntroducedDate;
+    if (firstIntroducedDate) {
+      const fDate = new Date(firstIntroducedDate);
+      if (referenceDate < fDate) {
+        return "not-applicable";  // 조문 도입 전 = 해당없음 고정
+      }
+    }
+    
+    // effectiveDate (permit_effective_date): 현행 시행일
     if (item.effectiveDate) {
       const effectiveDate = new Date(item.effectiveDate);
       if (referenceDate < effectiveDate) {
         if (item.introductionType === "new") {
           return "not-applicable";
         }
-        return "previous";
+        return "previous";  // F ≤ T < P
       }
     }
     
-    return "applicable";
+    return "applicable";  // T ≥ P
   };
 
   // ═══════════════════════════════════════════════════════════════════
-  // [패치 1] getAutoResult - "previous" 상태에서 자동 「해당없음」
+  // [v2 변경 4] getAutoResult - 자동 추천 최소화
   // ═══════════════════════════════════════════════════════════════════
-  // 새 비즈니스 룰:
-  //   건축허가일이 검사기준 시행일 이전이면 적용 의무가 없어
-  //   「해당없음」이 자동 판정됩니다.
-  //   사용자가 직접 「종전」/「적합」을 선택할 수 있습니다.
+  // 옵션 2 룰:
+  //   "not-applicable" (T<F) → 자동 [해당없음] (고정)
+  //   "previous" (F≤T<P)     → 자동 추천 없음, 사용자 직접 평가
+  //   "applicable" (T≥P)     → 자동 추천 없음, 사용자 직접 평가
+  // (자동 [적합]은 절대 안 함 — 현장 상태는 검사원이 직접 판단)
   const getAutoResult = (item: InspectionItem): ResultType | null => {
     const status = getItemStatus(item);
-    if (status === "previous") return "해당없음";       // 변경: "종전" → "해당없음"
     if (status === "not-applicable") return "해당없음";
-    return null;
+    return null;  // applicable, previous → 사용자 직접 평가
   };
 
   const collectAllItems = useCallback((sections: InspectionSection[]): InspectionItem[] => {
@@ -1271,11 +1304,12 @@ export default function JudgmentPage() {
   };
 
   // ═══════════════════════════════════════════════════════════════════
-  // [패치 4] 자동 결과 적용 useEffect - 사용자 명시 선택 보존
+  // [v2 변경 5] 자동 결과 적용 useEffect - 단순화
   // ═══════════════════════════════════════════════════════════════════
-  // "previous" 상태에서 자동 추천은 「해당없음」 이지만,
-  // 사용자가 「종전」/「적합」/「부적합」/「시정권고」를 명시 선택한 경우
-  // 그 선택을 유지합니다.
+  // 옵션 2 룰:
+  //   "not-applicable" (T<F) → 자동 [해당없음] 고정
+  //   "previous" / "applicable" → 사용자 직접 평가, 자동 결과 없음
+  //   기존에 자동 적용된 [해당없음]/[종전]은 제거, 사용자 선택은 보존
   useEffect(() => {
     if (!referenceDate) return;
     
@@ -1286,33 +1320,20 @@ export default function JudgmentPage() {
     allItems.forEach(originalItem => {
       const item = getItemWithEdits(originalItem);
       const status = getItemStatus(item);
-      const autoResult = getAutoResult(item);
       const currentResult = results[item.id];
       
-      if (status === "previous") {
-        // 시행 전 항목: 자동 「해당없음」, 사용자 명시 선택은 보존
-        if (currentResult && currentResult !== "해당없음") {
-          // 사용자 명시 선택 (종전·적합·부적합·시정권고) 보존
-          newResults[item.id] = currentResult;
-        } else {
-          // 사용자 선택 없음 또는 「해당없음」 → 자동 적용
+      if (status === "not-applicable") {
+        // 조문 도입 전 - 자동 [해당없음] 고정
+        if (currentResult !== "해당없음") {
           newResults[item.id] = "해당없음";
-          if (currentResult !== "해당없음") hasChanges = true;
-        }
-      } else if (autoResult) {
-        // not-applicable 상태 - 자동 「해당없음」 고정
-        if (currentResult !== autoResult) {
-          newResults[item.id] = autoResult;
           hasChanges = true;
         } else {
           newResults[item.id] = currentResult;
         }
       } else {
-        // applicable 상태 - 사용자 직접 평가
-        // 이전에 자동 적용된 결과(해당없음·종전)는 제거, 사용자 선택은 유지
-        if (currentResult === "해당없음" || currentResult === "종전") {
-          hasChanges = true;
-        } else if (currentResult) {
+        // previous, applicable - 사용자 직접 평가
+        // 사용자 선택은 모두 보존
+        if (currentResult) {
           newResults[item.id] = currentResult;
         }
       }
@@ -1456,26 +1477,62 @@ export default function JudgmentPage() {
           )}
         </div>
         {/* ═══════════════════════════════════════════════════════════════
-            [패치 3] "previous" 상태 안내 문구 변경
+            [v2 변경 6] 안내문구 4개 케이스 분기
             ═══════════════════════════════════════════════════════════════
-            새 룰: 「해당없음」이 자동 판정되며, 사용자가 직접
-            「종전」 또는 「적합」 등을 선택할 수 있습니다.                */}
-        {status === "previous" && referenceDate && (
-          <div className="px-4 pb-2 text-xs text-amber-600 ml-10">
-            ※ 이 항목은 {item.effectiveDate} 이후 적용되는 기준이므로,
-            입력하신 날짜({referenceDate.toISOString().split('T')[0]})에는 적용 의무가 없어
-            「해당없음」이 자동 판정됩니다.
-            <br />
-            단, 다음 경우 사용자가 직접 선택할 수 있습니다:
-            <br />
-            · 종전 기준에 따라 설치된 경우 → 「종전」 선택
-            <br />
-            · 현장이 현행 기준을 이미 충족하고 있는 경우 → 「적합」 선택
-          </div>
-        )}
+            (1) not-applicable: 조문 도입 전 → 해당없음 고정
+            (2) previous + 전면교체: D2 시점 현행 기준 평가
+            (3) previous + 수시교체: D1 기준, 교체 항목은 D2 기준
+            (4) previous + 같은날/미선택: 그 시점 기준 직접 평가
+            (5) applicable + 입력일: 현행 기준 직접 평가                 */}
         {status === "not-applicable" && referenceDate && (
           <div className="px-4 pb-2 text-xs text-gray-600 ml-10">
-            ※ 이 항목은 건축허가일(검사기준 적용일) 기준으로 이후에 개정되어 해당없음을 적용합니다.
+            ※ 이 검사기준은 {(customEdits[item.id] as any)?.firstIntroducedDate || item.effectiveDate || "도입일 이전"}부터 도입된 항목으로,
+            입력하신 날짜({referenceDate.toISOString().split('T')[0]})에는 적용되지 않아 「해당없음」으로 고정됩니다.
+          </div>
+        )}
+        {status === "previous" && referenceDate && permitDate && inspectionDate && permitDate !== inspectionDate && installType === "전면교체" && (
+          <div className="px-4 pb-2 text-xs text-amber-600 ml-10">
+            ※ <strong>전면교체</strong>이므로 검사기준 적용일({inspectionDate}) 기준 현행 기준을 평가합니다.
+            <br />
+            · 현행 기준 부합 → 「적합」
+            <br />
+            · 미흡 → 「부적합」 / 「시정권고」
+            <br />
+            · 건축사항 등 변경 불가 항목 → 「종전」 처리 가능
+            <br />
+            · 해당 설비 없음 → 「해당없음」
+          </div>
+        )}
+        {status === "previous" && referenceDate && permitDate && inspectionDate && permitDate !== inspectionDate && installType === "수시교체" && (
+          <div className="px-4 pb-2 text-xs text-amber-600 ml-10">
+            ※ <strong>수시교체</strong>이므로 건축허가일({permitDate}) 시점 기준이 기본 적용됩니다.
+            <br />
+            · 이 항목을 교체했다면 → 검사기준 적용일({inspectionDate}) 기준 평가 → 「적합」 / 「부적합」
+            <br />
+            · 교체하지 않은 항목 → 당시 기준 평가 → 「종전」 가능
+            <br />
+            · 해당 설비 없음 → 「해당없음」
+          </div>
+        )}
+        {status === "previous" && referenceDate && (!permitDate || !inspectionDate || permitDate === inspectionDate || !installType) && (
+          <div className="px-4 pb-2 text-xs text-amber-600 ml-10">
+            ※ 이 검사기준은 {item.effectiveDate} 이후 적용되는 기준이므로,
+            입력하신 날짜({referenceDate.toISOString().split('T')[0]})에는 적용 의무가 없습니다.
+            <br />
+            현장 상태를 확인하여 직접 판정해주세요:
+            <br />
+            · 현행 기준 충족 → 「적합」
+            <br />
+            · 종전 기준 부합 → 「종전」
+            <br />
+            · 미흡 → 「부적합」 / 「시정권고」
+            <br />
+            · 해당 설비 없음 → 「해당없음」
+          </div>
+        )}
+        {status === "applicable" && referenceDate && (
+          <div className="px-4 pb-2 text-xs text-blue-600 ml-10">
+            ※ 이 항목은 현행 검사기준이 적용되는 시점입니다. 현장 상태를 확인하여 직접 판정해주세요.
           </div>
         )}
         {customEdits[item.id]?.customWarning && (
