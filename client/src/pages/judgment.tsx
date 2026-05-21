@@ -409,6 +409,7 @@ interface CustomItemEdit {
   text?: string;
   permitEffectiveDate?: string;   // 건축허가일 이후 적용일 (= P, 현행 시행일)
   firstIntroducedDate?: string;   // [v2] 최초 도입일 (= F, 해당없음 컷오프)
+  enforcementType?: string;       // [v3] 'general' | 'retroactive' | 'immediate' (기본 general)
   standardEffectiveDate?: string; // 설치검사일(검사기준 적용일) 이후 적용일
   standardDatesWithMemo?: {date: string; memo: string; label?: string}[]; // 날짜+메모
   revisions?: RevisionEntry[];    // 개정 이력 (최대 10개)
@@ -664,6 +665,7 @@ export default function JudgmentPage() {
         equipmentTypes: (() => { try { return JSON.parse((edit as any).equipmentTypes || "[]"); } catch { return []; } })(),
         permitEffectiveDate: (edit as any).permitEffectiveDate || undefined,
         firstIntroducedDate: (edit as any).firstIntroducedDate || undefined,  // [v2]
+        enforcementType: (edit as any).enforcementType || 'general',  // [v3]
         standardDates: datesOnly,
         standardDatesWithMemo: datesWithMemo,
       };
@@ -1214,13 +1216,19 @@ export default function JudgmentPage() {
   }, [customEdits, currentFilterKey, equipmentType, subType]);
 
   // ═══════════════════════════════════════════════════════════════════
-  // [v2 변경 3] getItemStatus - first_introduced_date 체크 추가
+  // [v3 변경 1] getItemStatus - enforcement_type 우선 처리
   // ═══════════════════════════════════════════════════════════════════
-  // T < F (조문 도입 전)  → "not-applicable" (해당없음 고정)
-  // F ≤ T < P             → "previous"       (시행 전, 도입 후)
-  // T ≥ P                 → "applicable"     (현행 적용)
+  // 'retroactive' (소급적용): T 무관, 항상 'applicable' (검사 대상)
+  // 'general' (기본): v2 룰 그대로 (T<F=not-applicable, F≤T<P=previous, T≥P=applicable)
   const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => {
     if (!referenceDate) return "applicable";
+    
+    // [v3] 소급적용 항목: 시점 무관 항상 검사 대상
+    const edit = customEdits[item.id];
+    const enforcementType = (edit as any)?.enforcementType;
+    if (enforcementType === 'retroactive') {
+      return "applicable";  // T 무관, 항상 검사 대상
+    }
     
     // expiryDate: 이 날짜 이후에는 더 이상 적용되지 않음 (만료됨)
     if (item.expiryDate) {
@@ -1229,7 +1237,6 @@ export default function JudgmentPage() {
     }
     
     // [v2] first_introduced_date 체크: 조문 도입 전이면 해당없음 고정
-    const edit = customEdits[item.id];
     const firstIntroducedDate = (edit as any)?.firstIntroducedDate;
     if (firstIntroducedDate) {
       const fDate = new Date(firstIntroducedDate);
@@ -1530,7 +1537,25 @@ export default function JudgmentPage() {
             · 해당 설비 없음 → 「해당없음」
           </div>
         )}
-        {status === "applicable" && referenceDate && (
+        {/* [v3] retroactive 항목: 소급적용 안내 (applicable 상태 안에서 우선 처리) */}
+        {status === "applicable" && referenceDate && 
+         (customEdits[item.id] as any)?.enforcementType === 'retroactive' && (
+          <div className="px-4 pb-2 text-xs text-red-600 ml-10">
+            ⚠️ <strong>소급적용 항목</strong>: 이 검사기준은 건축허가일·검사기준 적용일과 무관하게 <strong>항상 검사 대상</strong>입니다.
+            <br />
+            (근거: 승강기 검사기준 부칙 제2조 ① 단서)
+            <br />
+            현장 상태를 확인하여 직접 판정해주세요:
+            <br />
+            · 현행 기준 충족 → 「적합」
+            <br />
+            · 미흡 → 「부적합」 / 「시정권고」
+            <br />
+            · 해당 설비 없음 → 「해당없음」
+          </div>
+        )}
+        {status === "applicable" && referenceDate && 
+         (customEdits[item.id] as any)?.enforcementType !== 'retroactive' && (
           <div className="px-4 pb-2 text-xs text-blue-600 ml-10">
             ※ 이 항목은 현행 검사기준이 적용되는 시점입니다. 현장 상태를 확인하여 직접 판정해주세요.
           </div>
