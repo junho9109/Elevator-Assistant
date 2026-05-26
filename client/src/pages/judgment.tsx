@@ -448,9 +448,25 @@ export default function JudgmentPage() {
   const [installType, setInstallType] = useState<"" | "전면교체" | "수시교체">("");
   const [standardDate] = useState("2017-01-28");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
-  const [results, setResults] = useState<Record<string, ResultType>>(() => {
+  // [v5] results: 다중 선택 지원 (ResultType[] 배열로)
+  const [results, setResults] = useState<Record<string, ResultType[]>>(() => {
     const saved = localStorage.getItem("judgmentResults");
-    return saved ? JSON.parse(saved) : {};
+    if (!saved) return {};
+    try {
+      const parsed = JSON.parse(saved);
+      // 기존 데이터 마이그레이션: 단일 값 → 배열
+      const migrated: Record<string, ResultType[]> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (Array.isArray(v)) {
+          migrated[k] = v as ResultType[];
+        } else if (typeof v === 'string') {
+          migrated[k] = [v as ResultType];
+        }
+      }
+      return migrated;
+    } catch {
+      return {};
+    }
   });
   
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -1014,7 +1030,12 @@ export default function JudgmentPage() {
       customWarning: existingEdit?.customWarning ?? "",
       standardNote: (existingEdit as any)?.standardNote ?? "",
       equipmentTypes: (existingEdit as any)?.equipmentTypes ?? [],
-      fixedResult: existingEdit?.fixedResult ?? results[item.id],
+      fixedResult: existingEdit?.fixedResult ?? (() => {
+        // [v5] results[item.id]는 이제 배열. 단일 fixedResult로 변환
+        const r = results[item.id];
+        if (Array.isArray(r)) return r[0];
+        return r as ResultType | undefined;
+      })(),
     });
     // 통합 다이얼로그: detailItem도 설정해서 사진/댓글도 같이 표시
     setDetailItem(item);
@@ -1030,7 +1051,7 @@ export default function JudgmentPage() {
     if (editForm.fixedResult) {
       setResults(prev => ({
         ...prev,
-        [editingItem.id]: editForm.fixedResult!
+        [editingItem.id]: [editForm.fixedResult!]  // [v5] 배열로
       }));
     }
     
@@ -1250,17 +1271,36 @@ export default function JudgmentPage() {
   };
 
   // ═══════════════════════════════════════════════════════════════════
-  // [v2 변경 4] getAutoResult - 자동 추천 최소화
+  // [v5] getAutoResults - 안내된 옵션 모두 자동 선택 (배열 반환)
   // ═══════════════════════════════════════════════════════════════════
-  // 옵션 2 룰:
-  //   "not-applicable" (T<F) → 자동 [해당없음] (고정)
-  //   "previous" (F≤T<P)     → 자동 추천 없음, 사용자 직접 평가
-  //   "applicable" (T≥P)     → 자동 추천 없음, 사용자 직접 평가
-  // (자동 [적합]은 절대 안 함 — 현장 상태는 검사원이 직접 판단)
-  const getAutoResult = (item: InspectionItem): ResultType | null => {
+  // 사용자 룰: 상태별로 안내 옵션을 모두 자동 선택
+  //   not-applicable          → ["해당없음"]
+  //   previous                → ["종전","적합","부적합","시정권고","해당없음"]
+  //   applicable + retroactive → ["적합","부적합","시정권고","해당없음"]
+  //   applicable + 일반         → ["적합","부적합","시정권고"]
+  const getAutoResults = (item: InspectionItem): ResultType[] => {
     const status = getItemStatus(item);
-    if (status === "not-applicable") return "해당없음";
-    return null;  // applicable, previous → 사용자 직접 평가
+    if (status === "not-applicable") return ["해당없음"];
+    
+    const edit = customEdits[item.id];
+    const enforcementType = (edit as any)?.enforcementType;
+    
+    if (status === "previous") {
+      return ["종전", "적합", "부적합", "시정권고", "해당없음"];
+    }
+    if (status === "applicable") {
+      if (enforcementType === "retroactive") {
+        return ["적합", "부적합", "시정권고", "해당없음"];
+      }
+      return ["적합", "부적합", "시정권고"];
+    }
+    return [];
+  };
+  
+  // 하위 호환 (단일 결과 기대하는 곳에서 사용 - 첫 번째 자동 결과 반환)
+  const getAutoResult = (item: InspectionItem): ResultType | null => {
+    const auto = getAutoResults(item);
+    return auto.length === 1 ? auto[0] : null;
   };
 
   const collectAllItems = useCallback((sections: InspectionSection[]): InspectionItem[] => {
@@ -1301,44 +1341,22 @@ export default function JudgmentPage() {
   };
 
   // ═══════════════════════════════════════════════════════════════════
-  // [v2 변경 5] 자동 결과 적용 useEffect - 단순화
+  // [v5] 자동 결과 적용 useEffect - 다중 선택
   // ═══════════════════════════════════════════════════════════════════
-  // 옵션 2 룰:
-  //   "not-applicable" (T<F) → 자동 [해당없음] 고정
-  //   "previous" / "applicable" → 사용자 직접 평가, 자동 결과 없음
-  //   기존에 자동 적용된 [해당없음]/[종전]은 제거, 사용자 선택은 보존
+  // 사용자가 클릭으로 선택/해제하기 전까지는 results에 항목이 없음
+  // → renderResultButton이 autoResults(자동 안내된 옵션)를 기본 표시
+  // 사용자가 한 번이라도 클릭하면 results에 항목이 추가되고 사용자 선택이 우선
+  // 
+  // useEffect는 referenceDate가 바뀔 때 사용자가 한 자동선택을 초기화
+  // (검사 시점이 바뀌면 자동 선택도 새로 시작)
   useEffect(() => {
     if (!referenceDate) return;
     
-    const allItems = collectAllItems(INSPECTION_DATA_MR);
-    const newResults: Record<string, ResultType> = {};
-    let hasChanges = false;
-    
-    allItems.forEach(originalItem => {
-      const item = getItemWithEdits(originalItem);
-      const status = getItemStatus(item);
-      const currentResult = results[item.id];
-      
-      if (status === "not-applicable") {
-        // 조문 도입 전 - 자동 [해당없음] 고정
-        if (currentResult !== "해당없음") {
-          newResults[item.id] = "해당없음";
-          hasChanges = true;
-        } else {
-          newResults[item.id] = currentResult;
-        }
-      } else {
-        // previous, applicable - 사용자 직접 평가
-        // 사용자 선택은 모두 보존
-        if (currentResult) {
-          newResults[item.id] = currentResult;
-        }
-      }
-    });
-    
-    if (hasChanges) {
-      setResults(newResults);
-    }
+    // referenceDate가 바뀌면 results를 초기화하지 않음
+    // (검사원이 직접 선택한 결과는 보존)
+    // autoResults는 renderResultButton에서 동적으로 표시되므로
+    // useEffect는 명시적인 처리가 불필요
+    // (단, 기존 단일 결과 형식 데이터가 있으면 그대로 보존됨)
   }, [referenceDate, collectAllItems, customEdits]);
 
   const toggleSection = (sectionId: string) => {
@@ -1353,27 +1371,41 @@ export default function JudgmentPage() {
     });
   };
 
+  // [v5] toggleResult: 다중 선택 (클릭 시 추가/해제)
+  const toggleResult = (itemId: string, result: ResultType) => {
+    setResults(prev => {
+      const current = prev[itemId] || [];
+      const newArr = current.includes(result)
+        ? current.filter(r => r !== result)  // 이미 선택 → 해제
+        : [...current, result];               // 미선택 → 추가
+      return { ...prev, [itemId]: newArr };
+    });
+  };
+  
+  // 하위 호환을 위한 setResult (단일 선택 강제)
   const setResult = (itemId: string, result: ResultType) => {
-    setResults(prev => ({
-      ...prev,
-      [itemId]: result
-    }));
+    setResults(prev => ({ ...prev, [itemId]: [result] }));
   };
 
   // ═══════════════════════════════════════════════════════════════════
-  // [패치 2] renderResultButton - "previous" 상태에서 모든 버튼 활성화
+  // [v5] renderResultButton - 다중 선택 UI
   // ═══════════════════════════════════════════════════════════════════
-  // 새 룰: 시행 전 항목은 모든 판정(적합/부적합/시정권고/해당없음/종전)
-  // 을 사용자가 자유롭게 선택할 수 있어야 합니다.
-  // 「not-applicable」(조문 도입 전)만 「해당없음」 으로 고정됩니다.
-  const renderResultButton = (itemId: string, resultType: ResultType, status: "applicable" | "previous" | "not-applicable", autoResult: ResultType | null) => {
-    const isSelected = results[itemId] === resultType;
-    const isAutoSelected = autoResult === resultType && !results[itemId];
+  // 사용자 룰: 안내된 옵션 모두 자동 선택, 검사원이 클릭으로 토글
+  // - 다중 선택 가능 (체크박스 동작)
+  // - 자동 선택 시 안내된 모든 옵션이 미리 선택됨
+  // - 검사원이 잘못된 옵션 클릭하여 해제 가능
+  const renderResultButton = (itemId: string, resultType: ResultType, status: "applicable" | "previous" | "not-applicable", autoResults: ResultType[]) => {
+    const userResults = results[itemId];
+    const hasUserChoice = userResults !== undefined;
+    const isSelected = hasUserChoice 
+      ? (userResults || []).includes(resultType)
+      : autoResults.includes(resultType);
+    const isAutoSelected = !hasUserChoice && autoResults.includes(resultType);
     const isDisabled = (status === "not-applicable" && resultType !== "해당없음");
     
     const baseClasses = "px-1.5 py-0.5 text-[10px] rounded border transition-all min-w-[32px] leading-tight";
     
-    if (isSelected || isAutoSelected) {
+    if (isSelected) {
       return (
         <button
           className={cn(
@@ -1382,7 +1414,7 @@ export default function JudgmentPage() {
               ? "bg-amber-500 text-white border-amber-500 ring-2 ring-amber-300" 
               : "bg-primary text-primary-foreground border-primary"
           )}
-          onClick={() => setResult(itemId, resultType)}
+          onClick={() => !isDisabled && toggleResult(itemId, resultType)}
           data-testid={`result-${itemId}-${resultType}`}
         >
           {resultType}
@@ -1398,7 +1430,7 @@ export default function JudgmentPage() {
             ? "bg-muted text-muted-foreground border-muted cursor-not-allowed opacity-50" 
             : "bg-background hover:bg-accent border-border"
         )}
-        onClick={() => !isDisabled && setResult(itemId, resultType)}
+        onClick={() => !isDisabled && toggleResult(itemId, resultType)}
         disabled={isDisabled}
         data-testid={`result-${itemId}-${resultType}`}
       >
@@ -1410,7 +1442,7 @@ export default function JudgmentPage() {
   const renderItem = (originalItem: InspectionItem) => {
     const item = getItemWithEdits(originalItem);
     const status = getItemStatus(item);
-    const autoResult = getAutoResult(item);
+    const autoResults = getAutoResults(item);  // [v5] 다중 선택용 배열
     const hasCustomEdit = !!customEdits[item.id];
     
     return (
@@ -1456,11 +1488,11 @@ export default function JudgmentPage() {
             <Image className="w-3.5 h-3.5 text-muted-foreground" />
           </button>
           <div className="flex gap-0.5 shrink-0">
-            {renderResultButton(item.id, "적합", status, autoResult)}
-            {renderResultButton(item.id, "부적합", status, autoResult)}
-            {renderResultButton(item.id, "시정권고", status, autoResult)}
-            {renderResultButton(item.id, "해당없음", status, autoResult)}
-            {renderResultButton(item.id, "종전", status, autoResult)}
+            {renderResultButton(item.id, "적합", status, autoResults)}
+            {renderResultButton(item.id, "부적합", status, autoResults)}
+            {renderResultButton(item.id, "시정권고", status, autoResults)}
+            {renderResultButton(item.id, "해당없음", status, autoResults)}
+            {renderResultButton(item.id, "종전", status, autoResults)}
           </div>
           {isAdminMode && item.id.startsWith("custom-") && (
             <button
