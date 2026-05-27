@@ -1341,23 +1341,25 @@ export default function JudgmentPage() {
   };
 
   // ═══════════════════════════════════════════════════════════════════
-  // [v5] 자동 결과 적용 useEffect - 다중 선택
+  // [v5.2] 검사기준 적용일 변경 감지 - results 자동 초기화 (토스트 제거)
   // ═══════════════════════════════════════════════════════════════════
-  // 사용자가 클릭으로 선택/해제하기 전까지는 results에 항목이 없음
-  // → renderResultButton이 autoResults(자동 안내된 옵션)를 기본 표시
-  // 사용자가 한 번이라도 클릭하면 results에 항목이 추가되고 사용자 선택이 우선
-  // 
-  // useEffect는 referenceDate가 바뀔 때 사용자가 한 자동선택을 초기화
-  // (검사 시점이 바뀌면 자동 선택도 새로 시작)
+  // 사용자가 검사기준 적용일을 변경하면 모든 검사 항목의 결과를 초기화하여
+  // 자동 안내된 옵션이 새 시점에 맞춰 표시되도록 함
+  const prevInspectionDateRef = useRef<string | null>(null);
+  
   useEffect(() => {
-    if (!referenceDate) return;
+    // 첫 마운트: 초기값 기록만 하고 초기화 안 함 (localStorage 데이터 보존)
+    if (prevInspectionDateRef.current === null) {
+      prevInspectionDateRef.current = inspectionDate;
+      return;
+    }
     
-    // referenceDate가 바뀌면 results를 초기화하지 않음
-    // (검사원이 직접 선택한 결과는 보존)
-    // autoResults는 renderResultButton에서 동적으로 표시되므로
-    // useEffect는 명시적인 처리가 불필요
-    // (단, 기존 단일 결과 형식 데이터가 있으면 그대로 보존됨)
-  }, [referenceDate, collectAllItems, customEdits]);
+    // 검사기준 적용일 변경 → 모든 검사 항목 결과 초기화
+    if (prevInspectionDateRef.current !== inspectionDate) {
+      prevInspectionDateRef.current = inspectionDate;
+      setResults({});  // 모든 항목 자동 안내된 옵션으로 재표시
+    }
+  }, [inspectionDate]);
 
   const toggleSection = (sectionId: string) => {
     setExpandedSections(prev => {
@@ -1371,13 +1373,22 @@ export default function JudgmentPage() {
     });
   };
 
-  // [v5] toggleResult: 다중 선택 (클릭 시 추가/해제)
-  const toggleResult = (itemId: string, result: ResultType) => {
+  // [v5.2] toggleResult: 다중 선택 + 첫 클릭 시 자동 선택을 기본값으로 복사
+  // 사용자가 처음 클릭하면 results에 autoResults를 먼저 복사한 후 그 옵션을 토글
+  // → 자동 선택된 다른 옵션들이 유지되면서 클릭한 옵션만 토글됨
+  const toggleResult = (itemId: string, result: ResultType, autoResults: ResultType[]) => {
     setResults(prev => {
-      const current = prev[itemId] || [];
+      let current = prev[itemId];
+      
+      // 첫 클릭: results에 항목이 없으면 autoResults를 기본값으로 복사
+      if (current === undefined) {
+        current = [...autoResults];
+      }
+      
+      // 토글: 이미 선택되어 있으면 해제, 미선택이면 추가
       const newArr = current.includes(result)
-        ? current.filter(r => r !== result)  // 이미 선택 → 해제
-        : [...current, result];               // 미선택 → 추가
+        ? current.filter(r => r !== result)
+        : [...current, result];
       return { ...prev, [itemId]: newArr };
     });
   };
@@ -1414,7 +1425,7 @@ export default function JudgmentPage() {
               ? "bg-amber-500 text-white border-amber-500 ring-2 ring-amber-300" 
               : "bg-primary text-primary-foreground border-primary"
           )}
-          onClick={() => !isDisabled && toggleResult(itemId, resultType)}
+          onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
           data-testid={`result-${itemId}-${resultType}`}
         >
           {resultType}
@@ -1430,7 +1441,7 @@ export default function JudgmentPage() {
             ? "bg-muted text-muted-foreground border-muted cursor-not-allowed opacity-50" 
             : "bg-background hover:bg-accent border-border"
         )}
-        onClick={() => !isDisabled && toggleResult(itemId, resultType)}
+        onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
         disabled={isDisabled}
         data-testid={`result-${itemId}-${resultType}`}
       >
