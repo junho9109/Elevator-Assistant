@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useStandards, useHotspots, useCreateStandard, useUpdateStandard, useDeleteStandard,
+  useStandards, useHotspots, useCreateStandard, useUpdateStandard, useDeleteStandard, useCreateCategory,
   useCreateHotspot, useUpdateHotspot, useDeleteHotspot,
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
@@ -187,6 +187,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
   const deleteStandard = useDeleteStandard();
+  const createCategory = useCreateCategory();
   const createHotspot = useCreateHotspot();
   const updateHotspot = useUpdateHotspot();
   const deleteHotspot = useDeleteHotspot();
@@ -815,7 +816,8 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
   const handleAddHotspot = async () => {
     if (!newHotspotLabel.trim()) { toast({ title: "버튼 이름을 입력해주세요.", variant: "destructive" }); return; }
     try {
-      await createHotspot.mutateAsync({ label: newHotspotLabel, top: "50%", left: "50%", categoryId: null });
+      const newCategory = await createCategory.mutateAsync({ key: `hotspot_${Date.now()}`, title: newHotspotLabel, description: newHotspotLabel });
+      await createHotspot.mutateAsync({ label: newHotspotLabel, top: "50%", left: "50%", categoryId: newCategory.id });
       toast({ title: `"${newHotspotLabel}" 버튼이 추가되었습니다.` });
       setNewHotspotLabel(""); setShowAddHotspot(false);
     } catch { toast({ title: "버튼 추가 실패", variant: "destructive" }); }

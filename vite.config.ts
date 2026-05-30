@@ -1,11 +1,11 @@
-import { defineConfig } from "vite";
+import type { UserConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { metaImagesPlugin } from "./vite-plugin-meta-images";
 
-export default defineConfig({
+const config: UserConfig = {
   plugins: [
     react(),
     runtimeErrorOverlay(),
@@ -32,7 +32,6 @@ export default defineConfig({
       },
     },
   ],
-
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
@@ -41,7 +40,6 @@ export default defineConfig({
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
   },
-
   optimizeDeps: {
     esbuildOptions: {
       loader: {
@@ -52,7 +50,6 @@ export default defineConfig({
       },
     },
   },
-
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
@@ -60,7 +57,6 @@ export default defineConfig({
       transformMixedEsModules: true,
     },
   },
-
   server: {
     host: "0.0.0.0",
     port: 3000,
@@ -76,6 +72,7 @@ export default defineConfig({
       deny: ["**/.*"],
     },
   },
-
   root: path.resolve(import.meta.dirname, "client"),
-});
+};
+
+export default config;
