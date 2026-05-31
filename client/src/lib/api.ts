@@ -119,6 +119,21 @@ export function useHotspots() {
   return useQuery({
     queryKey: ["hotspots"],
     queryFn: fetchHotspots,
+    staleTime: 5 * 60 * 1000,
+    initialData: () => {
+      try {
+        const raw = localStorage.getItem("hotspots_cache");
+        if (raw) return JSON.parse(raw) as Hotspot[];
+      } catch {}
+      return undefined;
+    },
+    initialDataUpdatedAt: () => {
+      try {
+        const ts = localStorage.getItem("hotspots_cache_ts");
+        return ts ? Number(ts) : 0;
+      } catch {}
+      return 0;
+    },
   });
 }
 

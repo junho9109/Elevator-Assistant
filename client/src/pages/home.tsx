@@ -184,6 +184,14 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const { toast } = useToast();
   const { data: standards = [] } = useStandards();
   const { data: hotspots = [] } = useHotspots();
+
+  // hotspots 위치 캐싱 (앱 시작 시 즉시 로드)
+  useEffect(() => {
+    if (hotspots.length > 0) {
+      localStorage.setItem("hotspots_cache", JSON.stringify(hotspots));
+      localStorage.setItem("hotspots_cache_ts", String(Date.now()));
+    }
+  }, [hotspots]);
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
   const deleteStandard = useDeleteStandard();
