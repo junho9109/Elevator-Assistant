@@ -12,25 +12,31 @@ const INITIAL_HOTSPOTS = [
 
 async function seed() {
   try {
-    console.log("Starting database seed...");
+    // ✅ 기존 데이터 보호: categories 또는 standards가 있으면 seed 건너뜀
+    const existingCategories = await db.select().from(categories);
+    const existingStandards = await db.select().from(standards);
 
-    // Clear existing data
-    console.log("Clearing existing data...");
-    await db.delete(hotspots);
-    await db.delete(standards);
-    await db.delete(categories);
+    if (existingCategories.length > 0 || existingStandards.length > 0) {
+      console.log(
+        `[SEED SKIP] 기존 데이터가 있어 seed를 건너뜁니다. ` +
+        `(categories: ${existingCategories.length}개, standards: ${existingStandards.length}개)`
+      );
+      console.log("[SEED SKIP] 사용자 데이터를 보호합니다.");
+      return;
+    }
+
+    // 데이터가 없는 경우에만 초기 데이터 생성 (최초 설치 시)
+    console.log("Starting database seed (fresh install)...");
 
     // Create categories and get their IDs
     console.log("Creating categories...");
     const categoryMap = new Map<string, number>();
-    
     for (const [key, sectionData] of Object.entries(ELEVATOR_DATA)) {
       const [category] = await db.insert(categories).values({
         key,
         title: sectionData.title,
         description: sectionData.desc,
       }).returning();
-      
       categoryMap.set(key, category.id);
       console.log(`Created category: ${category.title} (ID: ${category.id})`);
 
