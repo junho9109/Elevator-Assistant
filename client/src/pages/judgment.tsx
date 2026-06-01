@@ -2149,7 +2149,9 @@ export default function JudgmentPage() {
                       if (dbItem?.standardDates) {
                         try {
                           const parsed = JSON.parse(dbItem.standardDates);
-                          if (parsed.length > 0) return parsed.map((r: any, i: number) => ({
+                          if (parsed.length > 0) return parsed
+                            .filter((r: any) => !r.pending)  // 피난용 등 보관중 항목 제외
+                            .map((r: any, i: number) => ({
                             date: r.date || r,
                             memo: r.text || r.label || '',
                             label: r.label || `개정 ${i + 1} (${r.is_old ? '종전' : '현행'})`,
