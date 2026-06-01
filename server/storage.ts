@@ -576,7 +576,7 @@ export class DatabaseStorage implements IStorage {
       });
 
       // drizzle onConflictDoUpdate 사용
-      const result = await db.insert(inspectionBaseItems)
+      await db.insert(inspectionBaseItems)
         .values(values)
         .onConflictDoUpdate({
           target: inspectionBaseItems.itemId,
@@ -586,8 +586,8 @@ export class DatabaseStorage implements IStorage {
             sortOrder: sql`excluded.sort_order`,
             permitEffectiveDate: sql`excluded.permit_effective_date`,
             standardDates: sql`excluded.standard_dates`,
-            // text는 기존값이 있으면 유지 (수동 편집 보호)
-            text: sql`CASE WHEN ${inspectionBaseItems.text} IS NOT NULL AND ${inspectionBaseItems.text} != '' AND ${inspectionBaseItems.text} != excluded.text THEN ${inspectionBaseItems.text} ELSE excluded.text END`,
+            // text: 기존값이 비어있지 않고 다르면 유지 (수동 편집 보호)
+            text: sql`CASE WHEN inspection_base_items.text IS NOT NULL AND inspection_base_items.text != '' AND inspection_base_items.text != excluded.text THEN inspection_base_items.text ELSE excluded.text END`,
           }
         });
 

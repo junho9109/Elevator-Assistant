@@ -43,13 +43,6 @@ export async function seedStandardIndex(): Promise<void> {
     const entries = Object.entries(data);
 
     console.log(`[SEED] standard_index: ${entries.length}개 항목, DB 현재: ${existingCount}개`);
-
-    // 항목 수가 동일하면 스킵 (완전히 일치할 때만)
-    if (existingCount === entries.length) {
-      console.log(`[SEED] inspection_base_items 완전히 동기화됨 (${existingCount}/${entries.length}). 스킵.`);
-      return;
-    }
-
     console.log(`[SEED] inspection_base_items 저장 시작...`);
 
     const items = entries.map(([itemId, v], i) => {
