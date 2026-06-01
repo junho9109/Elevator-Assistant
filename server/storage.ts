@@ -69,7 +69,7 @@ import {
   inspectionBaseItems
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, or, asc } from "drizzle-orm";
+import { eq, ilike, or, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -543,49 +543,61 @@ export class DatabaseStorage implements IStorage {
     permitEffectiveDate: string | null;
     standardDates: string;
   }[]): Promise<{ inserted: number; updated: number }> {
+    if (items.length === 0) return { inserted: 0, updated: 0 };
+
+    // 수동 편집된 text 보호를 위해 기존 text 먼저 조회
+    const existingItems = await db.select({ itemId: inspectionBaseItems.itemId, text: inspectionBaseItems.text })
+      .from(inspectionBaseItems);
+    const existingMap = new Map(existingItems.map(e => [e.itemId, e.text]));
+
     let inserted = 0;
     let updated = 0;
-    // 50개씩 배치 처리
-    const batchSize = 50;
+
+    // 100개씩 단일 INSERT ... ON CONFLICT DO UPDATE 쿼리
+    const batchSize = 100;
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
-      for (const item of batch) {
-        const existing = await db.select({ id: inspectionBaseItems.id, text: inspectionBaseItems.text })
-          .from(inspectionBaseItems)
-          .where(eq(inspectionBaseItems.itemId, item.itemId))
-          .limit(1);
-        if (existing.length === 0) {
-          await db.insert(inspectionBaseItems).values({
-            itemId: item.itemId,
-            sectionId: item.sectionId,
-            sectionTitle: item.sectionTitle,
-            parentSectionId: item.parentSectionId,
-            text: item.text,
-            sortOrder: item.sortOrder,
-            permitEffectiveDate: item.permitEffectiveDate,
-            standardDates: item.standardDates,
-            isActive: 'true',
-          });
-          inserted++;
-        } else {
-          // text가 이미 수동 편집된 경우 보호
-          const newText = existing[0].text && existing[0].text !== item.text
-            ? existing[0].text
-            : item.text;
-          await db.update(inspectionBaseItems)
-            .set({
-              sectionTitle: item.sectionTitle,
-              parentSectionId: item.parentSectionId,
-              text: newText,
-              sortOrder: item.sortOrder,
-              permitEffectiveDate: item.permitEffectiveDate,
-              standardDates: item.standardDates,
-            })
-            .where(eq(inspectionBaseItems.itemId, item.itemId));
-          updated++;
-        }
-      }
+
+      const values = batch.map(item => {
+        const existingText = existingMap.get(item.itemId);
+        // 수동 편집된 text 보호: 기존 값이 있고 다르면 기존 값 유지
+        const finalText = existingText && existingText !== item.text ? existingText : item.text;
+        return {
+          itemId: item.itemId,
+          sectionId: item.sectionId,
+          sectionTitle: item.sectionTitle,
+          parentSectionId: item.parentSectionId,
+          text: finalText,
+          sortOrder: item.sortOrder,
+          permitEffectiveDate: item.permitEffectiveDate,
+          standardDates: item.standardDates,
+          isActive: 'true' as const,
+        };
+      });
+
+      // drizzle onConflictDoUpdate 사용
+      const result = await db.insert(inspectionBaseItems)
+        .values(values)
+        .onConflictDoUpdate({
+          target: inspectionBaseItems.itemId,
+          set: {
+            sectionTitle: sql`excluded.section_title`,
+            parentSectionId: sql`excluded.parent_section_id`,
+            sortOrder: sql`excluded.sort_order`,
+            permitEffectiveDate: sql`excluded.permit_effective_date`,
+            standardDates: sql`excluded.standard_dates`,
+            // text는 기존값이 있으면 유지 (수동 편집 보호)
+            text: sql`CASE WHEN ${inspectionBaseItems.text} IS NOT NULL AND ${inspectionBaseItems.text} != '' AND ${inspectionBaseItems.text} != excluded.text THEN ${inspectionBaseItems.text} ELSE excluded.text END`,
+          }
+        });
+
+      // 삽입/업데이트 카운트
+      batch.forEach(item => {
+        if (existingMap.has(item.itemId)) updated++;
+        else inserted++;
+      });
     }
+
     return { inserted, updated };
   }
 
