@@ -10,8 +10,9 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // 로컬 연결을 위해 추가 옵션 (필요 시)
-  ssl: false,  // 로컬이라 SSL 필요 없음
+  ssl: process.env.DATABASE_URL?.includes('neon.tech') 
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
 export const db = drizzle(pool, { schema });
