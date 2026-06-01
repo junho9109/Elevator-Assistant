@@ -3,6 +3,7 @@ import path from "node:path"; // 추가
 
 import express, { type Express, type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { seedStandardIndex } from "./seed-standard-index";
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -92,6 +93,8 @@ export default async function runApp(
   },
   () => {
     log(`serving on port ${port}`);
+    // 서버 시작 후 백그라운드에서 standard_index seed 실행
+    seedStandardIndex().catch((e) => console.error("[SEED] 오류:", e));
   }
 );
 }

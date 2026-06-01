@@ -533,6 +533,62 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async bulkUpsertInspectionBaseItems(items: {
+    itemId: string;
+    sectionId: string;
+    sectionTitle: string;
+    parentSectionId: string | null;
+    text: string;
+    sortOrder: number;
+    permitEffectiveDate: string | null;
+    standardDates: string;
+  }[]): Promise<{ inserted: number; updated: number }> {
+    let inserted = 0;
+    let updated = 0;
+    // 50개씩 배치 처리
+    const batchSize = 50;
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      for (const item of batch) {
+        const existing = await db.select({ id: inspectionBaseItems.id, text: inspectionBaseItems.text })
+          .from(inspectionBaseItems)
+          .where(eq(inspectionBaseItems.itemId, item.itemId))
+          .limit(1);
+        if (existing.length === 0) {
+          await db.insert(inspectionBaseItems).values({
+            itemId: item.itemId,
+            sectionId: item.sectionId,
+            sectionTitle: item.sectionTitle,
+            parentSectionId: item.parentSectionId,
+            text: item.text,
+            sortOrder: item.sortOrder,
+            permitEffectiveDate: item.permitEffectiveDate,
+            standardDates: item.standardDates,
+            isActive: 'true',
+          });
+          inserted++;
+        } else {
+          // text가 이미 수동 편집된 경우 보호
+          const newText = existing[0].text && existing[0].text !== item.text
+            ? existing[0].text
+            : item.text;
+          await db.update(inspectionBaseItems)
+            .set({
+              sectionTitle: item.sectionTitle,
+              parentSectionId: item.parentSectionId,
+              text: newText,
+              sortOrder: item.sortOrder,
+              permitEffectiveDate: item.permitEffectiveDate,
+              standardDates: item.standardDates,
+            })
+            .where(eq(inspectionBaseItems.itemId, item.itemId));
+          updated++;
+        }
+      }
+    }
+    return { inserted, updated };
+  }
+
   async deleteAllItemRevisions(itemId: string): Promise<void> {
     await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.itemId, itemId));
   }
