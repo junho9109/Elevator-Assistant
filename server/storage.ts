@@ -605,13 +605,20 @@ export class DatabaseStorage implements IStorage {
     await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.itemId, itemId));
   }
 
-  // inspection_item_edits의 standard_dates를 null로 초기화
-  // (inspection_base_items.standard_dates로 이전 완료)
+  // inspection_item_edits의 standard_dates, permit_effective_date를 null로 초기화
+  // (inspection_base_items.standard_dates / permit_effective_date로 이전 완료)
   async clearStandardDatesFromEdits(): Promise<void> {
+    // standard_dates만 초기화 (text, permitEffectiveDate 등 수동 편집은 보호)
+    // 단, inspection_base_items에 해당 itemId가 있는 경우에만 초기화
     await db.execute(sql`
-      UPDATE inspection_item_edits
-      SET standard_dates = NULL
-      WHERE standard_dates IS NOT NULL
+      UPDATE inspection_item_edits e
+      SET standard_dates = NULL,
+          permit_effective_date = NULL
+      WHERE EXISTS (
+        SELECT 1 FROM inspection_base_items b
+        WHERE b.item_id = e.item_id
+          AND b.permit_effective_date IS NOT NULL
+      )
     `);
   }
 }
