@@ -2153,8 +2153,9 @@ export default function JudgmentPage() {
                             .filter((r: any) => !r.pending)  // 피난용 등 보관중 항목 제외
                             .map((r: any, i: number) => ({
                             date: r.date || r,
-                            memo: r.text || r.label || '',
-                            label: r.label || `개정 ${i + 1} (${r.is_old ? '종전' : '현행'})`,
+                            memo: r.text || '',
+                            label: `개정 ${i + 1} (${detailItem.id})`,
+                            raw_label: r.raw_label || '',
                             is_old: r.is_old
                           }));
                         } catch {}
@@ -2179,15 +2180,19 @@ export default function JudgmentPage() {
                             {datesWithMemo.map((entry, idx) => {
                               const isOld = (entry as any).is_old;
                               const label = (entry as any).label || `개정 ${idx + 1}`;
+                              const rawLabel = (entry as any).raw_label || '';
                               return (
                               <div key={idx} className="border border-border rounded-lg p-3 bg-card">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isOld ? 'text-gray-600 bg-gray-500/10' : 'text-amber-600 bg-amber-500/10'}`}>
+                                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isOld ? 'text-gray-500 bg-gray-500/10' : 'text-amber-600 bg-amber-500/10'}`}>
                                     {label}
                                   </span>
                                   <span className="text-xs font-medium">{entry.date}</span>
                                   {isOld && <span className="text-xs text-muted-foreground">(종전)</span>}
                                 </div>
+                                {rawLabel && (
+                                  <p className="text-xs text-muted-foreground mb-1">{rawLabel}</p>
+                                )}
                                 {entry.memo && (
                                   <div className="flex gap-1 mt-1">
                                     <span className="text-xs text-muted-foreground mt-0.5">→</span>

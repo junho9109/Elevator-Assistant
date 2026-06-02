@@ -517,7 +517,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.4.3-다",
             text: "다) 어린이 손끼임방지 수단(틈새)이「엘리베이터 안전기준」7.6.2.2.1자)에 따라 적합한지 확인한다.",
             result: null,
-            effectiveDate: "2019-03-28",
+            effectiveDate: "2017-01-28",
             introductionType: "new"
           },
           {
