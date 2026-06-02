@@ -77,6 +77,11 @@ export async function seedStandardIndex(): Promise<void> {
 
     const { inserted, updated } = await storage.bulkUpsertInspectionBaseItems(items);
     console.log(`[SEED] 완료: 삽입 ${inserted}개, 업데이트 ${updated}개`);
+
+    // inspection_item_edits의 standardDatesWithMemo를 초기화
+    // (inspection_base_items.standard_dates로 이전 완료된 항목)
+    await storage.clearStandardDatesFromEdits();
+    console.log(`[SEED] inspection_item_edits.standardDatesWithMemo 초기화 완료`);
   } catch (err) {
     console.error("[SEED] standard_index 저장 오류:", err);
     // seed 실패해도 서버는 계속 실행

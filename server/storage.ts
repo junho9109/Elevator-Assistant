@@ -604,5 +604,15 @@ export class DatabaseStorage implements IStorage {
   async deleteAllItemRevisions(itemId: string): Promise<void> {
     await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.itemId, itemId));
   }
+
+  // inspection_item_edits의 standard_dates를 null로 초기화
+  // (inspection_base_items.standard_dates로 이전 완료)
+  async clearStandardDatesFromEdits(): Promise<void> {
+    await db.execute(sql`
+      UPDATE inspection_item_edits
+      SET standard_dates = NULL
+      WHERE standard_dates IS NOT NULL
+    `);
+  }
 }
 export const storage = new DatabaseStorage();
