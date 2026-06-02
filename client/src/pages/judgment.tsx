@@ -2164,7 +2164,7 @@ export default function JudgmentPage() {
                     })();
                     const dates: string[] = (itemEdit as any)?.standardDates || [];
                     const permitDate = (itemEdit as any)?.permitEffectiveDate || dbItem?.permitEffectiveDate;
-                    const hasData = datesWithMemo.length > 0 || dates.length > 0 || permitDate;
+                    const hasData = datesWithMemo.length > 0 || dates.length > 0 || permitDate || revisions.length > 0;
                     if (!hasData) return null;
                     return (
                       <div className="border border-border rounded-xl p-4 bg-muted/20">
@@ -2209,6 +2209,20 @@ export default function JudgmentPage() {
                               <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-lg">
                                 <span className="text-xs font-semibold text-amber-600">{`개정 ${idx + 1}`}</span>
                                 <span className="text-xs">{date}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : revisions.length > 0 ? (
+                          <div className="space-y-2">
+                            {revisions.map((r, idx) => (
+                              <div key={r.id || idx} className="border border-border rounded-lg p-3 bg-card">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{`개정 ${idx + 1}`}</span>
+                                  <span className="text-xs font-medium">{r.effectiveDate}{r.expiryDate ? ` ~ ${r.expiryDate}` : ""}</span>
+                                </div>
+                                {r.description && (
+                                  <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{r.description}</p>
+                                )}
                               </div>
                             ))}
                           </div>
