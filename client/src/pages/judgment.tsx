@@ -2218,7 +2218,7 @@ export default function JudgmentPage() {
                               <div key={r.id || idx} className="border border-border rounded-lg p-3 bg-card">
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{`개정 ${idx + 1}`}</span>
-                                  <span className="text-xs font-medium">{r.effectiveDate}{r.expiryDate ? ` ~ ${r.expiryDate}` : ""}</span>
+                                  <span className="text-xs font-medium">{r.effectiveDate}</span>
                                 </div>
                                 {r.description && (
                                   <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{r.description}</p>
