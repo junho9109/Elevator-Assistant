@@ -2213,19 +2213,42 @@ export default function JudgmentPage() {
                             ))}
                           </div>
                         ) : revisions.length > 0 ? (
-                          <div className="space-y-2">
-                            {revisions.map((r, idx) => (
-                              <div key={r.id || idx} className="border border-border rounded-lg p-3 bg-card">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{`개정 ${idx + 1}`}</span>
-                                  <span className="text-xs font-medium">{r.effectiveDate}</span>
-                                </div>
-                                {r.description && (
-                                  <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{r.description}</p>
+                          (() => {
+                            const applicable = referenceDate
+                              ? revisions.find((r: any) => {
+                                  const eff = new Date(r.effectiveDate);
+                                  const exp = r.expiryDate ? new Date(r.expiryDate) : null;
+                                  return eff <= referenceDate && (!exp || referenceDate < exp);
+                                })
+                              : null;
+                            return (
+                              <div className="space-y-2">
+                                {applicable ? (
+                                  <div className="border border-amber-400/50 rounded-lg p-3 bg-amber-500/5">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">적용 기준</span>
+                                      <span className="text-xs font-medium text-muted-foreground">{applicable.effectiveDate} 이후 건축허가분</span>
+                                    </div>
+                                    {applicable.description && (
+                                      <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{applicable.description}</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  revisions.map((r: any, idx: number) => (
+                                    <div key={r.id || idx} className="border border-border rounded-lg p-3 bg-card">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{`개정 ${idx + 1}`}</span>
+                                        <span className="text-xs font-medium">{r.effectiveDate}</span>
+                                      </div>
+                                      {r.description && (
+                                        <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{r.description}</p>
+                                      )}
+                                    </div>
+                                  ))
                                 )}
                               </div>
-                            ))}
-                          </div>
+                            );
+                          })()
                         ) : null}
                       </div>
                     );
