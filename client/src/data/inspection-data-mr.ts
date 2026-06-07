@@ -380,6 +380,18 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             text: "가) 문짝 간 틈새나 문짝과 문틀 또는 문턱 사이의 틈새가「엘리베이터 안전기준」7.1.4에 따라 적합한지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
+          },
+          {
+            id: "1.3.6-나",
+            text: "나) 자동동력 작동식 문의 표면은「엘리베이터 안전기준」7.6.1에 따라 함몰되거나 돌출부분이 없는지 확인한다.",
+            result: null,
+            effectiveDate: "2013-09-15"
+          },
+          {
+            id: "1.3.6-다",
+            text: "다) 어린이 손끼임방지 수단(틈새)이「엘리베이터 안전기준」7.6.2.2.1자)에 따라 적합한지 확인한다.",
+            result: null,
+            effectiveDate: "2013-09-15"
           }
         ]
       },
