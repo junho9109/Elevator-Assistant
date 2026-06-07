@@ -1204,6 +1204,21 @@ export default function JudgmentPage() {
     return equipmentType;
   }, [equipmentType, subType]);
 
+  // 선택 종류 → 정기검사기준 섹션번호 (별표2: 1.엘리베이터 / 2.경사형 / 3.에스컬레이터 / 4.덤웨이터 / 5.수직형휠체어 / 6.경사형휠체어)
+  const sectionPrefix = useMemo(() => {
+    if (equipmentType === "엘리베이터") return subType === "경사형" ? "2" : "1";
+    if (equipmentType === "에스컬레이터") return "3";
+    if (equipmentType === "덤웨이터") return "4";
+    if (equipmentType === "휠체어리프트") return subType === "경사형" ? "6" : "5";
+    return "1";
+  }, [equipmentType, subType]);
+
+  // 현재 종류에 해당하는 최상위 섹션만 표시 (예: 경사형 선택 시 2.x만)
+  const visibleSections = useMemo(
+    () => INSPECTION_DATA_MR.filter(s => s.id.split(".")[0] === sectionPrefix),
+    [sectionPrefix]
+  );
+
   // 항목이 현재 승강기 종류에 해당하는지 확인
   const isItemApplicable = useCallback((itemId: string): boolean => {
     const edit = customEdits[itemId];
@@ -1834,7 +1849,7 @@ export default function JudgmentPage() {
           </div>
           
           <div className="max-h-[600px] overflow-y-auto">
-            {INSPECTION_DATA_MR.map(section => renderSection(section))}
+            {visibleSections.map(section => renderSection(section))}
           </div>
         </div>
       </div>
