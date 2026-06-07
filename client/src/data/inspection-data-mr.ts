@@ -200,7 +200,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
               },
               {
                 id: "1.2.2.1-다",
-                text: "다) 기계실 출입문이「엘리베이터 안전기준」6.3.3가)?나)?다)에 따라 적합한지 확인한다.",
+                text: "다) 기계실 출입문이「엘리베이터 안전기준」6.3.3가)ㆍ나)ㆍ다)에 따라 적합한지 확인한다.",
                 result: null,
                 effectiveDate: "2013-09-15"
               },
@@ -365,7 +365,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
           },
           {
             id: "1.3.5-바",
-            text: "바) 승강로 내 도르래?풀리 및 스프로킷의 보호수단은「엘리베이터 안전기준」9.7에 따라 보호되어 있는지 확인한다.",
+            text: "바) 승강로 내 도르래ㆍ풀리 및 스프로킷의 보호수단은「엘리베이터 안전기준」9.7에 따라 보호되어 있는지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
           },
@@ -377,7 +377,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
           },
           {
             id: "1.3.5-아",
-            text: "아) 승강로에 설치된 출입문?비상문 및 점검문이「엘리베이터 안전기준」6.3.3가)?나)?다)?라)에 따라 적합한지 확인한다.",
+            text: "아) 승강로에 설치된 출입문ㆍ비상문 및 점검문이「엘리베이터 안전기준」6.3.3가)ㆍ나)ㆍ다)ㆍ라)에 따라 적합한지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
           }
@@ -479,7 +479,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
           },
           {
             id: "1.4.1-바",
-            text: "바) 카의 과부하감지장치가「엘리베이터 안전기준」16.1.2.3가)?나)?다)에 따라 작동하는지 확인한다.",
+            text: "바) 카의 과부하감지장치가「엘리베이터 안전기준」16.1.2.3가)ㆍ나)ㆍ다)에 따라 작동하는지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
           },
@@ -509,7 +509,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
           },
           {
             id: "1.4.2-다",
-            text: "다) 카 지붕의 비상등이 「엘리베이터 안전기준」8.10.4가)?다)에 따라 적합한지 확인한다.",
+            text: "다) 카 지붕의 비상등이 「엘리베이터 안전기준」8.10.4가)ㆍ다)에 따라 적합한지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
           },
@@ -558,7 +558,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
         items: [
           {
             id: "1.4.4-가",
-            text: "가) 문닫힘 안전장치가「엘리베이터 안전기준」7.6.2.2.1나)?라)에 따라 작동 하는지 확인한다.",
+            text: "가) 문닫힘 안전장치가「엘리베이터 안전기준」7.6.2.2.1나)ㆍ라)에 따라 작동 하는지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
           },
@@ -739,6 +739,18 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
         id: "1.5.3",
         title: "[1.5.3] 보상수단 및 추가적인 보호조치",
         items: [
+          {
+            id: "1.5.3-가",
+            text: "가) 튀어오름 방지장치가 설치된 경우「엘리베이터 안전기준」9.6.1다)에 따라 작동되는지 확인한다.",
+            result: null,
+            effectiveDate: "2013-09-15"
+          },
+          {
+            id: "1.5.3-나",
+            text: "나) 보상 로프가 설치된 경우「엘리베이터 안전기준」9.6.2에 따라 적합한지 확인한다.",
+            result: null,
+            effectiveDate: "2013-09-15"
+          },
           {
             id: "1.5.3-다",
             text: "다) 보상 체인이 설치된 경우 견고하게 고정되고 바닥에 닿지 않는지 확인한다.",
