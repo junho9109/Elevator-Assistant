@@ -304,6 +304,12 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             effectiveDate: "2013-09-15"
           },
           {
+            id: "1.3.2-다",
+            text: "다) 간접 유압식 엘리베이터의 경우, 승강로 천장의 가장 낮은 부분과 램의 가장 높은 부분 사이의 거리가「엘리베이터 안전기준」6.5.7.4에 따라 0.1 m 이상인지 확인한다.",
+            result: null,
+            effectiveDate: "2013-09-15"
+          },
+          {
             id: "1.3.2-라",
             text: "라) 피난공간의 허용 가능 인원 및 자세 유형 표지가「엘리베이터 안전기준」6.5.7.1 및 6.5.8.1에 따라 카지붕 및 피트에 부착되어 있는지 확인한다.",
             result: null,
@@ -342,6 +348,12 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
           {
             id: "1.3.5-다",
             text: "다) 여러 대의 엘리베이터가 있는 경우,「엘리베이터 안전기준」6.5.5.2에 따라 설치된 칸막이가 움직이는 부품들과 충돌이 없는지 확인한다.",
+            result: null,
+            effectiveDate: "2013-09-15"
+          },
+          {
+            id: "1.3.5-라",
+            text: "라) 반-밀폐식 승강로의 경우,「엘리베이터 안전기준」6.5.2.3에 따라 적합한 보호조치가 되어 있는지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
           },
@@ -911,6 +923,12 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
           {
             id: "1.8.1-나",
             text: "나) 권상구동 엘리베이터의 경우,「엘리베이터 안전기준」13.2.4에 따라 주행구간의 중간에서 측정한 속도가 정격속도의 92~105 % 이내인지 확인한다.",
+            result: null,
+            effectiveDate: "2013-09-15"
+          },
+          {
+            id: "1.8.1-다",
+            text: "다) 유압식 엘리베이터의 경우,「엘리베이터 안전기준」13.3.8에 따른 주행구간 중간에서 측정한 속도가 정상속도(빈 카의 상승)의 8%를 초과하지 않는지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
           },
