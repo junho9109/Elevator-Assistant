@@ -1226,6 +1226,7 @@ export default function JudgmentPage() {
     if (types.length === 0) return true; // 미지정이면 모두 표시
     return types.some(t => {
       if (t === currentFilterKey) return true;
+      if (subType && t === subType) return true; // 바 태그(예: 에스컬레이터/무빙워크) 매칭
       // 대분류만 체크 (예: "엘리베이터" 선택 시 "엘리베이터-전기식(MR)"도 포함)
       if (t.startsWith(equipmentType + "-") && !subType) return true;
       if (t === equipmentType && !subType) return true;
@@ -1621,9 +1622,19 @@ export default function JudgmentPage() {
     return customItems.filter(item => (item as any).sectionId === sectionId);
   };
 
+  // 섹션에 현재 선택 종류로 표시할 내용이 있는지 (재귀)
+  const sectionHasVisibleContent = (section: InspectionSection): boolean => {
+    if ((section.items || []).some(i => isItemApplicable(i.id))) return true;
+    if (getCustomItemsForSection(section.id).length > 0) return true;
+    return (section.subsections || []).some(sub => sectionHasVisibleContent(sub));
+  };
+
   const renderSection = (section: InspectionSection, depth: number = 0) => {
     const isExpanded = expandedSections.has(section.id);
     const sectionCustomItems = getCustomItemsForSection(section.id);
+    const visibleItems = (section.items || []).filter(item => isItemApplicable(item.id));
+    const visibleSubs = (section.subsections || []).filter(sub => sectionHasVisibleContent(sub));
+    if (visibleItems.length === 0 && visibleSubs.length === 0 && sectionCustomItems.length === 0) return null; // 현재 종류로 표시할 항목 없으면 섹션 숨김
     const hasContent = (section.items && section.items.length > 0) || 
                        (section.subsections && section.subsections.length > 0) ||
                        sectionCustomItems.length > 0;
@@ -1655,8 +1666,8 @@ export default function JudgmentPage() {
         
         {isExpanded && (
           <div className={cn(depth > 0 && "bg-background")}>
-            {section.subsections?.map(sub => renderSection(sub, depth + 1))}
-            {section.items?.map(item => renderItem(item))}
+            {visibleSubs.map(sub => renderSection(sub, depth + 1))}
+            {visibleItems.map(item => renderItem(item))}
             {sectionCustomItems.map(item => (
               <div key={item.id} className="bg-blue-50 border-l-4 border-l-blue-500">
                 {renderItem(item)}
