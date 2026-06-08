@@ -784,6 +784,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ error: "Failed to create revision" });
     }
   });
+  app.put("/api/inspection-revisions/:id", async (req, res) => {
+    try {
+      const updated = await storage.updateItemRevision(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "Revision not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update revision" });
+    }
+  });
   app.delete("/api/inspection-revisions/:id", async (req, res) => {
     try {
       await storage.deleteItemRevision(parseInt(req.params.id));

@@ -498,6 +498,9 @@ export default function JudgmentPage() {
   const [newComment, setNewComment] = useState({ author: "", content: "" });
   const [revisions, setRevisions] = useState<{id?:number; effectiveDate:string; expiryDate:string; introductionType:string; description:string}[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
+  // 관리자 개정 편집용 (inspection_item_revisions 직접 편집)
+  const [editRevisions, setEditRevisions] = useState<{id?: number; effectiveDate: string; expiryDate: string; description: string}[]>([]);
+  const editRevisionsSnapshot = useRef<{id: number; effectiveDate: string; expiryDate: string; description: string}[]>([]);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
@@ -1040,6 +1043,20 @@ export default function JudgmentPage() {
     // 통합 다이얼로그: detailItem도 설정해서 사진/댓글도 같이 표시
     setDetailItem(item);
     setIsDetailDialogOpen(true);
+    // 개정 이력(inspection_item_revisions) 편집용 로드
+    fetch(`/api/inspection-revisions/${item.id}`)
+      .then(r => r.json())
+      .then((data) => {
+        const arr = (Array.isArray(data) ? data : []).map((r: any) => ({
+          id: r.id,
+          effectiveDate: r.effectiveDate || "",
+          expiryDate: r.expiryDate || "",
+          description: r.description || "",
+        }));
+        setEditRevisions(arr);
+        editRevisionsSnapshot.current = arr.filter((r: any) => r.id != null).map((r: any) => ({ ...r }));
+      })
+      .catch(() => { setEditRevisions([]); editRevisionsSnapshot.current = []; });
   };
 
   const handleSaveItemEdit = () => {
@@ -1077,6 +1094,40 @@ export default function JudgmentPage() {
         title: "항목 수정 완료",
         description: "검사 항목이 수정되었습니다.",
       });
+    }
+    
+    // 개정 이력(inspection_item_revisions) 변경분 저장 (관리자)
+    if (isAdminMode && editingItem) {
+      const itemId = editingItem.id;
+      const orig = editRevisionsSnapshot.current;
+      const cur = editRevisions;
+      const curIds = cur.filter(r => r.id != null).map(r => r.id);
+      (async () => {
+        try {
+          // 삭제된 개정
+          for (const o of orig) {
+            if (!curIds.includes(o.id)) {
+              await fetch(`/api/inspection-revisions/${o.id}`, { method: "DELETE" });
+            }
+          }
+          // 수정/추가
+          for (const r of cur) {
+            if (!r.effectiveDate && !r.description) continue; // 빈 항목 skip
+            const body = JSON.stringify({ itemId, effectiveDate: r.effectiveDate || null, expiryDate: r.expiryDate || null, description: r.description || "" });
+            if (r.id != null) {
+              const o = orig.find(x => x.id === r.id);
+              if (o && (o.effectiveDate !== r.effectiveDate || o.expiryDate !== r.expiryDate || o.description !== r.description)) {
+                await fetch(`/api/inspection-revisions/${r.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body });
+              }
+            } else {
+              await fetch(`/api/inspection-revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+            }
+          }
+          // 캐시 갱신
+          const fresh = await fetch(`/api/inspection-revisions/${itemId}`).then(r => r.json()).catch(() => []);
+          setRevisionsCache(prev => ({ ...prev, [itemId]: Array.isArray(fresh) ? fresh : [] }));
+        } catch {}
+      })();
     }
     
     setIsEditItemDialogOpen(false);
@@ -2109,6 +2160,45 @@ export default function JudgmentPage() {
                     ))}
                     {(editForm.standardDatesWithMemo || []).length === 0 && (
                       <p className="text-xs text-muted-foreground">추가 버튼을 눌러 검사기준 적용일을 추가하세요.</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-muted-foreground">📝 개정 이력 편집 (화면 표시용 · 현행 DB)</label>
+                      <Button type="button" variant="outline" size="sm"
+                        onClick={() => setEditRevisions(prev => [...prev, { effectiveDate: "", expiryDate: "", description: "" }])}
+                        disabled={editRevisions.length >= 20}
+                      >+ 개정 추가</Button>
+                    </div>
+                    {editRevisions.map((rev, idx) => (
+                      <div key={rev.id ?? `new-${idx}`} className="border border-amber-400/40 rounded-lg p-3 bg-amber-500/5 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-amber-600">개정 {idx + 1}</span>
+                          <Button type="button" variant="ghost" size="sm"
+                            onClick={() => setEditRevisions(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-destructive px-2 ml-auto"
+                          >✕</Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <label className="text-[10px] text-muted-foreground">시행일</label>
+                            <Input type="date" value={rev.effectiveDate}
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, effectiveDate: e.target.value } : r))} />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-muted-foreground">만료일 (다음 개정 전까지)</label>
+                            <Input type="date" value={rev.expiryDate}
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, expiryDate: e.target.value } : r))} />
+                          </div>
+                        </div>
+                        <Textarea value={rev.description} rows={3}
+                          placeholder="개정 본문 (해당 시기 적용 기준)"
+                          onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, description: e.target.value } : r))}
+                          className="text-xs" />
+                      </div>
+                    ))}
+                    {editRevisions.length === 0 && (
+                      <p className="text-xs text-muted-foreground">개정 추가 버튼으로 이 항목의 개정 이력을 입력/수정하세요. (저장 시 현행 DB에 반영)</p>
                     )}
                   </div>
                   <div className="space-y-2">

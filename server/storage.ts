@@ -502,6 +502,13 @@ export class DatabaseStorage implements IStorage {
   async deleteItemRevision(id: number): Promise<void> {
     await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.id, id));
   }
+  async updateItemRevision(id: number, data: Partial<InsertInspectionItemRevision>): Promise<InspectionItemRevision | undefined> {
+    const [updated] = await db.update(inspectionItemRevisions)
+      .set(data)
+      .where(eq(inspectionItemRevisions.id, id))
+      .returning();
+    return updated;
+  }
   async getItemCommentCounts(): Promise<Record<string, number>> {
     const result = await db.select().from(judgmentComments);
     const counts: Record<string, number> = {};
