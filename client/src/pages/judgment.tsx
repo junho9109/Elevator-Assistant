@@ -1043,7 +1043,14 @@ export default function JudgmentPage() {
     // 통합 다이얼로그: detailItem도 설정해서 사진/댓글도 같이 표시
     setDetailItem(item);
     setIsDetailDialogOpen(true);
-    // 개정 이력(inspection_item_revisions) 편집용 로드
+    // 개정 이력 편집용 로드: inspection_item_revisions 우선, 없으면 edits/base_items 날짜에서 구성
+    const fallbackFromDates = () => {
+      const saved = (existingEdit as any)?.standardDatesWithMemo;
+      if (saved?.length > 0) {
+        return saved.map((s: any) => ({ effectiveDate: s.date || "", expiryDate: "", description: s.memo || "" }));
+      }
+      return dates.map((d: string) => ({ effectiveDate: d, expiryDate: "", description: "" }));
+    };
     fetch(`/api/inspection-revisions/${item.id}`)
       .then(r => r.json())
       .then((data) => {
@@ -1053,17 +1060,31 @@ export default function JudgmentPage() {
           expiryDate: r.expiryDate || "",
           description: r.description || "",
         }));
-        setEditRevisions(arr);
-        editRevisionsSnapshot.current = arr.filter((r: any) => r.id != null).map((r: any) => ({ ...r }));
+        if (arr.length > 0) {
+          setEditRevisions(arr);
+          editRevisionsSnapshot.current = arr.filter((r: any) => r.id != null).map((r: any) => ({ ...r }));
+        } else {
+          setEditRevisions(fallbackFromDates());
+          editRevisionsSnapshot.current = [];
+        }
       })
-      .catch(() => { setEditRevisions([]); editRevisionsSnapshot.current = []; });
+      .catch(() => { setEditRevisions(fallbackFromDates()); editRevisionsSnapshot.current = []; });
   };
 
   const handleSaveItemEdit = () => {
     if (!editingItem) return;
+    // 개정 편집 내용을 standardDates/standardDatesWithMemo에도 동기화 (판정 getItemStatus·상세표시용)
+    const revForSync = [...editRevisions]
+      .filter(r => r.effectiveDate || r.description)
+      .sort((a, b) => (a.effectiveDate || "").localeCompare(b.effectiveDate || ""));
+    const syncedForm = {
+      ...editForm,
+      standardDates: revForSync.map(r => r.effectiveDate || ""),
+      standardDatesWithMemo: revForSync.map((r, i) => ({ date: r.effectiveDate || "", memo: r.description || "", label: `개정 ${i + 1}` })),
+    };
     setCustomEdits(prev => ({
       ...prev,
-      [editingItem.id]: editForm
+      [editingItem.id]: syncedForm
     }));
     if (editForm.fixedResult) {
       setResults(prev => ({
@@ -1074,7 +1095,7 @@ export default function JudgmentPage() {
     
     // Save to server for all users (admin only)
     if (isAdminMode) {
-      saveInspectionEdit.mutate(editForm, {
+      saveInspectionEdit.mutate(syncedForm, {
         onSuccess: () => {
           toast({
             title: "항목 수정 완료",
@@ -2099,72 +2120,6 @@ export default function JudgmentPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-medium text-muted-foreground">검사기준 적용일 (개정)</label>
-                      <Button type="button" variant="outline" size="sm"
-                        onClick={() => setEditForm(prev => ({
-                          ...prev,
-                          standardDatesWithMemo: [...(prev.standardDatesWithMemo || []), { date: "", memo: "" }],
-                          standardDates: [...(prev.standardDates || []), ""]
-                        }))}
-                        disabled={(editForm.standardDatesWithMemo || []).length >= 20}
-                      >+ 추가</Button>
-                    </div>
-                    {(editForm.standardDatesWithMemo || []).map((entry, idx) => (
-                      <div key={idx} className="border border-border rounded-lg p-3 bg-card space-y-2">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Input
-                            placeholder={`개정 ${idx + 1}`}
-                            value={entry.label || ""}
-                            onChange={(e) => {
-                              const arr = [...(editForm.standardDatesWithMemo || [])];
-                              arr[idx] = { ...arr[idx], label: e.target.value };
-                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr }));
-                            }}
-                            className="flex-1 text-xs font-semibold"
-                          />
-                          <Button type="button" variant="ghost" size="sm"
-                            onClick={() => {
-                              const arr = (editForm.standardDatesWithMemo || []).filter((_, i) => i !== idx);
-                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr, standardDates: arr.map(a => a.date) }));
-                            }}
-                            className="text-destructive px-2"
-                          >✕</Button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="date"
-                            value={entry.date}
-                            onChange={(e) => {
-                              const arr = [...(editForm.standardDatesWithMemo || [])];
-                              arr[idx] = { ...arr[idx], date: e.target.value };
-                              const dates = arr.map(a => a.date);
-                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr, standardDates: dates }));
-                            }}
-                            className="flex-1"
-                          />
-                        </div>
-                        <div className="flex items-start gap-2 text-xs text-muted-foreground">
-                          <span className="mt-1">→</span>
-                          <Textarea
-                            value={entry.memo}
-                            onChange={(e) => {
-                              const arr = [...(editForm.standardDatesWithMemo || [])];
-                              arr[idx] = { ...arr[idx], memo: e.target.value };
-                              setEditForm(prev => ({ ...prev, standardDatesWithMemo: arr }));
-                            }}
-                            placeholder="적용 내용, 종전 기준 등 메모 (복사/붙여넣기 가능)"
-                            rows={3}
-                            className="flex-1 text-xs"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                    {(editForm.standardDatesWithMemo || []).length === 0 && (
-                      <p className="text-xs text-muted-foreground">추가 버튼을 눌러 검사기준 적용일을 추가하세요.</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-muted-foreground">📝 개정 이력 편집 (화면 표시용 · 현행 DB)</label>
                       <Button type="button" variant="outline" size="sm"
                         onClick={() => setEditRevisions(prev => [...prev, { effectiveDate: "", expiryDate: "", description: "" }])}
                         disabled={editRevisions.length >= 20}
