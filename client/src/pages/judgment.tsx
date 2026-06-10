@@ -2213,6 +2213,8 @@ export default function JudgmentPage() {
                   {(() => {
                     const itemEdit = customEdits[detailItem.id];
                     const dbItem = baseItemMap[detailItem.id];
+                    // 개정 이력은 항목 id로 키된 캐시에서 읽어 항목 전환 시에도 정확히 표시 (공유 상태 revisions 미사용)
+                    const detailRevisions = revisionsCache[detailItem.id] || [];
                     // customEdits 우선, 없으면 DB(standardDates) 사용
                     const datesWithMemo: {date: string; memo: string; label?: string}[] = (() => {
                       if ((itemEdit as any)?.standardDatesWithMemo?.length > 0) return (itemEdit as any).standardDatesWithMemo;
@@ -2234,7 +2236,7 @@ export default function JudgmentPage() {
                     })();
                     const dates: string[] = (itemEdit as any)?.standardDates || [];
                     const permitDate = (itemEdit as any)?.permitEffectiveDate || dbItem?.permitEffectiveDate;
-                    const hasData = datesWithMemo.length > 0 || dates.length > 0 || permitDate || revisions.length > 0;
+                    const hasData = datesWithMemo.length > 0 || dates.length > 0 || permitDate || detailRevisions.length > 0;
                     if (!hasData) return null;
                     return (
                       <div className="border border-border rounded-xl p-4 bg-muted/20">
@@ -2282,10 +2284,10 @@ export default function JudgmentPage() {
                               </div>
                             ))}
                           </div>
-                        ) : revisions.length > 0 ? (
+                        ) : detailRevisions.length > 0 ? (
                           (() => {
                             const applicable = referenceDate
-                              ? revisions.find((r: any) => {
+                              ? detailRevisions.find((r: any) => {
                                   const eff = new Date(r.effectiveDate);
                                   const exp = r.expiryDate ? new Date(r.expiryDate) : null;
                                   return eff <= referenceDate && (!exp || referenceDate < exp);
@@ -2304,7 +2306,7 @@ export default function JudgmentPage() {
                                     )}
                                   </div>
                                 ) : (
-                                  revisions.map((r: any, idx: number) => (
+                                  detailRevisions.map((r: any, idx: number) => (
                                     <div key={r.id || idx} className="border border-border rounded-lg p-3 bg-card">
                                       <div className="flex items-center gap-2 mb-1">
                                         <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{`개정 ${idx + 1}`}</span>
