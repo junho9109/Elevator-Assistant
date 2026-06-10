@@ -2272,6 +2272,13 @@ export default function JudgmentPage() {
                             const k = m ? `${m[1]}년 ${parseInt(m[2], 10)}월 ${parseInt(m[3], 10)}일` : date;
                             return enforce === "retroactive" ? `${k} 이후 소급 적용` : `${k} 이후 건축허가분부터 적용`;
                           };
+                          const isPeriodOnly = (s: string) => {
+                            const stripped = s
+                              .replace(/\d{4}\s*[년.\-]\s*\d{1,2}\s*[월.\-]\s*\d{1,2}\s*일?/g, "")
+                              .replace(/이후|이전|건축허가분|부터|적용|종전|신설|현행/g, "")
+                              .replace(/[~\-()\s.,]/g, "");
+                            return s.includes("~") && stripped.length === 0;
+                          };
                           return (
                             <div className="space-y-2">
                               {sorted.map((r, idx) => (
@@ -2282,7 +2289,7 @@ export default function JudgmentPage() {
                                     )}
                                     <span className="text-xs font-medium text-muted-foreground">{fmtPeriod(r.date)}</span>
                                   </div>
-                                  {r.description && (
+                                  {r.description && !isPeriodOnly(r.description) && (
                                     <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{r.description}</p>
                                   )}
                                 </div>
