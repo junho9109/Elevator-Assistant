@@ -2247,81 +2247,49 @@ export default function JudgmentPage() {
                             <span className="text-xs text-foreground">{permitDate}</span>
                           </div>
                         )}
-                        {datesWithMemo.length > 0 ? (
-                          <div className="space-y-2">
-                            {datesWithMemo.map((entry, idx) => {
-                              const isOld = (entry as any).is_old;
-                              const label = (entry as any).label || `개정 ${idx + 1}`;
-                              const rawLabel = (entry as any).raw_label || '';
-                              return (
-                              <div key={idx} className="border border-border rounded-lg p-3 bg-card">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${isOld ? 'text-gray-500 bg-gray-500/10' : 'text-amber-600 bg-amber-500/10'}`}>
-                                    {label}
-                                  </span>
-                                  <span className="text-xs font-medium">{entry.date}</span>
-                                  {isOld && <span className="text-xs text-muted-foreground">(종전)</span>}
-                                </div>
-                                {rawLabel && (
-                                  <p className="text-xs text-muted-foreground mb-1">{rawLabel}</p>
-                                )}
-                                {entry.memo && (
-                                  <div className="flex gap-1 mt-1">
-                                    <span className="text-xs text-muted-foreground mt-0.5">→</span>
-                                    <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{entry.memo}</p>
-                                  </div>
-                                )}
-                              </div>
-                              );
-                            })}
-                          </div>
-                        ) : dates.length > 0 ? (
-                          <div className="space-y-1">
-                            {dates.map((date: any, idx) => (
-                              <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-lg">
-                                <span className="text-xs font-semibold text-amber-600">{`개정 ${idx + 1}`}</span>
-                                <span className="text-xs">{date}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : detailRevisions.length > 0 ? (
-                          (() => {
-                            const applicable = referenceDate
-                              ? detailRevisions.find((r: any) => {
-                                  const eff = new Date(r.effectiveDate);
-                                  const exp = r.expiryDate ? new Date(r.expiryDate) : null;
-                                  return eff <= referenceDate && (!exp || referenceDate < exp);
-                                })
-                              : null;
-                            return (
-                              <div className="space-y-2">
-                                {applicable ? (
-                                  <div className="border border-amber-400/50 rounded-lg p-3 bg-amber-500/5">
-                                    <div className="flex items-center gap-2 mb-2">
+                        {(() => {
+                          let list: {date: string; description: string; key: string}[] = [];
+                          if (datesWithMemo.length > 0) {
+                            list = datesWithMemo.map((e: any, i: number) => ({ date: e.date || "", description: e.memo || "", key: `dm-${i}` }));
+                          } else if (detailRevisions.length > 0) {
+                            list = detailRevisions.map((r: any, i: number) => ({ date: r.effectiveDate || "", description: r.description || "", key: `dr-${r.id ?? i}` }));
+                          } else if (dates.length > 0) {
+                            list = dates.map((d: string, i: number) => ({ date: d, description: "", key: `d-${i}` }));
+                          }
+                          if (list.length === 0) return null;
+                          const sorted = [...list].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+                          let applicableIdx = -1;
+                          if (referenceDate) {
+                            let bestDate = "";
+                            sorted.forEach((r, i) => {
+                              if (r.date && new Date(r.date) <= referenceDate && r.date > bestDate) { applicableIdx = i; bestDate = r.date; }
+                            });
+                          }
+                          const enforce = (customEdits[detailItem.id] as any)?.enforcementType ?? (detailItem as any).enforcementType;
+                          const fmtPeriod = (date: string) => {
+                            if (!date) return "시행일 미입력";
+                            const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                            const k = m ? `${m[1]}년 ${parseInt(m[2], 10)}월 ${parseInt(m[3], 10)}일` : date;
+                            return enforce === "retroactive" ? `${k} 이후 소급 적용` : `${k} 이후 건축허가분부터 적용`;
+                          };
+                          return (
+                            <div className="space-y-2">
+                              {sorted.map((r, idx) => (
+                                <div key={r.key} className={cn("border rounded-lg p-3", idx === applicableIdx ? "border-amber-400/50 bg-amber-500/5" : "border-border bg-card")}>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    {idx === applicableIdx && (
                                       <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">적용 기준</span>
-                                      <span className="text-xs font-medium text-muted-foreground">{applicable.effectiveDate} 이후 건축허가분</span>
-                                    </div>
-                                    {applicable.description && (
-                                      <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{applicable.description}</p>
                                     )}
+                                    <span className="text-xs font-medium text-muted-foreground">{fmtPeriod(r.date)}</span>
                                   </div>
-                                ) : (
-                                  detailRevisions.map((r: any, idx: number) => (
-                                    <div key={r.id || idx} className="border border-border rounded-lg p-3 bg-card">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">{`개정 ${idx + 1}`}</span>
-                                        <span className="text-xs font-medium">{r.effectiveDate}</span>
-                                      </div>
-                                      {r.description && (
-                                        <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{r.description}</p>
-                                      )}
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            );
-                          })()
-                        ) : null}
+                                  {r.description && (
+                                    <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{r.description}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })()}
