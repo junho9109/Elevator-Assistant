@@ -567,8 +567,7 @@ export default function JudgmentPage() {
       };
       const item = findItem(INSPECTION_DATA_MR);
       if (item) {
-        setDetailItem(item);
-        setIsDetailDialogOpen(true);
+        handleOpenDetail(item);  // 항목별 개정 데이터(inspection_item_revisions)까지 정확히 로드
       }
     };
     window.addEventListener("openInspectionDetail", handler);
