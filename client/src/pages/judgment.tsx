@@ -2241,12 +2241,6 @@ export default function JudgmentPage() {
                     return (
                       <div className="border border-border rounded-xl p-4 bg-muted/20">
                         <h3 className="font-medium text-sm mb-3">📅 검사기준 적용일 (개정)</h3>
-                        {permitDate && (
-                          <div className="mb-2 px-3 py-2 bg-blue-500/10 rounded-lg">
-                            <span className="text-xs font-medium text-blue-600">건축허가일자 이후 적용: </span>
-                            <span className="text-xs text-foreground">{permitDate}</span>
-                          </div>
-                        )}
                         {(() => {
                           let list: {date: string; description: string; key: string}[] = [];
                           if (datesWithMemo.length > 0) {
@@ -2255,6 +2249,10 @@ export default function JudgmentPage() {
                             list = detailRevisions.map((r: any, i: number) => ({ date: r.effectiveDate || "", description: r.description || "", key: `dr-${r.id ?? i}` }));
                           } else if (dates.length > 0) {
                             list = dates.map((d: string, i: number) => ({ date: d, description: "", key: `d-${i}` }));
+                          }
+                          // 개정이 없고 항목 시행일만 있는 경우(예: 신설 항목) 시행일을 단일 항목으로 표시
+                          if (list.length === 0 && permitDate) {
+                            list = [{ date: permitDate, description: "", key: "permit" }];
                           }
                           if (list.length === 0) return null;
                           const sorted = [...list].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
