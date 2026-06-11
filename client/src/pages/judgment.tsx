@@ -2289,9 +2289,11 @@ export default function JudgmentPage() {
                                     )}
                                     <span className="text-xs font-medium text-muted-foreground">{fmtPeriod(r.date)}</span>
                                   </div>
-                                  {r.description && !isPeriodOnly(r.description) && (
-                                    <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{r.description}</p>
-                                  )}
+                                  {(() => {
+                                    const desc = (r.description || "").replace(/^\s*\[[^\]]*\]\s*/, "").trim();
+                                    if (!desc || isPeriodOnly(desc)) return null;
+                                    return <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{desc}</p>;
+                                  })()}
                                 </div>
                               ))}
                             </div>
