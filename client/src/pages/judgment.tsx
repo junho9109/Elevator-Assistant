@@ -18,6 +18,16 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ZoomControl } from "@/components/ZoomControl";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
+import INSPECTION_CONTENT from "@/data/inspection-content.json";
+type ContentEntry = {
+  text?: string;
+  effectiveDate?: string;
+  introductionType?: string;
+  equipmentTypes?: string[];
+  customWarning?: string;
+  revisions?: { effectiveDate: string | null; expiryDate: string | null; introductionType: string | null; description: string }[];
+};
+const contentMap: Record<string, ContentEntry> = INSPECTION_CONTENT as Record<string, ContentEntry>;
 import type { InspectionItemEdit, CustomInspectionItem } from "@shared/schema";
 
 // Image Viewer State
@@ -648,43 +658,34 @@ export default function JudgmentPage() {
 
   // [통합] serverEdits useQuery 제거됨 — inspection-content.json 사용
 
-  // Server edits are authoritative - replace local state when server data loads
-  const serverEditsJson = JSON.stringify(serverEdits);
+  // inspection-content.json 에서 직접 customEdits 구성
   useEffect(() => {
-    if (serverEditsError) {
-      return;
-    }
-    
-    const parsedEdits: InspectionItemEdit[] = JSON.parse(serverEditsJson);
-    // Build map from server edits (server is source of truth)
-    const serverEditsMap: Record<string, CustomItemEdit> = {};
-    for (const edit of parsedEdits) {
-      const parsedDates = (() => {
-        try { return JSON.parse((edit as any).standardDates || "[]"); } catch { return []; }
-      })();
-      const datesWithMemo = parsedDates.map((d: any) => typeof d === "object" ? d : { date: d, memo: "" });
-      const datesOnly = datesWithMemo.map((d: any) => d.date);
-      serverEditsMap[edit.itemId] = {
-        id: edit.itemId,
-        text: edit.text || undefined,
-        effectiveDate: edit.effectiveDate || undefined,
-        expiryDate: edit.expiryDate || undefined,
-        introductionType: edit.introductionType as "new" | "revision" | undefined,
-        customWarning: edit.customWarning || undefined,
-        standardNote: (edit as any).standardNote || undefined,
-        equipmentTypes: (() => { try { return JSON.parse((edit as any).equipmentTypes || "[]"); } catch { return []; } })(),
-        permitEffectiveDate: (edit as any).permitEffectiveDate || undefined,
-        firstIntroducedDate: (edit as any).firstIntroducedDate || undefined,  // [v2]
-        enforcementType: (edit as any).enforcementType || 'general',  // [v3]
-        standardDates: datesOnly,
+    const map: Record<string, CustomItemEdit> = {};
+    for (const [id, c] of Object.entries(contentMap)) {
+      const entry = c as ContentEntry;
+      const revDates = (entry.revisions || [])
+        .map(r => r.effectiveDate || "")
+        .filter(Boolean)
+        .sort((a, b) => b.localeCompare(a));
+      const datesWithMemo = (entry.revisions || [])
+        .sort((a, b) => (b.effectiveDate || "").localeCompare(a.effectiveDate || ""))
+        .map(r => ({ date: r.effectiveDate || "", memo: r.description || "", label: "" }));
+      map[id] = {
+        id,
+        text: entry.text || undefined,
+        effectiveDate: entry.effectiveDate || undefined,
+        introductionType: entry.introductionType as "new" | "revision" | undefined,
+        customWarning: entry.customWarning || undefined,
+        equipmentTypes: entry.equipmentTypes || [],
+        permitEffectiveDate: entry.effectiveDate || undefined,
+        enforcementType: 'general',
+        standardDates: revDates,
         standardDatesWithMemo: datesWithMemo,
       };
     }
-    // Server edits take precedence over local edits
-    setCustomEdits(serverEditsMap);
-    // Clear localStorage to prevent stale data
+    setCustomEdits(map);
     localStorage.removeItem("judgmentCustomEdits");
-  }, [serverEditsJson, serverEditsError]);
+  }, []);
 
   // Fetch custom inspection items from server
   const { data: serverCustomItems = [] } = useQuery<CustomInspectionItem[]>({
