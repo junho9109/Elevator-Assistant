@@ -26,7 +26,7 @@ type ContentEntry = {
   equipmentTypes?: string[];
   customWarning?: string;
   standardNote?: string;
-  revisions?: { effectiveDate: string | null; expiryDate: string | null; introductionType: string | null; description: string }[];
+  revisions?: { effectiveDate: string | null; expiryDate: string | null; introductionType: string | null; description: string; source?: string[] }[];
 };
 const contentMap: Record<string, ContentEntry> = INSPECTION_CONTENT as Record<string, ContentEntry>;
 import type { InspectionItemEdit, CustomInspectionItem } from "@shared/schema";
@@ -670,7 +670,7 @@ export default function JudgmentPage() {
         .sort((a, b) => b.localeCompare(a));
       const datesWithMemo = (entry.revisions || [])
         .sort((a, b) => (b.effectiveDate || "").localeCompare(a.effectiveDate || ""))
-        .map(r => ({ date: r.effectiveDate || "", memo: r.description || "", label: "" }));
+        .map(r => ({ date: r.effectiveDate || "", memo: r.description || "", label: "", source: (r as any).source }));
       map[id] = {
         id,
         text: entry.text || undefined,
@@ -1032,7 +1032,7 @@ export default function JudgmentPage() {
     const syncedForm = {
       ...editForm,
       standardDates: revForSync.map(r => r.effectiveDate || ""),
-      standardDatesWithMemo: revForSync.map((r, i) => ({ date: r.effectiveDate || "", memo: r.description || "", label: `개정 ${i + 1}` })),
+      standardDatesWithMemo: revForSync.map((r, i) => ({ date: r.effectiveDate || "", memo: r.description || "", label: `개정 ${i + 1}`, source: (r as any).source })),
     };
     setCustomEdits(prev => ({
       ...prev,
@@ -2204,11 +2204,11 @@ export default function JudgmentPage() {
                       <div className="border border-border rounded-xl p-4 bg-muted/20">
                         <h3 className="font-medium text-sm mb-3">📅 검사기준 적용일 (개정)</h3>
                         {(() => {
-                          let list: {date: string; description: string; key: string}[] = [];
+                          let list: {date: string; description: string; key: string; source?: string[]}[] = [];
                           if (datesWithMemo.length > 0) {
-                            list = datesWithMemo.map((e: any, i: number) => ({ date: e.date || "", description: e.memo || "", key: `dm-${i}` }));
+                            list = datesWithMemo.map((e: any, i: number) => ({ date: e.date || "", description: e.memo || "", key: `dm-${i}`, source: e.source }));
                           } else if (detailRevisions.length > 0) {
-                            list = detailRevisions.map((r: any, i: number) => ({ date: r.effectiveDate || "", description: r.description || "", key: `dr-${r.id ?? i}` }));
+                            list = detailRevisions.map((r: any, i: number) => ({ date: r.effectiveDate || "", description: r.description || "", key: `dr-${r.id ?? i}`, source: r.source }));
                           } else if (dates.length > 0) {
                             list = dates.map((d: string, i: number) => ({ date: d, description: "", key: `d-${i}` }));
                           }
@@ -2254,6 +2254,14 @@ export default function JudgmentPage() {
                                     if (!desc || isPeriodOnly(desc)) return null;
                                     return <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{desc}</p>;
                                   })()}
+                                  {(r as any).source?.length > 0 && (
+                                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                                      <span className="text-[10px] text-muted-foreground shrink-0">출처</span>
+                                      {(r as any).source.map((s: string, si: number) => (
+                                        <span key={si} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">{s}</span>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>
