@@ -646,15 +646,7 @@ export default function JudgmentPage() {
     enabled: !!detailItem
   });
 
-  // Fetch inspection item edits from server (for syncing across all users)
-  const { data: serverEdits = [], isError: serverEditsError } = useQuery<InspectionItemEdit[]>({
-    queryKey: ["/api/inspection-edits"],
-    queryFn: async () => {
-      const res = await fetch("/api/inspection-edits");
-      if (!res.ok) throw new Error("Failed to fetch inspection edits");
-      return res.json();
-    }
-  });
+  // [통합] serverEdits useQuery 제거됨 — inspection-content.json 사용
 
   // Server edits are authoritative - replace local state when server data loads
   const serverEditsJson = JSON.stringify(serverEdits);
@@ -720,23 +712,7 @@ export default function JudgmentPage() {
   }, []);
   const [editSectionExpanded, setEditSectionExpanded] = useState(false);
 
-  // 검사기준 DB 데이터 조회
-  const { data: baseItems = [] } = useQuery<any[]>({
-    queryKey: ["/api/inspection-base-items"],
-    queryFn: async () => {
-      const res = await fetch("/api/inspection-base-items");
-      if (!res.ok) throw new Error("Failed to fetch base items");
-      return res.json();
-    },
-    staleTime: 1000 * 60 * 60, // 1시간 캐시
-  });
-
-  // baseItems를 itemId로 빠르게 조회할 수 있는 맵
-  const baseItemMap = useMemo(() => {
-    const map: Record<string, any> = {};
-    baseItems.forEach(item => { map[item.itemId] = item; });
-    return map;
-  }, [baseItems]);
+  // [통합] baseItems useQuery 제거됨 — inspection-content.json 사용
 
   // Sync custom items from server - use JSON stringified value as dependency to prevent infinite loops
   const serverCustomItemsJson = JSON.stringify(serverCustomItems);
@@ -782,33 +758,8 @@ export default function JudgmentPage() {
   });
 
   // Mutation to save inspection item edit to server
-  const saveInspectionEdit = useMutation({
-    mutationFn: async (edit: CustomItemEdit) => {
-      const res = await fetch(`/api/inspection-edits/${edit.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: edit.text || null,
-          effectiveDate: edit.permitEffectiveDate || edit.standardEffectiveDate || edit.effectiveDate || null,
-          expiryDate: edit.expiryDate || null,
-          introductionType: edit.introductionType || null,
-          permitEffectiveDate: (edit as any).permitEffectiveDate || null,
-          standardEffectiveDate: (edit as any).standardDates?.[0] || (edit as any).standardEffectiveDate || null,
-          standardDates: JSON.stringify((edit as any).standardDatesWithMemo?.length > 0
-            ? (edit as any).standardDatesWithMemo
-            : ((edit as any).standardDates || []).map((d: string) => ({ date: d, memo: "" }))),
-          customWarning: edit.customWarning || null,
-          standardNote: (edit as any).standardNote || null,
-          equipmentTypes: JSON.stringify((edit as any).equipmentTypes || []),
-        })
-      });
-      if (!res.ok) throw new Error("Failed to save edit");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/inspection-edits"] });
-    }
-  });
+  // [통합] 관리자 저장 → inspection-content.json PC 직접 편집으로 이전 (API 저장 폐기)
+  const saveInspectionEdit = { mutate: (_data: any, _opts?: any) => { _opts?.onSuccess?.(); } };
 
   const uploadPhoto = useMutation({
     mutationFn: async (file: File) => {
@@ -927,18 +878,16 @@ export default function JudgmentPage() {
   const handleOpenDetail = (item: InspectionItem) => {
     setDetailItem(item);
     setIsDetailDialogOpen(true);
-    // 개정 이력 로드
-    setRevisionsLoading(true);
-    fetch(`/api/inspection-revisions/${item.id}`)
-      .then(r => r.json())
-      .then(data => {
-        const revData = Array.isArray(data) ? data : [];
-        setRevisions(revData);
-        // 캐시에도 저장 (일반 모드 표시용)
-        setRevisionsCache(prev => ({...prev, [item.id]: revData}));
-        setRevisionsLoading(false);
-      })
-      .catch(() => { setRevisions([]); setRevisionsLoading(false); });
+    // [통합] inspection-content.json 에서 직접 읽기
+    const entry = contentMap[item.id] as ContentEntry | undefined;
+    const revData = (entry?.revisions || []).map(r => ({
+      id: undefined, item_id: item.id,
+      effective_date: r.effectiveDate, expiry_date: r.expiryDate,
+      introduction_type: r.introductionType, description: r.description,
+    }));
+    setRevisions(revData);
+    setRevisionsCache(prev => ({...prev, [item.id]: revData}));
+    setRevisionsLoading(false);
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1042,32 +991,15 @@ export default function JudgmentPage() {
     // 통합 다이얼로그: detailItem도 설정해서 사진/댓글도 같이 표시
     setDetailItem(item);
     setIsDetailDialogOpen(true);
-    // 개정 이력 편집용 로드: inspection_item_revisions 우선, 없으면 edits/base_items 날짜에서 구성
-    const fallbackFromDates = () => {
-      const saved = (existingEdit as any)?.standardDatesWithMemo;
-      if (saved?.length > 0) {
-        return saved.map((s: any) => ({ effectiveDate: s.date || "", expiryDate: "", description: s.memo || "" }));
-      }
-      return dates.map((d: string) => ({ effectiveDate: d, expiryDate: "", description: "" }));
-    };
-    fetch(`/api/inspection-revisions/${item.id}`)
-      .then(r => r.json())
-      .then((data) => {
-        const arr = (Array.isArray(data) ? data : []).map((r: any) => ({
-          id: r.id,
-          effectiveDate: r.effectiveDate || "",
-          expiryDate: r.expiryDate || "",
-          description: r.description || "",
-        }));
-        if (arr.length > 0) {
-          setEditRevisions(arr);
-          editRevisionsSnapshot.current = arr.filter((r: any) => r.id != null).map((r: any) => ({ ...r }));
-        } else {
-          setEditRevisions(fallbackFromDates());
-          editRevisionsSnapshot.current = [];
-        }
-      })
-      .catch(() => { setEditRevisions(fallbackFromDates()); editRevisionsSnapshot.current = []; });
+    // [통합] 개정 이력 편집용 — inspection-content.json 에서 직접 읽기
+    const cEntry = contentMap[item.id] as ContentEntry | undefined;
+    const editArr = (cEntry?.revisions || []).map(r => ({
+      effectiveDate: r.effectiveDate || "",
+      expiryDate: r.expiryDate || "",
+      description: r.description || "",
+    }));
+    setEditRevisions(editArr);
+    editRevisionsSnapshot.current = [];
   };
 
   const handleSaveItemEdit = () => {
@@ -1116,39 +1048,7 @@ export default function JudgmentPage() {
       });
     }
     
-    // 개정 이력(inspection_item_revisions) 변경분 저장 (관리자)
-    if (isAdminMode && editingItem) {
-      const itemId = editingItem.id;
-      const orig = editRevisionsSnapshot.current;
-      const cur = editRevisions;
-      const curIds = cur.filter(r => r.id != null).map(r => r.id);
-      (async () => {
-        try {
-          // 삭제된 개정
-          for (const o of orig) {
-            if (!curIds.includes(o.id)) {
-              await fetch(`/api/inspection-revisions/${o.id}`, { method: "DELETE" });
-            }
-          }
-          // 수정/추가
-          for (const r of cur) {
-            if (!r.effectiveDate && !r.description) continue; // 빈 항목 skip
-            const body = JSON.stringify({ itemId, effectiveDate: r.effectiveDate || null, expiryDate: r.expiryDate || null, description: r.description || "" });
-            if (r.id != null) {
-              const o = orig.find(x => x.id === r.id);
-              if (o && (o.effectiveDate !== r.effectiveDate || o.expiryDate !== r.expiryDate || o.description !== r.description)) {
-                await fetch(`/api/inspection-revisions/${r.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body });
-              }
-            } else {
-              await fetch(`/api/inspection-revisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
-            }
-          }
-          // 캐시 갱신
-          const fresh = await fetch(`/api/inspection-revisions/${itemId}`).then(r => r.json()).catch(() => []);
-          setRevisionsCache(prev => ({ ...prev, [itemId]: Array.isArray(fresh) ? fresh : [] }));
-        } catch {}
-      })();
-    }
+    // [통합] 개정 이력 변경 → inspection-content.json PC 직접 편집으로 이전 (API 저장 폐기)
     
     setIsEditItemDialogOpen(false);
     setEditingItem(null);
