@@ -1232,51 +1232,48 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                   })}
                 </div>
               </div>
-              {/* 목록 + 상세 2단 레이아웃 */}
-              <div className="flex" style={{height: "420px"}}>
-                {/* 목록 */}
-                <div className={`overflow-y-auto divide-y divide-border border-r border-border ${stdSelected ? "w-2/5" : "w-full"}`}>
-                  {(() => {
-                    const filtered = STD_ITEMS.filter(x =>
-                      (stdCategory === "전체" || x.category === stdCategory) &&
-                      (!stdSearch || x.title.includes(stdSearch) || x.ref.includes(stdSearch) || x.conclusion.includes(stdSearch))
-                    );
-                    if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과 없음</p>;
-                    return filtered.map((item, idx) => (
-                      <div key={idx} onClick={() => setStdSelected(item)}
-                        className={`p-3 cursor-pointer transition-colors ${stdSelected === item ? "bg-blue-500/5 border-l-2 border-l-blue-500" : "hover:bg-muted/50"}`}>
-                        <div className={`font-medium leading-snug mb-1 ${stdSelected ? "text-xs line-clamp-2" : "text-sm line-clamp-2"}`}>{item.title}</div>
-                        <div className="text-[10px] text-muted-foreground">{item.source}</div>
+              <div className="divide-y divide-border max-h-[480px] overflow-y-auto">
+                {(() => {
+                  const filtered = STD_ITEMS.filter(x =>
+                    (stdCategory === "전체" || x.category === stdCategory) &&
+                    (!stdSearch || x.title.includes(stdSearch) || x.ref.includes(stdSearch) || x.conclusion.includes(stdSearch))
+                  );
+                  if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과 없음</p>;
+                  return filtered.map((item, idx) => (
+                    <div key={idx}>
+                      <div onClick={() => setStdSelected(stdSelected === item ? null : item)}
+                        className={`p-3 cursor-pointer transition-colors ${stdSelected === item ? "bg-blue-500/5" : "hover:bg-muted/50"}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium leading-snug text-foreground mb-1 line-clamp-2">{item.title}</div>
+                            <div className="text-[11px] text-muted-foreground">{item.source} · {item.typeTag}</div>
+                          </div>
+                          <span className="text-muted-foreground shrink-0 mt-0.5 text-xs">{stdSelected === item ? "▲" : "▽"}</span>
+                        </div>
                       </div>
-                    ));
-                  })()}
-                </div>
-                {/* 상세 */}
-                {stdSelected && (
-                  <div className="w-3/5 overflow-y-auto p-3 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <h4 className="text-xs font-semibold leading-snug text-foreground">{stdSelected.title}</h4>
-                      <button onClick={() => setStdSelected(null)} className="text-muted-foreground shrink-0"><X className="h-3.5 w-3.5" /></button>
+                      {stdSelected === item && (
+                        <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
+                          {(item.ref || item.basis) && (
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
+                              {item.ref && <p className="text-[11px] font-semibold text-blue-600">{item.ref}</p>}
+                              {item.basis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-card rounded-lg p-2">{item.basis}</p>}
+                            </div>
+                          )}
+                          {item.conclusion && (
+                            <div className="space-y-1.5">
+                              <p className="text-[10px] font-bold text-muted-foreground tracking-wide">표준화</p>
+                              <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2">{item.conclusion}</p>
+                            </div>
+                          )}
+                          <div className="pt-1.5 border-t border-border/50">
+                            <p className="text-[10px] text-muted-foreground">출처 · {item.source}</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    {(stdSelected.ref || stdSelected.basis) && (
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
-                        {stdSelected.ref && <p className="text-[11px] font-semibold text-blue-600">{stdSelected.ref}</p>}
-                        {stdSelected.basis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2">{stdSelected.basis}</p>}
-                      </div>
-                    )}
-                    {stdSelected.conclusion && (
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">표준화</p>
-                        <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2">{stdSelected.conclusion}</p>
-                      </div>
-                    )}
-                    <div className="pt-2 border-t border-border">
-                      <p className="text-[10px] text-muted-foreground mb-0.5">출처</p>
-                      <p className="text-[11px] font-medium text-muted-foreground">{stdSelected.source}</p>
-                    </div>
-                  </div>
-                )}
+                  ));
+                })()}
               </div>
             </div>
           </div>
