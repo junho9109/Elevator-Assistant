@@ -713,7 +713,25 @@ export default function JudgmentPage() {
   }, []);
   const [editSectionExpanded, setEditSectionExpanded] = useState(false);
 
-  // [통합] baseItems useQuery 제거됨 — inspection-content.json 사용
+  // [통합] baseItemMap — inspection-content.json 기반 (서버 fetch 없음)
+  const baseItemMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (const [id, c] of Object.entries(contentMap)) {
+      const entry = c as ContentEntry;
+      const revDates = (entry.revisions || [])
+        .map(r => r.effectiveDate)
+        .filter(Boolean)
+        .sort((a, b) => (b || "").localeCompare(a || ""));
+      map[id] = {
+        itemId: id,
+        text: entry.text,
+        permitEffectiveDate: entry.effectiveDate,
+        standardDates: JSON.stringify(revDates),
+        equipmentTypes: JSON.stringify(entry.equipmentTypes || []),
+      };
+    }
+    return map;
+  }, []);
 
   // Sync custom items from server - use JSON stringified value as dependency to prevent infinite loops
   const serverCustomItemsJson = JSON.stringify(serverCustomItems);
