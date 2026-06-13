@@ -1211,20 +1211,20 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                 style={{touchAction: isAdminMode ? "none" : "auto"}} />
             </div>
 
-            {/* 표준화 목록 */}
+            {/* 표준화 목록 + 상세 */}
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
               <div className="p-3 border-b border-border">
                 <h3 className="font-semibold text-sm mb-2">표준화 자료 ({STD_ITEMS.length}건)</h3>
                 <div className="relative mb-2">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input placeholder="검색..." value={stdSearch} onChange={e => setStdSearch(e.target.value)} className="pl-9 h-8 text-xs bg-secondary border-0" />
+                  <Input placeholder="검색..." value={stdSearch} onChange={e => { setStdSearch(e.target.value); setStdSelected(null); }} className="pl-9 h-8 text-xs bg-secondary border-0" />
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
                   {STD_CATEGORIES.map(cat => {
                     const cnt = cat === "전체" ? STD_ITEMS.length : STD_ITEMS.filter(x => x.category === cat).length;
                     if (cnt === 0) return null;
                     return (
-                      <button key={cat} onClick={() => setStdCategory(cat)}
+                      <button key={cat} onClick={() => { setStdCategory(cat); setStdSelected(null); }}
                         className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${stdCategory === cat ? "bg-foreground text-background border-foreground" : "bg-background border-border text-muted-foreground hover:bg-muted"}`}>
                         {cat} <span className="opacity-60">{cnt}</span>
                       </button>
@@ -1232,50 +1232,53 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
                   })}
                 </div>
               </div>
-              <div className="divide-y divide-border max-h-96 overflow-y-auto">
-                {(() => {
-                  const filtered = STD_ITEMS.filter(x =>
-                    (stdCategory === "전체" || x.category === stdCategory) &&
-                    (!stdSearch || x.title.includes(stdSearch) || x.ref.includes(stdSearch) || x.conclusion.includes(stdSearch))
-                  );
-                  if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과가 없습니다</p>;
-                  return filtered.map((item, idx) => (
-                    <div key={idx} onClick={() => setStdSelected(item)}
-                      className={`p-3 cursor-pointer transition-colors ${stdSelected === item ? "bg-blue-500/5 border-l-2 border-l-blue-500" : "hover:bg-muted/50"}`}>
-                      <div className="text-sm font-medium leading-snug text-foreground mb-1 line-clamp-2">{item.title}</div>
-                      <div className="text-[11px] text-muted-foreground">{item.source} · {item.typeTag}</div>
+              {/* 목록 + 상세 2단 레이아웃 */}
+              <div className="flex" style={{height: "420px"}}>
+                {/* 목록 */}
+                <div className={`overflow-y-auto divide-y divide-border border-r border-border ${stdSelected ? "w-2/5" : "w-full"}`}>
+                  {(() => {
+                    const filtered = STD_ITEMS.filter(x =>
+                      (stdCategory === "전체" || x.category === stdCategory) &&
+                      (!stdSearch || x.title.includes(stdSearch) || x.ref.includes(stdSearch) || x.conclusion.includes(stdSearch))
+                    );
+                    if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과 없음</p>;
+                    return filtered.map((item, idx) => (
+                      <div key={idx} onClick={() => setStdSelected(item)}
+                        className={`p-3 cursor-pointer transition-colors ${stdSelected === item ? "bg-blue-500/5 border-l-2 border-l-blue-500" : "hover:bg-muted/50"}`}>
+                        <div className={`font-medium leading-snug mb-1 ${stdSelected ? "text-xs line-clamp-2" : "text-sm line-clamp-2"}`}>{item.title}</div>
+                        <div className="text-[10px] text-muted-foreground">{item.source}</div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+                {/* 상세 */}
+                {stdSelected && (
+                  <div className="w-3/5 overflow-y-auto p-3 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-xs font-semibold leading-snug text-foreground">{stdSelected.title}</h4>
+                      <button onClick={() => setStdSelected(null)} className="text-muted-foreground shrink-0"><X className="h-3.5 w-3.5" /></button>
                     </div>
-                  ));
-                })()}
+                    {(stdSelected.ref || stdSelected.basis) && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
+                        {stdSelected.ref && <p className="text-[11px] font-semibold text-blue-600">{stdSelected.ref}</p>}
+                        {stdSelected.basis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2">{stdSelected.basis}</p>}
+                      </div>
+                    )}
+                    {stdSelected.conclusion && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">표준화</p>
+                        <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2">{stdSelected.conclusion}</p>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-border">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">출처</p>
+                      <p className="text-[11px] font-medium text-muted-foreground">{stdSelected.source}</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-
-            {/* 표준화 상세 카드 */}
-            {stdSelected && (
-              <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <h4 className="text-sm font-semibold leading-snug text-foreground">{stdSelected.title}</h4>
-                  <button onClick={() => setStdSelected(null)} className="text-muted-foreground shrink-0 mt-0.5"><X className="h-4 w-4" /></button>
-                </div>
-                {(stdSelected.ref || stdSelected.basis) && (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
-                    {stdSelected.ref && <p className="text-xs font-semibold text-blue-600">{stdSelected.ref}</p>}
-                    {stdSelected.basis && <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5">{stdSelected.basis}</p>}
-                  </div>
-                )}
-                {stdSelected.conclusion && (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-bold text-muted-foreground tracking-wide">표준화</p>
-                    <p className="text-xs text-foreground leading-relaxed border-l-2 border-amber-400 pl-2.5">{stdSelected.conclusion}</p>
-                  </div>
-                )}
-                <div className="pt-2 border-t border-border">
-                  <p className="text-[10px] text-muted-foreground mb-0.5">출처</p>
-                  <p className="text-xs font-medium text-muted-foreground">{stdSelected.source}</p>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
