@@ -2112,8 +2112,49 @@ export default function JudgmentPage() {
                 <p className="leading-relaxed">{detailItem.text}</p>
                 {(customEdits[detailItem.id] as any)?.standardNote && (
                   <div className="mt-2 pt-2 border-t border-border">
-                    <p className="text-xs text-muted-foreground font-medium mb-1">📋 검사기준</p>
-                    <p className="text-xs text-foreground whitespace-pre-wrap max-h-24 overflow-y-auto">{(customEdits[detailItem.id] as any).standardNote}</p>
+                    <p className="text-xs text-muted-foreground font-medium mb-2">📋 검사기준</p>
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                      {(() => {
+                        const note: string = (customEdits[detailItem.id] as any).standardNote;
+                        const lines = note.split("\n").filter((l: string) => l.trim());
+                        const sections: { header: string; body: string[] }[] = [];
+                        let cur: { header: string; body: string[] } | null = null;
+                        for (const line of lines) {
+                          const headerMatch = line.match(/^\[(\d[\d.]*)\]\s*(.*)/);
+                          if (headerMatch) {
+                            if (cur) sections.push(cur);
+                            cur = { header: headerMatch[1], body: [] };
+                            const rest = headerMatch[2].replace(/^\d[\d.]*\s+/, "").trim();
+                            if (rest) cur.body.push(rest);
+                          } else if (cur) {
+                            cur.body.push(line.trim());
+                          } else {
+                            sections.push({ header: "", body: [line.trim()] });
+                          }
+                        }
+                        if (cur) sections.push(cur);
+                        return sections.map((sec, si) => (
+                          <div key={si}>
+                            {sec.header && (
+                              <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 mb-1">{sec.header}</span>
+                            )}
+                            <div className="space-y-1">
+                              {sec.body.map((line: string, li: number) => {
+                                const isItem = /^[가-하]\s*\)/.test(line) || /^\d+\s*\)/.test(line);
+                                return isItem ? (
+                                  <div key={li} className="flex gap-1.5 text-xs text-foreground/80 leading-relaxed">
+                                    <span className="text-muted-foreground shrink-0 w-5">{line.match(/^([가-하]\s*\)|\d+\s*\))/)?.[0]}</span>
+                                    <span>{line.replace(/^[가-하]\s*\)|^\d+\s*\)/, "").trim()}</span>
+                                  </div>
+                                ) : (
+                                  <p key={li} className="text-xs text-foreground/80 leading-relaxed">{line}</p>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
                   </div>
                 )}
               </div>
