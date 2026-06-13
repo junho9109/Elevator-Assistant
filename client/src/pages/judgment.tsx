@@ -25,6 +25,7 @@ type ContentEntry = {
   introductionType?: string;
   equipmentTypes?: string[];
   customWarning?: string;
+  standardNote?: string;
   revisions?: { effectiveDate: string | null; expiryDate: string | null; introductionType: string | null; description: string }[];
 };
 const contentMap: Record<string, ContentEntry> = INSPECTION_CONTENT as Record<string, ContentEntry>;
@@ -676,6 +677,7 @@ export default function JudgmentPage() {
         effectiveDate: entry.effectiveDate || undefined,
         introductionType: entry.introductionType as "new" | "revision" | undefined,
         customWarning: entry.customWarning || undefined,
+        standardNote: (entry as any).standardNote || undefined,
         equipmentTypes: entry.equipmentTypes || [],
         permitEffectiveDate: entry.effectiveDate || undefined,
         enforcementType: 'general',
