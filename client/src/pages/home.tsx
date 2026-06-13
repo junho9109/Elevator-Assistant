@@ -1384,29 +1384,54 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
       {selectedSearchResult && createPortal(
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setSelectedSearchResult(null)}>
           <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100% - 32px)",maxWidth:"512px",maxHeight:"85vh",overflowY:"auto",zIndex:10000}} className="bg-card rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} onFocus={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start p-5 border-b border-border">
-              <div>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${selectedSearchResult.type === "standard" ? "bg-blue-500" : "bg-amber-500"}`}>
-                  {selectedSearchResult.type === "standard" ? "표준화" : "검사기준"}
-                </span>
-                <h2 className="text-base font-semibold mt-2 pr-4">{selectedSearchResult.title}</h2>
-              </div>
+            <div className="flex justify-between items-start p-4 border-b border-border">
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${selectedSearchResult.type === "standard" ? "bg-blue-500" : "bg-amber-500"}`}>
+                {selectedSearchResult.type === "standard" ? "표준화" : "검사기준"}
+              </span>
               <button onClick={() => setSelectedSearchResult(null)} className="text-muted-foreground hover:text-foreground p-1 shrink-0"><X className="h-5 w-5" /></button>
             </div>
-            <div className="p-5 space-y-3">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>
-              {selectedSearchResult.type === "inspection" && (
-                <button
-                  className="w-full mt-3 text-sm bg-primary text-primary-foreground rounded-xl py-2.5 hover:bg-primary/90"
-                  onClick={() => {
-                    const targetId = selectedSearchResult.query;
-                    setSelectedSearchResult(null);
-                    // 상세보기 팝업 열기 이벤트
-                    window.dispatchEvent(new CustomEvent("openInspectionDetail", { detail: { itemId: targetId } }));
-                  }}
-                >
-                  항목 상세보기 →
-                </button>
+            <div className="p-4 space-y-3">
+              {selectedSearchResult.type === "standard" ? (() => {
+                // STD_ITEMS에서 원본 데이터 찾기
+                const std = STD_ITEMS.find(x => x.title === selectedSearchResult.title) || null;
+                return (
+                  <>
+                    <h2 className="text-sm font-semibold leading-snug">{selectedSearchResult.title}</h2>
+                    {std && (std.ref || std.basis) && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
+                        {std.ref && <p className="text-xs font-semibold text-blue-600">{std.ref}</p>}
+                        {std.basis && <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5">{std.basis}</p>}
+                      </div>
+                    )}
+                    {std?.conclusion && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">표준화</p>
+                        <p className="text-xs text-foreground leading-relaxed border-l-2 border-amber-400 pl-2.5">{std.conclusion}</p>
+                      </div>
+                    )}
+                    {!std && <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>}
+                    <div className="pt-2 border-t border-border">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">출처</p>
+                      <p className="text-xs font-medium text-muted-foreground">{std?.source || ""}</p>
+                    </div>
+                  </>
+                );
+              })() : (
+                <>
+                  <h2 className="text-base font-semibold pr-4">{selectedSearchResult.title}</h2>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>
+                  <button
+                    className="w-full mt-3 text-sm bg-primary text-primary-foreground rounded-xl py-2.5 hover:bg-primary/90"
+                    onClick={() => {
+                      const targetId = selectedSearchResult.query;
+                      setSelectedSearchResult(null);
+                      window.dispatchEvent(new CustomEvent("openInspectionDetail", { detail: { itemId: targetId } }));
+                    }}
+                  >
+                    항목 상세보기 →
+                  </button>
+                </>
               )}
             </div>
           </div>
