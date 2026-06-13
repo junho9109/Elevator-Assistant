@@ -14,6 +14,10 @@ import {
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
+import STD_DATA from "@/data/표준화_parsed.json";
+type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
+const STD_ITEMS = STD_DATA as StdItem[];
+const STD_CATEGORIES = ["전체", "기계실", "피트", "승강로", "카상부", "카·문", "에스컬레이터", "주행성능", "제동장치", "완충기", "과속조절기", "덤웨이터", "휠체어리프트", "안전회로", "기타"];
 
 // ==================== 규칙 기반 AI 챗봇 ====================
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
@@ -31,13 +35,26 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   if (!kw || kw.length < 2) return [];
   const results: SearchResult[] = [];
 
-  // 표준화 검색
+  // 표준화 검색 (DB standards)
   standards.forEach(s => {
     if ((s.title || "").toLowerCase().includes(kw) || (s.body || "").toLowerCase().includes(kw)) {
       results.push({
         type: "standard",
         title: s.title,
         content: s.body ? s.body.slice(0, 100) + (s.body.length > 100 ? "..." : "") : "",
+        query: s.title
+      });
+    }
+  });
+
+  // 표준화 파싱 데이터 검색 (표준화_parsed.json)
+  STD_ITEMS.forEach(s => {
+    const searchText = `${s.title} ${s.ref} ${s.basis} ${s.conclusion}`.toLowerCase();
+    if (searchText.includes(kw)) {
+      results.push({
+        type: "standard",
+        title: s.title,
+        content: s.conclusion ? s.conclusion.slice(0, 100) + (s.conclusion.length > 100 ? "..." : "") : s.basis.slice(0, 100),
         query: s.title
       });
     }
@@ -225,6 +242,10 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   // 구조도/표준화
   const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
   const [selectedStandard, setSelectedStandard] = useState<Standard | null>(null);
+  // 표준화 탭 상태
+  const [stdCategory, setStdCategory] = useState("전체");
+  const [stdSelected, setStdSelected] = useState<StdItem | null>(null);
+  const [stdSearch, setStdSearch] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStandard, setEditingStandard] = useState<Standard | null>(null);
@@ -1192,33 +1213,69 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
 
             {/* 표준화 목록 */}
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
-              <div className="p-4 border-b border-border">
-                <h3 className="font-semibold mb-3">
-                  {activeButton ? `${activeButton.label} 기준 목록` : "전체 기준 목록"}
-                </h3>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="기준 검색..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 bg-secondary border-0" />
+              <div className="p-3 border-b border-border">
+                <h3 className="font-semibold text-sm mb-2">표준화 자료 ({STD_ITEMS.length}건)</h3>
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input placeholder="검색..." value={stdSearch} onChange={e => setStdSearch(e.target.value)} className="pl-9 h-8 text-xs bg-secondary border-0" />
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {STD_CATEGORIES.map(cat => {
+                    const cnt = cat === "전체" ? STD_ITEMS.length : STD_ITEMS.filter(x => x.category === cat).length;
+                    if (cnt === 0) return null;
+                    return (
+                      <button key={cat} onClick={() => setStdCategory(cat)}
+                        className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${stdCategory === cat ? "bg-foreground text-background border-foreground" : "bg-background border-border text-muted-foreground hover:bg-muted"}`}>
+                        {cat} <span className="opacity-60">{cnt}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="divide-y divide-border">
-                {displayItems.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-10 text-sm">기준이 없습니다</p>
-                ) : (
-                  displayItems.map(standard => (
-                    <div key={standard.id} className="p-4 hover:bg-muted/50 cursor-pointer transition-colors" onClick={() => setSelectedStandard(standard)}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-sm mb-1 truncate">{standard.title}</h4>
-                          {standard.standardNumber && <Badge variant="outline" className="text-xs mb-1">{standard.standardNumber}</Badge>}
-                          <p className="text-muted-foreground text-xs leading-relaxed line-clamp-2">{standard.body}</p>
-                        </div>
-                      </div>
+              <div className="divide-y divide-border max-h-96 overflow-y-auto">
+                {(() => {
+                  const filtered = STD_ITEMS.filter(x =>
+                    (stdCategory === "전체" || x.category === stdCategory) &&
+                    (!stdSearch || x.title.includes(stdSearch) || x.ref.includes(stdSearch) || x.conclusion.includes(stdSearch))
+                  );
+                  if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과가 없습니다</p>;
+                  return filtered.map((item, idx) => (
+                    <div key={idx} onClick={() => setStdSelected(item)}
+                      className={`p-3 cursor-pointer transition-colors ${stdSelected === item ? "bg-blue-500/5 border-l-2 border-l-blue-500" : "hover:bg-muted/50"}`}>
+                      <div className="text-sm font-medium leading-snug text-foreground mb-1 line-clamp-2">{item.title}</div>
+                      <div className="text-[11px] text-muted-foreground">{item.source} · {item.typeTag}</div>
                     </div>
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             </div>
+
+            {/* 표준화 상세 카드 */}
+            {stdSelected && (
+              <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <h4 className="text-sm font-semibold leading-snug text-foreground">{stdSelected.title}</h4>
+                  <button onClick={() => setStdSelected(null)} className="text-muted-foreground shrink-0 mt-0.5"><X className="h-4 w-4" /></button>
+                </div>
+                {(stdSelected.ref || stdSelected.basis) && (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
+                    {stdSelected.ref && <p className="text-xs font-semibold text-blue-600">{stdSelected.ref}</p>}
+                    {stdSelected.basis && <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5">{stdSelected.basis}</p>}
+                  </div>
+                )}
+                {stdSelected.conclusion && (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-bold text-muted-foreground tracking-wide">표준화</p>
+                    <p className="text-xs text-foreground leading-relaxed border-l-2 border-amber-400 pl-2.5">{stdSelected.conclusion}</p>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-border">
+                  <p className="text-[10px] text-muted-foreground mb-0.5">출처</p>
+                  <p className="text-xs font-medium text-muted-foreground">{stdSelected.source}</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
