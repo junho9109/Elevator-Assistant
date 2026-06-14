@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
+import ReactMarkdown from "react-markdown";
 import STD_DATA from "@/data/표준화_parsed.json";
 type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
 const STD_ITEMS = STD_DATA as StdItem[];
@@ -952,20 +953,36 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 )}
                 <div className={`max-w-[80%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1.5`}>
                   {msg.content && (
-                  <div className={`rounded-2xl px-3 py-2.5 text-sm leading-snug whitespace-pre-line ${
+                  <div className={`rounded-2xl px-3 py-2.5 text-sm leading-relaxed ${
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-tr-sm"
+                      ? "bg-primary text-primary-foreground rounded-tr-sm whitespace-pre-line"
                       : "bg-card border border-border rounded-tl-sm"
                   }`}>
-                    {msg.content.split('\n').map((line, i) => {
-                    const isBold = /^[0-9]+(위|\.) /.test(line) || /^•/.test(line);
-                    return (
-                      <span key={i}>
-                        {i > 0 && <br />}
-                        {isBold ? <span className="font-medium">{line}</span> : line}
-                      </span>
-                    );
-                  })}
+                    {msg.role === "assistant" ? (
+                      <ReactMarkdown
+                        components={{
+                          h1: ({children}) => <p className="font-bold text-base mb-1">{children}</p>,
+                          h2: ({children}) => <p className="font-bold text-sm mt-2 mb-1">{children}</p>,
+                          h3: ({children}) => <p className="font-semibold text-sm mt-1.5 mb-0.5">{children}</p>,
+                          strong: ({children}) => <strong className="font-semibold">{children}</strong>,
+                          ul: ({children}) => <ul className="list-disc pl-4 my-1 space-y-0.5">{children}</ul>,
+                          ol: ({children}) => <ol className="list-decimal pl-4 my-1 space-y-0.5">{children}</ol>,
+                          li: ({children}) => <li className="text-sm">{children}</li>,
+                          p: ({children}) => <p className="mb-1 last:mb-0">{children}</p>,
+                          table: ({children}) => <div className="overflow-x-auto my-1.5"><table className="text-xs border-collapse w-full">{children}</table></div>,
+                          th: ({children}) => <th className="border border-border px-2 py-1 bg-muted font-semibold text-left">{children}</th>,
+                          td: ({children}) => <td className="border border-border px-2 py-1">{children}</td>,
+                          code: ({children}) => <code className="bg-muted px-1 rounded text-xs font-mono">{children}</code>,
+                          hr: () => <hr className="border-border my-2" />,
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
+                    ) : (
+                      msg.content.split('\n').map((line, i) => (
+                        <span key={i}>{i > 0 && <br />}{line}</span>
+                      ))
+                    )}
                   </div>
                 )}
                   <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
