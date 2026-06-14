@@ -230,7 +230,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: `엘리베이터 통합 챗봇입니다.\n\n키워드를 입력하세요. 예시) 비상통화장치, 잠금장치`,
+      content: `안녕하세요! 승강기 안전검사 AI 어시스턴트입니다.\n\n검사기준, 판정 방법, 표준화 내용 등 궁금한 것을 자유롭게 물어보세요.\n\n예시) "비상통화장치가 작동 안 할 때 판정은?", "균형추 칸막이 설치 기준", "스커트디플렉터 소급적용"`,
       time: formatTime()
     }
   ]);
@@ -330,68 +330,86 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   }, [messages, isTyping]);
 
   // 메시지 전송
-  const sendMessage = useCallback((text: string) => {
+  const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
     const userMsg: Message = { role: "user", content: text, time: formatTime() };
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
     setIsTyping(true);
-    setTimeout(() => {
-      let answer = getRuleBasedAnswer(text);
-      let searchResults: SearchResult[] | undefined;
 
-      // 키워드 검색: 항상 표준화+검사기준에서 검색해서 관련 항목 표시
-      const results = searchAllData(text, standards);
-      if (results.length > 0) {
-        searchResults = results;
-        // 규칙 기반 답변이 없으면 검색 결과 안내 메시지
-        if (!answer) {
-          answer = `"${text}"에 대한 검색 결과 ${results.length}건입니다. 아래 항목을 눌러 자세한 내용을 확인하세요.`;
-        } else {
-          // 규칙 기반 답변이 있어도 관련 자료 함께 표시
-          answer += `
-
-📎 관련 자료 ${results.length}건을 찾았습니다. 아래를 눌러 확인하세요.`;
-        }
-      } else if (!answer) {
-        answer = `"${text}"에 대한 검색 결과가 없습니다. 다른 키워드로 검색해보세요.`;
+    // 사고 통계 질문 처리 (기존 로직 유지)
+    const q = text.toLowerCase();
+    if ((q.includes("사고") || q.includes("통계") || q.includes("연도별")) && accidentStats.yearly.length > 0) {
+      const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
+      const prev = accidentStats.yearly[accidentStats.yearly.length - 2];
+      if (latest) {
+        const answer = `공공데이터 기준 최신 승강기 안전사고 통계\n\n${latest.wrttimeid || latest.year || latest.stdr_year}년 현황\n• 승객용 엘리베이터: ${latest.pasngr_elvtr_acc_cnt || "-"}건\n• 화물용 엘리베이터: ${latest.freight_elvtr_acc_cnt || "-"}건\n• 에스컬레이터: ${latest.escalator_acc_cnt || "-"}건\n• 합계: ${latest.tot_acc_cnt || "-"}건${prev ? `\n\n전년(${prev.wrttimeid || prev.year || prev.stdr_year}년) 대비 추이를 확인하시려면 검사가이드 페이지를 참고하세요.` : ""}\n\n출처: 행정안전부 통계연보`;
+        setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime() }]);
+        setIsTyping(false);
+        return;
       }
-      // 사고 통계 질문 시 실시간 데이터 반영
-      const q = text.toLowerCase();
-      if ((q.includes("사고") || q.includes("통계") || q.includes("연도별")) && accidentStats.yearly.length > 0) {
-        const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
-        const prev = accidentStats.yearly[accidentStats.yearly.length - 2];
-        if (latest) {
-          answer = `공공데이터 기준 최신 승강기 안전사고 통계
-
-${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
-• 승객용 엘리베이터: ${latest.pasngr_elvtr_acc_cnt || latest.passengerElevatorAccidentCount || latest.safe_acci_only_passenger || "-"}건
-• 화물용 엘리베이터: ${latest.freight_elvtr_acc_cnt || latest.freightElevatorAccidentCount || "-"}건
-• 에스컬레이터: ${latest.escalator_acc_cnt || latest.escalatorAccidentCount || latest.safe_acci_escalator || "-"}건
-• 합계: ${latest.tot_acc_cnt || latest.totalAccidentCount || latest.safe_acci_smry || "-"}건${prev ? `
-
-전년(${prev.wrttimeid || prev.year || prev.stdr_year}년) 대비 추이를 확인하시려면 검사가이드 페이지를 참고하세요.` : ""}
-
-출처: 행정안전부 통계연보`;
-        }
-      }
-      if ((q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.age.length > 0) {
-        const ageData = accidentStats.age;
-        const latest = ageData[ageData.length - 1];
-        const year = latest.wrttimeid;
-        const tot = parseInt(latest.tot);
-        const child = parseInt(latest.old14_lss);
-        const adult = parseInt(latest.old15_mor_old64_lss);
-        const elder = parseInt(latest.old65_mor);
-        const childPct = Math.round(child/tot*100);
-        const adultPct = Math.round(adult/tot*100);
-        const elderPct = Math.round(elder/tot*100);
-        answer = `행정안전부 연령별 사고 통계 (${year}년)\n\n• 14세 이하: ${child}명 (${childPct}%)\n• 15~64세: ${adult}명 (${adultPct}%)\n• 65세 이상: ${elder}명 (${elderPct}%)\n• 합계: ${tot}명\n\n고령자(65세 이상) 비율이 ${elderPct}%로 가장 높습니다.\n점검 시 고령자 이용 구간 안전장치를 집중 확인하세요.\n\n출처: 행정안전부 통계연보`;
-      }
-      setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime(), searchResults }]);
+    }
+    if ((q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.age.length > 0) {
+      const latest = accidentStats.age[accidentStats.age.length - 1];
+      const tot = parseInt(latest.tot);
+      const child = parseInt(latest.old14_lss);
+      const adult = parseInt(latest.old15_mor_old64_lss);
+      const elder = parseInt(latest.old65_mor);
+      const answer = `행정안전부 연령별 사고 통계 (${latest.wrttimeid}년)\n\n• 14세 이하: ${child}명 (${Math.round(child/tot*100)}%)\n• 15~64세: ${adult}명 (${Math.round(adult/tot*100)}%)\n• 65세 이상: ${elder}명 (${Math.round(elder/tot*100)}%)\n• 합계: ${tot}명\n\n출처: 행정안전부 통계연보`;
+      setMessages(prev => [...prev, { role: "assistant", content: answer, time: formatTime() }]);
       setIsTyping(false);
-    }, 600);
-  }, [accidentStats, standards]);
+      return;
+    }
+
+    // 관련 표준화 자료 검색 (상위 8개)
+    const results = searchAllData(text, standards);
+    const searchResults = results.length > 0 ? results.slice(0, 8) : undefined;
+
+    // AI API 호출
+    try {
+      // 대화 히스토리 구성 (최근 10개)
+      const historyMsgs = messages
+        .slice(-10)
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+      historyMsgs.push({ role: "user", content: text });
+
+      // 관련 자료 컨텍스트
+      const context = results.slice(0, 6).map(r => {
+        const std = STD_ITEMS.find(s => s.title === r.title);
+        return std
+          ? { title: std.title, ref: std.ref, basis: std.basis, conclusion: std.conclusion, source: std.source }
+          : { title: r.title, ref: "", basis: r.content, conclusion: "", source: "" };
+      });
+
+      const resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: historyMsgs, context }),
+      });
+
+      if (!resp.ok) throw new Error("서버 오류");
+      const data = await resp.json();
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: data.reply,
+        time: formatTime(),
+        searchResults,
+      }]);
+    } catch {
+      // AI 실패 시 기존 키워드 검색 결과로 폴백
+      const fallback = searchResults
+        ? `"${text}"에 대한 검색 결과 ${results.length}건입니다. 아래 항목을 눌러 확인하세요.`
+        : `"${text}"에 대한 검색 결과가 없습니다. 다른 키워드로 검색해보세요.`;
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: fallback,
+        time: formatTime(),
+        searchResults,
+      }]);
+    }
+    setIsTyping(false);
+  }, [accidentStats, standards, messages]);
 
   // 리더라인 설정 (카드 오프셋 저장값 우선, 없으면 자동 계산)
   const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {
@@ -908,7 +926,7 @@ ${latest.wrttimeid || latest.year || latest.stdr_year}년 현황
               {defaultTab === "chat" ? <Bot className="h-3 w-3 text-primary-foreground" /> : <ImageIcon className="h-3 w-3 text-primary-foreground" />}
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight">{defaultTab === "chat" ? "챗봇" : "기술자료"}</h1>
+              <h1 className="text-lg font-bold tracking-tight">{defaultTab === "chat" ? "AI 검색" : "기술자료"}</h1>
               
             </div>
           </div>
