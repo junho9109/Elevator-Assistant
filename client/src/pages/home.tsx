@@ -24,12 +24,6 @@ const STD_CATEGORIES = ["전체", "기계실", "피트", "승강로", "카상부
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
 type SearchResult = { type: "standard" | "inspection"; title: string; content: string; query: string; };
 
-const QUICK_QUESTIONS = [
-  "오늘 안전 체크리스트",
-  "최신 사고 통계",
-  "연령별 사고 현황",
-];
-
 // 키워드로 표준화+검사기준 검색
 function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   const kw = keyword.toLowerCase().trim();
@@ -1071,17 +1065,6 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               </div>
             )}
             <div ref={messagesEndRef} />
-          </div>
-
-          {/* 빠른 질문 */}
-          <div className="px-4 py-2 border-t border-border bg-card shrink-0">
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-              {QUICK_QUESTIONS.map((q, i) => (
-                <button key={i} onClick={() => sendMessage(q)} className="flex-shrink-0 text-xs bg-secondary text-secondary-foreground rounded-full px-3 py-1.5 hover:bg-primary hover:text-primary-foreground transition-colors">
-                  {q}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* 입력창 */}

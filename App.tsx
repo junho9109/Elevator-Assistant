@@ -24,7 +24,7 @@ function MainApp() {
         <SafetyPage key="safety" />
       ]}
       pageNames={[
-        "챗봇",
+        "AI검색",
         "기술자료",
         "검사가이드",
         "정밀안전검사",
