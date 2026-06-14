@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
+import INSPECTION_CONTENT from "@/data/inspection-content.json";
 import ReactMarkdown from "react-markdown";
 import STD_DATA from "@/data/표준화_parsed.json";
 type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
@@ -55,19 +56,28 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
     }
   });
 
-  // 검사기준 검색 (INSPECTION_DATA_MR)
+  // 검사기준 검색 (inspection-content.json — 실제 본문)
+  Object.entries(INSPECTION_CONTENT as Record<string, any>).forEach(([id, val]) => {
+    const text = (val.text || "") as string;
+    if (text.toLowerCase().includes(kw)) {
+      results.push({
+        type: "inspection",
+        title: `[${id}] ${text.slice(0, 40)}`,
+        content: text.slice(0, 120),
+        query: id,
+      });
+    }
+  });
+
+  // INSPECTION_DATA_MR 섹션 제목 검색
   const searchSection = (sections: any[]) => {
     sections.forEach(sec => {
-      if (sec.items) {
-        sec.items.forEach((item: any) => {
-          if ((item.text || "").toLowerCase().includes(kw) || (item.id || "").toLowerCase().includes(kw)) {
-            results.push({
-              type: "inspection",
-              title: `[${item.id}] ${sec.title || ""}`,
-              content: item.text || "",
-              query: item.id
-            });
-          }
+      if ((sec.title || "").toLowerCase().includes(kw)) {
+        results.push({
+          type: "inspection",
+          title: sec.title || "",
+          content: `검사기준 섹션: ${sec.title}`,
+          query: sec.id || sec.title,
         });
       }
       if (sec.subsections) searchSection(sec.subsections);
@@ -385,13 +395,18 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
       historyMsgs.push({ role: "user", content: text });
 
-      // 관련 자료 컨텍스트
+      // 관련 자료 컨텍스트 — 깨끗한 데이터만 전달
       const context = results.slice(0, 6).map(r => {
         const std = STD_ITEMS.find(s => s.title === r.title);
-        return std
-          ? { title: std.title, ref: std.ref, basis: std.basis, conclusion: std.conclusion, source: std.source }
-          : { title: r.title, ref: "", basis: r.content, conclusion: "", source: "" };
-      });
+        if (std) {
+          // 결론이 너무 짧거나 깨진 경우 제외
+          const cleanConc = std.conclusion.length > 10 ? std.conclusion.slice(0, 300) : "";
+          const cleanBasis = std.basis.slice(0, 200);
+          return { title: std.title, ref: std.ref, basis: cleanBasis, conclusion: cleanConc, source: std.source };
+        }
+        // 검사기준 항목
+        return { title: r.title, ref: r.query, basis: r.content.slice(0, 200), conclusion: "", source: "검사기준" };
+      }).filter(c => c.title && (c.basis || c.conclusion));
 
       const resp = await fetch("/api/chat", {
         method: "POST",
