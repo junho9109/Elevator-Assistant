@@ -362,8 +362,23 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       return;
     }
 
-    // 관련 표준화 자료 검색 (상위 8개)
-    const results = searchAllData(text, standards);
+    // 관련 표준화 자료 검색 — 키워드를 분해해서 더 넓게 검색
+    const keywords = text.replace(/[?？]/g, "").split(/\s+/).filter(k => k.length >= 2);
+    let results = searchAllData(text, standards);
+    // 단일 키워드 검색으로 결과가 없으면 분해된 키워드로 재검색
+    if (results.length === 0 && keywords.length > 1) {
+      for (const kw of keywords) {
+        const r = searchAllData(kw, standards);
+        results.push(...r);
+      }
+      // 중복 제거
+      const seen = new Set<string>();
+      results = results.filter(r => {
+        if (seen.has(r.title)) return false;
+        seen.add(r.title);
+        return true;
+      });
+    }
     const searchResults = results.length > 0 ? results.slice(0, 8) : undefined;
 
     // AI API 호출
@@ -391,11 +406,29 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
       if (!resp.ok) throw new Error("서버 오류");
       const data = await resp.json();
+
+      // AI 답변에서도 키워드 추출해서 추가 검색
+      let finalResults = results.slice(0, 8);
+      if (finalResults.length === 0 && data.reply) {
+        const replyKeywords = data.reply.match(/[\uAC00-\uD7A3]{2,6}/g) || [];
+        const uniqueKws = [...new Set(replyKeywords)].slice(0, 5);
+        for (const kw of uniqueKws) {
+          const r = searchAllData(kw, standards);
+          finalResults.push(...r);
+        }
+        const seen = new Set<string>();
+        finalResults = finalResults.filter(r => {
+          if (seen.has(r.title)) return false;
+          seen.add(r.title);
+          return true;
+        }).slice(0, 8);
+      }
+
       setMessages(prev => [...prev, {
         role: "assistant",
         content: data.reply,
         time: formatTime(),
-        searchResults,
+        searchResults: finalResults.length > 0 ? finalResults : undefined,
       }]);
     } catch (err: any) {
       console.error("Chat fetch error:", err);
