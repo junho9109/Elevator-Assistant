@@ -92,19 +92,16 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   const stdResults = results.filter(r => r.type === "standard");
   const insResults = results.filter(r => r.type === "inspection");
 
-  // 표준화 중복 제거 (제목 기준)
+  // 표준화 중복 제거
   const seenStd = new Set<string>();
   const dedupedStd = stdResults.filter(r => {
     const key = r.title.slice(0, 30);
     if (seenStd.has(key)) return false;
     seenStd.add(key);
     return true;
-  }).slice(0, 5);
+  });
 
-  // 검사기준 상위 5개
-  const dedupedIns = insResults.slice(0, 5);
-
-  return [...dedupedStd, ...dedupedIns];
+  return [...dedupedStd, ...insResults];
 }
 
 function getRuleBasedAnswer(question: string): string {
@@ -403,7 +400,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         return true;
       });
     }
-    const searchResults = results.length > 0 ? results.slice(0, 10) : undefined;
+    const searchResults = results.length > 0 ? results : undefined;
 
     // AI API 호출
     try {
@@ -437,7 +434,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       const data = await resp.json();
 
       // AI 답변 결과 — 표준화+검사기준 둘 다 포함, 최대 10개
-      let finalResults = results.slice(0, 10);
+      let finalResults = results;
       if (finalResults.length === 0 && data.reply) {
         const replyKeywords = data.reply.match(/[\uAC00-\uD7A3]{2,6}/g) || [];
         const uniqueKws = [...new Set(replyKeywords)].slice(0, 5);
