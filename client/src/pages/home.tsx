@@ -65,8 +65,8 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
     if (text.toLowerCase().includes(kw)) {
       results.push({
         type: "inspection",
-        title: `[${id}] ${text.slice(0, 45).replace(/\n/g, " ")}`,
-        content: text.slice(0, 150).replace(/\n/g, " "),
+        title: `[${id}] ${text.slice(0, 60).replace(/\n/g, " ")}`,
+        content: text.replace(/\n/g, " "),
         query: id,
       });
     }
@@ -1528,7 +1528,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 shrink-0"
                         onClick={() => {
                           setSelectedSearchResult(null);
-                          window.dispatchEvent(new CustomEvent("openInspectionDetail", { detail: { itemId } }));
+                          // 검사가이드 페이지로 이동 후 항목 열기
+                          sessionStorage.setItem("pendingInspectionDetail", itemId);
+                          window.location.href = "/judgment";
                         }}
                       >
                         검사가이드에서 보기 →

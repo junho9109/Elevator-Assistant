@@ -559,6 +559,27 @@ export default function JudgmentPage() {
 
   // 챗봇에서 항목 상세보기 열기 이벤트 수신
   useEffect(() => {
+    // sessionStorage에서 대기 중인 항목 확인 (AI검색 → 검사가이드 이동 시)
+    const pendingId = sessionStorage.getItem("pendingInspectionDetail");
+    if (pendingId) {
+      sessionStorage.removeItem("pendingInspectionDetail");
+      const findItem = (sections: any[]): any => {
+        for (const sec of sections) {
+          if (sec.items) {
+            const found = sec.items.find((it: any) => it.id === pendingId);
+            if (found) return found;
+          }
+          if (sec.subsections) {
+            const found = findItem(sec.subsections);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const item = findItem(INSPECTION_DATA_MR);
+      if (item) setTimeout(() => handleOpenDetail(item), 300);
+    }
+
     const handler = (e: any) => {
       const itemId = e.detail?.itemId;
       if (!itemId) return;
