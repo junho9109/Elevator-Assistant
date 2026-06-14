@@ -18,6 +18,7 @@
   },
   "notes": "removed framer motion dependency",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
     "@capacitor/android": "^8.2.0",
     "@capacitor/live-updates": "^0.5.0",
     "@hookform/resolvers": "^3.10.0",

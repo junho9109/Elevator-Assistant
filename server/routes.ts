@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
+import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "./storage";
 import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema } from "@shared/schema";
 
@@ -980,6 +981,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(item);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch inspection base item" });
+    }
+  });
+
+  // ==================== AI 챗봇 ====================
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const { messages, context } = req.body as {
+        messages: { role: "user" | "assistant"; content: string }[];
+        context?: { title: string; ref?: string; basis?: string; conclusion?: string; source?: string }[];
+      };
+
+      if (!messages || messages.length === 0) {
+        return res.status(400).json({ error: "messages 필드가 필요합니다." });
+      }
+
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+      // 검색된 관련 자료를 시스템 프롬프트에 포함
+      const contextText = context && context.length > 0
+        ? `\n\n[관련 표준화 자료]\n` + context.map((c, i) =>
+            `${i + 1}. **${c.title}**\n` +
+            (c.ref ? `   근거: ${c.ref}\n` : "") +
+            (c.basis ? `   검사기준: ${c.basis}\n` : "") +
+            (c.conclusion ? `   표준화 결론: ${c.conclusion}\n` : "") +
+            (c.source ? `   출처: ${c.source}` : "")
+          ).join("\n\n")
+        : "";
+
+      const systemPrompt = `당신은 한국 승강기 안전 검사 전문 어시스턴트입니다.
+승강기 안전검사기준, 검사 판정 방법, 표준화 자료를 기반으로 검사원들의 질문에 정확하고 실용적으로 답변합니다.
+
+답변 원칙:
+- 검사기준 조문번호([별표1] 등)를 가능하면 명시
+- 판정 기준(합격/조건부합격/불합격/시정권고)을 명확히 제시
+- 종전/개정 기준 구분이 필요한 경우 명시
+- 모르거나 불확실한 내용은 솔직히 밝히고 공식 기준 확인 권고
+- 답변은 간결하고 현장에서 바로 활용할 수 있도록 작성${contextText}`;
+
+      const response = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: messages,
+      });
+
+      const reply = response.content[0].type === "text" ? response.content[0].text : "";
+      res.json({ reply });
+
+    } catch (error: any) {
+      console.error("Chat API error:", error);
+      if (error?.status === 401) {
+        return res.status(500).json({ error: "API 키 오류입니다. 관리자에게 문의하세요." });
+      }
+      res.status(500).json({ error: "AI 응답 생성 중 오류가 발생했습니다." });
     }
   });
 
