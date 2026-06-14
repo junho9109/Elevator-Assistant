@@ -1488,22 +1488,42 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     </div>
                   </>
                 );
-              })() : (
-                <>
-                  <h2 className="text-base font-semibold pr-4">{selectedSearchResult.title}</h2>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>
-                  <button
-                    className="w-full mt-3 text-sm bg-primary text-primary-foreground rounded-xl py-2.5 hover:bg-primary/90"
-                    onClick={() => {
-                      const targetId = selectedSearchResult.query;
-                      setSelectedSearchResult(null);
-                      window.dispatchEvent(new CustomEvent("openInspectionDetail", { detail: { itemId: targetId } }));
-                    }}
-                  >
-                    항목 상세보기 →
-                  </button>
-                </>
-              )}
+              })() : (() => {
+                // inspection-content.json에서 해당 항목 전체 데이터 조회
+                const itemId = selectedSearchResult.query;
+                const entry = (INSPECTION_CONTENT as Record<string, any>)[itemId];
+                const revisions = entry?.revisions || [];
+                const latestRev = revisions[revisions.length - 1];
+                return (
+                  <>
+                    <h2 className="text-sm font-semibold leading-snug pr-4">{selectedSearchResult.title}</h2>
+                    {entry?.text && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5 whitespace-pre-wrap">{entry.text}</p>
+                      </div>
+                    )}
+                    {latestRev && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">적용일</p>
+                        <p className="text-xs text-foreground border-l-2 border-amber-400 pl-2.5">{latestRev.effectiveDate} 이후 건축허가분부터 적용</p>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
+                      <p className="text-[10px] text-muted-foreground">항목 ID: {itemId}</p>
+                      <button
+                        className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 shrink-0"
+                        onClick={() => {
+                          setSelectedSearchResult(null);
+                          window.dispatchEvent(new CustomEvent("openInspectionDetail", { detail: { itemId } }));
+                        }}
+                      >
+                        검사가이드에서 보기 →
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>,
