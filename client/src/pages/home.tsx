@@ -59,11 +59,14 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   // 검사기준 검색 (inspection-content.json — 실제 본문)
   Object.entries(INSPECTION_CONTENT as Record<string, any>).forEach(([id, val]) => {
     const text = (val.text || "") as string;
+    // 텍스트가 너무 짧거나 부속서/연혁집 같은 항목 제외
+    if (text.length < 10) return;
+    if (text.includes("연혁집") || text.includes("부속서\n")) return;
     if (text.toLowerCase().includes(kw)) {
       results.push({
         type: "inspection",
-        title: `[${id}] ${text.slice(0, 40)}`,
-        content: text.slice(0, 120),
+        title: `[${id}] ${text.slice(0, 45).replace(/\n/g, " ")}`,
+        content: text.slice(0, 150).replace(/\n/g, " "),
         query: id,
       });
     }
@@ -85,7 +88,7 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   };
   searchSection(INSPECTION_DATA_MR);
 
-  return results.slice(0, 10); // 최대 10개
+  return results.slice(0, 15); // 최대 15개
 }
 
 function getRuleBasedAnswer(question: string): string {
@@ -417,8 +420,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       if (!resp.ok) throw new Error("서버 오류");
       const data = await resp.json();
 
-      // AI 답변에서도 키워드 추출해서 추가 검색
-      let finalResults = results.slice(0, 8);
+      // AI 답변 결과 — 표준화+검사기준 둘 다 포함, 최대 10개
+      let finalResults = results.slice(0, 10);
       if (finalResults.length === 0 && data.reply) {
         const replyKeywords = data.reply.match(/[\uAC00-\uD7A3]{2,6}/g) || [];
         const uniqueKws = [...new Set(replyKeywords)].slice(0, 5);
