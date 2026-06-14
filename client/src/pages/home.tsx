@@ -57,9 +57,9 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   });
 
   // 검사기준 검색 (inspection-content.json — 실제 본문)
-  Object.entries(INSPECTION_CONTENT as Record<string, any>).forEach(([id, val]) => {
-    const text = (val.text || "") as string;
-    // 텍스트가 너무 짧거나 부속서/연혁집 같은 항목 제외
+  const contentEntries = Object.entries(INSPECTION_CONTENT as unknown as Record<string, {text?: string; effectiveDate?: string; revisions?: any[]}>);
+  contentEntries.forEach(([id, val]) => {
+    const text = val.text || "";
     if (text.length < 10) return;
     if (text.includes("연혁집") || text.includes("부속서\n")) return;
     if (text.toLowerCase().includes(kw)) {
@@ -1491,7 +1491,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               })() : (() => {
                 // inspection-content.json에서 해당 항목 전체 데이터 조회
                 const itemId = selectedSearchResult.query;
-                const entry = (INSPECTION_CONTENT as Record<string, any>)[itemId];
+                const entry = (INSPECTION_CONTENT as unknown as Record<string, {text?: string; revisions?: any[]}>)[itemId];
                 const revisions = entry?.revisions || [];
                 const latestRev = revisions[revisions.length - 1];
                 return (
