@@ -557,11 +557,11 @@ export default function JudgmentPage() {
     return () => window.removeEventListener("highlightInspectionItem", handler);
   }, []);
 
-  // 챗봇에서 항목 상세보기 열기 이벤트 수신
+  // AI검색에서 항목 상세보기 열기 — navigatePage 이벤트 + sessionStorage 연동
   useEffect(() => {
-    // sessionStorage에서 대기 중인 항목 확인 (AI검색 → 검사가이드 이동 시)
-    const pendingId = sessionStorage.getItem("pendingInspectionDetail");
-    if (pendingId) {
+    const checkPending = () => {
+      const pendingId = sessionStorage.getItem("pendingInspectionDetail");
+      if (!pendingId) return;
       sessionStorage.removeItem("pendingInspectionDetail");
       const findItem = (sections: any[]): any => {
         for (const sec of sections) {
@@ -577,8 +577,13 @@ export default function JudgmentPage() {
         return null;
       };
       const item = findItem(INSPECTION_DATA_MR);
-      if (item) setTimeout(() => handleOpenDetail(item), 300);
-    }
+      if (item) setTimeout(() => handleOpenDetail(item), 100);
+    };
+
+    // 마운트 시 + navigatePage 이벤트 발생 직후 체크
+    checkPending();
+    const navHandler = () => setTimeout(checkPending, 150);
+    window.addEventListener("navigatePage", navHandler);
 
     const handler = (e: any) => {
       const itemId = e.detail?.itemId;
@@ -603,7 +608,10 @@ export default function JudgmentPage() {
       }
     };
     window.addEventListener("openInspectionDetail", handler);
-    return () => window.removeEventListener("openInspectionDetail", handler);
+    return () => {
+      window.removeEventListener("navigatePage", navHandler);
+      window.removeEventListener("openInspectionDetail", handler);
+    };
   }, []);
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);

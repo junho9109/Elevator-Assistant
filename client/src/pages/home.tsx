@@ -1507,13 +1507,15 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 const entry = (INSPECTION_CONTENT as unknown as Record<string, {text?: string; revisions?: any[]}>)[itemId];
                 const revisions = entry?.revisions || [];
                 const latestRev = revisions[revisions.length - 1];
+                const fullText = entry?.text || selectedSearchResult.content;
                 return (
                   <>
-                    <h2 className="text-sm font-semibold leading-snug pr-4">{selectedSearchResult.title}</h2>
-                    {entry?.text && (
+                    {/* 제목: 버튼 제목(잘린 것) 대신 ID만 표시 */}
+                    <h2 className="text-sm font-semibold leading-snug pr-4">항목 [{itemId}]</h2>
+                    {fullText && (
                       <div className="space-y-1.5">
                         <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5 whitespace-pre-wrap">{entry.text}</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5 whitespace-pre-wrap">{fullText}</p>
                       </div>
                     )}
                     {latestRev && (
@@ -1528,9 +1530,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 shrink-0"
                         onClick={() => {
                           setSelectedSearchResult(null);
-                          // 검사가이드 페이지로 이동 후 항목 열기
+                          // SwipeNavigator의 navigatePage 이벤트로 검사가이드(index 2)로 전환
                           sessionStorage.setItem("pendingInspectionDetail", itemId);
-                          window.location.href = "/judgment";
+                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
                         }}
                       >
                         검사가이드에서 보기 →
