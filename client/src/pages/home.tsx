@@ -438,6 +438,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
       // AI 답변 결과 — 표준화+검사기준 둘 다 포함, 최대 10개
       let finalResults = results.slice(0, 10);
+      if (finalResults.length === 0 && data.reply) {
         const replyKeywords = data.reply.match(/[\uAC00-\uD7A3]{2,6}/g) || [];
         const uniqueKws = [...new Set(replyKeywords)].slice(0, 5);
         for (const kw of uniqueKws) {
@@ -449,7 +450,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
           if (seen.has(r.title)) return false;
           seen.add(r.title);
           return true;
-        }).slice(0, 8);
+        }).slice(0, 10);
       }
 
       setMessages(prev => [...prev, {
