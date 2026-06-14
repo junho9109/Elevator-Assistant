@@ -1030,11 +1030,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ reply });
 
     } catch (error: any) {
-      console.error("Chat API error:", error);
-      if (error?.status === 401) {
-        return res.status(500).json({ error: "API 키 오류입니다. 관리자에게 문의하세요." });
-      }
-      res.status(500).json({ error: "AI 응답 생성 중 오류가 발생했습니다." });
+      console.error("Chat API error:", error?.message || error);
+      console.error("Chat API error status:", error?.status);
+      console.error("ANTHROPIC_API_KEY set:", !!process.env.ANTHROPIC_API_KEY);
+      const msg = error?.status === 401 ? "API 키 오류"
+        : error?.status === 429 ? "요청 한도 초과"
+        : error?.message || "AI 응답 생성 오류";
+      res.status(500).json({ error: msg });
     }
   });
 

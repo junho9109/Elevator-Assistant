@@ -396,7 +396,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         time: formatTime(),
         searchResults,
       }]);
-    } catch {
+    } catch (err: any) {
+      console.error("Chat fetch error:", err);
       // AI 실패 시 기존 키워드 검색 결과로 폴백
       const fallback = searchResults
         ? `"${text}"에 대한 검색 결과 ${results.length}건입니다. 아래 항목을 눌러 확인하세요.`
