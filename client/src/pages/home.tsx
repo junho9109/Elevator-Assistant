@@ -306,8 +306,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
           cardOffsetsRef.current = parsed;
           setCardOffsets(parsed);
         }
+        setCardOffsetsLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => { setCardOffsetsLoaded(true); });
     fetch("/api/settings/structureImg")
       .then(r => r.json())
       .then(d => { if (d.value) setStructureImg(d.value); })
@@ -449,7 +450,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
     let cardCX: number, cardCY: number;
 
-    const offsetKey = hotspot.label;
+    const offsetKey = String(hotspot.id);
     if ((cardOffsets as any)[offsetKey]) {
       cardCX = ((cardOffsets as any)[offsetKey].cx / 100) * canvasW;
       cardCY = ((cardOffsets as any)[offsetKey].cy / 100) * canvasH;
@@ -564,9 +565,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         ctx.restore();
       });
     };
-  }, [hotspots, activeButtonId, structureImg, isAdminMode, cardOffsets]);
+  }, [hotspots, activeButtonId, structureImg, isAdminMode, cardOffsets, cardOffsetsLoaded]);
 
-  useEffect(() => { if (activeTab === "map") drawCanvas(); }, [drawCanvas, activeTab]);
+  useEffect(() => { if (activeTab === "map" && cardOffsetsLoaded) drawCanvas(); }, [drawCanvas, activeTab, cardOffsetsLoaded]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -652,7 +653,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       const newCX = px - cardDragOffset.x;
       const newCY = py - cardDragOffset.y;
       const touchHotspot = hotspots.find(h => h.id === draggingCardId);
-      const touchKey = touchHotspot ? touchHotspot.label : String(draggingCardId);
+      const touchKey = String(draggingCardId);
       const newOffsets = {
         ...cardOffsets,
         [touchKey]: {
@@ -773,7 +774,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       const newCX = px - cardDragOffset.x;
       const newCY = py - cardDragOffset.y;
       const draggingHotspot = hotspots.find(h => h.id === draggingCardId);
-      const draggingKey = draggingHotspot ? draggingHotspot.label : String(draggingCardId);
+      const draggingKey = String(draggingCardId);
       const newOffsets = {
         ...cardOffsetsRef.current,
         [draggingKey]: {
