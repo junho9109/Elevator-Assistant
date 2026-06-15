@@ -560,9 +560,10 @@ export default function JudgmentPage() {
   // AI검색에서 항목 상세보기 열기 — navigatePage 이벤트 + sessionStorage 연동
   useEffect(() => {
     const checkPending = () => {
-      const pendingId = sessionStorage.getItem("pendingInspectionDetail");
+      const pendingId = sessionStorage.getItem("pendingInspectionDetail") || sessionStorage.getItem("pendingJudgmentItem");
       if (!pendingId) return;
       sessionStorage.removeItem("pendingInspectionDetail");
+      sessionStorage.removeItem("pendingJudgmentItem");
       const findItem = (sections: any[]): any => {
         for (const sec of sections) {
           if (sec.items) {

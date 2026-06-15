@@ -23,7 +23,7 @@ const STD_CATEGORIES = ["전체", "기계실", "피트", "승강로", "카상부
 
 // ==================== 규칙 기반 AI 챗봇 ====================
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
-type SearchResult = { type: "standard" | "inspection"; title: string; content: string; query: string; };
+type SearchResult = { type: "standard" | "inspection" | "judgment"; title: string; content: string; query: string; };
 
 // 키워드로 표준화+검사기준 검색
 function searchAllData(keyword: string, standards: any[]): SearchResult[] {
@@ -88,9 +88,31 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   };
   searchSection(INSPECTION_DATA_MR);
 
-  // 표준화/검사기준 각각 최대 5개씩 분리
+  // 검사가이드 안전검사기준 검색 (INSPECTION_DATA_MR items)
+  const searchJudgment = (sections: any[]) => {
+    sections.forEach(sec => {
+      if (sec.items) {
+        sec.items.forEach((item: any) => {
+          const itemText = `${item.id || ""} ${item.text || ""} ${item.standard || ""}`.toLowerCase();
+          if (itemText.includes(kw)) {
+            results.push({
+              type: "judgment",
+              title: item.text ? item.text.slice(0, 50).replace(/\n/g, " ") : item.id,
+              content: item.text || "",
+              query: item.id || "",
+            });
+          }
+        });
+      }
+      if (sec.subsections) searchJudgment(sec.subsections);
+    });
+  };
+  searchJudgment(INSPECTION_DATA_MR);
+
+  // 표준화/검사기준/검사가이드 각각 분리
   const stdResults = results.filter(r => r.type === "standard");
   const insResults = results.filter(r => r.type === "inspection");
+  const judResults = results.filter(r => r.type === "judgment");
 
   // 표준화 중복 제거
   const seenStd = new Set<string>();
@@ -101,7 +123,15 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
     return true;
   });
 
-  return [...dedupedStd, ...insResults];
+  // 검사가이드 중복 제거
+  const seenJud = new Set<string>();
+  const dedupedJud = judResults.filter(r => {
+    if (seenJud.has(r.query)) return false;
+    seenJud.add(r.query);
+    return true;
+  });
+
+  return [...dedupedStd, ...dedupedJud, ...insResults];
 }
 
 function getRuleBasedAnswer(question: string): string {
@@ -1054,14 +1084,18 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                           className={`text-xs px-3 py-2 rounded-xl border text-left hover:opacity-80 transition-opacity ${
                             r.type === "standard"
                               ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30"
+                              : r.type === "judgment"
+                              ? "border-green-400 bg-green-50 dark:bg-green-950/30"
                               : "border-amber-400 bg-amber-50 dark:bg-amber-950/30"
                           }`}
                         >
                           <div className="flex items-center gap-1 mb-1">
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white ${
-                              r.type === "standard" ? "bg-blue-500" : "bg-amber-500"
+                              r.type === "standard" ? "bg-blue-500"
+                              : r.type === "judgment" ? "bg-green-500"
+                              : "bg-amber-500"
                             }`}>
-                              {r.type === "standard" ? "표준화" : "검사기준"}
+                              {r.type === "standard" ? "표준화" : r.type === "judgment" ? "안전검사기준" : "검사기준"}
                             </span>
                           </div>
                           <div className="font-medium text-foreground text-xs leading-tight">{r.title}</div>
@@ -1469,14 +1503,17 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setSelectedSearchResult(null)}>
           <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100% - 32px)",maxWidth:"512px",maxHeight:"85vh",overflowY:"auto",zIndex:10000}} className="bg-card rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} onFocus={e => e.stopPropagation()}>
             <div className="flex justify-between items-start p-4 border-b border-border">
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${selectedSearchResult.type === "standard" ? "bg-blue-500" : "bg-amber-500"}`}>
-                {selectedSearchResult.type === "standard" ? "표준화" : "검사기준"}
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${
+                selectedSearchResult.type === "standard" ? "bg-blue-500"
+                : selectedSearchResult.type === "judgment" ? "bg-green-500"
+                : "bg-amber-500"
+              }`}>
+                {selectedSearchResult.type === "standard" ? "표준화" : selectedSearchResult.type === "judgment" ? "안전검사기준" : "검사기준"}
               </span>
               <button onClick={() => setSelectedSearchResult(null)} className="text-muted-foreground hover:text-foreground p-1 shrink-0"><X className="h-5 w-5" /></button>
             </div>
             <div className="p-4 space-y-3">
               {selectedSearchResult.type === "standard" ? (() => {
-                // STD_ITEMS에서 원본 데이터 찾기
                 const std = STD_ITEMS.find(x => x.title === selectedSearchResult.title) || null;
                 return (
                   <>
@@ -1498,6 +1535,32 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     <div className="pt-2 border-t border-border">
                       <p className="text-[10px] text-muted-foreground mb-0.5">출처</p>
                       <p className="text-xs font-medium text-muted-foreground">{std?.source || ""}</p>
+                    </div>
+                  </>
+                );
+              })() : selectedSearchResult.type === "judgment" ? (() => {
+                // 검사가이드 항목 팝업
+                return (
+                  <>
+                    <h2 className="text-sm font-semibold leading-snug pr-4">{selectedSearchResult.title}</h2>
+                    {selectedSearchResult.content && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">안전검사기준 내용</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5 whitespace-pre-wrap">{selectedSearchResult.content}</p>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
+                      <p className="text-[10px] text-muted-foreground">항목 ID: {selectedSearchResult.query}</p>
+                      <button
+                        className="text-xs bg-green-600 text-white rounded-lg px-3 py-1.5 hover:bg-green-700 shrink-0"
+                        onClick={() => {
+                          setSelectedSearchResult(null);
+                          sessionStorage.setItem("pendingJudgmentItem", selectedSearchResult.query);
+                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
+                        }}
+                      >
+                        검사가이드에서 보기 →
+                      </button>
                     </div>
                   </>
                 );
