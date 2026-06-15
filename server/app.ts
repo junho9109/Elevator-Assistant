@@ -4,6 +4,25 @@ import path from "node:path"; // 추가
 import express, { type Express, type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { seedStandardIndex } from "./seed-standard-index";
+import { pool } from "./db";
+
+async function ensureChatTable() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id SERIAL PRIMARY KEY,
+        user_name VARCHAR(50) NOT NULL,
+        content TEXT NOT NULL,
+        reply_to_id INTEGER,
+        reply_to_user VARCHAR(50),
+        reply_to_content TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+  } catch (e) {
+    console.error("chat_messages 테이블 생성 실패:", e);
+  }
+}
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -72,6 +91,7 @@ app.use((req, res, next) => {
 export default async function runApp(
   setup: (app: Express, server: Server) => Promise<void>,
 ) {
+  await ensureChatTable();
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

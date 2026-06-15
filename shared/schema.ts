@@ -363,3 +363,21 @@ export const insertInspectionBaseItemSchema = createInsertSchema(inspectionBaseI
 });
 export type InsertInspectionBaseItem = z.infer<typeof insertInspectionBaseItemSchema>;
 export type InspectionBaseItem = typeof inspectionBaseItems.$inferSelect;
+
+// ── 채팅 메시지 ──
+export const chatMessages = pgTable("chat_messages", {
+  id: serial("id").primaryKey(),
+  userName: varchar("user_name", { length: 50 }).notNull(),
+  content: text("content").notNull(),
+  replyToId: integer("reply_to_id"),       // 답변 대상 메시지 id
+  replyToUser: varchar("reply_to_user", { length: 50 }), // 답변 대상 작성자
+  replyToContent: text("reply_to_content"), // 답변 대상 내용 미리보기
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type ChatMessage = typeof chatMessages.$inferSelect;

@@ -1042,6 +1042,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== 채팅 ====================
+  app.get("/api/chat-messages", async (req, res) => {
+    try {
+      const { search, limit = "50", before } = req.query as Record<string, string>;
+      const db = (await import("./db")).db;
+      const { chatMessages } = await import("@shared/schema");
+      const { desc, ilike, lt, and } = await import("drizzle-orm");
+
+      let query = db.select().from(chatMessages).$dynamic();
+      const conditions = [];
+      if (search) conditions.push(ilike(chatMessages.content, `%${search}%`));
+      if (before) conditions.push(lt(chatMessages.id, parseInt(before)));
+      if (conditions.length) query = query.where(and(...conditions));
+      const msgs = await query.orderBy(desc(chatMessages.id)).limit(parseInt(limit));
+      res.json(msgs.reverse());
+    } catch (e) {
+      res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  app.post("/api/chat-messages", async (req, res) => {
+    try {
+      const { userName, content, replyToId, replyToUser, replyToContent } = req.body;
+      if (!userName?.trim() || !content?.trim()) return res.status(400).json({ error: "필수 값 누락" });
+      const db = (await import("./db")).db;
+      const { chatMessages } = await import("@shared/schema");
+      const [msg] = await db.insert(chatMessages).values({
+        userName: userName.trim().slice(0, 50),
+        content: content.trim().slice(0, 2000),
+        replyToId: replyToId || null,
+        replyToUser: replyToUser || null,
+        replyToContent: replyToContent?.slice(0, 100) || null,
+      }).returning();
+      res.json(msg);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to send message" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

@@ -10,6 +10,7 @@ import PrecisionInspectionPage from "@/pages/precision-inspection";
 import MemoPage from "@/pages/memo";
 import SafetyPage from "@/pages/safety";
 import TechnicalDataPage from "@/pages/technical-data";
+import ChatPage from "@/pages/chat";
 import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
 
@@ -23,7 +24,8 @@ function MainApp() {
         <InspectionStandardsPage key="inspection-standards" />,
         <PrecisionInspectionPage key="precision" />,
         <MemoPage key="memo" />,
-        <SafetyPage key="safety" />
+        <SafetyPage key="safety" />,
+        <ChatPage key="chat" />,
       ]}
       pageNames={[
         "AI검색",
@@ -32,7 +34,8 @@ function MainApp() {
         "검사기준",
         "정밀안전검사",
         "메모",
-        "안전보건"
+        "안전보건",
+        "채팅",
       ]}
     />
   );
