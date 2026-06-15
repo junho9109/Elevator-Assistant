@@ -1,15 +1,19 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import INSPECTION_CONTENT from "@/data/inspection-content.json";
+import BYULPYO22 from "@/data/별표22_parsed.json";
 
 type ContentEntry = {
   text?: string;
+  title?: string;
   effectiveDate?: string;
+  source?: string;
   introductionType?: string;
   revisions?: { effectiveDate: string | null; expiryDate: string | null; description: string; source?: string[] }[];
 };
 
 const contentMap = INSPECTION_CONTENT as unknown as Record<string, ContentEntry>;
+const byulpyo22Map = BYULPYO22 as unknown as Record<string, ContentEntry>;
 
 // ── 섹션 트리 생성 ──────────────────────────────────────
 interface Section {
@@ -71,7 +75,111 @@ function buildTree(): Section[] {
   });
 }
 
-// ── 항목 카드 ────────────────────────────────────────────
+// ── 별표22 트리 생성 ─────────────────────────────────────
+function buildByulpyo22Tree(): Section[] {
+  const keys = Object.keys(byulpyo22Map);
+  const chapterNums = [...new Set(
+    keys.map(k => k.split('.')[0])
+  )].filter(k => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
+
+  return chapterNums.map(ch => {
+    const entry = byulpyo22Map[ch];
+    const chTitle = entry?.title || entry?.text?.split('\n')[0] || `${ch}장`;
+    const sectionKeys = keys
+      .filter(k => new RegExp(`^${ch}\\.\\d+$`).test(k))
+      .sort((a, b) => {
+        const na = Number(a.split('.')[1]);
+        const nb = Number(b.split('.')[1]);
+        return na - nb;
+      });
+
+    const sections: Section[] = sectionKeys.map(sec => {
+      const subKeys = keys.filter(k =>
+        new RegExp(`^${sec.replace('.', '\\.')}\\.[^.]+$`).test(k)
+      ).sort((a, b) => {
+        const na = Number(a.split('.').slice(-1)[0]);
+        const nb = Number(b.split('.').slice(-1)[0]);
+        return na - nb;
+      });
+      const subSections: Section[] = subKeys.map(sub => ({
+        id: sub,
+        title: byulpyo22Map[sub]?.title || byulpyo22Map[sub]?.text?.split('\n')[0] || sub,
+        children: [],
+        items: keys.filter(k => k.startsWith(sub + '.')),
+      }));
+      const directItems = keys.filter(k =>
+        k.startsWith(sec + '.') && !subKeys.some(sub => k.startsWith(sub + '.')) && !subKeys.includes(k)
+      );
+      return {
+        id: sec,
+        title: byulpyo22Map[sec]?.title || byulpyo22Map[sec]?.text?.split('\n')[0] || sec,
+        children: subSections,
+        items: directItems,
+      };
+    });
+
+    return {
+      id: ch,
+      title: chTitle,
+      children: sections,
+      items: [],
+    };
+  });
+}
+
+// ── 별표22 항목 카드 ─────────────────────────────────────
+function Byulpyo22Card({ itemKey, isActive, onClick }: { itemKey: string; isActive: boolean; onClick: () => void }) {
+  const entry = byulpyo22Map[itemKey];
+  const text = entry?.text || "";
+  const firstLine = (entry?.title || text.split('\n')[0] || itemKey).trim();
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${
+        isActive ? "bg-primary text-primary-foreground" : "hover:bg-secondary text-foreground"
+      }`}
+    >
+      <span className="font-mono text-[10px] opacity-60 mr-1">[{itemKey}]</span>
+      <span className="leading-relaxed">{firstLine.length > 60 ? firstLine.slice(0, 60) + "…" : firstLine}</span>
+    </button>
+  );
+}
+
+// ── 별표22 상세 패널 ─────────────────────────────────────
+function Byulpyo22Detail({ itemKey, onClose }: { itemKey: string; onClose: () => void }) {
+  const entry = byulpyo22Map[itemKey];
+  if (!entry) return null;
+  const fullText = entry.text || "";
+  const firstLine = (entry.title || fullText.split('\n')[0] || itemKey).trim();
+  const body = fullText.split('\n').slice(1).join('\n').trim();
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <div>
+          <span className="font-mono text-[10px] text-muted-foreground">[{itemKey}]</span>
+          <p className="text-sm font-semibold mt-0.5 leading-snug">{firstLine}</p>
+        </div>
+        <button onClick={onClose} className="p-1 hover:bg-secondary rounded-lg ml-2 shrink-0">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {body && (
+          <div>
+            <p className="text-[10px] font-bold text-muted-foreground tracking-wide mb-1.5">조문 내용</p>
+            <p className="text-xs leading-relaxed text-foreground whitespace-pre-wrap bg-secondary rounded-lg p-3">{body}</p>
+          </div>
+        )}
+        <div className="pt-1 border-t border-border">
+          <p className="text-[10px] text-muted-foreground">{entry.source || "별표22 엘리베이터 안전기준 KC2050-51:2022"}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function ItemCard({ itemKey, isActive, onClick }: { itemKey: string; isActive: boolean; onClick: () => void }) {
   const entry = contentMap[itemKey];
   const text = entry?.text || "";
@@ -206,13 +314,66 @@ function SectionNode({
   );
 }
 
+// ── 별표22 섹션 트리 노드 ────────────────────────────────
+function Byulpyo22Node({
+  section, depth, activeKey, onSelect,
+}: {
+  section: Section; depth: number; activeKey: string | null; onSelect: (key: string) => void;
+}) {
+  const hasActive = activeKey ? (
+    section.items.includes(activeKey) ||
+    section.children.some(c => c.items.includes(activeKey) || c.id === activeKey)
+  ) : false;
+  const [open, setOpen] = useState(hasActive);
+  useEffect(() => { if (hasActive) setOpen(true); }, [hasActive]);
+  const hasChildren = section.children.length > 0 || section.items.length > 0;
+  const indent = depth * 12;
+
+  return (
+    <div>
+      <button
+        onClick={() => {
+          if (hasChildren) setOpen(o => !o);
+          if (!hasChildren) onSelect(section.id);
+        }}
+        className={`w-full flex items-center gap-1.5 px-3 py-2 text-left text-xs transition-colors hover:bg-secondary rounded-lg ${hasActive || activeKey === section.id ? "text-primary font-medium" : "text-foreground"}`}
+        style={{ paddingLeft: `${indent + 12}px` }}
+      >
+        {hasChildren ? (
+          open ? <ChevronDown size={12} className="shrink-0 opacity-60" /> : <ChevronRight size={12} className="shrink-0 opacity-60" />
+        ) : <span className="w-3" />}
+        <span className="font-mono text-[10px] text-muted-foreground mr-1 shrink-0">[{section.id}]</span>
+        <span className="truncate leading-snug">{section.title}</span>
+      </button>
+      {open && (
+        <div>
+          {section.children.map(child => (
+            <Byulpyo22Node key={child.id} section={child} depth={depth + 1} activeKey={activeKey} onSelect={onSelect} />
+          ))}
+          {section.items.map(key => (
+            <div key={key} style={{ paddingLeft: `${indent + 24}px` }} className="pr-2 py-0.5">
+              <Byulpyo22Card itemKey={key} isActive={activeKey === key} onClick={() => onSelect(key)} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 메인 페이지 ──────────────────────────────────────────
 export default function InspectionStandardsPage() {
   const tree = useMemo(() => buildTree(), []);
+  const tree22 = useMemo(() => buildByulpyo22Tree(), []);
+  const [activeTab, setActiveTab] = useState<"content" | "byulpyo22">("content");
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<string[]>([]);
   const [showSearch, setShowSearch] = useState(false);
+
+  const currentMap = activeTab === "content" ? contentMap : byulpyo22Map;
+  const currentTree = activeTab === "content" ? tree : tree22;
+  const totalCount = Object.keys(currentMap).length;
 
   // AI검색에서 넘어온 항목 처리
   useEffect(() => {
@@ -220,6 +381,12 @@ export default function InspectionStandardsPage() {
       const pendingId = sessionStorage.getItem("pendingInspectionDetail");
       if (!pendingId) return;
       sessionStorage.removeItem("pendingInspectionDetail");
+      // 어느 탭에 있는지 확인
+      if (byulpyo22Map[pendingId]) {
+        setActiveTab("byulpyo22");
+      } else {
+        setActiveTab("content");
+      }
       setActiveKey(pendingId);
     };
     checkPending();
@@ -228,26 +395,31 @@ export default function InspectionStandardsPage() {
     return () => window.removeEventListener("navigatePage", handler);
   }, []);
 
+  // 탭 변경 시 초기화
+  useEffect(() => {
+    setActiveKey(null);
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowSearch(false);
+  }, [activeTab]);
+
   // 검색
   useEffect(() => {
     if (!searchQuery.trim()) { setSearchResults([]); return; }
     const kw = searchQuery.toLowerCase();
-    const hits = Object.entries(contentMap)
+    const hits = Object.entries(currentMap)
       .filter(([, v]) => (v.text || "").toLowerCase().includes(kw))
       .map(([k]) => k)
       .slice(0, 30);
     setSearchResults(hits);
-  }, [searchQuery]);
+  }, [searchQuery, activeTab]);
 
   return (
     <div className="flex flex-col h-full bg-background">
       {/* 헤더 */}
-      <div className="px-4 pt-4 pb-2 border-b border-border shrink-0 bg-card">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-base font-bold">검사기준</h1>
-            <p className="text-[10px] text-muted-foreground mt-0.5">엘리베이터 안전기준 고시 · {Object.keys(contentMap).length}개 항목</p>
-          </div>
+      <div className="px-4 pt-4 pb-0 border-b border-border shrink-0 bg-card">
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-base font-bold">검사기준</h1>
           <button
             onClick={() => { setShowSearch(s => !s); setSearchQuery(""); setSearchResults([]); }}
             className="p-2 hover:bg-secondary rounded-lg transition-colors"
@@ -256,9 +428,35 @@ export default function InspectionStandardsPage() {
           </button>
         </div>
 
+        {/* 탭 */}
+        <div className="flex gap-0">
+          <button
+            onClick={() => setActiveTab("content")}
+            className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${
+              activeTab === "content"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            안전기준 고시
+            <span className="ml-1 text-[10px] opacity-60">({Object.keys(contentMap).length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("byulpyo22")}
+            className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${
+              activeTab === "byulpyo22"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            별표22 안전기준
+            <span className="ml-1 text-[10px] opacity-60">({Object.keys(byulpyo22Map).length})</span>
+          </button>
+        </div>
+
         {/* 검색창 */}
         {showSearch && (
-          <div className="mt-2">
+          <div className="py-2">
             <input
               autoFocus
               value={searchQuery}
@@ -279,18 +477,22 @@ export default function InspectionStandardsPage() {
               <p className="text-[10px] text-muted-foreground px-2 py-1">{searchResults.length}건 검색됨</p>
               {searchResults.map(key => (
                 <div key={key} className="px-1">
-                  <ItemCard
-                    itemKey={key}
-                    isActive={activeKey === key}
-                    onClick={() => { setActiveKey(key); setShowSearch(false); setSearchQuery(""); }}
-                  />
+                  {activeTab === "content" ? (
+                    <ItemCard itemKey={key} isActive={activeKey === key} onClick={() => { setActiveKey(key); setShowSearch(false); setSearchQuery(""); }} />
+                  ) : (
+                    <Byulpyo22Card itemKey={key} isActive={activeKey === key} onClick={() => { setActiveKey(key); setShowSearch(false); setSearchQuery(""); }} />
+                  )}
                 </div>
               ))}
             </div>
           ) : (
             <div className="p-2 space-y-0.5">
-              {tree.map(chapter => (
-                <SectionNode key={chapter.id} section={chapter} depth={0} activeKey={activeKey} onSelect={setActiveKey} />
+              {currentTree.map(chapter => (
+                activeTab === "content" ? (
+                  <SectionNode key={chapter.id} section={chapter} depth={0} activeKey={activeKey} onSelect={setActiveKey} />
+                ) : (
+                  <Byulpyo22Node key={chapter.id} section={chapter} depth={0} activeKey={activeKey} onSelect={setActiveKey} />
+                )
               ))}
             </div>
           )}
@@ -299,11 +501,14 @@ export default function InspectionStandardsPage() {
         {/* 상세 패널 */}
         {activeKey && (
           <div className="flex-1 overflow-hidden">
-            <DetailPanel itemKey={activeKey} onClose={() => setActiveKey(null)} />
+            {activeTab === "content" ? (
+              <DetailPanel itemKey={activeKey} onClose={() => setActiveKey(null)} />
+            ) : (
+              <Byulpyo22Detail itemKey={activeKey} onClose={() => setActiveKey(null)} />
+            )}
           </div>
         )}
 
-        {/* 빈 상태 */}
         {!activeKey && !showSearch && (
           <div className="hidden md:flex flex-1 items-center justify-center text-muted-foreground text-sm">
             항목을 선택하세요
