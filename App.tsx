@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Home from "@/pages/home";
 import JudgmentPage from "@/pages/judgment";
+import InspectionStandardsPage from "@/pages/inspection-standards";
 import PrecisionInspectionPage from "@/pages/precision-inspection";
 import MemoPage from "@/pages/memo";
 import SafetyPage from "@/pages/safety";
@@ -19,6 +20,7 @@ function MainApp() {
         <Home key="home" />,
         <TechnicalDataPage key="technical" />,
         <JudgmentPage key="judgment" />,
+        <InspectionStandardsPage key="inspection-standards" />,
         <PrecisionInspectionPage key="precision" />,
         <MemoPage key="memo" />,
         <SafetyPage key="safety" />
@@ -27,6 +29,7 @@ function MainApp() {
         "AI검색",
         "기술자료",
         "검사가이드",
+        "검사기준",
         "정밀안전검사",
         "메모",
         "안전보건"

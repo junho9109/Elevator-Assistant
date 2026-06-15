@@ -1510,8 +1510,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 const fullText = entry?.text || selectedSearchResult.content;
                 return (
                   <>
-                    {/* 제목: 버튼 제목(잘린 것) 대신 ID만 표시 */}
-                    <h2 className="text-sm font-semibold leading-snug pr-4">항목 [{itemId}]</h2>
+                    {/* 제목: 첫 문장만 표시 */}
+                    <h2 className="text-sm font-semibold leading-snug pr-4">
+                      <span className="text-[10px] font-mono text-muted-foreground mr-1">[{itemId}]</span>
+                      {fullText.split(/[.\n]/)[0]?.trim() || itemId}
+                    </h2>
                     {fullText && (
                       <div className="space-y-1.5">
                         <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
@@ -1530,9 +1533,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 shrink-0"
                         onClick={() => {
                           setSelectedSearchResult(null);
-                          // SwipeNavigator의 navigatePage 이벤트로 검사가이드(index 2)로 전환
+                          // 검사기준 페이지(index 3)로 이동
                           sessionStorage.setItem("pendingInspectionDetail", itemId);
-                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
+                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
                         }}
                       >
                         검사가이드에서 보기 →
