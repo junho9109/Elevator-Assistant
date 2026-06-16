@@ -1081,6 +1081,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== 표준화 항목 이미지 ====================
+  const STD_PHOTO_DELETE_PW = "910919";
+
+  app.get("/api/std-photos/:itemKey", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemPhotos } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      const key = decodeURIComponent(req.params.itemKey);
+      const photos = await db.select({
+        id: stdItemPhotos.id,
+        displayOrder: stdItemPhotos.displayOrder,
+        mimeType: stdItemPhotos.mimeType,
+        createdAt: stdItemPhotos.createdAt,
+      }).from(stdItemPhotos).where(eq(stdItemPhotos.itemKey, key)).orderBy(asc(stdItemPhotos.displayOrder));
+      res.json(photos);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.get("/api/std-photos/:itemKey/:id/image", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [photo] = await db.select().from(stdItemPhotos).where(eq(stdItemPhotos.id, parseInt(req.params.id)));
+      if (!photo) return res.status(404).json({ error: "Not found" });
+      const b64 = photo.imageData.replace(/^data:image\/\w+;base64,/, '');
+      res.setHeader('Content-Type', photo.mimeType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(Buffer.from(b64, 'base64'));
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/std-photos/:itemKey", upload.single('image'), async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemPhotos } = await import("@shared/schema");
+      const { eq, count } = await import("drizzle-orm");
+      const key = decodeURIComponent(req.params.itemKey);
+      const [{ value: cnt }] = await db.select({ value: count() }).from(stdItemPhotos).where(eq(stdItemPhotos.itemKey, key));
+      if (Number(cnt) >= 10) return res.status(400).json({ error: "최대 10장" });
+      if (!req.file) return res.status(400).json({ error: "No image" });
+      const base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const [photo] = await db.insert(stdItemPhotos).values({
+        itemKey: key,
+        imageData: base64Data,
+        mimeType: req.file.mimetype,
+        displayOrder: Number(cnt),
+      }).returning({ id: stdItemPhotos.id, displayOrder: stdItemPhotos.displayOrder, mimeType: stdItemPhotos.mimeType, createdAt: stdItemPhotos.createdAt });
+      res.status(201).json(photo);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.delete("/api/std-photos/:id", async (req, res) => {
+    try {
+      const { password } = req.body;
+      if (password !== STD_PHOTO_DELETE_PW) return res.status(403).json({ error: "비밀번호 오류" });
+      const db = (await import("./db")).db;
+      const { stdItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(stdItemPhotos).where(eq(stdItemPhotos.id, parseInt(req.params.id)));
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

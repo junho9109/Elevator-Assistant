@@ -381,3 +381,13 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 });
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+
+// ── 표준화 항목 이미지 ──
+export const stdItemPhotos = pgTable("std_item_photos", {
+  id: serial("id").primaryKey(),
+  itemKey: varchar("item_key", { length: 200 }).notNull(), // title 기반 식별자
+  imageData: text("image_data").notNull(),
+  mimeType: varchar("mime_type", { length: 50 }).default("image/jpeg"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});

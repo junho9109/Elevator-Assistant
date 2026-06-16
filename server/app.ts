@@ -19,8 +19,18 @@ async function ensureChatTable() {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       )
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS std_item_photos (
+        id SERIAL PRIMARY KEY,
+        item_key VARCHAR(200) NOT NULL,
+        image_data TEXT NOT NULL,
+        mime_type VARCHAR(50) DEFAULT 'image/jpeg',
+        display_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
   } catch (e) {
-    console.error("chat_messages 테이블 생성 실패:", e);
+    console.error("테이블 생성 실패:", e);
   }
 }
 

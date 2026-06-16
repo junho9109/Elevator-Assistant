@@ -394,6 +394,164 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
 
 const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", permitDate: "", inspectionDate: "", inspectionYear: "", images: [] as string[] };
 
+// ==================== 표준화 항목 이미지 섹션 ====================
+function StdPhotoSection({ itemKey }: { itemKey: string }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [photos, setPhotos] = useState<{ id: number; mimeType: string; createdAt: string }[]>([]);
+  const [viewer, setViewer] = useState<{ open: boolean; idx: number }>({ open: false, idx: 0 });
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [pw, setPw] = useState("");
+  const [pwErr, setPwErr] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const encodedKey = encodeURIComponent(itemKey);
+
+  const loadPhotos = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/std-photos/${encodedKey}`);
+      if (r.ok) setPhotos(await r.json());
+    } catch {}
+  }, [encodedKey]);
+
+  useEffect(() => { loadPhotos(); }, [loadPhotos]);
+
+  const compressImage = (file: File): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > 1200) { height = Math.round(height * 1200 / width); width = 1200; }
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(b => b ? resolve(b) : reject(), 'image/jpeg', 0.82);
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (fileRef.current) fileRef.current.value = "";
+    if (photos.length >= 10) return;
+    setUploading(true);
+    try {
+      const blob = await compressImage(file).catch(() => file as unknown as Blob);
+      const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+      const fd = new FormData();
+      fd.append('image', compressed);
+      const r = await fetch(`/api/std-photos/${encodedKey}`, { method: 'POST', body: fd });
+      if (r.ok) await loadPhotos();
+    } catch {}
+    setUploading(false);
+  };
+
+  const handleDelete = async () => {
+    if (pw !== "910919") { setPwErr(true); return; }
+    if (deleteTarget === null) return;
+    try {
+      await fetch(`/api/std-photos/${deleteTarget}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      setDeleteTarget(null);
+      setPw(""); setPwErr(false);
+      await loadPhotos();
+      setViewer({ open: false, idx: 0 });
+    } catch {}
+  };
+
+  const imgUrl = (id: number) => `/api/std-photos/${encodedKey}/${id}/image`;
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">첨부 이미지</p>
+        <p className="text-[10px] text-muted-foreground">{photos.length} / 10</p>
+      </div>
+
+      {photos.length === 0 && !uploading ? (
+        <label className="flex items-center justify-center gap-2 w-full py-2.5 border border-dashed border-border rounded-xl cursor-pointer hover:bg-secondary transition-colors">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          <span className="text-[11px] text-muted-foreground">사진 추가 (최대 10장)</span>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </label>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {photos.map((p, i) => (
+            <div key={p.id} className="w-16 h-16 rounded-xl overflow-hidden border border-border cursor-pointer shrink-0"
+              onClick={() => setViewer({ open: true, idx: i })}>
+              <img src={imgUrl(p.id)} alt="" className="w-full h-full object-cover" loading="lazy" />
+            </div>
+          ))}
+          {photos.length < 10 && (
+            <label className="w-16 h-16 rounded-xl border border-dashed border-border flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-secondary transition-colors shrink-0">
+              {uploading
+                ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                : <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span className="text-[9px] text-muted-foreground">추가</span></>
+              }
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
+            </label>
+          )}
+        </div>
+      )}
+
+      {/* 이미지 뷰어 */}
+      {viewer.open && photos.length > 0 && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setViewer({ open: false, idx: 0 })}>
+          <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
+            <span className="text-white text-xs">{viewer.idx + 1} / {photos.length}</span>
+            <div className="flex items-center gap-3">
+              <button className="text-red-400 text-xs px-2.5 py-1 border border-red-400/40 rounded-lg"
+                onClick={() => { setDeleteTarget(photos[viewer.idx].id); setPw(""); setPwErr(false); }}>삭제</button>
+              <button onClick={() => setViewer({ open: false, idx: 0 })} className="text-white/70 text-lg">✕</button>
+            </div>
+          </div>
+          <div className="flex-1 flex items-center justify-center px-4" onClick={e => e.stopPropagation()}>
+            <img src={imgUrl(photos[viewer.idx].id)} alt="" className="max-w-full max-h-full object-contain rounded-xl" />
+          </div>
+          <div className="flex gap-2 px-4 py-3 overflow-x-auto shrink-0" onClick={e => e.stopPropagation()}>
+            {photos.map((p, i) => (
+              <div key={p.id}
+                className={`w-10 h-10 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 ${i === viewer.idx ? 'border-white' : 'border-transparent'}`}
+                onClick={() => setViewer(v => ({ ...v, idx: i }))}>
+                <img src={imgUrl(p.id)} alt="" className="w-full h-full object-cover" loading="lazy" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 삭제 비밀번호 모달 */}
+      {deleteTarget !== null && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-6" onClick={() => { setDeleteTarget(null); setPw(""); setPwErr(false); }}>
+          <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-xs space-y-3" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-medium">사진 삭제</p>
+            <p className="text-xs text-muted-foreground">삭제하려면 비밀번호를 입력하세요.</p>
+            <input
+              type="password" placeholder="비밀번호" value={pw} autoFocus
+              onChange={e => { setPw(e.target.value); setPwErr(false); }}
+              onKeyDown={e => e.key === 'Enter' && handleDelete()}
+              className={`w-full text-sm bg-secondary border rounded-xl px-3 py-2.5 outline-none ${pwErr ? 'border-red-400' : 'border-border'}`}
+            />
+            {pwErr && <p className="text-[11px] text-red-500">비밀번호가 올바르지 않습니다.</p>}
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => { setDeleteTarget(null); setPw(""); setPwErr(false); }}
+                className="flex-1 py-2 rounded-xl border border-border text-sm text-muted-foreground">취소</button>
+              <button onClick={handleDelete}
+                className="flex-1 py-2 rounded-xl bg-red-500 text-white text-sm font-medium">삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ==================== 메인 ====================
 export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "map" }) {
   const queryClient = useQueryClient();
@@ -1541,6 +1699,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                               <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2">{item.conclusion}</p>
                             </div>
                           )}
+                          <StdPhotoSection itemKey={item.title} />
                           <div className="pt-1.5 border-t border-border/50">
                             <p className="text-[10px] text-muted-foreground">출처 · {item.source}</p>
                           </div>
