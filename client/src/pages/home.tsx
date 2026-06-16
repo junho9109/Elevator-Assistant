@@ -21,87 +21,212 @@ type StdItem = { title: string; ref: string; basis: string; conclusion: string; 
 const STD_ITEMS = STD_DATA as StdItem[];
 const STD_CATEGORIES = ["전체", "기계실", "피트", "승강로", "카상부", "카·문", "에스컬레이터", "주행성능", "제동장치", "완충기", "과속조절기", "덤웨이터", "휠체어리프트", "안전회로", "기타"];
 
-// ==================== 규칙 기반 AI 챗봇 ====================
+// ==================== 유사 검색 ====================
+
+// 유사어·약어·오타 사전 (승강기 검사 도메인 특화)
+const SYNONYMS: Record<string, string[]> = {
+  // 점형블록 계열
+  "점형블록": ["점형블럭", "점자블록", "점자블럭", "점블록", "점자유도블록"],
+  "점형블럭": ["점형블록"],
+  // 과속조절기·조속기
+  "과속조절기": ["조속기", "스피드거버너", "거버너"],
+  "조속기": ["과속조절기", "거버너"],
+  // 추락방지안전장치·비상정지
+  "추락방지안전장치": ["비상정지장치", "세이프티", "세이프티기어", "비상제동"],
+  "비상정지장치": ["추락방지안전장치", "세이프티기어"],
+  // 개문출발방지장치
+  "개문출발방지장치": ["ucmp", "개문출발", "문열림출발방지"],
+  "ucmp": ["개문출발방지장치", "개문출발"],
+  // 상승과속방지장치
+  "상승과속방지장치": ["ucm", "로프브레이크", "카브레이크", "이중브레이크"],
+  // 기계실 없는
+  "기계실없는": ["mrl", "머신룸리스"],
+  "mrl": ["기계실없는", "머신룸리스"],
+  "mr": ["기계실있는"],
+  // 완충기
+  "완충기": ["버퍼", "쿠션", "충격완화"],
+  // 에이프런
+  "에이프런": ["에프런", "apron"],
+  // 비상통화장치
+  "비상통화장치": ["비상호출", "인터폰", "비상벨", "비상통화"],
+  // 승강장문
+  "승강장문": ["홀도어", "층문", "hall door", "승강장도어"],
+  "홀도어": ["승강장문", "hall door"],
+  // 카문
+  "카문": ["카도어", "car door", "카 도어"],
+  "카도어": ["카문"],
+  // 권상기
+  "권상기": ["호이스팅머신", "구동기", "traction machine"],
+  "구동기": ["권상기", "호이스팅머신"],
+  // 주행안내레일
+  "주행안내레일": ["가이드레일", "레일", "guide rail"],
+  "가이드레일": ["주행안내레일", "레일"],
+  // 균형추
+  "균형추": ["카운터웨이트", "counter weight"],
+  "카운터웨이트": ["균형추"],
+  // 과속조절기로프
+  "과속조절기로프": ["조속기로프", "거버너로프"],
+  // 피트
+  "피트": ["pit", "엘리베이터피트"],
+  // 검사 종류
+  "수시검사": ["임시검사", "특별검사"],
+  "정밀안전검사": ["정밀검사", "정안검"],
+  "정기검사": ["정기안전검사"],
+  // 리모델링
+  "리모델링": ["교체설치", "개조", "교체공사"],
+  "교체설치": ["리모델링"],
+  // 스커트가드
+  "스커트가드": ["치마판", "스커트"],
+  // 비상구출문
+  "비상구출문": ["비상구출해치", "탈출해치", "비상해치"],
+  // 도어록
+  "잠금장치": ["도어록", "인터록", "interlock"],
+  "인터록": ["잠금장치", "interlock"],
+  // 보호난간
+  "보호난간": ["안전난간", "가드레일"],
+  // 장애인용
+  "장애인용": ["배리어프리", "barrier free", "휠체어"],
+  // 소방구조용
+  "소방구조용": ["소방엘리베이터", "소방용"],
+  // 자동구출운전
+  "자동구출운전": ["arg", "자동구출", "ard"],
+  // 오버밸런스
+  "오버밸런스": ["균형량", "ob율", "ob"],
+  // 파이널리미트스위치
+  "파이널리미트스위치": ["최종제한스위치", "final limit"],
+};
+
+// 키워드 확장 (유사어 포함한 검색어 목록 반환)
+function expandKeywords(kw: string): string[] {
+  const base = kw.toLowerCase().replace(/\s+/g, '');
+  const expanded = new Set<string>([base, kw.toLowerCase()]);
+
+  // 유사어 사전에서 직접 매핑
+  for (const [key, synonyms] of Object.entries(SYNONYMS)) {
+    const keyNorm = key.toLowerCase().replace(/\s+/g, '');
+    if (base.includes(keyNorm) || keyNorm.includes(base)) {
+      expanded.add(keyNorm);
+      synonyms.forEach(s => {
+        expanded.add(s.toLowerCase().replace(/\s+/g, ''));
+        expanded.add(s.toLowerCase());
+      });
+    }
+    // 유사어가 입력어와 일치하는 경우 역방향
+    synonyms.forEach(s => {
+      const sNorm = s.toLowerCase().replace(/\s+/g, '');
+      if (base.includes(sNorm) || sNorm.includes(base)) {
+        expanded.add(keyNorm);
+        synonyms.forEach(s2 => {
+          expanded.add(s2.toLowerCase().replace(/\s+/g, ''));
+        });
+      }
+    });
+  }
+  return [...expanded].filter(k => k.length >= 2);
+}
+
+// n-gram 유사도 (2글자 단위)
+function ngramSimilarity(a: string, b: string): number {
+  const ngrams = (s: string) => {
+    const set = new Set<string>();
+    const norm = s.replace(/\s+/g, '');
+    for (let i = 0; i < norm.length - 1; i++) set.add(norm.slice(i, i + 2));
+    return set;
+  };
+  const sa = ngrams(a), sb = ngrams(b);
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let inter = 0;
+  sa.forEach(g => { if (sb.has(g)) inter++; });
+  return (2 * inter) / (sa.size + sb.size);
+}
+
+// 정확도 점수 계산
+function scoreMatch(text: string, keywords: string[], originalKw: string): number {
+  const normText = text.toLowerCase().replace(/\s+/g, '');
+  const normOrig = originalKw.toLowerCase().replace(/\s+/g, '');
+
+  // 1순위: 원본 키워드 완전 포함
+  if (normText.includes(normOrig)) return 100;
+
+  // 2순위: 유사어 완전 포함
+  for (const kw of keywords) {
+    if (kw !== normOrig && normText.includes(kw)) return 85;
+  }
+
+  // 3순위: n-gram 유사도 (0.6 이상)
+  const sim = ngramSimilarity(normOrig, normText.slice(0, 200));
+  if (sim >= 0.6) return Math.round(sim * 70);
+
+  return 0;
+}
+
+
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
-type SearchResult = { type: "standard" | "inspection" | "judgment"; title: string; content: string; query: string; };
+type SearchResult = { type: "standard" | "inspection" | "judgment"; title: string; content: string; query: string; score?: number; };
 
 // 키워드로 표준화+검사기준 검색
 function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   const kw = keyword.toLowerCase().trim();
   if (!kw || kw.length < 2) return [];
-  const results: SearchResult[] = [];
+
+  // 키워드 확장 (유사어·약어 포함)
+  const kwList = expandKeywords(kw);
+
+  const scored: { result: SearchResult; score: number }[] = [];
+
+  const addResult = (r: SearchResult, searchText: string) => {
+    const score = scoreMatch(searchText, kwList, kw);
+    if (score > 0) scored.push({ result: r, score });
+  };
 
   // 표준화 검색 (DB standards)
   standards.forEach(s => {
-    if ((s.title || "").toLowerCase().includes(kw) || (s.body || "").toLowerCase().includes(kw)) {
-      results.push({
-        type: "standard",
-        title: s.title,
-        content: s.body ? s.body.slice(0, 100) + (s.body.length > 100 ? "..." : "") : "",
-        query: s.title
-      });
-    }
+    const searchText = `${s.title || ""} ${s.body || ""}`;
+    addResult({
+      type: "standard",
+      title: s.title,
+      content: s.body ? s.body.slice(0, 100) + (s.body.length > 100 ? "..." : "") : "",
+      query: s.title
+    }, searchText);
   });
 
-  // 표준화 파싱 데이터 검색 (표준화_parsed.json)
+  // 표준화 파싱 데이터 검색
   STD_ITEMS.forEach(s => {
-    const searchText = `${s.title} ${s.ref} ${s.basis} ${s.conclusion}`.toLowerCase();
-    if (searchText.includes(kw)) {
-      results.push({
-        type: "standard",
-        title: s.title,
-        content: s.conclusion ? s.conclusion.slice(0, 100) + (s.conclusion.length > 100 ? "..." : "") : s.basis.slice(0, 100),
-        query: s.title
-      });
-    }
+    const searchText = `${s.title} ${s.ref} ${s.basis} ${s.conclusion}`;
+    addResult({
+      type: "standard",
+      title: s.title,
+      content: s.conclusion ? s.conclusion.slice(0, 100) + (s.conclusion.length > 100 ? "..." : "") : s.basis.slice(0, 100),
+      query: s.title
+    }, searchText);
   });
 
-  // 검사기준 검색 (inspection-content.json — 실제 본문)
+  // 검사기준 검색 (inspection-content.json)
   const contentEntries = Object.entries(INSPECTION_CONTENT as unknown as Record<string, {text?: string; effectiveDate?: string; revisions?: any[]}>);
   contentEntries.forEach(([id, val]) => {
     const text = val.text || "";
     if (text.length < 10) return;
     if (text.includes("연혁집") || text.includes("부속서\n")) return;
-    if (text.toLowerCase().includes(kw)) {
-      results.push({
-        type: "inspection",
-        title: `[${id}] ${text.slice(0, 60).replace(/\n/g, " ")}`,
-        content: text.replace(/\n/g, " "),
-        query: id,
-      });
-    }
+    addResult({
+      type: "inspection",
+      title: `[${id}] ${text.slice(0, 60).replace(/\n/g, " ")}`,
+      content: text.replace(/\n/g, " "),
+      query: id,
+    }, text);
   });
 
-  // INSPECTION_DATA_MR 섹션 제목 검색
-  const searchSection = (sections: any[]) => {
-    sections.forEach(sec => {
-      if ((sec.title || "").toLowerCase().includes(kw)) {
-        results.push({
-          type: "inspection",
-          title: sec.title || "",
-          content: `검사기준 섹션: ${sec.title}`,
-          query: sec.id || sec.title,
-        });
-      }
-      if (sec.subsections) searchSection(sec.subsections);
-    });
-  };
-  searchSection(INSPECTION_DATA_MR);
-
-  // 검사가이드 안전검사기준 검색 (INSPECTION_DATA_MR items)
+  // 검사가이드 안전검사기준 검색
   const searchJudgment = (sections: any[]) => {
     sections.forEach(sec => {
       if (sec.items) {
         sec.items.forEach((item: any) => {
-          const itemText = `${item.id || ""} ${item.text || ""} ${item.standard || ""}`.toLowerCase();
-          if (itemText.includes(kw)) {
-            results.push({
-              type: "judgment",
-              title: item.text ? item.text.slice(0, 50).replace(/\n/g, " ") : item.id,
-              content: item.text || "",
-              query: item.id || "",
-            });
-          }
+          const itemText = `${item.id || ""} ${item.text || ""} ${item.standard || ""}`;
+          addResult({
+            type: "judgment",
+            title: item.text ? item.text.slice(0, 50).replace(/\n/g, " ") : item.id,
+            content: item.text || "",
+            query: item.id || "",
+          }, itemText);
         });
       }
       if (sec.subsections) searchJudgment(sec.subsections);
@@ -109,29 +234,52 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   };
   searchJudgment(INSPECTION_DATA_MR);
 
-  // 표준화/검사기준/검사가이드 각각 분리
-  const stdResults = results.filter(r => r.type === "standard");
-  const insResults = results.filter(r => r.type === "inspection");
-  const judResults = results.filter(r => r.type === "judgment");
+  // INSPECTION_DATA_MR 섹션 제목 검색
+  const searchSection = (sections: any[]) => {
+    sections.forEach(sec => {
+      addResult({
+        type: "inspection",
+        title: sec.title || "",
+        content: `검사기준 섹션: ${sec.title}`,
+        query: sec.id || sec.title,
+      }, sec.title || "");
+      if (sec.subsections) searchSection(sec.subsections);
+    });
+  };
+  searchSection(INSPECTION_DATA_MR);
 
-  // 표준화 중복 제거
+  // 점수 내림차순 정렬 + 타입별 중복 제거
+  scored.sort((a, b) => b.score - a.score);
+
   const seenStd = new Set<string>();
-  const dedupedStd = stdResults.filter(r => {
-    const key = r.title.slice(0, 30);
-    if (seenStd.has(key)) return false;
-    seenStd.add(key);
-    return true;
-  });
-
-  // 검사가이드 중복 제거
   const seenJud = new Set<string>();
-  const dedupedJud = judResults.filter(r => {
-    if (seenJud.has(r.query)) return false;
-    seenJud.add(r.query);
-    return true;
-  });
+  const dedupedStd: SearchResult[] = [];
+  const dedupedJud: SearchResult[] = [];
+  const dedupedIns: SearchResult[] = [];
 
-  return [...dedupedStd, ...dedupedJud, ...insResults];
+  for (const { result } of scored) {
+    if (result.type === "standard") {
+      const key = result.title.slice(0, 30);
+      if (!seenStd.has(key)) { seenStd.add(key); dedupedStd.push(result); }
+    } else if (result.type === "judgment") {
+      if (!seenJud.has(result.query)) { seenJud.add(result.query); dedupedJud.push(result); }
+    } else {
+      dedupedIns.push(result);
+    }
+  }
+
+  // 점수순 전체 병합 (타입별이 아닌 점수 순서 유지)
+  const allDeduped: SearchResult[] = [];
+  const seenAll = new Set<string>();
+  for (const { result, score } of scored) {
+    const key = `${result.type}:${result.title.slice(0, 30)}`;
+    if (!seenAll.has(key)) {
+      seenAll.add(key);
+      allDeduped.push({ ...result, score });
+    }
+  }
+
+  return allDeduped;
 }
 
 function getRuleBasedAnswer(question: string): string {
@@ -1097,6 +1245,15 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                             }`}>
                               {r.type === "standard" ? "표준화" : r.type === "judgment" ? "안전검사기준" : "검사기준"}
                             </span>
+                            {r.score !== undefined && (
+                              <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
+                                r.score === 100 ? "bg-gray-100 text-gray-600 dark:bg-gray-800"
+                                : r.score >= 85 ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30"
+                                : "bg-orange-100 text-orange-600 dark:bg-orange-900/30"
+                              }`}>
+                                {r.score === 100 ? "정확" : r.score >= 85 ? "유사어" : "유추"}
+                              </span>
+                            )}
                           </div>
                           <div className="font-medium text-foreground text-xs leading-tight">{r.title}</div>
                           {r.content && (
