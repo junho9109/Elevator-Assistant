@@ -2267,7 +2267,9 @@ export default function JudgmentPage() {
                               .replace(/\d{4}\s*[년.\-]\s*\d{1,2}\s*[월.\-]\s*\d{1,2}\s*일?/g, "")
                               .replace(/이후|이전|건축허가분|부터|적용|종전|신설|현행/g, "")
                               .replace(/[~\-()\s.,]/g, "");
-                            return s.includes("~") && stripped.length === 0;
+                            if (s.includes("~") && stripped.length === 0) return true;
+                            if (/\d{4}년.+이전 건축허가분에는 이 검사기준이 적용되지 않습니다/.test(s)) return true;
+                            return false;
                           };
                           return (
                             <div className="space-y-2">
