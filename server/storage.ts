@@ -298,7 +298,14 @@ export class DatabaseStorage implements IStorage {
 
   // MemoPhoto methods
   async getPhotosByMemo(memoId: number): Promise<MemoPhoto[]> {
-    return await db.select().from(memoPhotos).where(eq(memoPhotos.memoId, memoId));
+    return await db.select({
+      id: memoPhotos.id,
+      memoId: memoPhotos.memoId,
+      filename: memoPhotos.filename,
+      mimeType: memoPhotos.mimeType,
+      createdAt: memoPhotos.createdAt,
+      imageData: sql<string>`''`,  // 목록에서 imageData 제외 → 빈 문자열
+    }).from(memoPhotos).where(eq(memoPhotos.memoId, memoId));
   }
 
   async getPhoto(id: number): Promise<MemoPhoto | undefined> {

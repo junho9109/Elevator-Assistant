@@ -875,12 +875,43 @@ export default function MemoPage() {
     }
   });
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 이미지 리사이즈 + 썸네일 생성
+  const compressImage = (file: File, maxWidth: number, quality: number): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round(height * maxWidth / width);
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('압축 실패')), 'image/jpeg', quality);
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    try {
+      // 원본: 최대 1200px, quality 0.82 → 약 200~500KB
+      const compressed = await compressImage(file, 1200, 0.82);
+      const compressedFile = new File([compressed], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+      uploadPhoto.mutate(compressedFile);
+    } catch {
+      // 압축 실패 시 원본 업로드
       uploadPhoto.mutate(file);
     }
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
