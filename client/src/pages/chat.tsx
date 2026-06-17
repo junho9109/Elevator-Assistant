@@ -185,6 +185,13 @@ export default function ChatPage() {
           <p className="text-[10px] text-muted-foreground">{userName} · 실시간 채팅</p>
         </div>
         <button
+          onClick={() => { saveUserName(""); setUserName(""); setNameInput(generateRandomName()); }}
+          className="p-1.5 hover:bg-secondary rounded-lg text-muted-foreground"
+          title="이름 변경"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+        </button>
+        <button
           onClick={e => { e.stopPropagation(); setShowSearch(s => !s); setSearchQuery(""); setSearchResults([]); }}
           className="p-1.5 hover:bg-secondary rounded-lg"
         >
