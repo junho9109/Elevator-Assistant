@@ -24,14 +24,20 @@ function formatTime(iso: string) {
 }
 
 // 로컬 유저명 저장
-const RANDOM_ADJECTIVES = ["빠른", "꼼꼼한", "베테랑", "신중한", "날카로운", "경험많은", "열정적인", "침착한", "명석한", "성실한"];
-const RANDOM_NOUNS = ["검사원", "엔지니어", "기술자", "점검관", "안전관"];
+const RANDOM_ADJECTIVES = [
+  "졸린", "배고픈", "바쁜", "신난", "피곤한", "느긋한", "깜짝놀란", "당황한", "설레는", "귀찮은",
+  "행복한", "진지한", "의심많은", "용감한", "허기진", "냉정한", "열정적인", "수줍은", "씩씩한", "엉뚱한"
+];
+const RANDOM_ANIMALS = [
+  "판다", "나무늘보", "카피바라", "알파카", "미어캣", "해달", "수달", "비버", "라쿤", "고슴도치",
+  "치타", "나비", "펭귄", "플라밍고", "코알라", "캥거루", "오리너구리", "아르마딜로", "타조", "라마"
+];
 
 function generateRandomName(): string {
   const adj = RANDOM_ADJECTIVES[Math.floor(Math.random() * RANDOM_ADJECTIVES.length)];
-  const noun = RANDOM_NOUNS[Math.floor(Math.random() * RANDOM_NOUNS.length)];
-  const num = Math.floor(Math.random() * 900) + 100;
-  return `${adj}${noun}${num}`;
+  const animal = RANDOM_ANIMALS[Math.floor(Math.random() * RANDOM_ANIMALS.length)];
+  const num = Math.floor(Math.random() * 90) + 10;
+  return `${adj}${animal}${num}`;
 }
 
 function getUserName(): string {
