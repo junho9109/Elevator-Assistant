@@ -1146,6 +1146,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });
 
+  // ── 종전 기준 일괄 seed (서버 내부용) ──
+  app.post("/api/inspection-revisions/bulk-seed", async (req, res) => {
+    try {
+      const { secret, revisions } = req.body;
+      if (secret !== "seed-2009-67") return res.status(403).json({ error: "forbidden" });
+      const db2 = (await import("./db")).db;
+      const { inspectionItemRevisions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      let added = 0, skipped = 0;
+      for (const rev of revisions) {
+        // 동일 itemId + expiryDate + description 앞 20자 중복 방지
+        const existing = await db2.select().from(inspectionItemRevisions)
+          .where(and(
+            eq(inspectionItemRevisions.itemId, rev.itemId),
+            eq(inspectionItemRevisions.expiryDate, rev.expiryDate || "")
+          ));
+        const descKey = (rev.description || "").slice(0, 20);
+        const dup = existing.some(r => (r.description || "").startsWith(descKey));
+        if (dup) { skipped++; continue; }
+        await db2.insert(inspectionItemRevisions).values({
+          itemId: rev.itemId,
+          effectiveDate: rev.effectiveDate || null,
+          expiryDate: rev.expiryDate || null,
+          introductionType: rev.introductionType || "revision",
+          description: rev.description || "",
+        });
+        added++;
+      }
+      res.json({ added, skipped });
+    } catch (e) { res.status(500).json({ error: String(e) }); }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
