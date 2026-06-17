@@ -93,6 +93,23 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id;
+      if (!id) return;
+      setTimeout(() => {
+        const el = msgRefs.current[id];
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("!bg-purple-50", "dark:!bg-purple-950/30");
+          setTimeout(() => el.classList.remove("!bg-purple-50", "dark:!bg-purple-950/30"), 2000);
+        }
+      }, 200);
+    };
+    window.addEventListener("scrollToChatMsg", handler);
+    return () => window.removeEventListener("scrollToChatMsg", handler);
+  }, []);
+
+  useEffect(() => {
     fetchMsgs(true);
     pollTimer.current = setInterval(() => fetchMsgs(false), 5000);
     return () => { if (pollTimer.current) clearInterval(pollTimer.current); };

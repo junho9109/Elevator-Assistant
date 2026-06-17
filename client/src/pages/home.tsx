@@ -162,7 +162,7 @@ function scoreMatch(text: string, keywords: string[], originalKw: string): numbe
 
 
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
-type SearchResult = { type: "standard" | "inspection" | "judgment"; title: string; content: string; query: string; score?: number; };
+type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat"; title: string; content: string; query: string; score?: number; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
 // 키워드로 표준화+검사기준 검색
 function searchAllData(keyword: string, standards: any[]): SearchResult[] {
@@ -267,6 +267,9 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
       dedupedIns.push(result);
     }
   }
+
+  // 채팅 메시지 검색 (비동기지만 캐시된 결과 사용)
+  // → chatSearchCache는 Home 컴포넌트에서 주입
 
   // 점수순 전체 병합 (타입별이 아닌 점수 순서 유지)
   const allDeduped: SearchResult[] = [];
@@ -736,6 +739,31 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         return true;
       });
     }
+
+    // 채팅 메시지 검색 병합
+    try {
+      const chatRes = await fetch(`/api/chat-messages?search=${encodeURIComponent(text)}&limit=20`);
+      if (chatRes.ok) {
+        const chatMsgs = await chatRes.json();
+        const chatResults: SearchResult[] = chatMsgs.map((m: any) => ({
+          type: "chat" as const,
+          title: m.content.slice(0, 50).replace(/\n/g, " "),
+          content: m.content.slice(0, 100),
+          query: String(m.id),
+          score: 100,
+          chatMeta: {
+            id: m.id,
+            userName: m.userName,
+            createdAt: m.createdAt,
+            replyToUser: m.replyToUser,
+            replyToContent: m.replyToContent,
+            hasImage: false,
+          },
+        }));
+        results = [...results, ...chatResults];
+      }
+    } catch {}
+
     const searchResults = results.length > 0 ? results : undefined;
 
     // AI API 호출
@@ -1386,12 +1414,21 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                       {msg.searchResults.map((r: SearchResult, ri: number) => (
                         <button
                           key={ri}
-                          onClick={() => setSelectedSearchResult(r)}
+                          onClick={() => {
+                            if (r.type === "chat") {
+                              window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
+                              setTimeout(() => window.dispatchEvent(new CustomEvent("scrollToChatMsg", { detail: { id: r.chatMeta?.id } })), 300);
+                            } else {
+                              setSelectedSearchResult(r);
+                            }
+                          }}
                           className={`text-xs px-3 py-2 rounded-xl border text-left hover:opacity-80 transition-opacity ${
                             r.type === "standard"
                               ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30"
                               : r.type === "judgment"
                               ? "border-green-400 bg-green-50 dark:bg-green-950/30"
+                              : r.type === "chat"
+                              ? "border-purple-400 bg-purple-50 dark:bg-purple-950/30"
                               : "border-amber-400 bg-amber-50 dark:bg-amber-950/30"
                           }`}
                         >
@@ -1399,9 +1436,10 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white ${
                               r.type === "standard" ? "bg-blue-500"
                               : r.type === "judgment" ? "bg-green-500"
+                              : r.type === "chat" ? "bg-purple-500"
                               : "bg-amber-500"
                             }`}>
-                              {r.type === "standard" ? "표준화" : r.type === "judgment" ? "안전검사기준" : "검사기준"}
+                              {r.type === "standard" ? "표준화" : r.type === "judgment" ? "안전검사기준" : r.type === "chat" ? "채팅" : "검사기준"}
                             </span>
                             {r.score !== undefined && (
                               <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
@@ -1412,8 +1450,17 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                                 {r.score === 100 ? "정확" : r.score >= 85 ? "유사어" : "유추"}
                               </span>
                             )}
+                            {r.type === "chat" && r.chatMeta?.hasImage && (
+                              <span className="text-[9px] text-purple-500">📷</span>
+                            )}
                           </div>
                           <div className="font-medium text-foreground text-xs leading-tight">{r.title}</div>
+                          {r.type === "chat" && r.chatMeta && (
+                            <div className="text-muted-foreground text-[10px] mt-0.5 leading-tight">
+                              <span className="text-purple-600 font-medium">{r.chatMeta.userName}</span>
+                              {r.chatMeta.replyToUser && <span> → {r.chatMeta.replyToUser}에 답변</span>}
+                            </div>
+                          )}
                           {r.content && (
                             <div className="text-muted-foreground text-[10px] mt-0.5 leading-tight line-clamp-2">{r.content}</div>
                           )}
