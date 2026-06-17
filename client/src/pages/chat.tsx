@@ -24,6 +24,16 @@ function formatTime(iso: string) {
 }
 
 // 로컬 유저명 저장
+const RANDOM_ADJECTIVES = ["빠른", "꼼꼼한", "베테랑", "신중한", "날카로운", "경험많은", "열정적인", "침착한", "명석한", "성실한"];
+const RANDOM_NOUNS = ["검사원", "엔지니어", "기술자", "점검관", "안전관"];
+
+function generateRandomName(): string {
+  const adj = RANDOM_ADJECTIVES[Math.floor(Math.random() * RANDOM_ADJECTIVES.length)];
+  const noun = RANDOM_NOUNS[Math.floor(Math.random() * RANDOM_NOUNS.length)];
+  const num = Math.floor(Math.random() * 900) + 100;
+  return `${adj}${noun}${num}`;
+}
+
 function getUserName(): string {
   return localStorage.getItem("chat_username") || "";
 }
@@ -35,7 +45,7 @@ export default function ChatPage() {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [userName, setUserName] = useState(getUserName());
-  const [nameInput, setNameInput] = useState("");
+  const [nameInput, setNameInput] = useState(() => generateRandomName());
   const [replyTo, setReplyTo] = useState<ChatMsg | null>(null);
   const [longPress, setLongPress] = useState<{ msg: ChatMsg; x: number; y: number } | null>(null);
   const [showSearch, setShowSearch] = useState(false);
@@ -134,16 +144,25 @@ export default function ChatPage() {
       <div className="flex flex-col h-full items-center justify-center p-6 gap-4">
         <div className="text-center">
           <p className="text-base font-medium mb-1">채팅방 입장</p>
-          <p className="text-xs text-muted-foreground">표시될 이름을 입력하세요</p>
+          <p className="text-xs text-muted-foreground">표시될 이름을 확인하거나 직접 입력하세요</p>
         </div>
-        <input
-          autoFocus
-          value={nameInput}
-          onChange={e => setNameInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) { saveUserName(nameInput.trim()); setUserName(nameInput.trim()); }}}
-          placeholder="예) 김검사, 홍길동 등"
-          className="w-full max-w-xs text-sm bg-secondary border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-primary"
-        />
+        <div className="flex gap-2 w-full max-w-xs">
+          <input
+            autoFocus
+            value={nameInput}
+            onChange={e => setNameInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && nameInput.trim()) { saveUserName(nameInput.trim()); setUserName(nameInput.trim()); }}}
+            placeholder="이름 입력"
+            className="flex-1 text-sm bg-secondary border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <button
+            onClick={() => setNameInput(generateRandomName())}
+            className="px-3 py-2 border border-border rounded-xl text-muted-foreground hover:bg-secondary transition-colors"
+            title="랜덤 이름 생성"
+          >
+            🔀
+          </button>
+        </div>
         <button
           onClick={() => { if (nameInput.trim()) { saveUserName(nameInput.trim()); setUserName(nameInput.trim()); }}}
           className="w-full max-w-xs py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium"
