@@ -1043,23 +1043,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ==================== 채팅 ====================
+  const { db: chatDb } = await import("./db");
+  const { chatMessages: chatMsgsTable } = await import("@shared/schema");
+  const { desc: chatDesc, ilike: chatIlike, lt: chatLt, and: chatAnd } = await import("drizzle-orm");
+
+  // chat_messages 인덱스 생성 (최초 1회)
+  try {
+    const { pool: chatPool } = await import("./db");
+    await chatPool.query(`CREATE INDEX IF NOT EXISTS idx_chat_messages_id ON chat_messages(id DESC)`);
+    await chatPool.query(`CREATE INDEX IF NOT EXISTS idx_chat_messages_content ON chat_messages USING gin(to_tsvector('simple', content))`);
+  } catch {}
+
   app.get("/api/chat-messages", async (req, res) => {
     try {
-      const { search, limit = "50", before } = req.query as Record<string, string>;
-      const db = (await import("./db")).db;
-      const { chatMessages } = await import("@shared/schema");
-      const { desc, ilike, lt, and } = await import("drizzle-orm");
-
-      let query = db.select().from(chatMessages).$dynamic();
+      const { search, limit = "50", before, after } = req.query as Record<string, string>;
+      const { gt: chatGt } = await import("drizzle-orm");
+      let query = chatDb.select().from(chatMsgsTable).$dynamic();
       const conditions = [];
-      if (search) conditions.push(ilike(chatMessages.content, `%${search}%`));
-      if (before) conditions.push(lt(chatMessages.id, parseInt(before)));
-      if (conditions.length) query = query.where(and(...conditions));
-      const msgs = await query.orderBy(desc(chatMessages.id)).limit(parseInt(limit));
+      if (search) conditions.push(chatIlike(chatMsgsTable.content, `%${search}%`));
+      if (before) conditions.push(chatLt(chatMsgsTable.id, parseInt(before)));
+      if (after) conditions.push(chatGt(chatMsgsTable.id, parseInt(after)));
+      if (conditions.length) query = query.where(chatAnd(...conditions));
+      const msgs = await query.orderBy(chatDesc(chatMsgsTable.id)).limit(parseInt(limit));
+      res.setHeader('Cache-Control', 'no-store');
       res.json(msgs.reverse());
-    } catch (e) {
-      res.status(500).json({ error: "Failed to fetch messages" });
-    }
+    } catch (e) { res.status(500).json({ error: "Failed to fetch messages" }); }
   });
 
   app.post("/api/chat-messages", async (req, res) => {

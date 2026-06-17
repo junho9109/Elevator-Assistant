@@ -65,17 +65,36 @@ export default function ChatPage() {
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchMsgs = useCallback(async () => {
+  const lastIdRef = useRef<number>(0);
+
+  const fetchMsgs = useCallback(async (initial = false) => {
     try {
-      const r = await fetch("/api/chat-messages?limit=80");
-      if (r.ok) setMsgs(await r.json());
+      if (initial) {
+        // 첫 로딩: 최근 30개만
+        const r = await fetch("/api/chat-messages?limit=30");
+        if (r.ok) {
+          const data = await r.json();
+          setMsgs(data);
+          if (data.length > 0) lastIdRef.current = data[data.length - 1].id;
+        }
+      } else {
+        // 폴링: 마지막 ID 이후 새 메시지만
+        const r = await fetch(`/api/chat-messages?after=${lastIdRef.current}&limit=50`);
+        if (r.ok) {
+          const data = await r.json();
+          if (data.length > 0) {
+            setMsgs(prev => [...prev, ...data]);
+            lastIdRef.current = data[data.length - 1].id;
+          }
+        }
+      }
     } catch {}
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    fetchMsgs();
-    pollTimer.current = setInterval(fetchMsgs, 5000);
+    fetchMsgs(true);
+    pollTimer.current = setInterval(() => fetchMsgs(false), 5000);
     return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
   }, [fetchMsgs]);
 
