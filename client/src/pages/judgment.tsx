@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, ChevronLeft, Check, Settings2, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown } from "lucide-react";
+import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings2, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -1443,6 +1443,13 @@ export default function JudgmentPage() {
   // - 다중 선택 가능 (체크박스 동작)
   // - 자동 선택 시 안내된 모든 옵션이 미리 선택됨
   // - 검사원이 잘못된 옵션 클릭하여 해제 가능
+  // [추가] ISO 날짜 → 한글 표기 (예: 2019-03-28 → 2019년 3월 28일)
+  const formatKoreanDate = (iso?: string): string => {
+    if (!iso) return "";
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(iso);
+    return m ? `${+m[1]}년 ${+m[2]}월 ${+m[3]}일` : iso;
+  };
+
   const renderResultButton = (itemId: string, resultType: ResultType, status: "applicable" | "previous" | "not-applicable", autoResults: ResultType[]) => {
     const userResults = results[itemId];
     const hasUserChoice = userResults !== undefined;
@@ -1563,72 +1570,99 @@ export default function JudgmentPage() {
                  [가능한 옵션 안내]
             
             버튼은 모든 상태에서 유지, 안내문구만 동적                      */}
-        {status === "not-applicable" && referenceDate && (
-          <div className="px-4 pb-2 text-xs text-gray-600 ml-10">
-            ※ 이 검사기준은 <strong>{item.effectiveDate || "도입일 이전"}</strong>부터 도입된 항목입니다.
-            <br />
-            입력하신 검사기준 적용일({referenceDate.toISOString().split('T')[0]})에는 적용되지 않아 「해당없음」으로 자동 처리됩니다.
-          </div>
-        )}
-        {status === "previous" && referenceDate && (() => {
+        {/* [개선] 적용 안내 — 접힌 토글 + 한글 날짜 카드 (버튼/amber 로직은 그대로) */}
+        {referenceDate && (() => {
           const standardDates: string[] = (customEdits[item.id] as any)?.standardDates || [];
-          let latestDate = item.effectiveDate || '';
-          for (const d of standardDates) {
-            if (d > latestDate) latestDate = d;
-          }
-          return (
-            <div className="px-4 pb-2 text-xs text-amber-600 ml-10">
-              ※ 이 검사기준은 <strong>{item.effectiveDate}</strong>부터 도입되어 <strong>{latestDate}</strong>에 개정되었습니다.
-              <br />
-              입력하신 검사기준 적용일({referenceDate.toISOString().split('T')[0]})에는 옛 본문이 적용됩니다.
-              <br />
-              현장 상태를 확인하여 직접 판정해주세요:
-              <br />
-              · 옛 본문에 부합 → 「종전」
-              <br />
-              · 현행 기준({latestDate}~)에 이미 부합 → 「적합」
-              <br />
-              · 미흡 → 「부적합」 / 「시정권고」
-              <br />
-              · 해당 설비 없음 → 「해당없음」
+          let latestDate = item.effectiveDate || "";
+          for (const d of standardDates) { if (d > latestDate) latestDate = d; }
+          const enforcementType = (customEdits[item.id] as any)?.enforcementType;
+          const refK = formatKoreanDate(referenceDate.toISOString().split("T")[0]);
+          const effK = formatKoreanDate(item.effectiveDate);
+          const latestK = formatKoreanDate(latestDate) || effK;
+
+          const row = (cond: string, label: string, tone: string) => (
+            <div className="flex items-center justify-between py-1">
+              <span className="text-[12px] text-muted-foreground">{cond}</span>
+              <span className={cn("text-[12px] font-medium px-3 py-0.5 rounded", tone)}>{label}</span>
             </div>
           );
-        })()}
-        {/* [v3] retroactive 항목: 소급적용 안내 */}
-        {status === "applicable" && referenceDate && 
-         (customEdits[item.id] as any)?.enforcementType === 'retroactive' && (
-          <div className="px-4 pb-2 text-xs text-red-600 ml-10">
-            ⚠️ <strong>소급적용 항목</strong>: 이 검사기준은 건축허가일·검사기준 적용일과 무관하게 <strong>항상 검사 대상</strong>입니다.
-            <br />
-            (근거: 승강기 검사기준 부칙 제2조 ① 단서)
-            <br />
-            현장 상태를 확인하여 직접 판정해주세요:
-            <br />
-            · 현행 기준 충족 → 「적합」
-            <br />
-            · 미흡 → 「부적합」 / 「시정권고」
-            <br />
-            · 해당 설비 없음 → 「해당없음」
-          </div>
-        )}
-        {/* [v4] applicable + 일반: 종전/해당없음 안내 제외 (현행 적용 시점이므로) */}
-        {status === "applicable" && referenceDate && 
-         (customEdits[item.id] as any)?.enforcementType !== 'retroactive' && (() => {
-          const standardDates: string[] = (customEdits[item.id] as any)?.standardDates || [];
-          let latestDate = item.effectiveDate || '';
-          for (const d of standardDates) {
-            if (d > latestDate) latestDate = d;
+
+          let lead: JSX.Element;
+          let rows: JSX.Element;
+
+          if (status === "not-applicable") {
+            lead = (
+              <>
+                <div className="text-[11px] text-muted-foreground mb-1">적용 기준일</div>
+                <div className="text-[14px] font-medium text-foreground">{effK || "도입일 이전"} 도입</div>
+                <div className="text-[12px] text-muted-foreground mt-1">검사기준 적용일({refK})에는 적용되지 않아 「해당없음」으로 자동 처리됩니다.</div>
+              </>
+            );
+            rows = row("해당 시점 미도입", "해당없음", "bg-gray-100 text-gray-600");
+          } else if (status === "previous") {
+            lead = (
+              <>
+                <div className="text-[11px] text-muted-foreground mb-1">적용 기준일</div>
+                <div className="text-[14px] font-medium text-foreground">{effK} 도입 → {latestK} 개정</div>
+                <div className="text-[12px] text-muted-foreground mt-1">검사기준 적용일({refK})에는 옛 본문이 적용됩니다.</div>
+              </>
+            );
+            rows = (
+              <>
+                {row("옛 본문에 부합", "종전", "bg-amber-100 text-amber-700")}
+                {row(`현행 기준(${latestK}~) 부합`, "적합", "bg-green-100 text-green-700")}
+                {row("미흡", "부적합 · 시정권고", "bg-orange-100 text-orange-700")}
+                {row("해당 설비 없음", "해당없음", "bg-gray-100 text-gray-600")}
+              </>
+            );
+          } else if (enforcementType === "retroactive") {
+            lead = (
+              <>
+                <div className="text-[11px] text-muted-foreground mb-1">소급적용 항목</div>
+                <div className="text-[13px] text-foreground">건축허가일·검사기준 적용일과 <span className="font-medium">무관하게 항상 검사 대상</span>입니다.</div>
+                <div className="text-[11px] text-muted-foreground mt-1">근거: 승강기 검사기준 부칙 제2조 ① 단서</div>
+              </>
+            );
+            rows = (
+              <>
+                {row("현행 기준 충족", "적합", "bg-green-100 text-green-700")}
+                {row("미흡", "부적합 · 시정권고", "bg-orange-100 text-orange-700")}
+                {row("해당 설비 없음", "해당없음", "bg-gray-100 text-gray-600")}
+              </>
+            );
+          } else {
+            lead = (
+              <>
+                <div className="text-[11px] text-muted-foreground mb-1">적용 기준일</div>
+                <div className="text-[14px] font-medium text-foreground">{latestK} 이후</div>
+                <div className="text-[12px] text-muted-foreground mt-1">
+                  <span className="bg-blue-100 text-blue-700 text-[11px] px-2 py-0.5 rounded mr-1">건축허가</span>
+                  신청분부터 현행 기준 적용
+                </div>
+              </>
+            );
+            rows = (
+              <>
+                {row("현행 기준 부합", "적합", "bg-green-100 text-green-700")}
+                {row("미흡", "부적합 · 시정권고", "bg-orange-100 text-orange-700")}
+              </>
+            );
           }
+
           return (
-            <div className="px-4 pb-2 text-xs text-blue-600 ml-10">
-              ※ 이 검사기준은 <strong>{latestDate || item.effectiveDate}</strong>부터 현행 적용되는 기준입니다.
-              <br />
-              현장 상태를 확인하여 직접 판정해주세요:
-              <br />
-              · 현행 기준 부합 → 「적합」
-              <br />
-              · 미흡 → 「부적합」 / 「시정권고」
-            </div>
+            <details className="ml-10 mr-4 mb-2 group">
+              <summary className="inline-flex items-center gap-1 w-fit px-2 py-1 text-[11px] text-muted-foreground border border-border rounded cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                <Info className="w-3 h-3" />
+                적용 안내
+                <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="mt-2 p-3 bg-muted/40 border border-border rounded">
+                {lead}
+                <div className="border-t border-border my-2.5" />
+                <div className="text-[12px] text-muted-foreground mb-1.5">현장 상태를 확인해 직접 판정하세요</div>
+                {rows}
+              </div>
+            </details>
           );
         })()}
         {customEdits[item.id]?.customWarning && (
