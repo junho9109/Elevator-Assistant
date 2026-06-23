@@ -1459,7 +1459,7 @@ export default function JudgmentPage() {
     const isAutoSelected = !hasUserChoice && autoResults.includes(resultType);
     const isDisabled = (status === "not-applicable" && resultType !== "해당없음");
     
-    const baseClasses = "px-1.5 py-0.5 text-[10px] rounded border transition-all min-w-[32px] leading-tight";
+    const baseClasses = "px-2 py-0.5 text-[11px] rounded border transition-all whitespace-nowrap leading-tight";
     
     if (isSelected) {
       return (
@@ -1543,7 +1543,7 @@ export default function JudgmentPage() {
           >
             <Image className="w-3.5 h-3.5 text-muted-foreground" />
           </button>
-          <div className="flex gap-0.5 shrink-0">
+          <div className="flex gap-0.5 flex-wrap">
             {renderResultButton(item.id, "적합", status, autoResults)}
             {renderResultButton(item.id, "부적합", status, autoResults)}
             {renderResultButton(item.id, "시정권고", status, autoResults)}
