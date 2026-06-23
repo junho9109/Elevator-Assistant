@@ -101,7 +101,7 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
                 currentIndex === i ? "text-primary" : "text-muted-foreground"
               }`}
             >
-              <span className={`text-xs font-medium tracking-tight ${currentIndex === i ? "font-semibold" : ""}`}>
+              <span className={`text-[10px] font-medium tracking-tight whitespace-nowrap ${currentIndex === i ? "font-semibold" : ""}`}>
                 {name}
               </span>
               {currentIndex === i && (
