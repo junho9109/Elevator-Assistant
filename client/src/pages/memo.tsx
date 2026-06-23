@@ -963,7 +963,7 @@ export default function MemoPage() {
                   >
                     <div className="font-medium text-sm mb-1">{memo.title || "제목 없음"}</div>
                     <div className="text-xs text-muted-foreground line-clamp-2">{(memo as any).body || ""}</div>
-                    <div className="text-[10px] text-muted-foreground mt-1.5 flex justify-between">
+                    <div className="text-xs text-muted-foreground mt-1.5 flex justify-between">
                       <span>{memo.createdAt ? new Date(memo.createdAt).toLocaleDateString("ko-KR") : ""}</span>
                       {isAdminMode && <button onClick={e => { e.stopPropagation(); handleDeleteMemo(memo.id, memo); }} className="text-red-400 text-xs">삭제</button>}
                     </div>

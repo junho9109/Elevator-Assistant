@@ -224,7 +224,7 @@ export default function ChatPage() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium">검사원 채팅방</p>
-          <p className="text-[10px] text-muted-foreground">{userName} · 실시간 채팅</p>
+          <p className="text-xs text-muted-foreground">{userName} · 실시간 채팅</p>
         </div>
         <button
           onClick={() => { saveUserName(""); setUserName(""); setNameInput(generateRandomName()); }}
@@ -274,13 +274,13 @@ export default function ChatPage() {
                 onClick={() => scrollToMsg(msg.id)}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-muted-foreground">{msg.userName} · {formatTime(msg.createdAt)}</span>
-                  <span className="text-[9px] text-blue-600 flex items-center gap-0.5 shrink-0">
+                  <span className="text-xs text-muted-foreground">{msg.userName} · {formatTime(msg.createdAt)}</span>
+                  <span className="text-[11px] text-blue-600 flex items-center gap-0.5 shrink-0">
                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 17L17 7M17 7H7M17 7v10"/></svg>이동
                   </span>
                 </div>
                 {msg.replyToUser && (
-                  <div className="text-[9px] text-muted-foreground border-l-2 border-green-500 pl-2">
+                  <div className="text-[11px] text-muted-foreground border-l-2 border-green-500 pl-2">
                     {msg.replyToUser}: {msg.replyToContent}
                   </div>
                 )}
@@ -305,7 +305,7 @@ export default function ChatPage() {
                 {(!prevMsg || new Date(prevMsg.createdAt).toDateString() !== new Date(msg.createdAt).toDateString()) && (
                   <div className="flex items-center gap-2 my-3">
                     <div className="flex-1 h-px bg-border" />
-                    <span className="text-[9px] text-muted-foreground">{new Date(msg.createdAt).toLocaleDateString("ko-KR")}</span>
+                    <span className="text-[11px] text-muted-foreground">{new Date(msg.createdAt).toLocaleDateString("ko-KR")}</span>
                     <div className="flex-1 h-px bg-border" />
                   </div>
                 )}
@@ -313,7 +313,7 @@ export default function ChatPage() {
                   {/* 아바타 */}
                   <div className="w-7 shrink-0 self-start mt-1">
                     {showAvatar && !isMe && (
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-medium ${avatarColor(msg.userName)}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-medium ${avatarColor(msg.userName)}`}>
                         {initials(msg.userName)}
                       </div>
                     )}
@@ -321,7 +321,7 @@ export default function ChatPage() {
                   {/* 말풍선 */}
                   <div className={`flex flex-col gap-0.5 max-w-[78%] ${isMe ? "items-end" : "items-start"}`}>
                     {showAvatar && !isMe && (
-                      <span className="text-[9px] text-muted-foreground pl-1">{msg.userName}</span>
+                      <span className="text-[11px] text-muted-foreground pl-1">{msg.userName}</span>
                     )}
                     <div
                       onMouseDown={e => onPressStart(e, msg)}
@@ -342,8 +342,8 @@ export default function ChatPage() {
                           className={`border-l-2 pl-2 mb-1.5 cursor-pointer rounded-r ${isMe ? "border-white/50" : "border-green-500"}`}
                           onClick={e => { e.stopPropagation(); if (msg.replyToId) scrollToMsg(msg.replyToId); }}
                         >
-                          <p className={`text-[9px] font-medium ${isMe ? "text-white/80" : "text-green-700"}`}>{msg.replyToUser}</p>
-                          <p className={`text-[9px] truncate ${isMe ? "text-white/70" : "text-muted-foreground"}`}>{msg.replyToContent}</p>
+                          <p className={`text-[11px] font-medium ${isMe ? "text-white/80" : "text-green-700"}`}>{msg.replyToUser}</p>
+                          <p className={`text-[11px] truncate ${isMe ? "text-white/70" : "text-muted-foreground"}`}>{msg.replyToContent}</p>
                         </div>
                       )}
                       {msg.content}
@@ -385,8 +385,8 @@ export default function ChatPage() {
       {replyTo && (
         <div className="px-3 py-2 border-t border-border bg-secondary shrink-0 flex items-center gap-2">
           <div className="flex-1 border-l-2 border-green-500 pl-2.5 min-w-0">
-            <p className="text-[10px] font-medium text-green-700">{replyTo.userName}에게 답변</p>
-            <p className="text-[10px] text-muted-foreground truncate">{replyTo.content}</p>
+            <p className="text-xs font-medium text-green-700">{replyTo.userName}에게 답변</p>
+            <p className="text-xs text-muted-foreground truncate">{replyTo.content}</p>
           </div>
           <button onClick={() => setReplyTo(null)} className="p-1 hover:bg-border rounded-lg shrink-0">
             <X size={14} className="text-muted-foreground" />

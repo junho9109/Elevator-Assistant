@@ -1866,7 +1866,7 @@ export default function JudgmentPage() {
                   <SelectItem value="수시교체">수시교체 (부품 일부 교체·개조)</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-[10px] text-muted-foreground">건축허가일과 검사기준 적용일이 다른 경우 선택하세요</p>
+              <p className="text-xs text-muted-foreground">건축허가일과 검사기준 적용일이 다른 경우 선택하세요</p>
             </div>
           )}
 
@@ -1876,7 +1876,7 @@ export default function JudgmentPage() {
               {permitDate && <p className="text-foreground">건축허가일: <strong>{permitDate}</strong></p>}
               {inspectionDate && <p className="text-foreground">검사기준 적용일: <strong>{inspectionDate}</strong></p>}
               {installType && <p className="text-primary font-medium">교체 구분: {installType}</p>}
-              <p className="text-[10px] text-blue-500 mt-1">
+              <p className="text-xs text-blue-500 mt-1">
                 {permitDate && inspectionDate && permitDate !== inspectionDate
                   ? `${permitDate > inspectionDate ? permitDate : inspectionDate} 기준으로 판정됩니다.`
                   : "입력된 날짜 기준으로 검사항목 적용 여부가 판정됩니다."}
@@ -1907,11 +1907,11 @@ export default function JudgmentPage() {
           <div className="bg-muted/50 border-b border-border">
             <div className="flex items-center">
               <div className="flex-1 p-3 font-semibold text-center border-r border-border">검사기준</div>
-              <div className="w-9 p-2 text-[10px] font-semibold text-center border-r border-border">적합</div>
-              <div className="w-9 p-2 text-[10px] font-semibold text-center border-r border-border">부적합</div>
-              <div className="w-9 p-2 text-[10px] font-semibold text-center border-r border-border">시정<br/>권고</div>
-              <div className="w-9 p-2 text-[10px] font-semibold text-center border-r border-border">해당<br/>없음</div>
-              <div className="w-9 p-2 text-[10px] font-semibold text-center">종전</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center border-r border-border">적합</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center border-r border-border">부적합</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center border-r border-border">시정<br/>권고</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center border-r border-border">해당<br/>없음</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center">종전</div>
             </div>
           </div>
           
@@ -2120,12 +2120,12 @@ export default function JudgmentPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="flex-1">
-                            <label className="text-[10px] text-muted-foreground">시행일</label>
+                            <label className="text-xs text-muted-foreground">시행일</label>
                             <Input type="date" value={rev.effectiveDate}
                               onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, effectiveDate: e.target.value } : r))} />
                           </div>
                           <div className="flex-1">
-                            <label className="text-[10px] text-muted-foreground">만료일 (다음 개정 전까지)</label>
+                            <label className="text-xs text-muted-foreground">만료일 (다음 개정 전까지)</label>
                             <Input type="date" value={rev.expiryDate}
                               onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, expiryDate: e.target.value } : r))} />
                           </div>
@@ -2200,7 +2200,7 @@ export default function JudgmentPage() {
                         return sections.map((sec, si) => (
                           <div key={si}>
                             {sec.header && (
-                              <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 mb-1">{sec.header}</span>
+                              <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 mb-1">{sec.header}</span>
                             )}
                             <div className="space-y-1">
                               {sec.body.map((line: string, li: number) => {
@@ -2322,9 +2322,9 @@ export default function JudgmentPage() {
                                   })()}
                                   {(r as any).source?.length > 0 && (
                                     <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                                      <span className="text-[10px] text-muted-foreground shrink-0">출처</span>
+                                      <span className="text-xs text-muted-foreground shrink-0">출처</span>
                                       {(r as any).source.map((s: string, si: number) => (
-                                        <span key={si} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">{s}</span>
+                                        <span key={si} className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">{s}</span>
                                       ))}
                                     </div>
                                   )}

@@ -441,7 +441,7 @@ export default function PrecisionInspectionPage() {
                     <div key={k} className={`border-b border-border last:border-0 ${isSelected ? "bg-primary/5" : ""}`}>
                       <div className={`px-4 py-3`}>
                         <div className="flex items-center gap-2 mb-2">
-                          {isSelected && <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full font-medium">선택됨</span>}
+                          {isSelected && <span className="text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full font-medium">선택됨</span>}
                           <p className="text-xs font-semibold text-primary">{k}</p>
                         </div>
                         <p className="text-xs text-foreground mb-2">{v}</p>
@@ -463,9 +463,9 @@ export default function PrecisionInspectionPage() {
                               </p>
                             )}
                             <div className="border-t border-border pt-1.5 mt-1">
-                              <p className="text-[10px] text-muted-foreground">🏁 최종 이행 마감일</p>
+                              <p className="text-xs text-muted-foreground">🏁 최종 이행 마감일</p>
                               <p className="text-base font-bold text-primary">{formatDate(result.dates.deadline)}</p>
-                              <p className="text-[10px] text-muted-foreground">정밀안전검사일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후</p>
+                              <p className="text-xs text-muted-foreground">정밀안전검사일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후</p>
                             </div>
                           </div>
                         )}
@@ -473,7 +473,7 @@ export default function PrecisionInspectionPage() {
                         {/* 선택된 주기의 행정절차 */}
                         {isSelected && (
                           <div className="mt-2 space-y-1">
-                            <p className="text-[10px] font-semibold text-muted-foreground mt-2 mb-1">▸ 행정 처리 절차</p>
+                            <p className="text-xs font-semibold text-muted-foreground mt-2 mb-1">▸ 행정 처리 절차</p>
                             {result.adminProcess.map((step: string, i: number) => (
                               <p key={i} className="text-xs leading-relaxed text-foreground pl-2">{step}</p>
                             ))}
@@ -483,7 +483,7 @@ export default function PrecisionInspectionPage() {
                     </div>
                   );
                 })}
-                <p className="text-[10px] text-muted-foreground px-4 py-2">※ 최초 2개월 조건부합격 → 이행계획서 제출 → 주기별 확인 → 최종 판정</p>
+                <p className="text-xs text-muted-foreground px-4 py-2">※ 최초 2개월 조건부합격 → 이행계획서 제출 → 주기별 확인 → 최종 판정</p>
               </div>
             ) : (
               // 일반: 이행기간 + 행정절차 분리 표시
@@ -500,9 +500,9 @@ export default function PrecisionInspectionPage() {
                       <p className="text-xs text-muted-foreground">⏱ 최초 조건부합격 만료: <span className="font-semibold text-foreground">{formatDate(addMonths(result.base, result.initialMonths))}</span> (+{result.initialMonths}개월)</p>
                     )}
                     <div className="border-t border-border pt-1.5">
-                      <p className="text-[10px] text-muted-foreground">🏁 최종 이행 마감일</p>
+                      <p className="text-xs text-muted-foreground">🏁 최종 이행 마감일</p>
                       <p className="text-base font-bold text-primary">{formatDate(result.dates.deadline)}</p>
-                      <p className="text-[10px] text-muted-foreground">검사일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후</p>
+                      <p className="text-xs text-muted-foreground">검사일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후</p>
                     </div>
                   </div>
                 )}
@@ -555,7 +555,7 @@ export default function PrecisionInspectionPage() {
             </div>
 
             {/* 출처 */}
-            <p className="text-[10px] text-muted-foreground text-center pb-4">
+            <p className="text-xs text-muted-foreground text-center pb-4">
               출처: 한국승강기안전공단 검사총괄실 · 검사규정 제13조제3항 (2026.02.27)
             </p>
           </div>

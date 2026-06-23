@@ -473,8 +473,8 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">첨부 이미지</p>
-        <p className="text-[10px] text-muted-foreground">{photos.length} / 10</p>
+        <p className="text-xs font-bold text-muted-foreground tracking-wide">첨부 이미지</p>
+        <p className="text-xs text-muted-foreground">{photos.length} / 10</p>
       </div>
 
       {photos.length === 0 && !uploading ? (
@@ -495,7 +495,7 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
             <label className="w-16 h-16 rounded-xl border border-dashed border-border flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-secondary transition-colors shrink-0">
               {uploading
                 ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                : <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span className="text-[9px] text-muted-foreground">추가</span></>
+                : <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span className="text-[11px] text-muted-foreground">추가</span></>
               }
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
             </label>
@@ -1433,7 +1433,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                           }`}
                         >
                           <div className="flex items-center gap-1 mb-1">
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white ${
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full text-white ${
                               r.type === "standard" ? "bg-blue-500"
                               : r.type === "judgment" ? "bg-green-500"
                               : r.type === "chat" ? "bg-purple-500"
@@ -1442,7 +1442,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                               {r.type === "standard" ? "표준화" : r.type === "judgment" ? "안전검사기준" : r.type === "chat" ? "채팅" : "검사기준"}
                             </span>
                             {r.score !== undefined && (
-                              <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
+                              <span className={`text-[11px] px-1 py-0.5 rounded font-medium ${
                                 r.score === 100 ? "bg-gray-100 text-gray-600 dark:bg-gray-800"
                                 : r.score >= 85 ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30"
                                 : "bg-orange-100 text-orange-600 dark:bg-orange-900/30"
@@ -1451,18 +1451,18 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                               </span>
                             )}
                             {r.type === "chat" && r.chatMeta?.hasImage && (
-                              <span className="text-[9px] text-purple-500">📷</span>
+                              <span className="text-[11px] text-purple-500">📷</span>
                             )}
                           </div>
                           <div className="font-medium text-foreground text-xs leading-tight">{r.title}</div>
                           {r.type === "chat" && r.chatMeta && (
-                            <div className="text-muted-foreground text-[10px] mt-0.5 leading-tight">
+                            <div className="text-muted-foreground text-xs mt-0.5 leading-tight">
                               <span className="text-purple-600 font-medium">{r.chatMeta.userName}</span>
                               {r.chatMeta.replyToUser && <span> → {r.chatMeta.replyToUser}에 답변</span>}
                             </div>
                           )}
                           {r.content && (
-                            <div className="text-muted-foreground text-[10px] mt-0.5 leading-tight line-clamp-2">{r.content}</div>
+                            <div className="text-muted-foreground text-xs mt-0.5 leading-tight line-clamp-2">{r.content}</div>
                           )}
                         </button>
                       ))}
@@ -1735,20 +1735,20 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
                           {(item.ref || item.basis) && (
                             <div className="space-y-1.5">
-                              <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
+                              <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
                               {item.ref && <p className="text-[11px] font-semibold text-blue-600">{item.ref}</p>}
                               {item.basis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-card rounded-lg p-2">{item.basis}</p>}
                             </div>
                           )}
                           {item.conclusion && (
                             <div className="space-y-1.5">
-                              <p className="text-[10px] font-bold text-muted-foreground tracking-wide">표준화</p>
+                              <p className="text-xs font-bold text-muted-foreground tracking-wide">표준화</p>
                               <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2">{item.conclusion}</p>
                             </div>
                           )}
                           <StdPhotoSection itemKey={item.title} />
                           <div className="pt-1.5 border-t border-border/50">
-                            <p className="text-[10px] text-muted-foreground">출처 · {item.source}</p>
+                            <p className="text-xs text-muted-foreground">출처 · {item.source}</p>
                           </div>
                         </div>
                       )}
@@ -1883,20 +1883,20 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     <h2 className="text-sm font-semibold leading-snug">{selectedSearchResult.title}</h2>
                     {std && (std.ref || std.basis) && (
                       <div className="space-y-1.5">
-                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
+                        <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
                         {std.ref && <p className="text-xs font-semibold text-blue-600">{std.ref}</p>}
                         {std.basis && <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5">{std.basis}</p>}
                       </div>
                     )}
                     {std?.conclusion && (
                       <div className="space-y-1.5">
-                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">표준화</p>
+                        <p className="text-xs font-bold text-muted-foreground tracking-wide">표준화</p>
                         <p className="text-xs text-foreground leading-relaxed border-l-2 border-amber-400 pl-2.5">{std.conclusion}</p>
                       </div>
                     )}
                     {!std && <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>}
                     <div className="pt-2 border-t border-border">
-                      <p className="text-[10px] text-muted-foreground mb-0.5">출처</p>
+                      <p className="text-xs text-muted-foreground mb-0.5">출처</p>
                       <p className="text-xs font-medium text-muted-foreground">{std?.source || ""}</p>
                     </div>
                   </>
@@ -1908,12 +1908,12 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     <h2 className="text-sm font-semibold leading-snug pr-4">{selectedSearchResult.title}</h2>
                     {selectedSearchResult.content && (
                       <div className="space-y-1.5">
-                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">안전검사기준 내용</p>
+                        <p className="text-xs font-bold text-muted-foreground tracking-wide">안전검사기준 내용</p>
                         <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5 whitespace-pre-wrap">{selectedSearchResult.content}</p>
                       </div>
                     )}
                     <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
-                      <p className="text-[10px] text-muted-foreground">항목 ID: {selectedSearchResult.query}</p>
+                      <p className="text-xs text-muted-foreground">항목 ID: {selectedSearchResult.query}</p>
                       <button
                         className="text-xs bg-green-600 text-white rounded-lg px-3 py-1.5 hover:bg-green-700 shrink-0"
                         onClick={() => {
@@ -1938,23 +1938,23 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                   <>
                     {/* 제목: 첫 문장만 표시 */}
                     <h2 className="text-sm font-semibold leading-snug pr-4">
-                      <span className="text-[10px] font-mono text-muted-foreground mr-1">[{itemId}]</span>
+                      <span className="text-xs font-mono text-muted-foreground mr-1">[{itemId}]</span>
                       {fullText.split(/[.\n]/)[0]?.trim() || itemId}
                     </h2>
                     {fullText && (
                       <div className="space-y-1.5">
-                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
+                        <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
                         <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5 whitespace-pre-wrap">{fullText}</p>
                       </div>
                     )}
                     {latestRev && (
                       <div className="space-y-1.5">
-                        <p className="text-[10px] font-bold text-muted-foreground tracking-wide">적용일</p>
+                        <p className="text-xs font-bold text-muted-foreground tracking-wide">적용일</p>
                         <p className="text-xs text-foreground border-l-2 border-amber-400 pl-2.5">{latestRev.effectiveDate} 이후 건축허가분부터 적용</p>
                       </div>
                     )}
                     <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
-                      <p className="text-[10px] text-muted-foreground">항목 ID: {itemId}</p>
+                      <p className="text-xs text-muted-foreground">항목 ID: {itemId}</p>
                       <button
                         className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 shrink-0"
                         onClick={() => {

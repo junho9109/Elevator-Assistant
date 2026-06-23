@@ -68,7 +68,7 @@ function ItemBtn({ id, isActive, onClick }: { id: string; isActive: boolean; onC
         isActive ? "bg-primary text-primary-foreground" : "hover:bg-secondary text-foreground"
       }`}
     >
-      <span className="font-mono text-[10px] opacity-60 mr-1">[{id}]</span>
+      <span className="font-mono text-xs opacity-60 mr-1">[{id}]</span>
       <span>{label.length > 60 ? label.slice(0, 60) + "…" : label}</span>
     </button>
   );
@@ -100,7 +100,7 @@ function TreeNode({ sec, depth, activeKey, onSelect }: {
         {hasChildren
           ? (open ? <ChevronDown size={12} className="shrink-0 opacity-60" /> : <ChevronRight size={12} className="shrink-0 opacity-60" />)
           : <span className="w-3" />}
-        <span className="font-mono text-[10px] text-muted-foreground mr-1 shrink-0">[{sec.id}]</span>
+        <span className="font-mono text-xs text-muted-foreground mr-1 shrink-0">[{sec.id}]</span>
         <span className="truncate">{sec.title}</span>
       </button>
       {open && (
@@ -129,7 +129,7 @@ function Detail({ id, onClose }: { id: string; onClose: () => void }) {
     <div className="flex flex-col h-full">
       <div className="flex items-start justify-between px-4 py-3 border-b border-border shrink-0 gap-2">
         <div className="flex-1 min-w-0">
-          <span className="font-mono text-[10px] text-muted-foreground">[{id}]</span>
+          <span className="font-mono text-xs text-muted-foreground">[{id}]</span>
           <p className="text-sm font-semibold mt-0.5 leading-snug">{firstLine}</p>
         </div>
         <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded-lg shrink-0 mt-0.5">
@@ -139,13 +139,13 @@ function Detail({ id, onClose }: { id: string; onClose: () => void }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {body ? (
           <div>
-            <p className="text-[10px] font-bold text-muted-foreground tracking-wide mb-2">조문 내용</p>
+            <p className="text-xs font-bold text-muted-foreground tracking-wide mb-2">조문 내용</p>
             <p className="text-xs leading-relaxed whitespace-pre-wrap bg-secondary rounded-lg p-3">{body}</p>
           </div>
         ) : (
           <p className="text-xs leading-relaxed whitespace-pre-wrap bg-secondary rounded-lg p-3">{fullText}</p>
         )}
-        <p className="text-[10px] text-muted-foreground border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground border-t border-border pt-3">
           출처: {e.source || "별표22 엘리베이터 안전기준 (KC2050-51:2022)"}
         </p>
       </div>
@@ -194,7 +194,7 @@ export default function InspectionStandardsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-base font-bold">검사기준</h1>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               별표22 엘리베이터 안전기준 KC2050-51:2022 · {Object.keys(dataMap).length}개 조문
             </p>
           </div>
@@ -222,7 +222,7 @@ export default function InspectionStandardsPage() {
         <div className={`${activeKey ? "hidden md:flex w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
           {showSearch && results.length > 0 ? (
             <div className="p-2 space-y-1">
-              <p className="text-[10px] text-muted-foreground px-2 py-1">{results.length}건</p>
+              <p className="text-xs text-muted-foreground px-2 py-1">{results.length}건</p>
               {results.map(k => (
                 <div key={k} className="px-1">
                   <ItemBtn id={k} isActive={activeKey === k} onClick={() => { setActiveKey(k); setShowSearch(false); setQuery(""); }} />
