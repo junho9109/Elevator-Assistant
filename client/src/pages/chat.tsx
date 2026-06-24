@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, X, Send, CornerUpLeft, ImagePlus } from "lucide-react";
+import { Search, X, Send, CornerUpLeft, ImagePlus, Video } from "lucide-react";
 
 interface ChatMsg {
   id: number;
@@ -9,6 +9,8 @@ interface ChatMsg {
   replyToUser?: string | null;
   replyToContent?: string | null;
   imageData?: string | null;
+  videoData?: string | null;
+  videoMime?: string | null;
   createdAt: string;
 }
 
@@ -62,7 +64,10 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [pendingVideo, setPendingVideo] = useState<string | null>(null);
+  const [pendingVideoMime, setPendingVideoMime] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const msgRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,23 +154,32 @@ export default function ChatPage() {
     }, 100);
   };
 
-  // 이미지 압축 (최대 800px, quality 0.75 → 채팅용 경량)
+  // 이미지 압축 (최대 800px, quality 0.75) — 실패 시 원본 base64 폴백
   const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        const MAX = 800;
-        let { width, height } = img;
-        if (width > MAX) { height = Math.round(height * MAX / width); width = MAX; }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.75));
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const MAX = 800;
+            let { width, height } = img;
+            if (width > MAX) { height = Math.round(height * MAX / width); width = MAX; }
+            const canvas = document.createElement('canvas');
+            canvas.width = width; canvas.height = height;
+            canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+            const result = canvas.toDataURL('image/jpeg', 0.75);
+            resolve(result);
+          } catch {
+            resolve(dataUrl); // 압축 실패 → 원본 폴백
+          }
+        };
+        img.onerror = () => resolve(dataUrl); // 이미지 로드 실패 → 원본 폴백
+        img.src = dataUrl;
       };
-      img.onerror = reject;
-      img.src = url;
+      reader.onerror = () => resolve(""); // 읽기 실패
+      reader.readAsDataURL(file);
     });
   };
 
@@ -173,12 +187,30 @@ export default function ChatPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (photoInputRef.current) photoInputRef.current.value = "";
-    try { setPendingImage(await compressImage(file)); }
-    catch { alert("이미지 처리 실패"); }
+    const result = await compressImage(file);
+    if (result) setPendingImage(result);
+  };
+
+  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (videoInputRef.current) videoInputRef.current.value = "";
+    // 50MB 제한
+    if (file.size > 50 * 1024 * 1024) {
+      alert("동영상은 50MB 이하만 첨부 가능합니다.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setPendingVideo(dataUrl);
+      setPendingVideoMime(file.type);
+    };
+    reader.readAsDataURL(file);
   };
 
   const sendMsg = async () => {
-    if ((!input.trim() && !pendingImage) || !userName || sending) return;
+    if ((!input.trim() && !pendingImage && !pendingVideo) || !userName || sending) return;
     setSending(true);
     try {
       const r = await fetch("/api/chat-messages", {
@@ -191,6 +223,8 @@ export default function ChatPage() {
           replyToUser: replyTo?.userName || null,
           replyToContent: replyTo?.content.slice(0, 80) || null,
           imageData: pendingImage || null,
+          videoData: pendingVideo || null,
+          videoMime: pendingVideoMime || null,
         }),
       });
       if (r.ok) {
@@ -199,6 +233,8 @@ export default function ChatPage() {
         lastIdRef.current = msg.id;   // 폴링 중복 방지
         setInput("");
         setPendingImage(null);
+        setPendingVideo(null);
+        setPendingVideoMime(null);
         setReplyTo(null);
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
       }
@@ -382,6 +418,7 @@ export default function ChatPage() {
                       )}
                       {msg.content && <span>{msg.content}</span>}
                       {msg.imageData && <img src={msg.imageData} alt="첨부이미지" className="mt-1 max-w-[200px] rounded-lg block" />}
+                      {msg.videoData && <video src={msg.videoData} controls className="mt-1 max-w-[220px] rounded-lg block" style={{maxHeight:'160px'}} playsInline />}
                     </div>
                     <span className="text-[8px] text-muted-foreground px-1">{formatTime(msg.createdAt)}</span>
                   </div>
@@ -437,13 +474,27 @@ export default function ChatPage() {
             <button onClick={() => setPendingImage(null)} className="text-xs text-muted-foreground border border-border rounded px-2 py-1">삭제</button>
           </div>
         )}
+        {pendingVideo && (
+          <div className="px-3 pt-2 flex items-center gap-2">
+            <video src={pendingVideo} className="w-16 h-16 object-cover rounded-lg border border-border" muted playsInline />
+            <span className="text-xs text-muted-foreground">동영상 첨부됨</span>
+            <button onClick={() => { setPendingVideo(null); setPendingVideoMime(null); }} className="text-xs text-muted-foreground border border-border rounded px-2 py-1">삭제</button>
+          </div>
+        )}
         <div className="px-3 py-2.5 flex gap-2 items-end">
           <input type="file" accept="image/*" ref={photoInputRef} onChange={handlePhotoSelect} className="hidden" />
+          <input type="file" accept="video/*" ref={videoInputRef} onChange={handleVideoSelect} className="hidden" />
           <button
             onClick={() => photoInputRef.current?.click()}
             className="w-9 h-9 rounded-full bg-secondary border border-border flex items-center justify-center shrink-0"
           >
             <ImagePlus size={16} className="text-muted-foreground" />
+          </button>
+          <button
+            onClick={() => videoInputRef.current?.click()}
+            className="w-9 h-9 rounded-full bg-secondary border border-border flex items-center justify-center shrink-0"
+          >
+            <Video size={16} className="text-muted-foreground" />
           </button>
           <textarea
             value={input}

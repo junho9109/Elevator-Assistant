@@ -373,6 +373,8 @@ export const chatMessages = pgTable("chat_messages", {
   replyToUser: varchar("reply_to_user", { length: 50 }), // 답변 대상 작성자
   replyToContent: text("reply_to_content"), // 답변 대상 내용 미리보기
   imageData: text("image_data"),            // 첨부 이미지 base64
+  videoData: text("video_data"),            // 첨부 동영상 base64
+  videoMime: varchar("video_mime", { length: 50 }), // 동영상 mime type
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

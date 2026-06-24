@@ -1072,8 +1072,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/chat-messages", async (req, res) => {
     try {
-      const { userName, content, replyToId, replyToUser, replyToContent, imageData } = req.body;
-      if (!userName?.trim() || (!content?.trim() && !imageData)) return res.status(400).json({ error: "필수 값 누락" });
+      const { userName, content, replyToId, replyToUser, replyToContent, imageData, videoData, videoMime } = req.body;
+      if (!userName?.trim() || (!content?.trim() && !imageData && !videoData)) return res.status(400).json({ error: "필수 값 누락" });
       const db = (await import("./db")).db;
       const { chatMessages } = await import("@shared/schema");
       const [msg] = await db.insert(chatMessages).values({
@@ -1083,6 +1083,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         replyToUser: replyToUser || null,
         replyToContent: replyToContent?.slice(0, 100) || null,
         imageData: imageData || null,
+        videoData: videoData || null,
+        videoMime: videoMime || null,
       }).returning();
       res.json(msg);
     } catch (e) {
