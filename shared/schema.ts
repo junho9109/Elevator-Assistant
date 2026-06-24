@@ -167,6 +167,32 @@ export type JudgmentPhoto = typeof judgmentPhotos.$inferSelect;
 export type InsertJudgmentComment = z.infer<typeof insertJudgmentCommentSchema>;
 export type JudgmentComment = typeof judgmentComments.$inferSelect;
 
+// 표준화 항목 오버라이드 (JSON 원본 위에 DB 수정값 덮어씌우기)
+export const stdItemOverrides = pgTable("std_item_overrides", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),           // itemKey (photo key 보존용)
+  basis: text("basis"),                     // 현안 및 근거 조항 수정값
+  conclusion: text("conclusion"),           // 표준화 결정 수정값
+  source: text("source"),                   // 출처(회차) 수정값
+  ref: text("ref"),                         // 검사기준 조항 수정값
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertStdItemOverrideSchema = createInsertSchema(stdItemOverrides).omit({ id: true, updatedAt: true });
+export type StdItemOverride = typeof stdItemOverrides.$inferSelect;
+
+// 검사기준 항목 오버라이드 (별표22_parsed.json 위에 DB 수정값 덮어씌우기)
+export const inspStdOverrides = pgTable("insp_std_overrides", {
+  id: serial("id").primaryKey(),
+  itemKey: varchar("item_key", { length: 50 }).notNull().unique(), // 조문번호 e.g. "6.1.8.1"
+  text: text("text"),                       // 조문 내용 수정값
+  source: text("source"),                   // 출처 수정값
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertInspStdOverrideSchema = createInsertSchema(inspStdOverrides).omit({ id: true, updatedAt: true });
+export type InspStdOverride = typeof inspStdOverrides.$inferSelect;
+
 // Comments table for standards
 export const standardComments = pgTable("standard_comments", {
   id: serial("id").primaryKey(),

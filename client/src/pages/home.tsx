@@ -444,7 +444,7 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
-const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", permitDate: "", inspectionDate: "", inspectionYear: "", images: [] as string[] };
+const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", basis: "", conclusion: "", source: "", permitDate: "", inspectionDate: "", inspectionYear: "", images: [] as string[] };
 
 // ==================== 표준화 항목 이미지 섹션 ====================
 function StdPhotoSection({ itemKey }: { itemKey: string }) {
@@ -618,6 +618,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       localStorage.setItem("hotspots_cache_ts", String(Date.now()));
     }
   }, [hotspots]);
+  const { data: stdOverrides } = useQuery<any[]>({
+    queryKey: ["/api/std-overrides"],
+    queryFn: () => fetch("/api/std-overrides").then(r => r.json()),
+    staleTime: 0,
+  });
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
   const deleteStandard = useDeleteStandard();
@@ -1365,7 +1370,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const openAddModal = () => { setEditingStandard(null); setForm(emptyForm); setShowAddModal(true); };
   const openEditModal = (standard: Standard) => {
     setEditingStandard(standard);
-    setForm({ categoryId: standard.categoryId ? String(standard.categoryId) : "", title: standard.title, standardNumber: standard.standardNumber || "", body: standard.body, permitDate: standard.permitDate || "", inspectionDate: standard.inspectionDate || "", inspectionYear: standard.inspectionYear || "", images: standard.imageUrls || [] });
+    const ov = stdOverrides?.find((o: any) => o.title === standard.title);
+    setForm({ categoryId: standard.categoryId ? String(standard.categoryId) : "", title: standard.title, standardNumber: standard.standardNumber || "", body: standard.body, basis: ov?.basis || (standard as any).basis || "", conclusion: ov?.conclusion || (standard as any).conclusion || "", source: ov?.source || (standard as any).source || "", permitDate: standard.permitDate || "", inspectionDate: standard.inspectionDate || "", inspectionYear: standard.inspectionYear || "", images: standard.imageUrls || [] });
     setSelectedStandard(null); setShowAddModal(true);
   };
 
@@ -1374,7 +1380,18 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     if (!form.body.trim()) { toast({ title: "내용을 입력해주세요.", variant: "destructive" }); return; }
     const data = { categoryId: form.categoryId ? parseInt(form.categoryId) : null, title: form.title, standardNumber: form.standardNumber || null, body: form.body, permitDate: form.permitDate || null, inspectionDate: form.inspectionDate || null, inspectionYear: form.inspectionYear || null, imageUrls: form.images.length > 0 ? form.images : null, hotspotId: null, inspectionRound: null };
     try {
-      if (editingStandard) { await updateStandard.mutateAsync({ id: editingStandard.id, standard: data }); toast({ title: "수정되었습니다." }); }
+      if (editingStandard) {
+        await updateStandard.mutateAsync({ id: editingStandard.id, standard: data });
+        // basis/conclusion/source 오버라이드 저장
+        if (form.basis || form.conclusion || form.source) {
+          await fetch(`/api/std-overrides/${encodeURIComponent(editingStandard.title)}`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ basis: form.basis, conclusion: form.conclusion, source: form.source, ref: form.standardNumber }),
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/std-overrides"] });
+        }
+        toast({ title: "수정되었습니다." });
+      }
       else { await createStandard.mutateAsync(data); toast({ title: "추가되었습니다." }); }
       setShowAddModal(false); setEditingStandard(null); setForm(emptyForm);
     } catch { toast({ title: "저장 실패", variant: "destructive" }); }
@@ -1609,6 +1626,38 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               <div>
                 <label className="block text-sm font-medium mb-1">내용 *</label>
                 <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.body} onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))} />
+                {editingStandard && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">현안 및 근거 조항 (basis)</label>
+                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.basis} onChange={e => setForm(prev => ({ ...prev, basis: e.target.value }))} placeholder="현안 사항 및 근거 조항" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">검사방법 표준화 결정 (conclusion)</label>
+                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.conclusion} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="표준화 결정 내용" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">출처 (회차)</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2025년 제1차 표준화" />
+                    </div>
+                  </>
+                )}
+                {editingStandard && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">현안 및 근거 조항 (basis)</label>
+                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.basis} onChange={e => setForm(prev => ({ ...prev, basis: e.target.value }))} placeholder="현안 사항 및 근거 조항" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">검사방법 표준화 결정 (conclusion)</label>
+                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.conclusion} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="표준화 결정 내용" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">출처 (회차)</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2025년 제1차 표준화" />
+                    </div>
+                  </>
+                )}
               </div>
               <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
               <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />

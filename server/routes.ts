@@ -575,7 +575,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/inspection-edits/:itemId", async (req, res) => {
+  // ── 표준화 오버라이드 API ──
+  app.get("/api/std-overrides", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemOverrides } = await import("@shared/schema");
+      const rows = await db.select().from(stdItemOverrides);
+      res.json(rows);
+    } catch { res.status(500).json({ error: "Failed to fetch std overrides" }); }
+  });
+
+  app.put("/api/std-overrides/:title", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const title = decodeURIComponent(req.params.title);
+      const { basis, conclusion, source, ref } = req.body;
+      const existing = await db.select().from(stdItemOverrides).where(eq(stdItemOverrides.title, title)).limit(1);
+      let row;
+      if (existing.length > 0) {
+        [row] = await db.update(stdItemOverrides).set({ basis, conclusion, source, ref, updatedAt: new Date() }).where(eq(stdItemOverrides.title, title)).returning();
+      } else {
+        [row] = await db.insert(stdItemOverrides).values({ title, basis, conclusion, source, ref }).returning();
+      }
+      res.json(row);
+    } catch (e) { res.status(500).json({ error: "Failed to save std override" }); }
+  });
+
+  // ── 검사기준 오버라이드 API ──
+  app.get("/api/insp-std-overrides", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const rows = await db.select().from(inspStdOverrides);
+      res.json(rows);
+    } catch { res.status(500).json({ error: "Failed to fetch insp-std overrides" }); }
+  });
+
+  app.put("/api/insp-std-overrides/:itemKey", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const itemKey = req.params.itemKey;
+      const { text, source } = req.body;
+      const existing = await db.select().from(inspStdOverrides).where(eq(inspStdOverrides.itemKey, itemKey)).limit(1);
+      let row;
+      if (existing.length > 0) {
+        [row] = await db.update(inspStdOverrides).set({ text, source, updatedAt: new Date() }).where(eq(inspStdOverrides.itemKey, itemKey)).returning();
+      } else {
+        [row] = await db.insert(inspStdOverrides).values({ itemKey, text, source }).returning();
+      }
+      res.json(row);
+    } catch (e) { res.status(500).json({ error: "Failed to save insp-std override" }); }
+  });
+
+    app.delete("/api/inspection-edits/:itemId", async (req, res) => {
     try {
       const itemId = req.params.itemId;
       await storage.deleteInspectionItemEdit(itemId);

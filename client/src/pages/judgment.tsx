@@ -687,9 +687,14 @@ export default function JudgmentPage() {
     enabled: !!detailItem
   });
 
-  // [통합] serverEdits useQuery 제거됨 — inspection-content.json 사용
+  // DB에서 서버 편집값 fetch → 재접속 시 자동 최신화
+  const { data: serverEdits } = useQuery<any[]>({
+    queryKey: ["/api/inspection-edits"],
+    queryFn: () => fetch("/api/inspection-edits").then(r => r.json()),
+    staleTime: 0,
+  });
 
-  // inspection-content.json 에서 직접 customEdits 구성
+  // DB serverEdits → inspection-content.json 순으로 customEdits 구성 (DB 우선)
   useEffect(() => {
     const map: Record<string, CustomItemEdit> = {};
     for (const [id, c] of Object.entries(contentMap)) {
@@ -715,9 +720,25 @@ export default function JudgmentPage() {
         standardDatesWithMemo: datesWithMemo,
       };
     }
+    // DB 편집값으로 덮어쓰기 (재접속 시 항상 최신 DB값 반영)
+    if (serverEdits && serverEdits.length > 0) {
+      serverEdits.forEach((edit: any) => {
+        if (edit.itemId) {
+          map[edit.itemId] = {
+            id: edit.itemId,
+            text: edit.text || undefined,
+            permitEffectiveDate: edit.permitEffectiveDate || undefined,
+            fixedResult: edit.fixedResult || undefined,
+            customWarning: edit.customWarning || undefined,
+            standardDates: edit.standardDates ? JSON.parse(edit.standardDates) : undefined,
+            standardNote: edit.standardNote || undefined,
+          };
+        }
+      });
+    }
     setCustomEdits(map);
     localStorage.removeItem("judgmentCustomEdits");
-  }, []);
+  }, [serverEdits]);
 
   // Fetch custom inspection items from server
   const { data: serverCustomItems = [] } = useQuery<CustomInspectionItem[]>({
@@ -809,8 +830,18 @@ export default function JudgmentPage() {
   });
 
   // Mutation to save inspection item edit to server
-  // [통합] 관리자 저장 → inspection-content.json PC 직접 편집으로 이전 (API 저장 폐기)
-  const saveInspectionEdit = { mutate: (_data: any, _opts?: any) => { _opts?.onSuccess?.(); } };
+  const saveInspectionEdit = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await fetch(`/api/inspection-edits/${data.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error("저장 실패");
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/inspection-edits"] }),
+  });
 
   const uploadPhoto = useMutation({
     mutationFn: async (file: File) => {
@@ -1098,8 +1129,6 @@ export default function JudgmentPage() {
         description: "검사 항목이 수정되었습니다.",
       });
     }
-    
-    // [통합] 개정 이력 변경 → inspection-content.json PC 직접 편집으로 이전 (API 저장 폐기)
     
     setIsEditItemDialogOpen(false);
     setEditingItem(null);
