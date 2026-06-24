@@ -1,3 +1,4 @@
+import React from "react";
 import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
@@ -163,6 +164,54 @@ function scoreMatch(text: string, keywords: string[], originalKw: string): numbe
 
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat"; title: string; content: string; query: string; score?: number; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
+
+// ==================== 검색결과 아코디언 ====================
+type CatGroup = { key: string; label: string; color: string; bg: string; dot: string; items: SearchResult[] };
+
+function SearchCatAccordion({ cat, onSelect }: { cat: CatGroup; onSelect: (r: SearchResult) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const scoreLabel = (s?: number) => s === 100 ? "정확" : s !== undefined && s >= 85 ? "유사어" : s !== undefined ? "유추" : null;
+  const scoreBg   = (s?: number) => s === 100 ? "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+    : s !== undefined && s >= 85 ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+    : "bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400";
+  return (
+    <div className="border border-border rounded-xl overflow-hidden">
+      <button
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-card hover:bg-muted/40 transition-colors"
+        onClick={() => setOpen(o => !o)}
+      >
+        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cat.dot }} />
+        <span className="text-xs font-medium text-foreground flex-1">{cat.label}</span>
+        <span className="text-[11px] font-medium px-2 py-0.5 rounded-md" style={{ background: cat.bg, color: cat.color }}>{cat.items.length}건</span>
+        <svg className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      {open && (
+        <div className="border-t border-border divide-y divide-border">
+          {cat.items.map((r, i) => (
+            <button key={i} className="w-full text-left px-3 py-2 hover:bg-muted/30 transition-colors" onClick={() => onSelect(r)}>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                {scoreLabel(r.score) && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${scoreBg(r.score)}`}>{scoreLabel(r.score)}</span>
+                )}
+                {r.type === "chat" && r.chatMeta?.hasImage && <span className="text-[11px] text-purple-500">📷</span>}
+              </div>
+              <div className="text-xs font-medium text-foreground leading-snug">{r.title}</div>
+              {r.type === "chat" && r.chatMeta && (
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  <span className="text-purple-500 font-medium">{r.chatMeta.userName}</span>
+                  {r.chatMeta.replyToUser && <span> → {r.chatMeta.replyToUser}에 답변</span>}
+                </div>
+              )}
+              {r.content && r.type !== "chat" && (
+                <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1 leading-snug">{r.content}</div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // 키워드로 표준화+검사기준 검색
 function searchAllData(keyword: string, standards: any[]): SearchResult[] {
@@ -1409,65 +1458,33 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                   </div>
                 )}
                   <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
-                  {msg.searchResults && msg.searchResults.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {msg.searchResults.map((r: SearchResult, ri: number) => (
-                        <button
-                          key={ri}
-                          onClick={() => {
+                  {msg.searchResults && msg.searchResults.length > 0 && (() => {
+                    const cats: { key: string; label: string; color: string; bg: string; dot: string; items: SearchResult[] }[] = [
+                      { key: "standard", label: "표준화", color: "#185FA5", bg: "#E6F1FB", dot: "#378ADD", items: [] },
+                      { key: "judgment", label: "검사기준", color: "#0F6E56", bg: "#E1F5EE", dot: "#1D9E75", items: [] },
+                      { key: "inspection", label: "검사가이드", color: "#854F0B", bg: "#FAEEDA", dot: "#BA7517", items: [] },
+                      { key: "chat", label: "채팅", color: "#533AB7", bg: "#EEEDFE", dot: "#7F77DD", items: [] },
+                    ];
+                    msg.searchResults.forEach((r: SearchResult) => {
+                      const cat = cats.find(c => c.key === r.type) ?? cats[2];
+                      cat.items.push(r);
+                    });
+                    const filled = cats.filter(c => c.items.length > 0);
+                    return (
+                      <div className="mt-2 flex flex-col gap-2">
+                        {filled.map(cat => (
+                          <SearchCatAccordion key={cat.key} cat={cat} onSelect={(r: SearchResult) => {
                             if (r.type === "chat") {
                               window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
                               setTimeout(() => window.dispatchEvent(new CustomEvent("scrollToChatMsg", { detail: { id: r.chatMeta?.id } })), 300);
                             } else {
                               setSelectedSearchResult(r);
                             }
-                          }}
-                          className={`text-xs px-3 py-2 rounded-xl border text-left hover:opacity-80 transition-opacity ${
-                            r.type === "standard"
-                              ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30"
-                              : r.type === "judgment"
-                              ? "border-green-400 bg-green-50 dark:bg-green-950/30"
-                              : r.type === "chat"
-                              ? "border-purple-400 bg-purple-50 dark:bg-purple-950/30"
-                              : "border-amber-400 bg-amber-50 dark:bg-amber-950/30"
-                          }`}
-                        >
-                          <div className="flex items-center gap-1 mb-1">
-                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full text-white ${
-                              r.type === "standard" ? "bg-blue-500"
-                              : r.type === "judgment" ? "bg-green-500"
-                              : r.type === "chat" ? "bg-purple-500"
-                              : "bg-amber-500"
-                            }`}>
-                              {r.type === "standard" ? "표준화" : r.type === "judgment" ? "안전검사기준" : r.type === "chat" ? "채팅" : "검사기준"}
-                            </span>
-                            {r.score !== undefined && (
-                              <span className={`text-[11px] px-1 py-0.5 rounded font-medium ${
-                                r.score === 100 ? "bg-gray-100 text-gray-600 dark:bg-gray-800"
-                                : r.score >= 85 ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30"
-                                : "bg-orange-100 text-orange-600 dark:bg-orange-900/30"
-                              }`}>
-                                {r.score === 100 ? "정확" : r.score >= 85 ? "유사어" : "유추"}
-                              </span>
-                            )}
-                            {r.type === "chat" && r.chatMeta?.hasImage && (
-                              <span className="text-[11px] text-purple-500">📷</span>
-                            )}
-                          </div>
-                          <div className="font-medium text-foreground text-xs leading-tight">{r.title}</div>
-                          {r.type === "chat" && r.chatMeta && (
-                            <div className="text-muted-foreground text-xs mt-0.5 leading-tight">
-                              <span className="text-purple-600 font-medium">{r.chatMeta.userName}</span>
-                              {r.chatMeta.replyToUser && <span> → {r.chatMeta.replyToUser}에 답변</span>}
-                            </div>
-                          )}
-                          {r.content && (
-                            <div className="text-muted-foreground text-xs mt-0.5 leading-tight line-clamp-2">{r.content}</div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                          }} />
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
                 {msg.role === "user" && (
                   <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center flex-shrink-0 mt-1">
