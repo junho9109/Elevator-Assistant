@@ -1072,16 +1072,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/chat-messages", async (req, res) => {
     try {
-      const { userName, content, replyToId, replyToUser, replyToContent } = req.body;
-      if (!userName?.trim() || !content?.trim()) return res.status(400).json({ error: "필수 값 누락" });
+      const { userName, content, replyToId, replyToUser, replyToContent, imageData } = req.body;
+      if (!userName?.trim() || (!content?.trim() && !imageData)) return res.status(400).json({ error: "필수 값 누락" });
       const db = (await import("./db")).db;
       const { chatMessages } = await import("@shared/schema");
       const [msg] = await db.insert(chatMessages).values({
         userName: userName.trim().slice(0, 50),
-        content: content.trim().slice(0, 2000),
+        content: (content || "").trim().slice(0, 2000),
         replyToId: replyToId || null,
         replyToUser: replyToUser || null,
         replyToContent: replyToContent?.slice(0, 100) || null,
+        imageData: imageData || null,
       }).returning();
       res.json(msg);
     } catch (e) {

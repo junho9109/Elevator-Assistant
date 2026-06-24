@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, X, Send, CornerUpLeft } from "lucide-react";
+import { Search, X, Send, CornerUpLeft, ImagePlus } from "lucide-react";
 
 interface ChatMsg {
   id: number;
@@ -8,6 +8,7 @@ interface ChatMsg {
   replyToId?: number | null;
   replyToUser?: string | null;
   replyToContent?: string | null;
+  imageData?: string | null;
   createdAt: string;
 }
 
@@ -60,6 +61,8 @@ export default function ChatPage() {
   const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const msgRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -146,8 +149,36 @@ export default function ChatPage() {
     }, 100);
   };
 
+  // 이미지 압축 (최대 800px, quality 0.75 → 채팅용 경량)
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 800;
+        let { width, height } = img;
+        if (width > MAX) { height = Math.round(height * MAX / width); width = MAX; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  };
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    try { setPendingImage(await compressImage(file)); }
+    catch { alert("이미지 처리 실패"); }
+  };
+
   const sendMsg = async () => {
-    if (!input.trim() || !userName || sending) return;
+    if ((!input.trim() && !pendingImage) || !userName || sending) return;
     setSending(true);
     try {
       const r = await fetch("/api/chat-messages", {
@@ -159,12 +190,15 @@ export default function ChatPage() {
           replyToId: replyTo?.id || null,
           replyToUser: replyTo?.userName || null,
           replyToContent: replyTo?.content.slice(0, 80) || null,
+          imageData: pendingImage || null,
         }),
       });
       if (r.ok) {
         const msg = await r.json();
         setMsgs(prev => [...prev, msg]);
+        lastIdRef.current = msg.id;   // 폴링 중복 방지
         setInput("");
+        setPendingImage(null);
         setReplyTo(null);
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
       }
@@ -346,7 +380,8 @@ export default function ChatPage() {
                           <p className={`text-[11px] truncate ${isMe ? "text-white/70" : "text-muted-foreground"}`}>{msg.replyToContent}</p>
                         </div>
                       )}
-                      {msg.content}
+                      {msg.content && <span>{msg.content}</span>}
+                      {msg.imageData && <img src={msg.imageData} alt="첨부이미지" className="mt-1 max-w-[200px] rounded-lg block" />}
                     </div>
                     <span className="text-[8px] text-muted-foreground px-1">{formatTime(msg.createdAt)}</span>
                   </div>
@@ -395,23 +430,38 @@ export default function ChatPage() {
       )}
 
       {/* 입력창 */}
-      <div className="px-3 py-2.5 border-t border-border bg-card shrink-0 flex gap-2 items-end">
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }}}
-          placeholder="메시지 입력…"
-          rows={1}
-          className="flex-1 text-sm bg-secondary border border-border rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-          style={{ maxHeight: "100px", overflowY: "auto" }}
-        />
-        <button
-          onClick={sendMsg}
-          disabled={!input.trim() || sending}
-          className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center shrink-0 disabled:opacity-40 transition-opacity"
-        >
-          <Send size={15} className="text-white" />
-        </button>
+      <div className="border-t border-border bg-card shrink-0">
+        {pendingImage && (
+          <div className="px-3 pt-2 flex items-center gap-2">
+            <img src={pendingImage} alt="미리보기" className="w-16 h-16 object-cover rounded-lg border border-border" />
+            <button onClick={() => setPendingImage(null)} className="text-xs text-muted-foreground border border-border rounded px-2 py-1">삭제</button>
+          </div>
+        )}
+        <div className="px-3 py-2.5 flex gap-2 items-end">
+          <input type="file" accept="image/*" ref={photoInputRef} onChange={handlePhotoSelect} className="hidden" />
+          <button
+            onClick={() => photoInputRef.current?.click()}
+            className="w-9 h-9 rounded-full bg-secondary border border-border flex items-center justify-center shrink-0"
+          >
+            <ImagePlus size={16} className="text-muted-foreground" />
+          </button>
+          <textarea
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }}}
+            placeholder="메시지 입력…"
+            rows={1}
+            className="flex-1 text-sm bg-secondary border border-border rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            style={{ maxHeight: "100px", overflowY: "auto" }}
+          />
+          <button
+            onClick={sendMsg}
+            disabled={(!input.trim() && !pendingImage) || sending}
+            className="w-9 h-9 rounded-full bg-green-600 flex items-center justify-center shrink-0 disabled:opacity-40 transition-opacity"
+          >
+            <Send size={15} className="text-white" />
+          </button>
+        </div>
       </div>
     </div>
   );
