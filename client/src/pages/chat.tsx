@@ -187,6 +187,12 @@ export default function ChatPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (photoInputRef.current) photoInputRef.current.value = "";
+    // HEIC/HEIF는 브라우저 미지원 → 안내 후 차단
+    const isHeic = file.type === "image/heic" || file.type === "image/heif" || file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif");
+    if (isHeic) {
+      alert("HEIC/HEIF 형식은 지원하지 않습니다.\n아이폰 설정 → 카메라 → 포맷 → '가장 호환성 높은 항목'으로 변경하거나\nJPEG/PNG로 변환 후 첨부해주세요.");
+      return;
+    }
     const result = await compressImage(file);
     if (result) setPendingImage(result);
   };
@@ -417,7 +423,11 @@ export default function ChatPage() {
                         </div>
                       )}
                       {msg.content && <span>{msg.content}</span>}
-                      {msg.imageData && <img src={msg.imageData} alt="첨부이미지" className="mt-1 max-w-[200px] rounded-lg block" />}
+                      {msg.imageData && (
+                        msg.imageData.startsWith("data:image/heic") || msg.imageData.startsWith("data:image/heif")
+                          ? <span className="text-xs text-muted-foreground mt-1 block">[HEIC 이미지 — 미지원 형식]</span>
+                          : <img src={msg.imageData} alt="첨부이미지" className="mt-1 max-w-[200px] rounded-lg block" />
+                      )}
                       {msg.videoData && <video src={msg.videoData} controls className="mt-1 max-w-[220px] rounded-lg block" style={{maxHeight:'160px'}} playsInline />}
                     </div>
                     <span className="text-[8px] text-muted-foreground px-1">{formatTime(msg.createdAt)}</span>
