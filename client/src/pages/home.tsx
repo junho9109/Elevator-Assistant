@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useStandards, useHotspots, useCreateStandard, useUpdateStandard, useDeleteStandard, useCreateCategory,
   useCreateHotspot, useUpdateHotspot, useDeleteHotspot,
