@@ -1371,7 +1371,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const openEditModal = (standard: Standard) => {
     setEditingStandard(standard);
     const ov = stdOverrides?.find((o: any) => o.title === standard.title);
-    setForm({ categoryId: standard.categoryId ? String(standard.categoryId) : "", title: standard.title, standardNumber: standard.standardNumber || "", body: standard.body, basis: ov?.basis || (standard as any).basis || "", conclusion: ov?.conclusion || (standard as any).conclusion || "", source: ov?.source || (standard as any).source || "", permitDate: standard.permitDate || "", inspectionDate: standard.inspectionDate || "", inspectionYear: standard.inspectionYear || "", images: standard.imageUrls || [] });
+    setForm({ categoryId: standard.categoryId ? String(standard.categoryId) : "", title: standard.title, standardNumber: standard.standardNumber || "", body: standard.body, overrideTitle: ov?.overrideTitle || "", basis: ov?.basis || (standard as any).basis || "", conclusion: ov?.conclusion || (standard as any).conclusion || "", source: ov?.source || (standard as any).source || "", typeTag: ov?.typeTag || (standard as any).typeTag || "", category: ov?.category || (standard as any).category || "", permitDate: standard.permitDate || "", inspectionDate: standard.inspectionDate || "", inspectionYear: standard.inspectionYear || "", images: standard.imageUrls || [] });
     setSelectedStandard(null); setShowAddModal(true);
   };
 
@@ -1382,14 +1382,12 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     try {
       if (editingStandard) {
         await updateStandard.mutateAsync({ id: editingStandard.id, standard: data });
-        // basis/conclusion/source 오버라이드 저장
-        if (form.basis || form.conclusion || form.source) {
-          await fetch(`/api/std-overrides/${encodeURIComponent(editingStandard.title)}`, {
-            method: "PUT", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ basis: form.basis, conclusion: form.conclusion, source: form.source, ref: form.standardNumber }),
-          });
-          queryClient.invalidateQueries({ queryKey: ["/api/std-overrides"] });
-        }
+        // 오버라이드 저장 (전체 필드)
+        await fetch(`/api/std-overrides/${encodeURIComponent(editingStandard.title)}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ overrideTitle: form.overrideTitle, basis: form.basis, conclusion: form.conclusion, source: form.source, ref: form.standardNumber, typeTag: form.typeTag, category: form.category }),
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/std-overrides"] });
         toast({ title: "수정되었습니다." });
       }
       else { await createStandard.mutateAsync(data); toast({ title: "추가되었습니다." }); }
@@ -1628,33 +1626,29 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.body} onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))} />
                 {editingStandard && (
                   <>
+                    <div className="space-y-1 mt-2">
+                      <label className="text-xs font-medium text-muted-foreground">수정 제목 (원본 제목 대체)</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} placeholder="비워두면 원본 제목 유지" />
+                    </div>
                     <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">현안 및 근거 조항 (basis)</label>
+                      <label className="text-xs font-medium text-muted-foreground">현안 및 근거 조항</label>
                       <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.basis} onChange={e => setForm(prev => ({ ...prev, basis: e.target.value }))} placeholder="현안 사항 및 근거 조항" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">검사방법 표준화 결정 (conclusion)</label>
-                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.conclusion} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="표준화 결정 내용" />
+                      <label className="text-xs font-medium text-muted-foreground">검사방법 표준화 결정</label>
+                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.conclusion} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="표준화 결정 내용" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">출처 (회차)</label>
                       <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2025년 제1차 표준화" />
                     </div>
-                  </>
-                )}
-                {editingStandard && (
-                  <>
                     <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">현안 및 근거 조항 (basis)</label>
-                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.basis} onChange={e => setForm(prev => ({ ...prev, basis: e.target.value }))} placeholder="현안 사항 및 근거 조항" />
+                      <label className="text-xs font-medium text-muted-foreground">유형 태그</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.typeTag} onChange={e => setForm(prev => ({ ...prev, typeTag: e.target.value }))} placeholder="예: 검사방법, 판정기준" />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">검사방법 표준화 결정 (conclusion)</label>
-                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.conclusion} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="표준화 결정 내용" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-muted-foreground">출처 (회차)</label>
-                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2025년 제1차 표준화" />
+                      <label className="text-xs font-medium text-muted-foreground">분류</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.category} onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))} placeholder="예: 기계실, 승강로" />
                     </div>
                   </>
                 )}
@@ -1791,7 +1785,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         className={`p-3 cursor-pointer transition-colors ${stdSelected === item ? "bg-blue-500/5" : "hover:bg-muted/50"}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium leading-snug text-foreground mb-1 line-clamp-2">{item.title}</div>
+                            <div className="text-sm font-medium leading-snug text-foreground mb-1 line-clamp-2">{stdOverrides?.find((o: any) => o.title === item.title)?.overrideTitle || item.title}</div>
                             <div className="text-[11px] text-muted-foreground">{item.source} · {item.typeTag}</div>
                           </div>
                           <span className="text-muted-foreground shrink-0 mt-0.5 text-xs">{stdSelected === item ? "▲" : "▽"}</span>
@@ -1900,6 +1894,34 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               <div>
                 <label className="block text-sm font-medium mb-1">내용 *</label>
                 <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.body} onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))} />
+                {editingStandard && (
+                  <>
+                    <div className="space-y-1 mt-2">
+                      <label className="text-xs font-medium text-muted-foreground">수정 제목 (원본 제목 대체)</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} placeholder="비워두면 원본 제목 유지" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">현안 및 근거 조항</label>
+                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.basis} onChange={e => setForm(prev => ({ ...prev, basis: e.target.value }))} placeholder="현안 사항 및 근거 조항" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">검사방법 표준화 결정</label>
+                      <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.conclusion} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="표준화 결정 내용" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">출처 (회차)</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2025년 제1차 표준화" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">유형 태그</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.typeTag} onChange={e => setForm(prev => ({ ...prev, typeTag: e.target.value }))} placeholder="예: 검사방법, 판정기준" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">분류</label>
+                      <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.category} onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))} placeholder="예: 기계실, 승강로" />
+                    </div>
+                  </>
+                )}
               </div>
               <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
               <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />
@@ -2092,7 +2114,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setSelectedStandard(null)}>
           <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100% - 32px)",maxWidth:"512px",maxHeight:"85vh",overflowY:"auto",zIndex:10000}} className="bg-card rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} onFocus={e => e.stopPropagation()}>
             <div className="flex justify-between items-start p-5 border-b border-border">
-              <h2 className="text-lg font-semibold pr-4">{selectedStandard.title}</h2>
+              <h2 className="text-lg font-semibold pr-4">{stdOverrides?.find((o: any) => o.title === selectedStandard.title)?.overrideTitle || selectedStandard.title}</h2>
               <div className="flex gap-2 flex-shrink-0">
                 <button onClick={() => openEditModal(selectedStandard)} className="text-primary hover:text-primary/80 p-1"><Pencil className="h-4 w-4" /></button>
                 <button onClick={() => { setDeleteConfirm(selectedStandard); setSelectedStandard(null); }} className="text-destructive hover:text-destructive/80 p-1"><Trash2 className="h-4 w-4" /></button>

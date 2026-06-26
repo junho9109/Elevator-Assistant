@@ -591,13 +591,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { stdItemOverrides } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
       const title = decodeURIComponent(req.params.title);
-      const { basis, conclusion, source, ref } = req.body;
+      const { overrideTitle, basis, conclusion, source, ref, typeTag, category } = req.body;
       const existing = await db.select().from(stdItemOverrides).where(eq(stdItemOverrides.title, title)).limit(1);
       let row;
       if (existing.length > 0) {
-        [row] = await db.update(stdItemOverrides).set({ basis, conclusion, source, ref, updatedAt: new Date() }).where(eq(stdItemOverrides.title, title)).returning();
+        [row] = await db.update(stdItemOverrides).set({ overrideTitle, basis, conclusion, source, ref, typeTag, category, updatedAt: new Date() }).where(eq(stdItemOverrides.title, title)).returning();
       } else {
-        [row] = await db.insert(stdItemOverrides).values({ title, basis, conclusion, source, ref }).returning();
+        [row] = await db.insert(stdItemOverrides).values({ title, overrideTitle, basis, conclusion, source, ref, typeTag, category }).returning();
       }
       res.json(row);
     } catch (e) { res.status(500).json({ error: "Failed to save std override" }); }

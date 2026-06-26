@@ -170,11 +170,14 @@ export type JudgmentComment = typeof judgmentComments.$inferSelect;
 // 표준화 항목 오버라이드 (JSON 원본 위에 DB 수정값 덮어씌우기)
 export const stdItemOverrides = pgTable("std_item_overrides", {
   id: serial("id").primaryKey(),
-  title: text("title").notNull(),           // itemKey (photo key 보존용)
+  title: text("title").notNull(),           // itemKey (식별자 — 원본 title)
+  overrideTitle: text("override_title"),    // 수정된 제목
   basis: text("basis"),                     // 현안 및 근거 조항 수정값
   conclusion: text("conclusion"),           // 표준화 결정 수정값
   source: text("source"),                   // 출처(회차) 수정값
   ref: text("ref"),                         // 검사기준 조항 수정값
+  typeTag: text("type_tag"),                // 유형 태그 수정값
+  category: text("category"),              // 분류 수정값
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
