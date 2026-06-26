@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Search, X, FileCheck, Pencil, Lock, LockOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Lock, LockOpen } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import BYULPYO22 from "@/data/별표22_parsed.json";
 
