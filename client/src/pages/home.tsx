@@ -641,6 +641,19 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
 
   // 채팅
+  const [showUsage, setShowUsage] = useState(false);
+  const [usageStats, setUsageStats] = useState<any>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+
+  const fetchUsageStats = async () => {
+    setUsageLoading(true);
+    try {
+      const r = await fetch("/api/ai-usage/stats");
+      if (r.ok) setUsageStats(await r.json());
+    } catch {}
+    setUsageLoading(false);
+  };
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -1419,11 +1432,106 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               
             </div>
           </div>
-
+          <button
+            onClick={() => { setShowUsage(s => !s); if (!showUsage) fetchUsageStats(); }}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            사용량
+          </button>
         </div>
       </div>
 
-
+      {/* AI 사용량 대시보드 */}
+      {showUsage && (
+        <div className="border-b border-border bg-card shrink-0 overflow-y-auto" style={{maxHeight: "70vh"}}>
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-blue-50 dark:bg-blue-900/20">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">AI 사용량 현황</span>
+            <span className="text-xs text-blue-600 dark:text-blue-400">이번 달</span>
+            <button onClick={() => setShowUsage(false)} className="w-6 h-6 flex items-center justify-center rounded border border-blue-200 dark:border-blue-700"><X className="h-3 w-3" /></button>
+          </div>
+          {usageLoading ? (
+            <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">불러오는 중…</div>
+          ) : usageStats ? (
+            <div className="p-3 flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "총 질문 수", val: `${usageStats.totalQuestions}건`, sub: "" },
+                  { label: "예상 비용", val: `$${parseFloat(usageStats.totalCost).toFixed(3)}`, sub: `약 ${Math.round(parseFloat(usageStats.totalCost) * 1450)}원` },
+                  { label: "입력 토큰", val: `${(usageStats.totalInput / 1000).toFixed(1)}K`, sub: `$${(usageStats.totalInput * 3 / 1_000_000).toFixed(3)}` },
+                  { label: "출력 토큰", val: `${(usageStats.totalOutput / 1000).toFixed(1)}K`, sub: `$${(usageStats.totalOutput * 15 / 1_000_000).toFixed(3)}` },
+                ].map((s, i) => (
+                  <div key={i} className="bg-secondary rounded-lg p-2.5">
+                    <p className="text-[10px] text-muted-foreground mb-1">{s.label}</p>
+                    <p className="text-base font-medium">{s.val}</p>
+                    {s.sub && <p className="text-[10px] text-muted-foreground mt-0.5">{s.sub}</p>}
+                  </div>
+                ))}
+              </div>
+              <div className="bg-secondary rounded-lg p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] text-muted-foreground">최근 7일 비용</span>
+                  <span className="text-[10px] font-medium text-blue-600">${parseFloat(usageStats.totalCost).toFixed(3)} 합계</span>
+                </div>
+                <div className="flex items-end gap-1" style={{height: 56}}>
+                  {Object.entries(usageStats.daily || {}).map(([date, d]: [string, any]) => {
+                    const allCosts = Object.values(usageStats.daily || {}).map((x: any) => x.cost);
+                    const maxCost = Math.max(...allCosts as number[], 0.001);
+                    const hTotal = Math.round((d.cost / maxCost) * 44);
+                    const hOut = Math.round((d.output / (d.input + d.output + 0.001)) * hTotal);
+                    const hInp = hTotal - hOut;
+                    const dayLabel = ["일","월","화","수","목","금","토"][new Date(date).getDay()];
+                    return (
+                      <div key={date} className="flex flex-col items-center gap-0.5 flex-1">
+                        <div className="flex flex-col items-center w-full">
+                          <div className="w-full rounded-t" style={{height: hOut, background: "#185FA5", borderRadius: "3px 3px 0 0"}}></div>
+                          <div className="w-full" style={{height: hInp, background: "#B5D4F4"}}></div>
+                        </div>
+                        <span className="text-[9px] text-muted-foreground">{dayLabel}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-3 mt-1.5">
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{background:"#185FA5"}}></div><span className="text-[9px] text-muted-foreground">출력</span></div>
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{background:"#B5D4F4"}}></div><span className="text-[9px] text-muted-foreground">입력</span></div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <div className="flex-1">
+                  <p className="text-xs text-blue-800 dark:text-blue-300">질문 1회 평균 비용</p>
+                  <p className="text-[10px] text-blue-600">입력 ~800tok + 출력 ~500tok 기준</p>
+                </div>
+                <span className="text-sm font-medium text-blue-700">
+                  {usageStats.totalQuestions > 0 ? `$${(parseFloat(usageStats.totalCost) / usageStats.totalQuestions).toFixed(4)}` : "-"}
+                </span>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium text-muted-foreground mb-1.5">최근 질문 로그</p>
+                <div className="border border-border rounded-lg overflow-hidden">
+                  {(usageStats.recentLogs || []).slice(0, 5).map((log: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 border-b border-border last:border-0">
+                      <span className="text-[9px] text-muted-foreground min-w-[48px]">
+                        {new Date(log.createdAt).toLocaleTimeString("ko-KR", {hour: "2-digit", minute: "2-digit"})}
+                      </span>
+                      <span className="text-[10px] flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{log.question}</span>
+                      <span className="text-[9px] text-muted-foreground">{(log.inputTokens + log.outputTokens).toLocaleString()}tok</span>
+                      <span className="text-[10px] font-medium text-blue-600 min-w-[36px] text-right">${parseFloat(log.costUsd).toFixed(4)}</span>
+                    </div>
+                  ))}
+                  {(usageStats.recentLogs || []).length === 0 && (
+                    <div className="px-3 py-4 text-center text-xs text-muted-foreground">아직 기록이 없습니다</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="px-4 py-6 text-center text-xs text-muted-foreground">데이터를 불러올 수 없습니다</div>
+          )}
+        </div>
+      )}
 
       {/* ==================== 채팅 탭 ==================== */}
       {defaultTab === "chat" && (
