@@ -92,32 +92,32 @@ export default function ChatPage() {
   const fetchMsgs = useCallback(async (initial = false) => {
     try {
       if (initial) {
-        // ① 캐시 즉시 표시 (카카오톡처럼 빠르게)
+        // ① 캐시 즉시 표시
         try {
           const cached = localStorage.getItem(CACHE_KEY);
           if (cached) {
             const cachedMsgs = JSON.parse(cached);
+            // 캐시는 asc 순으로 저장됨
             setMsgs(cachedMsgs);
             setLoading(false);
-            // 캐시의 최신 ID 설정
             if (cachedMsgs.length > 0) {
-              lastIdRef.current = Math.max(...cachedMsgs.map((m: any) => m.id));
+              lastIdRef.current = cachedMsgs[cachedMsgs.length - 1].id;
             }
           }
         } catch {}
 
-        // ② 서버에서 최신 데이터 fetch
+        // ② 서버에서 최신 데이터 fetch — desc 반환 → reverse()로 asc 변환
         const r = await fetch("/api/chat-messages?limit=50");
         if (r.ok) {
           const data = await r.json();
-          // desc 정렬이므로 첫 번째 항목이 가장 최신
-          if (data.length > 0) {
-            lastIdRef.current = data[0].id;
-            // 이미지 없는 버전으로 캐시 저장 (용량 절약)
-            const cacheData = data.map((m: any) => ({ ...m, imageData: m.imageData ? "CACHED" : null, videoData: null }));
+          // 서버는 desc(최신→오래된) 반환 → reverse()로 오래된→최신 순으로 변환
+          const sorted = [...data].reverse();
+          if (sorted.length > 0) {
+            lastIdRef.current = sorted[sorted.length - 1].id;
+            const cacheData = sorted.map((m: any) => ({ ...m, imageData: m.imageData ? "CACHED" : null, videoData: null }));
             try { localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData)); } catch {}
           }
-          setMsgs(data);
+          setMsgs(sorted);
         }
       } else {
         // 폴링: 마지막 ID 이후 새 메시지만
@@ -126,9 +126,15 @@ export default function ChatPage() {
         if (r.ok) {
           const data = await r.json();
           if (data.length > 0) {
-            // 새 메시지는 desc 정렬 → 역순으로 추가
-            setMsgs(prev => [...prev, ...data]);
-            lastIdRef.current = data[0].id;
+            // desc 반환 → reverse()로 asc 변환 후 기존 목록 뒤에 추가
+            const newMsgs = [...data].reverse();
+            // 중복 방지: 이미 있는 id 제외
+            setMsgs(prev => {
+              const existIds = new Set(prev.map((m: any) => m.id));
+              const unique = newMsgs.filter((m: any) => !existIds.has(m.id));
+              return unique.length > 0 ? [...prev, ...unique] : prev;
+            });
+            lastIdRef.current = newMsgs[newMsgs.length - 1].id;
           }
         }
       }
