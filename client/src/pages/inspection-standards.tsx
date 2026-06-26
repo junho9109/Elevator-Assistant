@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Search, X, FileCheck, Calendar, Pencil, Lock, LockOpen } from "lucide-react";
+import { ChevronRight, Search, X, FileCheck, Pencil, Lock, LockOpen } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import BYULPYO22 from "@/data/별표22_parsed.json";
 
 type Entry = { text?: string; title?: string; source?: string; };
@@ -169,7 +170,6 @@ export default function InspectionStandardsPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<string[]>([]);
   const [showSearch, setShowSearch] = useState(false);
-  const [yearOpen, setYearOpen] = useState(false);
   const [selectedYear, setSelectedYear] = useState(YEARS[0]);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -233,8 +233,6 @@ export default function InspectionStandardsPage() {
 
   const handleYearSelect = (yr: typeof YEARS[0]) => {
     setSelectedYear(yr);
-    setYearOpen(false);
-    // 연도 변경 시 선택 초기화
     setActiveKey(null);
     setQuery("");
     setResults([]);
@@ -262,50 +260,35 @@ export default function InspectionStandardsPage() {
             {isAdminMode ? <LockOpen size={15} className="text-amber-600" /> : <Lock size={15} />}
           </button>
           <button
-            onClick={() => { setShowSearch(s => !s); setQuery(""); setResults([]); setYearOpen(false); }}
+            onClick={() => { setShowSearch(s => !s); setQuery(""); setResults([]); }}
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
           >
             {showSearch ? <X size={15} /> : <Search size={15} />}
           </button>
         </div>
 
-        {/* 연도 선택 드롭다운 */}
-        <button
-          onClick={() => { setYearOpen(o => !o); setShowSearch(false); }}
-          className="w-full flex items-center gap-2 px-4 py-2.5 border-t border-border hover:bg-secondary transition-colors"
-        >
-          <Calendar size={14} className="text-muted-foreground shrink-0" />
-          <span className="text-xs text-muted-foreground">적용 연도</span>
-          <span className="text-xs font-medium text-foreground flex-1 text-left">{selectedYear.label}</span>
-          <span className="text-xs text-muted-foreground">{selectedYear.std}</span>
-          <ChevronDown size={13} className={`text-muted-foreground transition-transform shrink-0 ${yearOpen ? "rotate-180" : ""}`} />
-        </button>
-
-        {yearOpen && (
-          <div className="border-t border-border">
-            {YEARS.map(yr => (
-              <button
-                key={yr.year}
-                onClick={() => handleYearSelect(yr)}
-                className={`w-full flex items-center justify-between px-6 py-2.5 text-left transition-colors border-b border-border last:border-0 ${
-                  selectedYear.year === yr.year ? "bg-primary/10" : "hover:bg-secondary"
-                }`}
-              >
-                <div>
-                  <span className={`text-xs font-medium ${selectedYear.year === yr.year ? "text-primary" : "text-foreground"}`}>
-                    {yr.label}
-                  </span>
-                  <span className={`text-xs ml-2 ${selectedYear.year === yr.year ? "text-primary/70" : "text-muted-foreground"}`}>
-                    {yr.std}
-                  </span>
-                </div>
-                {selectedYear.year === yr.year && (
-                  <span className="text-primary text-xs">✓</span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* 연도 선택 — Select 드롭다운 */}
+        <div className="flex items-center gap-2 px-4 py-2 border-t border-border">
+          <span className="text-xs text-muted-foreground shrink-0">적용 연도</span>
+          <Select
+            value={selectedYear.year}
+            onValueChange={(val) => {
+              const yr = YEARS.find(y => y.year === val);
+              if (yr) handleYearSelect(yr);
+            }}
+          >
+            <SelectTrigger className="flex-1 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {YEARS.map(yr => (
+                <SelectItem key={yr.year} value={yr.year} className="text-xs">
+                  {yr.label} <span className="text-muted-foreground ml-1">{yr.std}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {showSearch && (
           <div className="px-3 pb-2 border-t border-border pt-2">
