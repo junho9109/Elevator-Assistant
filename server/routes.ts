@@ -1110,6 +1110,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== AI 사용량 통계 ====================
+  app.get("/api/ai-usage/stats", async (req, res) => {
+    try {
+      const { db: usageDb } = await import("./db");
+      const { aiUsage } = await import("@shared/schema");
+      const { gte, desc: usageDesc } = await import("drizzle-orm");
+
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const allRows = await usageDb.select().from(aiUsage).where(gte(aiUsage.createdAt, monthStart));
+
+      const totalQuestions = allRows.length;
+      const totalInput = allRows.reduce((s, r) => s + r.inputTokens, 0);
+      const totalOutput = allRows.reduce((s, r) => s + r.outputTokens, 0);
+      const totalCost = allRows.reduce((s, r) => s + parseFloat(r.costUsd), 0);
+
+      // 최근 7일 일별
+      const daily: Record<string, { input: number; output: number; cost: number }> = {};
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        daily[d.toISOString().slice(0, 10)] = { input: 0, output: 0, cost: 0 };
+      }
+      allRows.forEach(r => {
+        const key = new Date(r.createdAt).toISOString().slice(0, 10);
+        if (daily[key]) {
+          daily[key].input += r.inputTokens;
+          daily[key].output += r.outputTokens;
+          daily[key].cost += parseFloat(r.costUsd);
+        }
+      });
+
+      const recentLogs = await usageDb.select().from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(10);
+      res.json({ totalQuestions, totalInput, totalOutput, totalCost: totalCost.toFixed(4), daily, recentLogs });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // ==================== 채팅 ====================
   const { db: chatDb } = await import("./db");
   const { chatMessages: chatMsgsTable } = await import("@shared/schema");

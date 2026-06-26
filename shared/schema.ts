@@ -423,3 +423,15 @@ export const stdItemPhotos = pgTable("std_item_photos", {
   displayOrder: integer("display_order").default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// AI 사용량 로그
+export const aiUsage = pgTable("ai_usage", {
+  id: serial("id").primaryKey(),
+  question: text("question").notNull(),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  costUsd: text("cost_usd").notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type AiUsage = typeof aiUsage.$inferSelect;
+
