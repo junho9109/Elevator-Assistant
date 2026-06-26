@@ -97,7 +97,7 @@ function TreeNode({ sec, depth, activeKey, onSelect }: {
   return (
     <div>
       <button
-        onClick={() => { hasChildren ? setOpen(o => !o) : onSelect(sec.id); }}
+        onClick={() => { if (hasChildren) { setOpen(o => !o); } else { onSelect(sec.id); } }}
         className={`w-full flex items-center gap-1.5 py-2 pr-3 text-left text-xs transition-colors hover:bg-secondary ${
           isActive || hasDescendant ? "text-primary font-medium" : "text-foreground"
         }`}
@@ -128,7 +128,14 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
   isAdminMode: boolean; override?: any; onEdit: () => void;
 }) {
   const e = dataMap[id];
-  if (!e) return null;
+  if (!e) return (
+    <div className="flex flex-col h-full items-center justify-center gap-3 p-6 text-center">
+      <FileCheck size={32} className="opacity-20" />
+      <p className="text-xs text-muted-foreground">조문 데이터를 불러올 수 없습니다.</p>
+      <p className="font-mono text-[10px] text-muted-foreground">[{id}]</p>
+      <button onClick={onClose} className="text-xs text-primary underline">닫기</button>
+    </div>
+  );
   const displayText = override?.text || e.text || "";
   const firstLine = (e.title || displayText.split("\n")[0] || id).trim();
   const body = displayText.includes("\n") ? displayText.split("\n").slice(1).join("\n").trim() : displayText;
