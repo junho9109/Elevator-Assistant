@@ -129,7 +129,7 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
 }) {
   const e = dataMap[id];
   if (!e) return (
-    <div className="flex flex-col h-full items-center justify-center gap-3 p-6 text-center">
+    <div className="flex flex-col flex-1 min-h-0 items-center justify-center gap-3 p-6 text-center">
       <FileCheck size={32} className="opacity-20" />
       <p className="text-xs text-muted-foreground">조문 데이터를 불러올 수 없습니다.</p>
       <p className="font-mono text-[10px] text-muted-foreground">[{id}]</p>
@@ -142,7 +142,7 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
   const displaySource = override?.source || e.source || `별표22 엘리베이터 안전기준 ${yearStd}`;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-start gap-2 px-4 py-3 border-b border-border shrink-0">
         <div className="flex-1 min-w-0">
           <span className="font-mono text-[10px] text-muted-foreground">[{id}]</span>
@@ -310,7 +310,7 @@ export default function InspectionStandardsPage() {
       </div>
 
       {/* 본문 */}
-      <div className="flex-1 overflow-hidden flex">
+      <div className="flex-1 overflow-hidden flex min-h-0">
         {/* 좌측: 트리 또는 검색결과 */}
         <div className={`${activeKey ? "hidden md:flex md:w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
           {showSearch && results.length > 0 ? (
@@ -334,7 +334,7 @@ export default function InspectionStandardsPage() {
 
         {/* 우측: 상세 */}
         {activeKey ? (
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0">
             <Detail
               id={activeKey}
               yearStd={selectedYear.std}
