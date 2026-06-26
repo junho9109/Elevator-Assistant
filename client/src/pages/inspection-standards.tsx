@@ -247,7 +247,6 @@ export default function InspectionStandardsPage() {
   };
 
   return (
-    <>
     <div className="flex flex-col h-full bg-background">
       {/* 헤더 */}
       <div className="shrink-0 bg-card border-b border-border">
@@ -360,7 +359,6 @@ export default function InspectionStandardsPage() {
           </div>
         )}
       </div>
-    </div>
 
     {/* 비밀번호 다이얼로그 */}
     {showPw && (
@@ -413,6 +411,6 @@ export default function InspectionStandardsPage() {
         </div>
       </div>
     )}
-    </>
+    </div>
   );
 }
