@@ -75,24 +75,48 @@ export default function ChatPage() {
 
   const lastIdRef = useRef<number>(0);
 
+  const CACHE_KEY = "chat_msgs_cache";
+
   const fetchMsgs = useCallback(async (initial = false) => {
     try {
       if (initial) {
-        // 첫 로딩: 최근 30개만
-        const r = await fetch("/api/chat-messages?limit=30");
+        // ① 캐시 즉시 표시 (카카오톡처럼 빠르게)
+        try {
+          const cached = localStorage.getItem(CACHE_KEY);
+          if (cached) {
+            const cachedMsgs = JSON.parse(cached);
+            setMsgs(cachedMsgs);
+            setLoading(false);
+            // 캐시의 최신 ID 설정
+            if (cachedMsgs.length > 0) {
+              lastIdRef.current = Math.max(...cachedMsgs.map((m: any) => m.id));
+            }
+          }
+        } catch {}
+
+        // ② 서버에서 최신 데이터 fetch
+        const r = await fetch("/api/chat-messages?limit=50");
         if (r.ok) {
           const data = await r.json();
+          // desc 정렬이므로 첫 번째 항목이 가장 최신
+          if (data.length > 0) {
+            lastIdRef.current = data[0].id;
+            // 이미지 없는 버전으로 캐시 저장 (용량 절약)
+            const cacheData = data.map((m: any) => ({ ...m, imageData: m.imageData ? "CACHED" : null, videoData: null }));
+            try { localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData)); } catch {}
+          }
           setMsgs(data);
-          if (data.length > 0) lastIdRef.current = data[data.length - 1].id;
         }
       } else {
         // 폴링: 마지막 ID 이후 새 메시지만
+        if (lastIdRef.current === 0) return;
         const r = await fetch(`/api/chat-messages?after=${lastIdRef.current}&limit=50`);
         if (r.ok) {
           const data = await r.json();
           if (data.length > 0) {
+            // 새 메시지는 desc 정렬 → 역순으로 추가
             setMsgs(prev => [...prev, ...data]);
-            lastIdRef.current = data[data.length - 1].id;
+            lastIdRef.current = data[0].id;
           }
         }
       }
@@ -119,7 +143,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     fetchMsgs(true);
-    pollTimer.current = setInterval(() => fetchMsgs(false), 5000);
+    pollTimer.current = setInterval(() => fetchMsgs(false), 2000);
     return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
   }, [fetchMsgs]);
 
@@ -423,10 +447,10 @@ export default function ChatPage() {
                         </div>
                       )}
                       {msg.content && <span>{msg.content}</span>}
-                      {msg.imageData && (
+                      {msg.imageData && msg.imageData !== "CACHED" && (
                         msg.imageData.startsWith("data:image/heic") || msg.imageData.startsWith("data:image/heif")
                           ? <span className="text-xs text-muted-foreground mt-1 block">[HEIC 이미지 — 미지원 형식]</span>
-                          : <img src={msg.imageData} alt="첨부이미지" className="mt-1 max-w-[200px] rounded-lg block" />
+                          : <img src={msg.imageData} alt="첨부이미지" className="mt-1 max-w-[200px] rounded-lg block" loading="lazy" />
                       )}
                       {msg.videoData && <video src={msg.videoData} controls className="mt-1 max-w-[220px] rounded-lg block" style={{maxHeight:'160px'}} playsInline />}
                     </div>
