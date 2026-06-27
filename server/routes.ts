@@ -1104,7 +1104,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 - **[1순위] 검사기준(별표22)** — 가장 먼저 인용. 조문번호와 수치를 그대로 사용
 - **[2순위] 기술자료(표준화)** — 검사기준에 없거나 보완이 필요할 때 인용
 - **[3순위] 채팅참고** — 공식 기준 아님. 현장 분위기 파악용으로만 참고. 답변에 직접 인용 금지
-- 자료가 없는 영역은 법령·고시 지식으로 답변
 
 ## 답변 규칙
 - **결론부터** — 첫 문장에 판정(적합/부적합/시정권고/해당없음) 또는 핵심 답
@@ -1112,7 +1111,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 - **수치 굵게** — **0.5m**, **125%** 처럼
 - **필요한 말만** — "참고사항", "권장 조치", "추가 검토", "주의사항" 섹션 만들지 않음
 - **모를 때** — "기준 없음" 또는 "공단 확인 필요" 한 줄로 끝냄
-- 인사·서론·마무리 없음${contextText}`
+- 인사·서론·마무리 없음
+
+## 출처 표시 규칙 (필수)
+답변 마지막에 반드시 다음 형식으로 출처를 표시:
+> 📌 근거: [검사기준] 조문번호 | [기술자료] 표준화명 | [검사가이드] 항목명
+- 실제로 답변에 활용한 자료만 표시
+- [별표22] X.X.X 형식 조문은 [검사기준] 태그로 표시
+- 표준화 자료는 [기술자료] 태그로 표시
+- 검사가이드 항목은 [검사가이드] 태그로 표시${contextText}`
 
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
@@ -1167,7 +1174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const response = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 100,
-        system: '승강기 안전검사 전문가다. 사용자 질문에서 별표22·표준화 자료 검색에 쓸 핵심 검색어를 최대 3개 추출해서 JSON 배열만 반환해. 예: ["자동구출운전","건축허가일"] 다른 텍스트 없이 JSON만.',
+        system: '승강기 안전검사 전문가다. 사용자 질문에서 별표22·표준화 검색에 쓸 핵심어를 최대 3개 추출해 JSON 배열만 반환해. 적용시기/언제부터 질문이면 반드시 "건축허가일" 또는 "적용" 포함. 검사방법·확인방법 위주 항목(가나다 세부항목)이 아닌 기준 조문 위주로. 예: ["자동구출운전","건축허가일","2017"] 다른 텍스트 없이 JSON만.',
         messages: [{ role: "user", content: question }],
       });
       const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "[]";

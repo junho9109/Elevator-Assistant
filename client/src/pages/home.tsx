@@ -299,7 +299,11 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
 
   // ② 제목과 본문을 분리해서 점수 계산
   const addResult = (r: SearchResult, titleText: string, bodyText: string) => {
-    const score = scoreMatch(bodyText, kwList, kw, titleText, undefined, intent, allTerms);
+    let score = scoreMatch(bodyText, kwList, kw, titleText, undefined, intent, allTerms);
+    // 세부 소항목(1.2.1.4-마 같은 가/나/다 항목)은 적용시기 질문에서 패널티
+    if (intent === "timing" && /[가나다라마바사아자차카타파하]-?$/.test(r.query || "")) {
+      score = Math.max(0, score - 60);
+    }
     if (score >= 50) scored.push({ result: r, score }); // ③ 임계값 50 미만 제외
   };
 
@@ -2250,7 +2254,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     {!std && <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>}
                     <div className="pt-2 border-t border-border">
                       <p className="text-xs text-muted-foreground mb-0.5">출처</p>
-                      <p className="text-xs font-medium text-muted-foreground">{std?.source || ""}</p>
+                      <p className="text-xs font-medium text-blue-600">[기술자료] {std?.source || "표준화 자료"}</p>
                     </div>
                   </>
                 );
@@ -2271,11 +2275,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         className="text-xs bg-green-600 text-white rounded-lg px-3 py-1.5 hover:bg-green-700 shrink-0"
                         onClick={() => {
                           setSelectedSearchResult(null);
-                          sessionStorage.setItem("pendingJudgmentItem", selectedSearchResult.query);
-                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
+                          sessionStorage.setItem("pendingInspectionDetail", selectedSearchResult.query);
+                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
                         }}
                       >
-                        검사가이드에서 보기 →
+                        검사기준에서 보기 →
                       </button>
                     </div>
                   </>
@@ -2307,17 +2311,16 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                       </div>
                     )}
                     <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
-                      <p className="text-xs text-muted-foreground">항목 ID: {itemId}</p>
+                      <p className="text-xs text-blue-600 font-medium">[검사기준] {itemId}</p>
                       <button
                         className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 shrink-0"
                         onClick={() => {
                           setSelectedSearchResult(null);
-                          // 검사기준 페이지(index 3)로 이동
                           sessionStorage.setItem("pendingInspectionDetail", itemId);
                           window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
                         }}
                       >
-                        검사가이드에서 보기 →
+                        검사기준에서 보기 →
                       </button>
                     </div>
                   </>
