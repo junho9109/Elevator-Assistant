@@ -1122,6 +1122,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const reply = response.content[0].type === "text" ? response.content[0].text : "";
+
+      // AI 사용량 DB 저장 (모든 사용자 누적 — 껐다 켜도 DB에 영구 보존)
+      try {
+        const { db: uDb } = await import("./db");
+        const { aiUsage } = await import("@shared/schema");
+        const usage = response.usage;
+        const inputTok = usage?.input_tokens || 0;
+        const outputTok = usage?.output_tokens || 0;
+        // Sonnet 4.6: input $3/1M, output $15/1M
+        const cost = ((inputTok * 3 + outputTok * 15) / 1_000_000).toFixed(6);
+        const question = Array.isArray(messages) && messages.length > 0
+          ? String(messages[messages.length - 1]?.content || "").slice(0, 200)
+          : "";
+        await uDb.insert(aiUsage).values({
+          question,
+          inputTokens: inputTok,
+          outputTokens: outputTok,
+          costUsd: cost,
+        });
+      } catch (e) {
+        console.error("[usage 저장 오류]", e);
+      }
+
       res.json({ reply });
 
     } catch (error: any) {
