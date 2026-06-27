@@ -845,25 +845,18 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       return;
     }
 
-    // ⑩ Query Rewriting — Haiku로 최적 검색어 생성
+    // ⑩ Query Rewriting — 서버 API를 통해 Haiku로 최적 검색어 생성 (CORS 방지)
     let searchQueries: string[] = [text];
     try {
-      const qrRes = await fetch("https://api.anthropic.com/v1/messages", {
+      const qrRes = await fetch("/api/query-rewrite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 100,
-          system: '승강기 안전검사 전문가다. 사용자 질문에서 별표22·표준화 자료 검색에 쓸 핵심 검색어를 최대 3개 추출해서 JSON 배열만 반환해. 예: ["자동구출운전","건축허가일"] 다른 텍스트 없이 JSON만.',
-          messages: [{ role: "user", content: text }]
-        })
+        body: JSON.stringify({ question: text })
       });
       if (qrRes.ok) {
         const qrData = await qrRes.json();
-        const raw = qrData.content?.[0]?.text?.trim() || "";
-        const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          searchQueries = [text, ...parsed.filter((q: string) => q !== text)];
+        if (Array.isArray(qrData.queries) && qrData.queries.length > 0) {
+          searchQueries = [text, ...qrData.queries.filter((q: string) => q !== text)];
         }
       }
     } catch {}

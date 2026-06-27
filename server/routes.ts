@@ -1158,6 +1158,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== Query Rewriting (CORS 프록시) ====================
+  app.post("/api/query-rewrite", async (req, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) return res.json({ queries: [] });
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 100,
+        system: '승강기 안전검사 전문가다. 사용자 질문에서 별표22·표준화 자료 검색에 쓸 핵심 검색어를 최대 3개 추출해서 JSON 배열만 반환해. 예: ["자동구출운전","건축허가일"] 다른 텍스트 없이 JSON만.',
+        messages: [{ role: "user", content: question }],
+      });
+      const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "[]";
+      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      res.json({ queries: Array.isArray(parsed) ? parsed : [] });
+    } catch (e) {
+      res.json({ queries: [] });
+    }
+  });
+
   // ==================== AI 사용량 통계 ====================
   app.get("/api/ai-usage/stats", async (req, res) => {
     try {
