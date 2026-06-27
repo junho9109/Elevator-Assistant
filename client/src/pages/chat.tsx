@@ -153,9 +153,23 @@ export default function ChatPage() {
     return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
   }, [fetchMsgs]);
 
+  const msgListRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = (smooth = false) => {
+    const el = msgListRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  };
+
+  // 초기 로딩 완료 시 맨 아래로 (애니메이션 없이 즉시)
   useEffect(() => {
-    if (!loading) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs.length, loading]);
+    if (!loading) scrollToBottom(false);
+  }, [loading]);
+
+  // 새 메시지 수신 시 맨 아래로
+  useEffect(() => {
+    scrollToBottom(false);
+  }, [msgs.length]);
 
   // 검색
   useEffect(() => {
@@ -272,7 +286,7 @@ export default function ChatPage() {
         setPendingVideo(null);
         setPendingVideoMime(null);
         setReplyTo(null);
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        setTimeout(() => scrollToBottom(false), 50);
       }
     } catch {}
     setSending(false);
@@ -412,7 +426,7 @@ export default function ChatPage() {
 
       {/* 채팅 목록 */}
       {!(showSearch && searchQuery) && (
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
+        <div ref={msgListRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
           {loading && <p className="text-xs text-muted-foreground text-center py-8">불러오는 중…</p>}
           {msgs.map((msg, i) => {
             const isMe = msg.userName === userName;
@@ -496,7 +510,7 @@ export default function ChatPage() {
               </div>
             );
           })}
-          <div ref={bottomRef} />
+
         </div>
       )}
 
