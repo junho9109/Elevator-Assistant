@@ -1221,6 +1221,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 메시지 soft delete
+  app.delete("/api/chat-messages/:id", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { chatMessages } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const [msg] = await db.update(chatMessages)
+        .set({ deletedAt: new Date(), content: "", imageData: null, imageThumbnail: null, videoData: null })
+        .where(eq(chatMessages.id, id))
+        .returning();
+      res.json(msg);
+    } catch (e) { res.status(500).json({ error: "Failed to delete" }); }
+  });
+
+  // 서버 시작 시 15일 이상 이미지 → 50px 썸네일로 교체
+  (async () => {
+    try {
+      const db = (await import("./db")).db;
+      const { chatMessages } = await import("@shared/schema");
+      const { lt, and, isNotNull, isNull } = await import("drizzle-orm");
+      const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+      // imageData가 있고 imageThumbnail이 없고 15일 이상 된 메시지
+      const expired = await db.select({ id: chatMessages.id, imageData: chatMessages.imageData })
+        .from(chatMessages)
+        .where(and(lt(chatMessages.createdAt, cutoff), isNotNull(chatMessages.imageData), isNull(chatMessages.imageThumbnail)));
+      for (const row of expired) {
+        if (!row.imageData || row.imageData === "CACHED") continue;
+        // 50px 초소형 썸네일 생성 (서버에서는 base64 그대로 유지, 표시 크기만 제한)
+        // imageThumbnail = imageData 앞 2000자 (50px 수준 blur 효과용)
+        const thumb = row.imageData.slice(0, 2000);
+        await db.update(chatMessages).set({ imageThumbnail: thumb, imageData: null })
+          .where((await import("drizzle-orm")).eq(chatMessages.id, row.id));
+      }
+      if (expired.length > 0) console.log(`[이미지 만료] ${expired.length}개 처리 완료`);
+    } catch (e) { console.error("[이미지 만료 처리 오류]", e); }
+  })();
+
   // ==================== 표준화 항목 이미지 ====================
   const STD_PHOTO_DELETE_PW = "910919";
 

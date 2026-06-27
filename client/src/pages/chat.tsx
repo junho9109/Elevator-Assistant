@@ -57,6 +57,7 @@ export default function ChatPage() {
   const [nameInput, setNameInput] = useState(() => generateRandomName());
   const [replyTo, setReplyTo] = useState<ChatMsg | null>(null);
   const [longPress, setLongPress] = useState<{ msg: ChatMsg; x: number; y: number } | null>(null);
+  const [expandedImg, setExpandedImg] = useState<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ChatMsg[]>([]);
@@ -286,6 +287,18 @@ export default function ChatPage() {
   };
   const onPressEnd = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
 
+  const deleteMessage = async (id: number) => {
+    setLongPress(null);
+    if (!confirm("삭제하면 모든 사용자에게 사라집니다. 삭제할까요?")) return;
+    try {
+      await fetch(`/api/chat-messages/${id}`, { method: "DELETE" });
+      setMsgs(prev => prev.map(m => m.id === id
+        ? { ...m, content: "", imageData: null, imageThumbnail: null, videoData: null, deletedAt: new Date().toISOString() }
+        : m
+      ));
+    } catch {}
+  };
+
   if (!userName) {
     return (
       <div className="flex flex-col h-full items-center justify-center p-6 gap-4">
@@ -452,13 +465,30 @@ export default function ChatPage() {
                           <p className={`text-[11px] truncate ${isMe ? "text-white/70" : "text-muted-foreground"}`}>{msg.replyToContent}</p>
                         </div>
                       )}
-                      {msg.content && <span>{msg.content}</span>}
-                      {msg.imageData && msg.imageData !== "CACHED" && (
-                        msg.imageData.startsWith("data:image/heic") || msg.imageData.startsWith("data:image/heif")
-                          ? <span className="text-xs text-muted-foreground mt-1 block">[HEIC 이미지 — 미지원 형식]</span>
-                          : <img src={msg.imageData} alt="첨부이미지" className="mt-1 max-w-[200px] rounded-lg block" loading="lazy" />
-                      )}
-                      {msg.videoData && <video src={msg.videoData} controls className="mt-1 max-w-[220px] rounded-lg block" style={{maxHeight:'160px'}} playsInline />}
+                      {msg.deletedAt
+                        ? <span className="text-xs italic opacity-60">삭제된 메시지입니다</span>
+                        : <>
+                          {msg.content && <span>{msg.content}</span>}
+                          {msg.imageData && msg.imageData !== "CACHED" && (
+                            msg.imageData.startsWith("data:image/heic") || msg.imageData.startsWith("data:image/heif")
+                              ? <span className="text-xs text-muted-foreground mt-1 block">[HEIC — 미지원]</span>
+                              : <img
+                                  src={msg.imageData}
+                                  alt="첨부이미지"
+                                  className="mt-1 max-w-[200px] rounded-lg block cursor-pointer active:opacity-80"
+                                  loading="lazy"
+                                  onClick={e => { e.stopPropagation(); setExpandedImg(msg.imageData!); }}
+                                />
+                          )}
+                          {msg.imageThumbnail && !msg.imageData && (
+                            <div className="mt-1">
+                              <img src={msg.imageThumbnail} alt="미리보기" className="max-w-[60px] rounded opacity-50 blur-[1px] block" loading="lazy" />
+                              <span className="text-[10px] opacity-60 mt-0.5 block">원본 만료됨</span>
+                            </div>
+                          )}
+                          {msg.videoData && <video src={msg.videoData} controls className="mt-1 max-w-[220px] rounded-lg block" style={{maxHeight:'160px'}} playsInline />}
+                        </>
+                      }
                     </div>
                     <span className="text-[8px] text-muted-foreground px-1">{formatTime(msg.createdAt)}</span>
                   </div>
@@ -490,6 +520,35 @@ export default function ChatPage() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             복사
           </button>
+          <button
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs text-destructive hover:bg-secondary"
+            onClick={() => deleteMessage(longPress.msg.id)}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            삭제
+          </button>
+        </div>
+      )}
+
+      {/* 이미지 확대 오버레이 */}
+      {expandedImg && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center"
+          onClick={() => setExpandedImg(null)}
+        >
+          <img
+            src={expandedImg}
+            alt="확대"
+            className="max-w-[90vw] max-h-[80vh] rounded-xl object-contain"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 flex items-center justify-center"
+            onClick={() => setExpandedImg(null)}
+          >
+            <X size={18} className="text-white" />
+          </button>
+          <p className="absolute bottom-6 text-white/60 text-xs">탭하면 닫힘</p>
         </div>
       )}
 
