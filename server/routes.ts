@@ -1045,7 +1045,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { messages, context } = req.body as {
         messages: { role: "user" | "assistant"; content: string }[];
-        context?: { title: string; ref?: string; basis?: string; conclusion?: string; source?: string }[];
+        context?: {
+          inspCtx?: { priority: string; title: string; ref: string; content: string }[];
+          techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string }[];
+          chatCtx?: { priority: string; content: string; note: string }[];
+        };
       };
 
       if (!messages || messages.length === 0) {
@@ -1054,40 +1058,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-      // 검색된 관련 자료를 시스템 프롬프트에 포함
-      const contextText = context && context.length > 0
-        ? `\n\n[관련 표준화 자료]\n` + context.map((c, i) =>
-            `${i + 1}. **${c.title}**\n` +
-            (c.ref ? `   근거: ${c.ref}\n` : "") +
-            (c.basis ? `   검사기준: ${c.basis}\n` : "") +
-            (c.conclusion ? `   표준화 결론: ${c.conclusion}\n` : "") +
-            (c.source ? `   출처: ${c.source}` : "")
-          ).join("\n\n")
-        : "";
+      // 우선순위별 컨텍스트 → 시스템 프롬프트 주입
+      let contextText = "";
 
-      const systemPrompt = `당신은 대한민국 승강기 안전검사 분야의 최고 전문가입니다. 15년 이상의 현장 검사 경험을 가진 수석 검사원으로서, 승강기 안전관리법·KC 안전기준·행정안전부 고시·별표22 등 모든 관련 법령에 정통합니다.
+      if (context) {
+        const sections: string[] = [];
 
-## 전문 분야
-- 안전검사(정기·수시·정밀안전검사) 판정 기준 및 절차
-- 별표22(엘리베이터 안전기준) 조문 해석 및 적용
-- 검사방법 표준화 사례 및 현장 적용
-- 단계적 이행, 종전 기준 적용 여부 판단
-- 부품 인증·설치검사·완성검사 기준
-- 현장 애매 사례 판단
+        // 1순위: 검사기준(별표22)
+        if (context.inspCtx && context.inspCtx.length > 0) {
+          sections.push("## [1순위] 검사기준 (별표22)\n" +
+            context.inspCtx.map(c =>
+              `■ ${c.title}${c.ref ? ` [${c.ref}]` : ""}\n${c.content}`
+            ).join("\n\n")
+          );
+        }
 
-## 답변 방식
-1. **핵심 판단 먼저** — 적합/부적합/시정권고/해당없음 또는 결론을 첫 문장에
-2. **근거 명시** — 조문번호([별표22] X.X.X, 승강기안전관리법 제X조 등) 반드시 인용
-3. **실무 적용** — 현장에서 바로 쓸 수 있는 수치와 판단 기준 제시
-4. **예외·주의** — 건축허가일 기준 종전/개정, 엘리베이터 기종별 차이 명시
-5. **불확실 시** — "공식 기준 확인 필요" 또는 "한국승강기안전공단 문의 권장"으로 솔직히 표기
+        // 2순위: 기술자료(표준화)
+        if (context.techCtx && context.techCtx.length > 0) {
+          sections.push("## [2순위] 기술자료 (표준화)\n" +
+            context.techCtx.map(c =>
+              `■ ${c.title} (${c.ref})\n` +
+              (c.basis ? `현안: ${c.basis}\n` : "") +
+              (c.conclusion ? `표준화결정: ${c.conclusion}\n` : "") +
+              `출처: ${c.source}`
+            ).join("\n\n")
+          );
+        }
 
-## 답변 형식
-- 마크다운 활용 (굵게, 목록, 구분선)
-- 수치는 굵게 표시 (**0.3m 이상**, **정격하중의 125%** 등)
-- 관련 조문이 여러 개면 표로 정리
-- 불필요한 서론·인사말 없이 바로 핵심 답변
-- 질문 복잡도에 따라 분량 유연하게 조절${contextText}`
+        // 3순위: 채팅 참고 (현장 의견 — 공식 기준 아님)
+        if (context.chatCtx && context.chatCtx.length > 0) {
+          sections.push("## [3순위] 채팅 참고 (현장 의견 — 공식 기준 아님, 참고만 할 것)\n" +
+            context.chatCtx.map(c => `• ${c.content}`).join("\n")
+          );
+        }
+
+        if (sections.length > 0) {
+          contextText = "\n\n---\n" + sections.join("\n\n") + "\n---";
+        }
+      }
+
+      const systemPrompt = `당신은 승강기 안전검사 현장 전문가다. 검사원이 현장에서 바로 판단에 쓸 수 있는 답을 준다.
+
+## 참고 자료 활용 규칙
+아래에 [1순위] [2순위] [3순위] 자료가 제공된다.
+- **[1순위] 검사기준(별표22)** — 가장 먼저 인용. 조문번호와 수치를 그대로 사용
+- **[2순위] 기술자료(표준화)** — 검사기준에 없거나 보완이 필요할 때 인용
+- **[3순위] 채팅참고** — 공식 기준 아님. 현장 분위기 파악용으로만 참고. 답변에 직접 인용 금지
+- 자료가 없는 영역은 법령·고시 지식으로 답변
+
+## 답변 규칙
+- **결론부터** — 첫 문장에 판정(적합/부적합/시정권고/해당없음) 또는 핵심 답
+- **조문번호 명시** — [별표22] X.X.X, 승강기안전관리법 제X조 형식으로
+- **수치 굵게** — **0.5m**, **125%** 처럼
+- **필요한 말만** — "참고사항", "권장 조치", "추가 검토", "주의사항" 섹션 만들지 않음
+- **모를 때** — "기준 없음" 또는 "공단 확인 필요" 한 줄로 끝냄
+- 인사·서론·마무리 없음${contextText}`
 
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-6",

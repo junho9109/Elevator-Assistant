@@ -807,17 +807,18 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       });
     }
 
-    // 채팅 메시지 검색 병합
+    // ── 채팅 메시지 검색 (별도 보관 — UI 표시용)
+    let chatResults: SearchResult[] = [];
     try {
-      const chatRes = await fetch(`/api/chat-messages?search=${encodeURIComponent(text)}&limit=20`);
+      const chatRes = await fetch(`/api/chat-messages?search=${encodeURIComponent(text)}&limit=10`);
       if (chatRes.ok) {
         const chatMsgs = await chatRes.json();
-        const chatResults: SearchResult[] = chatMsgs.map((m: any) => ({
+        chatResults = chatMsgs.map((m: any) => ({
           type: "chat" as const,
           title: m.content.slice(0, 50).replace(/\n/g, " "),
-          content: m.content.slice(0, 100),
+          content: m.content.slice(0, 150),
           query: String(m.id),
-          score: 100,
+          score: 50,
           chatMeta: {
             id: m.id,
             userName: m.userName,
@@ -827,6 +828,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             hasImage: false,
           },
         }));
+        // UI 검색 결과에는 채팅도 포함 (표시용)
         results = [...results, ...chatResults];
       }
     } catch {}
@@ -835,25 +837,45 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
     // AI API 호출
     try {
-      // 대화 히스토리 구성 (최근 10개)
+      // 대화 히스토리 구성 (최근 8개)
       const historyMsgs = messages
-        .slice(-10)
+        .slice(-8)
         .filter(m => m.role === "user" || m.role === "assistant")
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
       historyMsgs.push({ role: "user", content: text });
 
-      // 관련 자료 컨텍스트 — 깨끗한 데이터만 전달
-      const context = results.slice(0, 6).map(r => {
-        const std = STD_ITEMS.find(s => s.title === r.title);
-        if (std) {
-          // 결론이 너무 짧거나 깨진 경우 제외
-          const cleanConc = std.conclusion.length > 10 ? std.conclusion.slice(0, 300) : "";
-          const cleanBasis = std.basis.slice(0, 200);
-          return { title: std.title, ref: std.ref, basis: cleanBasis, conclusion: cleanConc, source: std.source };
-        }
-        // 검사기준 항목
-        return { title: r.title, ref: r.query, basis: r.content.slice(0, 200), conclusion: "", source: "검사기준" };
-      }).filter(c => c.title && (c.basis || c.conclusion));
+      // ── 우선순위별 컨텍스트 구성 ──
+      // 1) 검사기준(별표22) — 최대 3개, 항목당 600자
+      const stdResults = results.filter(r => r.type !== "chat" && r.source !== "standards_db" && !STD_ITEMS.find(s => s.title === r.title));
+      const inspCtx = stdResults.slice(0, 3).map(r => ({
+        priority: "검사기준",
+        title: r.title,
+        ref: r.query || "",
+        content: r.content.slice(0, 600),
+      })).filter(c => c.content);
+
+      // 2) 기술자료(표준화) — 최대 3개, 항목당 500자 (결론 전체 + basis)
+      const techResults = results.filter(r => STD_ITEMS.find(s => s.title === r.title));
+      const techCtx = techResults.slice(0, 3).map(r => {
+        const std = STD_ITEMS.find(s => s.title === r.title)!;
+        return {
+          priority: "기술자료(표준화)",
+          title: std.title,
+          ref: std.ref,
+          basis: std.basis.slice(0, 250),
+          conclusion: std.conclusion.length > 10 ? std.conclusion.slice(0, 400) : "",
+          source: std.source,
+        };
+      }).filter(c => c.basis || c.conclusion);
+
+      // 3) 채팅 참고 — 최대 2개, 항목당 150자 (실무 참고용)
+      const chatCtx = chatResults.slice(0, 2).map(r => ({
+        priority: "채팅참고(현장의견)",
+        content: r.content.slice(0, 150),
+        note: "공식 기준 아님 — 현장 검사원 대화 참고용",
+      })).filter(c => c.content);
+
+      const context = { inspCtx, techCtx, chatCtx };
 
       const resp = await fetch("/api/chat", {
         method: "POST",
