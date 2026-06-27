@@ -939,15 +939,34 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
       // 1) 검사기준(별표22) — 최대 2개 (score 높은 순), 항목당 600자
       const stdResults = contextResults.filter(r => r.type !== "chat" && r.source !== "standards_db" && !STD_ITEMS.find(s => s.title === r.title));
-      const inspCtx = stdResults.slice(0, 2).map(r => ({
-        priority: "검사기준",
-        title: r.title,
-        ref: r.query || "",
-        content: r.content.slice(0, 600),
-      })).filter(c => c.content);
+      const inspCtx = stdResults.slice(0, 2).map(r => {
+        // 날짜 데이터 포함 — inspection-content.json의 effectiveDate/revisions
+        const inspEntry = (INSPECTION_CONTENT as any)[r.query || ""];
+        const effectiveDate = inspEntry?.effectiveDate
+          ? `적용일: ${inspEntry.effectiveDate.replace(/-/g, ".")} 이후 건축허가분` : "";
+        const revisionNote = inspEntry?.revisions?.[0]?.description || "";
+        const dateInfo = effectiveDate || revisionNote ? `
+[적용시기] ${effectiveDate || revisionNote}` : "";
+        return {
+          priority: "검사기준",
+          title: r.title,
+          ref: r.query || "",
+          content: r.content.slice(0, 600) + dateInfo,
+        };
+      }).filter(c => c.content);
 
       // 2) 기술자료(표준화) — 최대 2개, 항목당 500자
-      const techResults = contextResults.filter(r => STD_ITEMS.find(s => s.title === r.title));
+      // + 검사기준 조문번호로 표준화 교차검색 (ref 역참조)
+      const inspRefNums = inspCtx.map(c => c.ref).filter(Boolean);
+      const crossRefItems = inspRefNums.length > 0
+        ? STD_ITEMS.filter(s =>
+            inspRefNums.some(ref => s.ref.includes(ref.replace(/\[.*?\]\s*/, '').trim()))
+          ).map(s => ({ type: "standard" as const, title: s.title, content: s.conclusion.slice(0, 100), query: s.title, score: 180 }))
+        : [];
+      const techResults = [
+        ...contextResults.filter(r => STD_ITEMS.find(s => s.title === r.title)),
+        ...crossRefItems.filter(cr => !contextResults.find(r => r.title === cr.title)),
+      ];
       const techCtx = techResults.slice(0, 2).map(r => {
         const std = STD_ITEMS.find(s => s.title === r.title)!;
         return {
@@ -969,6 +988,31 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
       const context = { inspCtx, techCtx, chatCtx };
 
+      // AI가 실제로 참고한 항목을 SearchResult로 변환 (카드 표시용)
+      const contextUsed: SearchResult[] = [
+        // 1순위: 검사기준 컨텍스트 항목
+        ...inspCtx.map(c => ({
+          type: "inspection" as const,
+          title: c.title,
+          content: c.content.slice(0, 150),
+          query: c.ref,
+          score: 200, // 컨텍스트 사용 항목 최우선
+        })),
+        // 2순위: 표준화 컨텍스트 항목
+        ...techCtx.map(c => ({
+          type: "standard" as const,
+          title: c.title,
+          content: c.conclusion ? c.conclusion.slice(0, 150) : c.basis.slice(0, 150),
+          query: c.ref,
+          score: 190,
+        })),
+        // 3순위: 채팅 참고 항목
+        ...chatResults.slice(0, 2).map(r => ({
+          ...r,
+          score: 100,
+        })),
+      ];
+
       const resp = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -978,10 +1022,16 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       if (!resp.ok) throw new Error("서버 오류");
       const data = await resp.json();
 
-      // AI 답변 결과 — 표준화+검사기준 둘 다 포함, 최대 10개
-      let finalResults = results;
-      if (finalResults.length === 0 && data.reply) {
-        const replyKeywords = data.reply.match(/[\uAC00-\uD7A3]{2,6}/g) || [];
+      // 최종 카드 목록: 컨텍스트 사용 항목 우선 + 나머지 검색 결과 보충
+      const contextTitles = new Set(contextUsed.map(r => r.title));
+      const extraResults = results
+        .filter(r => !contextTitles.has(r.title))
+        .slice(0, 6);
+      let finalResults = [...contextUsed, ...extraResults];
+
+      // 검색 결과가 아예 없으면 AI 답변에서 키워드 추출해 보충
+      if (contextUsed.length === 0 && results.length === 0 && data.reply) {
+        const replyKeywords = data.reply.match(/[가-힣]{2,6}/g) || [];
         const uniqueKws = [...new Set(replyKeywords)].slice(0, 5);
         for (const kw of uniqueKws) {
           const r = searchAllData(kw, standards);
