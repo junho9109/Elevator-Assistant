@@ -98,11 +98,32 @@ const SYNONYMS: Record<string, string[]> = {
 };
 
 // 키워드 확장 (유사어 포함한 검색어 목록 반환)
+// ⑦ 질문에서 핵심 명사 추출 (조사·부사 제거)
+function extractKeyTerms(question: string): string[] {
+  const stopWords = ['이야','이에요','뭐야','뭔가요','어때','어떻게','언제','얼마','몇','부터','까지','이상','이하','미만','초과','있어','없어','해야','안돼','돼','인가요','인지','하는','경우','때','위한','대한','관련','기준','확인','검사','해줘','알려줘','설명','무엇','어디','왜','어느','가요','나요','인가','요'];
+  const norm = question.replace(/[?？!！.,。]/g, ' ').trim();
+  // 2글자 이상 명사 추출 (조사 제거)
+  const terms = norm.split(/\s+/)
+    .map(w => w.replace(/[은는이가을를의에서로부터까지도만]/g, ''))
+    .filter(w => w.length >= 2 && !stopWords.includes(w));
+  return [...new Set(terms)];
+}
+
+// ⑥ 질문 의도 분류
+type QueryIntent = 'timing' | 'criteria' | 'comparison' | 'judgment' | 'general';
+function detectIntent(question: string): QueryIntent {
+  const q = question;
+  if (/언제부터|적용시기|몇년|건축허가|이후|부터\s*적용/.test(q)) return 'timing';
+  if (/차이|비교|vs|versus|다른점|같은점/.test(q)) return 'comparison';
+  if (/합격|불합격|판정|시정|적합|부적합/.test(q)) return 'judgment';
+  if (/기준|수치|치수|높이|폭|길이|거리|이상|이하|미만|초과/.test(q)) return 'criteria';
+  return 'general';
+}
+
 function expandKeywords(kw: string): string[] {
   const base = kw.toLowerCase().replace(/\s+/g, '');
   const expanded = new Set<string>([base, kw.toLowerCase()]);
 
-  // 유사어 사전에서 직접 매핑
   for (const [key, synonyms] of Object.entries(SYNONYMS)) {
     const keyNorm = key.toLowerCase().replace(/\s+/g, '');
     if (base.includes(keyNorm) || keyNorm.includes(base)) {
@@ -112,14 +133,11 @@ function expandKeywords(kw: string): string[] {
         expanded.add(s.toLowerCase());
       });
     }
-    // 유사어가 입력어와 일치하는 경우 역방향
     synonyms.forEach(s => {
       const sNorm = s.toLowerCase().replace(/\s+/g, '');
       if (base.includes(sNorm) || sNorm.includes(base)) {
         expanded.add(keyNorm);
-        synonyms.forEach(s2 => {
-          expanded.add(s2.toLowerCase().replace(/\s+/g, ''));
-        });
+        synonyms.forEach(s2 => expanded.add(s2.toLowerCase().replace(/\s+/g, '')));
       }
     });
   }
@@ -141,24 +159,79 @@ function ngramSimilarity(a: string, b: string): number {
   return (2 * inter) / (sa.size + sb.size);
 }
 
-// 정확도 점수 계산
-function scoreMatch(text: string, keywords: string[], originalKw: string): number {
+// ② 제목/본문 위치별 점수 차별화 + ③ 임계값 + ④ 챕터 근접도
+function scoreMatch(
+  text: string,
+  keywords: string[],
+  originalKw: string,
+  titleText?: string,        // 제목 별도 전달
+  chapterKey?: string,       // 조문 번호 (챕터 근접도용)
+  intent?: QueryIntent,      // ⑥ 의도
+  allTerms?: string[]        // ⑦ 멀티 키워드 교집합용
+): number {
   const normText = text.toLowerCase().replace(/\s+/g, '');
+  const normTitle = (titleText || '').toLowerCase().replace(/\s+/g, '');
   const normOrig = originalKw.toLowerCase().replace(/\s+/g, '');
 
-  // 1순위: 원본 키워드 완전 포함
-  if (normText.includes(normOrig)) return 100;
+  let score = 0;
 
-  // 2순위: 유사어 완전 포함
-  for (const kw of keywords) {
-    if (kw !== normOrig && normText.includes(kw)) return 85;
+  // ② 제목 완전 일치 → 최고 점수
+  if (normTitle && normTitle.includes(normOrig)) {
+    score = 160;
+  }
+  // 본문 앞부분(300자 이내) 포함
+  else if (normText.slice(0, 300).includes(normOrig)) {
+    score = 100;
+  }
+  // 본문 뒷부분 포함
+  else if (normText.includes(normOrig)) {
+    score = 70;
+  }
+  // 유사어 포함
+  else {
+    for (const kw of keywords) {
+      if (kw !== normOrig) {
+        if (normTitle && normTitle.includes(kw)) { score = 130; break; }
+        if (normText.slice(0, 300).includes(kw)) { score = Math.max(score, 80); }
+        else if (normText.includes(kw)) { score = Math.max(score, 55); }
+      }
+    }
+    // n-gram 폴백
+    if (score === 0) {
+      const sim = ngramSimilarity(normOrig, normText.slice(0, 200));
+      if (sim >= 0.6) score = Math.round(sim * 60);
+    }
   }
 
-  // 3순위: n-gram 유사도 (0.6 이상)
-  const sim = ngramSimilarity(normOrig, normText.slice(0, 200));
-  if (sim >= 0.6) return Math.round(sim * 70);
+  if (score === 0) return 0;
 
-  return 0;
+  // ③ 임계값: 50 미만은 제외
+  if (score < 50) return 0;
+
+  // ⑦ 멀티 키워드 교집합 보너스 — 여러 핵심어가 모두 포함되면 +40
+  if (allTerms && allTerms.length > 1) {
+    const matchCount = allTerms.filter(t =>
+      normText.includes(t.toLowerCase().replace(/\s+/g, ''))
+    ).length;
+    if (matchCount === allTerms.length) score += 40;
+    else if (matchCount >= 2) score += 20;
+  }
+
+  // ⑥ 의도별 보너스
+  if (intent === 'timing') {
+    // 날짜/건축허가 패턴이 있으면 +30
+    if (/\d{4}년|건축허가|이후|부터적용|\d{4}\.\d{1,2}/.test(normText)) score += 30;
+  } else if (intent === 'criteria') {
+    // 수치 패턴 있으면 +20
+    if (/\d+m|\d+mm|\d+%|이상|이하|미만|초과/.test(normText)) score += 20;
+  } else if (intent === 'judgment') {
+    if (/합격|불합격|시정|적합|부적합/.test(normText)) score += 20;
+  }
+
+  // ④ 챕터 근접도: 같은 상위 챕터면 +15
+  // (챕터 번호는 외부에서 전달받아 사용 — searchAllData에서 주입)
+
+  return score;
 }
 
 
@@ -218,36 +291,36 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   const kw = keyword.toLowerCase().trim();
   if (!kw || kw.length < 2) return [];
 
-  // 키워드 확장 (유사어·약어 포함)
   const kwList = expandKeywords(kw);
+  const intent = detectIntent(keyword);            // ⑥ 의도 분류
+  const allTerms = extractKeyTerms(keyword);       // ⑦ 핵심어 추출
 
   const scored: { result: SearchResult; score: number }[] = [];
 
-  const addResult = (r: SearchResult, searchText: string) => {
-    const score = scoreMatch(searchText, kwList, kw);
-    if (score > 0) scored.push({ result: r, score });
+  // ② 제목과 본문을 분리해서 점수 계산
+  const addResult = (r: SearchResult, titleText: string, bodyText: string) => {
+    const score = scoreMatch(bodyText, kwList, kw, titleText, undefined, intent, allTerms);
+    if (score >= 50) scored.push({ result: r, score }); // ③ 임계값 50 미만 제외
   };
 
   // 표준화 검색 (DB standards)
   standards.forEach(s => {
-    const searchText = `${s.title || ""} ${s.body || ""}`;
     addResult({
       type: "standard",
       title: s.title,
       content: s.body ? s.body.slice(0, 100) + (s.body.length > 100 ? "..." : "") : "",
       query: s.title
-    }, searchText);
+    }, s.title || "", `${s.body || ""}`);
   });
 
   // 표준화 파싱 데이터 검색
   STD_ITEMS.forEach(s => {
-    const searchText = `${s.title} ${s.ref} ${s.basis} ${s.conclusion}`;
     addResult({
       type: "standard",
       title: s.title,
       content: s.conclusion ? s.conclusion.slice(0, 100) + (s.conclusion.length > 100 ? "..." : "") : s.basis.slice(0, 100),
       query: s.title
-    }, searchText);
+    }, s.title, `${s.ref} ${s.basis} ${s.conclusion}`);
   });
 
   // 검사기준 검색 (inspection-content.json)
@@ -256,12 +329,13 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
     const text = val.text || "";
     if (text.length < 10) return;
     if (text.includes("연혁집") || text.includes("부속서\n")) return;
+    const title = `[${id}] ${text.slice(0, 60).replace(/\n/g, " ")}`;
     addResult({
       type: "inspection",
-      title: `[${id}] ${text.slice(0, 60).replace(/\n/g, " ")}`,
+      title,
       content: text.replace(/\n/g, " "),
       query: id,
-    }, text);
+    }, title, text);
   });
 
   // 검사가이드 안전검사기준 검색
@@ -269,13 +343,14 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
     sections.forEach(sec => {
       if (sec.items) {
         sec.items.forEach((item: any) => {
-          const itemText = `${item.id || ""} ${item.text || ""} ${item.standard || ""}`;
+          const titleT = item.text ? item.text.slice(0, 50).replace(/\n/g, " ") : item.id;
+          const bodyT = `${item.id || ""} ${item.text || ""} ${item.standard || ""}`;
           addResult({
             type: "judgment",
-            title: item.text ? item.text.slice(0, 50).replace(/\n/g, " ") : item.id,
+            title: titleT,
             content: item.text || "",
             query: item.id || "",
-          }, itemText);
+          }, titleT, bodyT);
         });
       }
       if (sec.subsections) searchJudgment(sec.subsections);
@@ -286,41 +361,22 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
   // INSPECTION_DATA_MR 섹션 제목 검색
   const searchSection = (sections: any[]) => {
     sections.forEach(sec => {
+      const titleT = sec.title || "";
       addResult({
         type: "inspection",
-        title: sec.title || "",
+        title: titleT,
         content: `검사기준 섹션: ${sec.title}`,
         query: sec.id || sec.title,
-      }, sec.title || "");
+      }, titleT, titleT);
       if (sec.subsections) searchSection(sec.subsections);
     });
   };
   searchSection(INSPECTION_DATA_MR);
 
-  // 점수 내림차순 정렬 + 타입별 중복 제거
+  // 점수 내림차순 정렬
   scored.sort((a, b) => b.score - a.score);
 
-  const seenStd = new Set<string>();
-  const seenJud = new Set<string>();
-  const dedupedStd: SearchResult[] = [];
-  const dedupedJud: SearchResult[] = [];
-  const dedupedIns: SearchResult[] = [];
-
-  for (const { result } of scored) {
-    if (result.type === "standard") {
-      const key = result.title.slice(0, 30);
-      if (!seenStd.has(key)) { seenStd.add(key); dedupedStd.push(result); }
-    } else if (result.type === "judgment") {
-      if (!seenJud.has(result.query)) { seenJud.add(result.query); dedupedJud.push(result); }
-    } else {
-      dedupedIns.push(result);
-    }
-  }
-
-  // 채팅 메시지 검색 (비동기지만 캐시된 결과 사용)
-  // → chatSearchCache는 Home 컴포넌트에서 주입
-
-  // 점수순 전체 병합 (타입별이 아닌 점수 순서 유지)
+  // 중복 제거 후 점수순 병합
   const allDeduped: SearchResult[] = [];
   const seenAll = new Set<string>();
   for (const { result, score } of scored) {
@@ -789,22 +845,54 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       return;
     }
 
-    // 관련 표준화 자료 검색 — 키워드를 분해해서 더 넓게 검색
-    const keywords = text.replace(/[?？]/g, "").split(/\s+/).filter(k => k.length >= 2);
-    let results = searchAllData(text, standards);
-    // 단일 키워드 검색으로 결과가 없으면 분해된 키워드로 재검색
-    if (results.length === 0 && keywords.length > 1) {
-      for (const kw of keywords) {
-        const r = searchAllData(kw, standards);
-        results.push(...r);
-      }
-      // 중복 제거
-      const seen = new Set<string>();
-      results = results.filter(r => {
-        if (seen.has(r.title)) return false;
-        seen.add(r.title);
-        return true;
+    // ⑩ Query Rewriting — Haiku로 최적 검색어 생성
+    let searchQueries: string[] = [text];
+    try {
+      const qrRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 100,
+          system: '승강기 안전검사 전문가다. 사용자 질문에서 별표22·표준화 자료 검색에 쓸 핵심 검색어를 최대 3개 추출해서 JSON 배열만 반환해. 예: ["자동구출운전","건축허가일"] 다른 텍스트 없이 JSON만.',
+          messages: [{ role: "user", content: text }]
+        })
       });
+      if (qrRes.ok) {
+        const qrData = await qrRes.json();
+        const raw = qrData.content?.[0]?.text?.trim() || "";
+        const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          searchQueries = [text, ...parsed.filter((q: string) => q !== text)];
+        }
+      }
+    } catch {}
+
+    // ⑦ 멀티 쿼리 검색 — 각 검색어로 검색 후 교집합 우선
+    let results = searchAllData(text, standards);
+    if (searchQueries.length > 1) {
+      const multiResults: Map<string, { result: SearchResult; hitCount: number; maxScore: number }> = new Map();
+      for (const q of searchQueries) {
+        const r = searchAllData(q, standards);
+        r.forEach(item => {
+          const key = `${item.type}:${item.title.slice(0, 30)}`;
+          const existing = multiResults.get(key);
+          if (existing) {
+            existing.hitCount++;
+            existing.maxScore = Math.max(existing.maxScore, item.score || 0);
+          } else {
+            multiResults.set(key, { result: item, hitCount: 1, maxScore: item.score || 0 });
+          }
+        });
+      }
+      // 여러 쿼리에 모두 나온 항목 우선 (교집합), 점수 보정
+      const merged = [...multiResults.values()]
+        .map(({ result, hitCount, maxScore }) => ({
+          ...result,
+          score: maxScore + (hitCount > 1 ? 40 * (hitCount - 1) : 0)
+        }))
+        .sort((a, b) => (b.score || 0) - (a.score || 0));
+      if (merged.length > 0) results = merged;
     }
 
     // ── 채팅 메시지 검색 (별도 보관 — UI 표시용)
@@ -845,18 +933,22 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       historyMsgs.push({ role: "user", content: text });
 
       // ── 우선순위별 컨텍스트 구성 ──
-      // 1) 검사기준(별표22) — 최대 3개, 항목당 600자
-      const stdResults = results.filter(r => r.type !== "chat" && r.source !== "standards_db" && !STD_ITEMS.find(s => s.title === r.title));
-      const inspCtx = stdResults.slice(0, 3).map(r => ({
+      // ③ score 임계값 필터링 — 70 미만 제외
+      const filteredResults = results.filter(r => (r.score || 0) >= 70);
+      const contextResults = filteredResults.length > 0 ? filteredResults : results.slice(0, 4);
+
+      // 1) 검사기준(별표22) — 최대 2개 (score 높은 순), 항목당 600자
+      const stdResults = contextResults.filter(r => r.type !== "chat" && r.source !== "standards_db" && !STD_ITEMS.find(s => s.title === r.title));
+      const inspCtx = stdResults.slice(0, 2).map(r => ({
         priority: "검사기준",
         title: r.title,
         ref: r.query || "",
         content: r.content.slice(0, 600),
       })).filter(c => c.content);
 
-      // 2) 기술자료(표준화) — 최대 3개, 항목당 500자 (결론 전체 + basis)
-      const techResults = results.filter(r => STD_ITEMS.find(s => s.title === r.title));
-      const techCtx = techResults.slice(0, 3).map(r => {
+      // 2) 기술자료(표준화) — 최대 2개, 항목당 500자
+      const techResults = contextResults.filter(r => STD_ITEMS.find(s => s.title === r.title));
+      const techCtx = techResults.slice(0, 2).map(r => {
         const std = STD_ITEMS.find(s => s.title === r.title)!;
         return {
           priority: "기술자료(표준화)",
