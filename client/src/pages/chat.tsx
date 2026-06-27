@@ -94,18 +94,17 @@ export default function ChatPage() {
           }
         } catch {}
 
-        // ② 서버에서 최신 데이터 fetch — desc 반환 → reverse()로 asc 변환
+        // ② 서버에서 최신 데이터 fetch — asc 반환 (오래된→최신)
         const r = await fetch("/api/chat-messages?limit=50");
         if (r.ok) {
           const data = await r.json();
-          // 서버는 desc(최신→오래된) 반환 → reverse()로 오래된→최신 순으로 변환
-          const sorted = [...data].reverse();
-          if (sorted.length > 0) {
-            lastIdRef.current = sorted[sorted.length - 1].id;
-            const cacheData = sorted.map((m: any) => ({ ...m, imageData: m.imageData ? "CACHED" : null, videoData: null }));
+          // 서버가 asc 반환 → 그대로 사용 (오래된 것 위, 최신 아래)
+          if (data.length > 0) {
+            lastIdRef.current = data[data.length - 1].id;
+            const cacheData = data.map((m: any) => ({ ...m, imageData: m.imageData ? "CACHED" : null, videoData: null }));
             try { localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData)); } catch {}
           }
-          setMsgs(sorted);
+          setMsgs(data);
         }
       } else {
         // 폴링: 마지막 ID 이후 새 메시지만
@@ -114,15 +113,13 @@ export default function ChatPage() {
         if (r.ok) {
           const data = await r.json();
           if (data.length > 0) {
-            // desc 반환 → reverse()로 asc 변환 후 기존 목록 뒤에 추가
-            const newMsgs = [...data].reverse();
-            // 중복 방지: 이미 있는 id 제외
+            // asc 반환 → 그대로 기존 목록 뒤에 추가 (오래된→최신 순 유지)
             setMsgs(prev => {
               const existIds = new Set(prev.map((m: any) => m.id));
-              const unique = newMsgs.filter((m: any) => !existIds.has(m.id));
+              const unique = data.filter((m: any) => !existIds.has(m.id));
               return unique.length > 0 ? [...prev, ...unique] : prev;
             });
-            lastIdRef.current = newMsgs[newMsgs.length - 1].id;
+            lastIdRef.current = data[data.length - 1].id;
           }
         }
       }
