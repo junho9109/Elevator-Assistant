@@ -1238,12 +1238,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { search, limit = "50", before, after } = req.query as Record<string, string>;
       let query = chatDb.select().from(chatMsgsTable).$dynamic();
       const conditions = [];
-      if (search) conditions.push(chatIlike(chatMsgsTable.content, `%${search}%`));
+      if (search) conditions.push(chatIlike(chatMsgsTable.content, `%${decodeURIComponent(search)}%`));
       if (before) conditions.push(chatLt(chatMsgsTable.id, parseInt(before)));
       if (after) conditions.push(chatGt2(chatMsgsTable.id, parseInt(after)));
       if (conditions.length) query = query.where(chatAnd(...conditions));
-      // asc 정렬: 오래된 것 먼저 → 클라이언트에서 그대로 위에서 아래로 표시
-      const msgs = await query.orderBy(chatAsc(chatMsgsTable.id)).limit(parseInt(limit));
+      // search 있을 때는 desc(최신 우선) + 넉넉한 limit으로 관련 메시지 확보
+      // search 없을 때는 asc(오래된 것 먼저) + 일반 limit
+      const searchLimit = search ? Math.max(parseInt(limit), 100) : parseInt(limit);
+      const msgs = await query
+        .orderBy(search ? (await import("drizzle-orm")).desc(chatMsgsTable.id) : chatAsc(chatMsgsTable.id))
+        .limit(searchLimit);
       res.setHeader('Cache-Control', 'no-store');
       res.json(msgs);
     } catch (e) { res.status(500).json({ error: "Failed to fetch messages" }); }

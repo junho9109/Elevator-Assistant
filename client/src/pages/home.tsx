@@ -895,7 +895,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     // ── 채팅 메시지 검색 (별도 보관 — UI 표시용)
     let chatResults: SearchResult[] = [];
     try {
-      const chatRes = await fetch(`/api/chat-messages?search=${encodeURIComponent(text)}&limit=10`);
+      const chatRes = await fetch(`/api/chat-messages?search=${encodeURIComponent(text)}&limit=20`);
       if (chatRes.ok) {
         const chatMsgs = await chatRes.json();
         chatResults = chatMsgs.map((m: any) => ({
