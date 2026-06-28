@@ -108,7 +108,43 @@ export default function SafetyPage() {
   };
 
   const guides = [
-    { id:"cpr", title:"심폐소생술 (CPR)", icon:"❤️", content:`【성인 CPR 순서】\n\n1️⃣ 반응 확인\n• 어깨를 두드리며 "괜찮으세요?" 확인\n• 반응 없으면 즉시 119 신고\n\n2️⃣ 기도 확보\n• 머리를 뒤로 젖히고 턱을 들어올림\n\n3️⃣ 가슴압박 30회\n• 양손을 겹쳐 가슴 중앙에 위치\n• 압박 깊이: 5~6cm\n• 속도: 분당 100~120회\n\n4️⃣ 인공호흡 2회\n• 코를 막고 입을 완전히 덮어 1초간\n\n5️⃣ 30:2 비율로 반복` },
+    { id:"cpr", title:"심폐소생술 (CPR)", icon:"❤️", video:"https://drive.google.com/file/d/1Dq5cOEoyaCkyB3tJF8InbyD4Jgf0D2LF/preview", content:`【심폐소생술 전 확인사항】
+
+1️⃣ 현장 안전 확인
+• 환자에게 접근 전 현장이 안전한지 판단
+
+2️⃣ 반응 확인
+• 어깨를 가볍게 두드리며 반응 확인
+• 반응 없으면 심정지 의심
+
+3️⃣ 119 신고 + 심장충격기 요청
+• 주변인 지목하여 각각 역할 부여
+• 혼자라면 스피커폰으로 119 신고 후 즉시 시작
+
+4️⃣ 호흡 확인
+• 신고 후 즉시 호흡 체크
+
+【올바른 가슴압박】
+
+• 환자를 편평하고 단단한 바닥에 눕힘
+• 가슴뼈 아래쪽 1/2 지점에 손꿈치(손바닥 두툼한 부위) 위치
+• 다른 손을 포개고 깍지 → 손꿈치만 닿도록
+• 어깨·팔꿈치·손꿈치 수직 유지
+• 압박 깊이: 5cm (최대 6cm 초과 금지)
+• 압박 후 완전히 힘 빼기
+• 속도: 분당 100~120회, 30회 반복
+
+【심장충격기 (AED) 사용법】
+
+• 심장충격기 사용 시 생존율 4배 증가
+• 패드 부착: 오른쪽 빗장뼈 아래 + 왼쪽 젖꼭지 아래
+• 패드 부착 중에도 가슴압박 중단 금지
+• 분석 중 → 모두 환자에게서 떨어지기
+• 충전 중에도 가슴압박 계속
+• 제세동 후 즉시 가슴압박 재개
+• 2분마다 교대하며 구급대원 올 때까지 반복
+
+출처: 보건복지부·질병관리본부·소방청·대한심폐소생협회` },
     { id:"fall", title:"추락 사고 응급처치", icon:"🚨", content:`【추락 사고 처치】\n\n⚠️ 척추 손상 의심 시 절대 이동 금지\n\n1️⃣ 현장 안전 확인 후 119 신고\n2️⃣ 의식·호흡 확인\n3️⃣ 의식 없고 호흡 없으면 → CPR 실시\n4️⃣ 출혈 시 → 깨끗한 천으로 압박지혈\n5️⃣ 골절 의심 시 → 부목으로 고정` },
     { id:"electric", title:"감전 사고 응급처치", icon:"⚡", content:`【감전 사고 처치】\n\n⚠️ 직접 접촉 금지! 2차 감전 위험\n\n1️⃣ 전원 차단 (주개폐기 OFF)\n2️⃣ 119 신고\n3️⃣ 절연 도구로 환자 분리\n4️⃣ 의식·호흡 확인\n5️⃣ 호흡 없으면 → CPR 실시\n6️⃣ 화상 부위 → 냉수로 15~20분 냉각` },
     { id:"cut", title:"절상/열상 응급처치", icon:"🩹", content:`【절상/열상 처치】\n\n1️⃣ 장갑 착용 후 처치\n2️⃣ 깨끗한 천·거즈로 상처 압박\n3️⃣ 5~10분간 지속 압박\n4️⃣ 출혈 심하면 → 심장보다 높이\n5️⃣ 지혈 후 → 소독제 처리\n\n⚠️ 이물질이 박힌 경우 제거하지 말 것` },
@@ -216,7 +252,27 @@ export default function SafetyPage() {
                   <div className="flex items-center gap-3"><span className="text-2xl">{g.icon}</span><span className="font-semibold">{g.title}</span></div>
                   {expandedGuide===g.id?<ChevronUp className="h-4 w-4 text-gray-400"/>:<ChevronDown className="h-4 w-4 text-gray-400"/>}
                 </div>
-                {expandedGuide===g.id&&<div className="px-4 pb-4 border-t pt-3 bg-gray-50"><pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{g.content}</pre></div>}
+                {expandedGuide===g.id&&(
+                  <div className="border-t bg-gray-50">
+                    {(g as any).video && (
+                      <div className="px-4 pt-4">
+                        <p className="text-xs font-medium text-gray-500 mb-2">📹 교육 영상 (보건복지부·소방청)</p>
+                        <div className="relative w-full rounded-xl overflow-hidden bg-black" style={{paddingTop:"56.25%"}}>
+                          <iframe
+                            src={(g as any).video}
+                            className="absolute inset-0 w-full h-full"
+                            allow="autoplay"
+                            allowFullScreen
+                            title="심폐소생술 교육 영상"
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <div className="px-4 pb-4 pt-3">
+                      <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans leading-relaxed">{g.content}</pre>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
