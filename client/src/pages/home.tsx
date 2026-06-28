@@ -208,6 +208,18 @@ function scoreMatch(
   // ③ 임계값: 50 미만은 제외
   if (score < 50) return 0;
 
+  // ★ 키워드 일치율 보너스 — 질문 핵심어가 많이 포함될수록 높은 점수
+  if (allTerms && allTerms.length > 0) {
+    const matchedCount = allTerms.filter(term =>
+      normText.includes(term.toLowerCase().replace(/\s+/g, '')) ||
+      (normTitle && normTitle.includes(term.toLowerCase().replace(/\s+/g, '')))
+    ).length;
+    const matchRatio = matchedCount / allTerms.length;
+    // 일치율 × 80점 추가 (복합어 우선)
+    const ratioBonus = Math.round(matchRatio * 80);
+    score += ratioBonus;
+  }
+
   // ⑦ 멀티 키워드 교집합 보너스 — 여러 핵심어가 모두 포함되면 +40
   if (allTerms && allTerms.length > 1) {
     const matchCount = allTerms.filter(t =>
@@ -932,7 +944,34 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       // ── 우선순위별 컨텍스트 구성 ──
       // ③ score 임계값 필터링 — 70 미만 제외
       const filteredResults = results.filter(r => (r.score || 0) >= 70);
-      const contextResults = filteredResults.length > 0 ? filteredResults : results.slice(0, 4);
+      let contextResults = filteredResults.length > 0 ? filteredResults : results.slice(0, 4);
+
+      // ★ Rerank — Haiku가 후보 중 가장 관련있는 항목 선별
+      try {
+        const candidates = contextResults.slice(0, 20).map((r, i) => ({
+          id: String(i),
+          title: r.title,
+          content: r.content.slice(0, 120),
+          type: r.type,
+        }));
+        const rrRes = await fetch("/api/rerank", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question: text, candidates }),
+        });
+        if (rrRes.ok) {
+          const { ranked } = await rrRes.json();
+          if (Array.isArray(ranked) && ranked.length > 0) {
+            // rerank 결과를 앞에 배치 + 나머지 보충
+            const rankedTitles = new Set(ranked.map((r: any) => r.title));
+            const rest = contextResults.filter(r => !rankedTitles.has(r.title));
+            contextResults = [
+              ...ranked.map((r: any) => ({ ...r, score: (r.score || 0) + 100 })),
+              ...rest,
+            ];
+          }
+        }
+      } catch {}
 
       // 1) 검사기준(별표22) — 최대 2개 (score 높은 순), 항목당 600자
       const stdResults = contextResults.filter(r => r.type !== "chat" && r.source !== "standards_db" && !STD_ITEMS.find(s => s.title === r.title));

@@ -1165,6 +1165,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==================== Rerank (검색 후 관련성 재순위) ====================
+  app.post("/api/rerank", async (req, res) => {
+    try {
+      const { question, candidates } = req.body as {
+        question: string;
+        candidates: { id: string; title: string; content: string; type: string }[];
+      };
+      if (!question || !candidates?.length) return res.json({ ranked: [] });
+
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+      const candidateList = candidates.slice(0, 20).map((c, i) =>
+        `${i + 1}. [${c.type}] ${c.title}: ${c.content.slice(0, 100)}`
+      ).join("\n");
+
+      const response = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 200,
+        system: '승강기 안전검사 전문가다. 질문과 가장 직접 관련있는 항목 번호를 최대 4개 골라 JSON 배열로만 반환해. 예: [1,3,5,7] 다른 텍스트 없이 JSON만.',
+        messages: [{ role: "user", content: `질문: "${question}"\n\n후보:\n${candidateList}` }],
+      });
+
+      const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "[]";
+      const indices: number[] = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      const ranked = indices
+        .filter(i => i >= 1 && i <= candidates.length)
+        .map(i => candidates[i - 1]);
+
+      res.json({ ranked });
+    } catch (e) {
+      res.json({ ranked: [] });
+    }
+  });
+
   // ==================== Query Rewriting (CORS 프록시) ====================
   app.post("/api/query-rewrite", async (req, res) => {
     try {
