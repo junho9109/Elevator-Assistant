@@ -108,7 +108,7 @@ export default function SafetyPage() {
   };
 
   const guides = [
-    { id:"cpr", title:"심폐소생술 (CPR)", icon:"❤️", video:"https://drive.google.com/file/d/1Dq5cOEoyaCkyB3tJF8InbyD4Jgf0D2LF/preview", content:`【심폐소생술 전 확인사항】
+    { id:"cpr", title:"심폐소생술 (CPR)", icon:"❤️", video:"https://www.youtube.com/embed/2ZIdOeTZRMk", content:`【심폐소생술 전 확인사항】
 
 1️⃣ 현장 안전 확인
 • 환자에게 접근 전 현장이 안전한지 판단
