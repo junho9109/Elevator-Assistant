@@ -171,7 +171,7 @@ export default function SafetyPage() {
             <div className="flex justify-between items-center">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500">{isAdmin ? "전체 보호구 목록" : `${empName}님의 보호구`}</p>
-                <button onClick={() => { setLoggedIn(false); setEmpId(""); setEmpName(""); }} className="text-xs text-muted-foreground hover:text-foreground">로그아웃</button>
+                <button onClick={() => { setLoggedIn(false); setEmpId(""); setEmpName(""); localStorage.removeItem("safety_emp_id"); localStorage.removeItem("safety_emp_name"); }} className="text-xs text-muted-foreground hover:text-foreground">로그아웃</button>
               </div>
               <Button size="sm" onClick={()=>setShowAddPPE(true)}><Plus className="h-4 w-4 mr-1"/>등록</Button>
             </div>
