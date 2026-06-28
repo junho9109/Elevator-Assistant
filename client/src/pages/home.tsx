@@ -2275,11 +2275,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         className="text-xs bg-green-600 text-white rounded-lg px-3 py-1.5 hover:bg-green-700 shrink-0"
                         onClick={() => {
                           setSelectedSearchResult(null);
-                          sessionStorage.setItem("pendingInspectionDetail", selectedSearchResult.query);
-                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
+                          sessionStorage.setItem("pendingJudgmentItem", selectedSearchResult.query);
+                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
                         }}
                       >
-                        검사기준에서 보기 →
+                        검사가이드에서 보기 →
                       </button>
                     </div>
                   </>
