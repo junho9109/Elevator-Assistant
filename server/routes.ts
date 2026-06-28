@@ -1258,7 +1258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== 채팅 ====================
   const { db: chatDb } = await import("./db");
   const { chatMessages: chatMsgsTable } = await import("@shared/schema");
-  const { asc: chatAsc, ilike: chatIlike, lt: chatLt, gt: chatGt2, and: chatAnd } = await import("drizzle-orm");
+  const { asc: chatAsc, desc: chatDesc2, ilike: chatIlike, lt: chatLt, gt: chatGt2, and: chatAnd, or: chatOr } = await import("drizzle-orm");
 
   // chat_messages 인덱스 생성 (최초 1회)
   try {
@@ -1271,7 +1271,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { search, limit = "50", before, after } = req.query as Record<string, string>;
       let query = chatDb.select().from(chatMsgsTable).$dynamic();
-      const { or: chatOr } = await import("drizzle-orm");
       const conditions = [];
       if (search) {
         // 검색어를 공백으로 분리해서 각 단어별 OR 검색
@@ -1291,7 +1290,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // search 있을 때: desc(최신 우선) + 넉넉한 limit
       // search 없을 때: asc(오래된 것 먼저)
       const searchLimit = search ? Math.max(parseInt(limit), 100) : parseInt(limit);
-      const { desc: chatDesc2 } = await import("drizzle-orm");
       const msgs = await query
         .orderBy(search ? chatDesc2(chatMsgsTable.id) : chatAsc(chatMsgsTable.id))
         .limit(searchLimit);
