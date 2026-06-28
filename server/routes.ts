@@ -1237,16 +1237,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { search, limit = "50", before, after } = req.query as Record<string, string>;
       let query = chatDb.select().from(chatMsgsTable).$dynamic();
+      const { or: chatOr } = await import("drizzle-orm");
       const conditions = [];
-      if (search) conditions.push(chatIlike(chatMsgsTable.content, `%${decodeURIComponent(search)}%`));
+      if (search) {
+        // 검색어를 공백으로 분리해서 각 단어별 OR 검색
+        const decoded = decodeURIComponent(search);
+        const words = decoded.split(/\s+/).filter((w: string) => w.length >= 2);
+        if (words.length > 1) {
+          // 여러 단어: 각 단어를 OR로 검색 (단어 중 하나라도 포함)
+          const wordConds = words.map((w: string) => chatIlike(chatMsgsTable.content, `%${w}%`));
+          conditions.push(chatOr(...wordConds));
+        } else {
+          conditions.push(chatIlike(chatMsgsTable.content, `%${decoded}%`));
+        }
+      }
       if (before) conditions.push(chatLt(chatMsgsTable.id, parseInt(before)));
       if (after) conditions.push(chatGt2(chatMsgsTable.id, parseInt(after)));
       if (conditions.length) query = query.where(chatAnd(...conditions));
-      // search 있을 때는 desc(최신 우선) + 넉넉한 limit으로 관련 메시지 확보
-      // search 없을 때는 asc(오래된 것 먼저) + 일반 limit
+      // search 있을 때: desc(최신 우선) + 넉넉한 limit
+      // search 없을 때: asc(오래된 것 먼저)
       const searchLimit = search ? Math.max(parseInt(limit), 100) : parseInt(limit);
+      const { desc: chatDesc2 } = await import("drizzle-orm");
       const msgs = await query
-        .orderBy(search ? (await import("drizzle-orm")).desc(chatMsgsTable.id) : chatAsc(chatMsgsTable.id))
+        .orderBy(search ? chatDesc2(chatMsgsTable.id) : chatAsc(chatMsgsTable.id))
         .limit(searchLimit);
       res.setHeader('Cache-Control', 'no-store');
       res.json(msgs);
