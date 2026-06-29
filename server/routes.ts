@@ -1172,30 +1172,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== Rerank (검색 후 관련성 재순위) ====================
   app.post("/api/rerank", async (req, res) => {
     try {
-      const { question, candidates } = req.body as {
+      const { question, candidates, coreTerms } = req.body as {
         question: string;
         candidates: { id: string; title: string; content: string; type: string }[];
+        coreTerms?: string[];
       };
       if (!question || !candidates?.length) return res.json({ ranked: [] });
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-      const candidateList = candidates.slice(0, 20).map((c, i) =>
-        `${i + 1}. [${c.type}] ${c.title}: ${c.content.slice(0, 100)}`
+      const coreStr = coreTerms && coreTerms.length > 0
+        ? `질문 핵심 개념: [${coreTerms.join(", ")}]`
+        : "";
+
+      const candidateList = candidates.slice(0, 15).map((c, i) =>
+        `${i + 1}. [${c.type}] ${c.title}: ${c.content.slice(0, 150)}`
       ).join("\n");
 
       const response = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-6",
         max_tokens: 200,
-        system: '승강기 안전검사 전문가다. 질문과 가장 직접 관련있는 항목 번호를 최대 4개 골라 JSON 배열로만 반환해. 예: [1,3,5,7] 다른 텍스트 없이 JSON만.',
-        messages: [{ role: "user", content: `질문: "${question}"\n\n후보:\n${candidateList}` }],
+        system: `승강기 안전검사 전문가다. 질문의 핵심 주제와 직접 관련된 항목만 선택해. 규칙:
+1. 핵심 개념(${coreStr})이 항목 제목 또는 내용에 직접 포함되어야 함
+2. 날짜나 수치만 포함하고 핵심 개념이 없는 항목은 제외
+3. 관련성 높은 순으로 최대 3개 번호만 JSON 배열로 반환. 예: [1,3] 다른 텍스트 없이 JSON만.`,
+        messages: [{ role: "user", content: `질문: "${question}"\n${coreStr}\n\n후보:\n${candidateList}` }],
       });
 
       const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "[]";
       const indices: number[] = JSON.parse(raw.replace(/```json|```/g, "").trim());
       const ranked = indices
-        .filter(i => i >= 1 && i <= candidates.length)
-        .map(i => candidates[i - 1]);
+        .filter((i: number) => i >= 1 && i <= candidates.length)
+        .map((i: number) => candidates[i - 1]);
 
       res.json({ ranked });
     } catch (e) {

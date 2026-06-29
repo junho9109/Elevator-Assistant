@@ -942,27 +942,37 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       historyMsgs.push({ role: "user", content: text });
 
       // ── 우선순위별 컨텍스트 구성 ──
-      // ③ score 임계값 필터링 — 70 미만 제외
-      const filteredResults = results.filter(r => (r.score || 0) >= 70);
-      let contextResults = filteredResults.length > 0 ? filteredResults : results.slice(0, 4);
 
-      // ★ Rerank — Haiku가 후보 중 가장 관련있는 항목 선별
+      // ② 핵심 개념 하드 필터 — 질문 핵심 키워드가 하나도 없는 항목 제거
+      const coreTerms = extractKeyTerms(text);
+      const hardFiltered = coreTerms.length > 0
+        ? results.filter(r => {
+            const combined = (r.title + " " + r.content).toLowerCase();
+            // 핵심 키워드 중 하나 이상 포함된 항목만 통과
+            return coreTerms.some(term => combined.includes(term.toLowerCase()));
+          })
+        : results;
+
+      // ③ score 임계값 상향 — 100 미만 제외 (기존 70 → 100)
+      const filteredResults = hardFiltered.filter(r => (r.score || 0) >= 100);
+      let contextResults = filteredResults.length > 0 ? filteredResults : hardFiltered.slice(0, 4);
+
+      // ★ Rerank — Sonnet으로 정밀 관련성 판단 (Haiku→Sonnet 업그레이드)
       try {
-        const candidates = contextResults.slice(0, 20).map((r, i) => ({
+        const candidates = contextResults.slice(0, 15).map((r, i) => ({
           id: String(i),
           title: r.title,
-          content: r.content.slice(0, 120),
+          content: r.content.slice(0, 150),
           type: r.type,
         }));
         const rrRes = await fetch("/api/rerank", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: text, candidates }),
+          body: JSON.stringify({ question: text, candidates, coreTerms }),
         });
         if (rrRes.ok) {
           const { ranked } = await rrRes.json();
           if (Array.isArray(ranked) && ranked.length > 0) {
-            // rerank 결과를 앞에 배치 + 나머지 보충
             const rankedTitles = new Set(ranked.map((r: any) => r.title));
             const rest = contextResults.filter(r => !rankedTitles.has(r.title));
             contextResults = [
@@ -991,7 +1001,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         };
       }).filter(c => c.content);
 
-      // 2) 기술자료(표준화) — 최대 2개, 항목당 500자
+      // 2) 기술자료(표준화) — 최대 1개 (Rerank 후 최상위만), 항목당 500자
       // + 검사기준 조문번호로 표준화 교차검색 (ref 역참조)
       const inspRefNums = inspCtx.map(c => c.ref).filter(Boolean);
       const crossRefItems = inspRefNums.length > 0
@@ -1003,7 +1013,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         ...contextResults.filter(r => STD_ITEMS.find(s => s.title === r.title)),
         ...crossRefItems.filter(cr => !contextResults.find(r => r.title === cr.title)),
       ];
-      const techCtx = techResults.slice(0, 2).map(r => {
+      const techCtx = techResults.slice(0, 1).map(r => {
         const std = STD_ITEMS.find(s => s.title === r.title)!;
         return {
           priority: "기술자료(표준화)",
