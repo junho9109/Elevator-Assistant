@@ -515,7 +515,12 @@ export default function ChatPage() {
       {longPress && (
         <div
           className="fixed z-50 bg-card border border-border rounded-xl shadow-lg p-1 flex gap-1"
-          style={{ left: Math.min(longPress.x - 20, window.innerWidth - 180), top: Math.max(longPress.y - 80, 60) }}
+          style={{
+            left: Math.min(Math.max(longPress.x - 80, 8), window.innerWidth - 188),
+            top: (longPress.y + 16 > window.innerHeight - 140)
+              ? Math.max(longPress.y - 130, 60)
+              : longPress.y + 16,
+          }}
           onClick={e => e.stopPropagation()}
         >
           <button
