@@ -109,6 +109,32 @@ function extractKeyTerms(question: string): string[] {
   return [...new Set(terms)];
 }
 
+// 주/보조 키워드 분리 — 주 키워드(명사): 검색 필터, 보조 키워드(동사/형용사): 의도 파악
+function splitKeywords(question: string): { primary: string[]; secondary: string[] } {
+  const timingWords = ['적용','시행','언제','부터','이후','시기','일자','날짜','기준','건축허가','의무'];
+  const criteriaWords = ['기준','판정','방법','확인','검사','치수','수치','이상','이하','미만','초과'];
+  const judgeWords = ['합격','불합격','시정','적합','부적합','지적'];
+
+  const norm = question.replace(/[?？!！.,。]/g, ' ').trim();
+  const words = norm.split(/\s+/).map(w => w.replace(/[은는이가을를의에서로부터까지도만]/g, '')).filter(w => w.length >= 2);
+
+  const secondary: string[] = [];
+  const primary: string[] = [];
+
+  for (const w of words) {
+    if (timingWords.includes(w) || criteriaWords.includes(w) || judgeWords.includes(w)) {
+      secondary.push(w);
+    } else {
+      primary.push(w);
+    }
+  }
+  // primary가 없으면 전체를 primary로
+  return {
+    primary: primary.length > 0 ? [...new Set(primary)] : [...new Set(words)],
+    secondary: [...new Set(secondary)],
+  };
+}
+
 // ⑥ 질문 의도 분류
 type QueryIntent = 'timing' | 'criteria' | 'comparison' | 'judgment' | 'general';
 function detectIntent(question: string): QueryIntent {
@@ -943,13 +969,15 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
       // ── 우선순위별 컨텍스트 구성 ──
 
-      // ② 핵심 개념 하드 필터 — 질문 핵심 키워드가 하나도 없는 항목 제거
-      const coreTerms = extractKeyTerms(text);
-      const hardFiltered = coreTerms.length > 0
+      // ② 주/보조 키워드 분리 + 핵심 개념 하드 필터
+      const { primary: primaryTerms, secondary: secondaryTerms } = splitKeywords(text);
+      const coreTerms = primaryTerms; // Rerank용 핵심어
+
+      const hardFiltered = primaryTerms.length > 0
         ? results.filter(r => {
             const combined = (r.title + " " + r.content).toLowerCase();
-            // 핵심 키워드 중 하나 이상 포함된 항목만 통과
-            return coreTerms.some(term => combined.includes(term.toLowerCase()));
+            // 주 키워드 중 하나라도 포함된 항목만 통과 (보조 키워드는 의도 파악용)
+            return primaryTerms.some(term => combined.includes(term.toLowerCase()));
           })
         : results;
 
@@ -968,7 +996,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         const rrRes = await fetch("/api/rerank", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: text, candidates, coreTerms }),
+          body: JSON.stringify({ question: text, candidates, coreTerms: primaryTerms, secondaryTerms }),
         });
         if (rrRes.ok) {
           const { ranked } = await rrRes.json();
@@ -2269,100 +2297,150 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
       {/* 검색결과 팝업 */}
       {selectedSearchResult && createPortal(
-        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setSelectedSearchResult(null)}>
-          <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100% - 32px)",maxWidth:"512px",maxHeight:"85vh",overflowY:"auto",zIndex:10000}} className="bg-card rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()} onFocus={e => e.stopPropagation()}>
-            <div className="flex justify-between items-start p-4 border-b border-border">
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${
-                selectedSearchResult.type === "standard" ? "bg-blue-500"
-                : selectedSearchResult.type === "judgment" ? "bg-green-500"
-                : "bg-amber-500"
-              }`}>
-                {selectedSearchResult.type === "standard" ? "표준화" : selectedSearchResult.type === "judgment" ? "안전검사기준" : "검사기준"}
-              </span>
-              <button onClick={() => setSelectedSearchResult(null)} className="text-muted-foreground hover:text-foreground p-1 shrink-0"><X className="h-5 w-5" /></button>
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.65)"}} onClick={() => setSelectedSearchResult(null)}>
+          <div style={{position:"fixed",bottom:0,left:0,right:0,maxHeight:"85vh",overflowY:"auto",zIndex:10000,borderRadius:"20px 20px 0 0"}} className="bg-card" onClick={e => e.stopPropagation()}>
+
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-medium px-2.5 py-1 rounded-full ${
+                  selectedSearchResult.type === "standard"
+                    ? "bg-blue-50 text-blue-700"
+                    : selectedSearchResult.type === "judgment"
+                    ? "bg-green-50 text-green-700"
+                    : "bg-amber-50 text-amber-700"
+                }`}>
+                  {selectedSearchResult.type === "standard" ? "기술자료" : selectedSearchResult.type === "judgment" ? "검사가이드" : "검사기준"}
+                </span>
+              </div>
+              <button onClick={() => setSelectedSearchResult(null)} className="w-7 h-7 rounded-full flex items-center justify-center bg-secondary text-muted-foreground hover:bg-muted">
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <div className="p-4 space-y-3">
+
+            <div className="p-4 space-y-4">
               {selectedSearchResult.type === "standard" ? (() => {
                 const std = STD_ITEMS.find(x => x.title === selectedSearchResult.title) || null;
                 return (
                   <>
-                    <h2 className="text-sm font-semibold leading-snug">{selectedSearchResult.title}</h2>
-                    {std && (std.ref || std.basis) && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
-                        {std.ref && <p className="text-xs font-semibold text-blue-600">{std.ref}</p>}
-                        {std.basis && <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5">{std.basis}</p>}
+                    {/* 제목 */}
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-medium text-foreground leading-snug">{selectedSearchResult.title}</h2>
+                        {std?.source && <p className="text-xs text-muted-foreground mt-0.5">{std.source}</p>}
+                      </div>
+                    </div>
+                    {/* 검사기준 참조 */}
+                    {std?.ref && (
+                      <div className="bg-blue-50 rounded-xl p-3">
+                        <p className="text-[10px] font-medium text-blue-600 mb-1">검사기준 참조</p>
+                        <p className="text-xs text-blue-800 leading-relaxed">{std.ref}</p>
                       </div>
                     )}
+                    {/* 검사기준 내용 */}
+                    {std?.basis && (
+                      <div className="bg-secondary rounded-xl p-3">
+                        <p className="text-[10px] font-medium text-muted-foreground mb-1.5">기준 내용</p>
+                        <p className="text-xs text-foreground leading-relaxed">{std.basis}</p>
+                      </div>
+                    )}
+                    {/* 표준화 결론 */}
                     {std?.conclusion && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-muted-foreground tracking-wide">표준화</p>
-                        <p className="text-xs text-foreground leading-relaxed border-l-2 border-amber-400 pl-2.5">{std.conclusion}</p>
+                      <div>
+                        <p className="text-[10px] font-medium text-muted-foreground mb-1.5">표준화 결론</p>
+                        <div className="border-l-2 border-blue-400 pl-3">
+                          <p className="text-xs text-foreground leading-relaxed">{std.conclusion}</p>
+                        </div>
                       </div>
                     )}
-                    {!std && <p className="text-sm leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>}
-                    <div className="pt-2 border-t border-border">
-                      <p className="text-xs text-muted-foreground mb-0.5">출처</p>
-                      <p className="text-xs font-medium text-blue-600">[기술자료] {std?.source || "표준화 자료"}</p>
+                    {!std && <p className="text-xs leading-relaxed text-foreground whitespace-pre-wrap">{selectedSearchResult.content}</p>}
+                    <div className="pt-1 border-t border-border">
+                      <p className="text-[10px] font-medium text-blue-600">[기술자료] {std?.source || "표준화 자료"}</p>
                     </div>
                   </>
                 );
               })() : selectedSearchResult.type === "judgment" ? (() => {
-                // 검사가이드 항목 팝업
                 return (
                   <>
-                    <h2 className="text-sm font-semibold leading-snug pr-4">{selectedSearchResult.title}</h2>
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center shrink-0 mt-0.5">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#27500A" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-medium text-foreground leading-snug">{selectedSearchResult.title}</h2>
+                        <p className="text-xs text-muted-foreground mt-0.5">항목 {selectedSearchResult.query}</p>
+                      </div>
+                    </div>
                     {selectedSearchResult.content && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-muted-foreground tracking-wide">안전검사기준 내용</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5 whitespace-pre-wrap">{selectedSearchResult.content}</p>
+                      <div className="bg-secondary rounded-xl p-3">
+                        <p className="text-[10px] font-medium text-muted-foreground mb-1.5">검사 기준 내용</p>
+                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{selectedSearchResult.content}</p>
                       </div>
                     )}
-                    <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
-                      <p className="text-xs text-muted-foreground">항목 ID: {selectedSearchResult.query}</p>
-                      <button
-                        className="text-xs bg-green-600 text-white rounded-lg px-3 py-1.5 hover:bg-green-700 shrink-0"
-                        onClick={() => {
-                          setSelectedSearchResult(null);
-                          sessionStorage.setItem("pendingJudgmentItem", selectedSearchResult.query);
-                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
-                        }}
-                      >
-                        검사가이드에서 보기 →
-                      </button>
-                    </div>
+                    <button
+                      className="w-full text-xs bg-green-600 text-white rounded-xl py-2.5 font-medium hover:bg-green-700"
+                      onClick={() => {
+                        setSelectedSearchResult(null);
+                        sessionStorage.setItem("pendingJudgmentItem", selectedSearchResult.query);
+                        window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
+                      }}
+                    >
+                      검사가이드에서 보기 →
+                    </button>
                   </>
                 );
               })() : (() => {
-                // inspection-content.json에서 해당 항목 전체 데이터 조회
                 const itemId = selectedSearchResult.query;
-                const entry = (INSPECTION_CONTENT as unknown as Record<string, {text?: string; revisions?: any[]}>)[itemId];
+                const entry = (INSPECTION_CONTENT as unknown as Record<string, {text?: string; effectiveDate?: string; revisions?: any[]}>)[itemId];
                 const revisions = entry?.revisions || [];
-                const latestRev = revisions[revisions.length - 1];
+                const effectiveDate = entry?.effectiveDate;
                 const fullText = entry?.text || selectedSearchResult.content;
                 return (
                   <>
-                    {/* 제목: 첫 문장만 표시 */}
-                    <h2 className="text-sm font-semibold leading-snug pr-4">
-                      <span className="text-xs font-mono text-muted-foreground mr-1">[{itemId}]</span>
-                      {fullText.split(/[.\n]/)[0]?.trim() || itemId}
-                    </h2>
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#854F0B" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-mono text-muted-foreground">[{itemId}]</p>
+                        <h2 className="text-sm font-medium text-foreground leading-snug mt-0.5">
+                          {fullText.split('\n')[0]?.trim() || itemId}
+
+                        </h2>
+                      </div>
+                    </div>
+                    {/* 적용일 강조 표시 */}
+                    {(effectiveDate || revisions.length > 0) && (
+                      <div className="bg-amber-50 rounded-xl p-3">
+                        <p className="text-[10px] font-medium text-amber-700 mb-1.5">적용 시기</p>
+                        {effectiveDate && (
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></div>
+                            <p className="text-xs font-medium text-amber-800">{effectiveDate.replace(/-/g, ".")} 이후 건축허가분부터 적용</p>
+                          </div>
+                        )}
+                        {revisions.slice(-2).reverse().map((rev: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 mt-1">
+                            <div className="w-1.5 h-1.5 rounded-full bg-amber-300 shrink-0"></div>
+                            <p className="text-xs text-amber-700">{rev.effectiveDate || rev.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* 기준 내용 */}
                     {fullText && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed bg-secondary rounded-lg p-2.5 whitespace-pre-wrap">{fullText}</p>
+                      <div className="bg-secondary rounded-xl p-3">
+                        <p className="text-[10px] font-medium text-muted-foreground mb-1.5">기준 내용</p>
+                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{fullText.slice(0, 400)}{fullText.length > 400 ? "..." : ""}</p>
                       </div>
                     )}
-                    {latestRev && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold text-muted-foreground tracking-wide">적용일</p>
-                        <p className="text-xs text-foreground border-l-2 border-amber-400 pl-2.5">{latestRev.effectiveDate} 이후 건축허가분부터 적용</p>
-                      </div>
-                    )}
-                    <div className="pt-2 border-t border-border flex items-center justify-between gap-2">
-                      <p className="text-xs text-blue-600 font-medium">[검사기준] {itemId}</p>
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-border">
+                      <p className="text-[10px] font-medium text-amber-600">[검사기준] {itemId}</p>
                       <button
-                        className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 hover:bg-primary/90 shrink-0"
+                        className="text-xs bg-primary text-primary-foreground rounded-xl px-3 py-2 hover:bg-primary/90"
                         onClick={() => {
                           setSelectedSearchResult(null);
                           sessionStorage.setItem("pendingInspectionDetail", itemId);
@@ -2376,6 +2454,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 );
               })()}
             </div>
+            {/* 하단 안전 여백 */}
+            <div className="h-4"></div>
           </div>
         </div>,
         document.body

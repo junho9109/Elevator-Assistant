@@ -1172,17 +1172,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== Rerank (검색 후 관련성 재순위) ====================
   app.post("/api/rerank", async (req, res) => {
     try {
-      const { question, candidates, coreTerms } = req.body as {
+      const { question, candidates, coreTerms, secondaryTerms } = req.body as {
         question: string;
         candidates: { id: string; title: string; content: string; type: string }[];
         coreTerms?: string[];
+        secondaryTerms?: string[];
       };
       if (!question || !candidates?.length) return res.json({ ranked: [] });
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-      const coreStr = coreTerms && coreTerms.length > 0
-        ? `질문 핵심 개념: [${coreTerms.join(", ")}]`
+      const primaryStr = coreTerms && coreTerms.length > 0
+        ? `주 키워드(반드시 포함): [${coreTerms.join(", ")}]`
+        : "";
+      const secondaryStr = secondaryTerms && secondaryTerms.length > 0
+        ? `보조 키워드(의도 파악용): [${secondaryTerms.join(", ")}]`
         : "";
 
       const candidateList = candidates.slice(0, 15).map((c, i) =>
@@ -1192,11 +1196,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 200,
-        system: `승강기 안전검사 전문가다. 질문의 핵심 주제와 직접 관련된 항목만 선택해. 규칙:
-1. 핵심 개념(${coreStr})이 항목 제목 또는 내용에 직접 포함되어야 함
-2. 날짜나 수치만 포함하고 핵심 개념이 없는 항목은 제외
-3. 관련성 높은 순으로 최대 3개 번호만 JSON 배열로 반환. 예: [1,3] 다른 텍스트 없이 JSON만.`,
-        messages: [{ role: "user", content: `질문: "${question}"\n${coreStr}\n\n후보:\n${candidateList}` }],
+        system: `승강기 안전검사 전문가다. 후보 항목 중 질문과 직접 관련된 항목을 선별해. 규칙:
+1. ${primaryStr} — 주 키워드가 항목 제목 또는 내용에 직접 포함된 항목 우선
+2. ${secondaryStr} — 보조 키워드는 의도 파악에만 활용 (예: "적용"→날짜 포함 항목 선호)
+3. 주 키워드 없이 날짜·수치만 있는 항목은 제외
+4. 관련성 높은 순으로 최대 3개 번호만 JSON 배열로 반환. 예: [1,3] 다른 텍스트 없이 JSON만.`,
+        messages: [{ role: "user", content: `질문: "${question}"\n${primaryStr}\n${secondaryStr}\n\n후보:\n${candidateList}` }],
       });
 
       const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "[]";
