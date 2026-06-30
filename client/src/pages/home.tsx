@@ -2199,27 +2199,54 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                           </div>
                         </div>
                       </div>
-                      {stdSelected === item && (
+                      {stdSelected === item && (() => {
+                        const ov = stdOverrides?.find((o: any) => o.title === item.title);
+                        const dispRef = ov?.ref || item.ref;
+                        const dispBasis = ov?.basis || item.basis;
+                        const dispConclusion = ov?.conclusion || item.conclusion;
+                        const dispSource = ov?.source || item.source;
+                        return (
                         <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
-                          {(item.ref || item.basis) && (
+                          {(dispRef || dispBasis) && (
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
-                              {item.ref && <p className="text-[11px] font-semibold text-blue-600">{item.ref}</p>}
-                              {item.basis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-card rounded-lg p-2">{item.basis}</p>}
+                              {dispRef && <p className="text-[11px] font-semibold text-blue-600">{dispRef}</p>}
+                              {dispBasis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-card rounded-lg p-2">{dispBasis}</p>}
                             </div>
                           )}
-                          {item.conclusion && (
+                          {dispConclusion && (
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">표준화</p>
-                              <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2">{item.conclusion}</p>
+                              <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2">{dispConclusion}</p>
                             </div>
                           )}
                           <StdPhotoSection itemKey={item.title} />
-                          <div className="pt-1.5 border-t border-border/50">
-                            <p className="text-xs text-muted-foreground">출처 · {item.source}</p>
+                          <div className="pt-1.5 border-t border-border/50 flex items-center justify-between gap-2">
+                            <p className={`text-xs ${ov?.source ? "text-blue-600 font-medium" : "text-muted-foreground"}`}>
+                              출처 · {dispSource}{ov?.source && <span className="ml-1 text-[10px] text-blue-500">(수정됨)</span>}
+                            </p>
+                            {isAdminMode && (
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  const dbStd = standards?.find((s: any) => s.title === item.title);
+                                  const virtualStd = dbStd || {
+                                    id: -1, title: item.title, body: item.basis || item.conclusion || " ",
+                                    standardNumber: item.ref || "", categoryId: null, imageUrls: null,
+                                    permitDate: null, inspectionDate: null, inspectionYear: null,
+                                    hotspotId: null, inspectionRound: null, createdAt: new Date().toISOString(),
+                                  } as any;
+                                  openEditModal(virtualStd);
+                                }}
+                                className="text-[10px] text-blue-600 underline shrink-0"
+                              >
+                                출처 수정
+                              </button>
+                            )}
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   ));
                 })()}
