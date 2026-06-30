@@ -716,10 +716,13 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       localStorage.setItem("hotspots_cache_ts", String(Date.now()));
     }
   }, [hotspots]);
-  const { data: stdOverrides } = useQuery<any[]>({
+  const { data: stdOverrides, refetch: refetchStdOverrides } = useQuery<any[]>({
     queryKey: ["/api/std-overrides"],
-    queryFn: () => fetch("/api/std-overrides").then(r => r.json()),
+    queryFn: () => fetch("/api/std-overrides", { cache: "no-store" }).then(r => r.json()),
     staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
@@ -1653,8 +1656,15 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             typeTag: (form as any).typeTag || "", category: (form as any).category || "",
           }),
         });
-        if (!ovRes.ok) throw new Error("오버라이드 저장 실패");
-        queryClient.invalidateQueries({ queryKey: ["/api/std-overrides"] });
+        if (!ovRes.ok) {
+          const errText = await ovRes.text().catch(() => "");
+          console.error("[오버라이드 저장 실패]", ovRes.status, errText);
+          throw new Error(`오버라이드 저장 실패 (${ovRes.status})`);
+        }
+        const savedRow = await ovRes.json();
+        console.log("[오버라이드 저장 성공]", savedRow);
+        // 강제 즉시 refetch — 캐시 무효화만으론 안 될 경우 대비
+        await refetchStdOverrides();
         toast({ title: "수정되었습니다." });
       } else {
         if (!form.body.trim()) { toast({ title: "내용을 입력해주세요.", variant: "destructive" }); return; }
@@ -2066,7 +2076,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               <div className="flex gap-2">
                 <Button
                   variant={isAdminMode ? "default" : "outline"}
-                  size="icon"
+                  size="sm"
                   onClick={() => {
                     if (isAdminMode) {
                       setIsAdminMode(false);
@@ -2074,10 +2084,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                       setIsPasswordDialogOpen(true);
                     }
                   }}
-                  className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
-                  title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
                 >
-                  <Settings className="h-4 w-4" />
+                  <Settings className="h-4 w-4 mr-1" />{isAdminMode ? "편집 중" : "편집"}
                 </Button>
                 {isAdminMode && (
                   <Button size="sm" onClick={openAddModal}>

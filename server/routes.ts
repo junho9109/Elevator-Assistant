@@ -581,6 +581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const db = (await import("./db")).db;
       const { stdItemOverrides } = await import("@shared/schema");
       const rows = await db.select().from(stdItemOverrides);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
       res.json(rows);
     } catch { res.status(500).json({ error: "Failed to fetch std overrides" }); }
   });
