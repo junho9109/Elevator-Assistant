@@ -1,6 +1,6 @@
 {
   "appId": "com.junho.elevatorassistant",
-  "appName": "엘리베이터 도우미",
+  "appName": "승벼리",
   "webDir": "dist/public",
   "server": {
     "androidScheme": "https",

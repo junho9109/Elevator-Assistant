@@ -7,3 +7,6 @@ vite.config.ts.*
 /generated/prisma
 *.zip
 *.zip
+*.pdf
+deployed.js
+output.txt
