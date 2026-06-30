@@ -646,15 +646,15 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
         </label>
       ) : (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
           {photos.map((p, i) => (
-            <div key={p.id} className="w-16 h-16 rounded-xl overflow-hidden border border-border cursor-pointer shrink-0"
+            <div key={p.id} className="w-24 h-24 rounded-xl overflow-hidden border border-border cursor-pointer shrink-0"
               onClick={() => setViewer({ open: true, idx: i })}>
               <img src={imgUrl(p.id)} alt="" className="w-full h-full object-cover" loading="lazy" />
             </div>
           ))}
           {photos.length < 10 && (
-            <label className="w-16 h-16 rounded-xl border border-dashed border-border flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-secondary transition-colors shrink-0">
+            <label className="w-24 h-24 rounded-xl border border-dashed border-border flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-secondary transition-colors shrink-0">
               {uploading
                 ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                 : <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span className="text-[11px] text-muted-foreground">추가</span></>
@@ -2074,10 +2074,6 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2026년 제1차 표준화" />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">유형 태그</label>
-                <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.typeTag} onChange={e => setForm(prev => ({ ...prev, typeTag: e.target.value }))} placeholder="예: 검사방법, 판정기준" />
-              </div>
-              <div>
                 <label className="block text-sm font-medium mb-1">분류</label>
                 <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.category} onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))} placeholder="예: 기계실, 승강로" />
               </div>
@@ -2223,7 +2219,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                                 <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>
                               )}
                             </div>
-                            <div className="text-[11px] text-muted-foreground">{headerOv?.source || item.source} · {headerOv?.typeTag || item.typeTag}</div>
+                            <div className="text-[11px] text-muted-foreground">{headerOv?.source || item.source}</div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0 mt-0.5">
                             {isAdminMode && (
@@ -2405,10 +2401,6 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               <div>
                 <label className="block text-sm font-medium mb-1">출처 (회차)</label>
                 <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2026년 제1차 표준화" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">유형 태그</label>
-                <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.typeTag} onChange={e => setForm(prev => ({ ...prev, typeTag: e.target.value }))} placeholder="예: 검사방법, 판정기준" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">분류</label>
