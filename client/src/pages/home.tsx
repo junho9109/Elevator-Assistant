@@ -2215,6 +2215,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         const dispBasis = ov?.basis || item.basis;
                         const dispConclusion = ov?.conclusion || item.conclusion;
                         const dispSource = ov?.source || item.source;
+                        console.log("[DEBUG 펼친카드]", { itemTitle: item.title, stdOverridesCount: stdOverrides?.length, ov, dispSource });
                         return (
                         <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
                           {(dispRef || dispBasis) && (
