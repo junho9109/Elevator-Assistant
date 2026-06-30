@@ -2180,14 +2180,17 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                               <button
                                 onClick={e => {
                                   e.stopPropagation();
-                                  // DB standards에서 매칭 항목 찾기, 없으면 가상 Standard 객체 생성
-                                  const dbStd = standards?.find((s: any) => s.title === item.title);
-                                  const ov = stdOverrides?.find((o: any) => o.title === item.title);
-                                  const virtualStd = dbStd || {
+                                  // STD_ITEMS(item) 전체 필드를 가상 Standard로 구성 — DB standards는 무관
+                                  const virtualStd = {
                                     id: -1,
                                     title: item.title,
                                     body: item.basis || item.conclusion || " ",
                                     standardNumber: item.ref || "",
+                                    basis: item.basis || "",
+                                    conclusion: item.conclusion || "",
+                                    source: item.source || "",
+                                    typeTag: item.typeTag || "",
+                                    category: item.category || "",
                                     categoryId: null,
                                     imageUrls: null,
                                     permitDate: null,
@@ -2240,10 +2243,12 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                               <button
                                 onClick={e => {
                                   e.stopPropagation();
-                                  const dbStd = standards?.find((s: any) => s.title === item.title);
-                                  const virtualStd = dbStd || {
+                                  const virtualStd = {
                                     id: -1, title: item.title, body: item.basis || item.conclusion || " ",
-                                    standardNumber: item.ref || "", categoryId: null, imageUrls: null,
+                                    standardNumber: item.ref || "",
+                                    basis: item.basis || "", conclusion: item.conclusion || "",
+                                    source: item.source || "", typeTag: item.typeTag || "", category: item.category || "",
+                                    categoryId: null, imageUrls: null,
                                     permitDate: null, inspectionDate: null, inspectionYear: null,
                                     hotspotId: null, inspectionRound: null, createdAt: new Date().toISOString(),
                                   } as any;
