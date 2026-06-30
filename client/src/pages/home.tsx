@@ -2231,7 +2231,6 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         const dispRef = ov?.ref || item.ref;
                         const dispBasis = ov?.basis || item.basis;
                         const dispConclusion = ov?.conclusion || item.conclusion;
-                        const dispSource = ov?.source || item.source;
                         return (
                         <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
                           {(dispRef || dispBasis) && (
@@ -2248,11 +2247,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                             </div>
                           )}
                           <StdPhotoSection itemKey={item.title} />
-                          <div className="pt-1.5 border-t border-border/50 flex items-center justify-between gap-2">
-                            <p className={`text-xs ${ov?.source ? "text-blue-600 font-medium" : "text-muted-foreground"}`}>
-                              출처 · {dispSource}{ov?.source && <span className="ml-1 text-[10px] text-blue-500">(수정됨)</span>}
-                            </p>
-                            {isAdminMode && (
+                          {isAdminMode && (
+                            <div className="pt-1.5 border-t border-border/50 flex items-center justify-end">
                               <button
                                 onClick={e => {
                                   e.stopPropagation();
@@ -2269,10 +2265,10 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                                 }}
                                 className="text-[10px] text-blue-600 underline shrink-0"
                               >
-                                출처 수정
+                                ✏️ 수정
                               </button>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                         );
                       })()}
