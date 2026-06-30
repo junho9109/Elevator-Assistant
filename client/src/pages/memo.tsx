@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette, Lock, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette, Settings, Lock, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Stage, Layer, Line, Rect, Ellipse, Arrow, Image as KonvaImage } from "react-konva";
@@ -932,11 +932,12 @@ export default function MemoPage() {
             <Button
               onClick={handleAdminModeToggle}
               variant={isAdminMode ? "default" : "outline"}
-              size="sm"
+              size="icon"
               data-testid="button-admin-mode"
+              className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
+              title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
             >
-              <Lock className="w-4 h-4 mr-1" />
-              {isAdminMode ? "관리자" : "관리"}
+              <Settings className="h-4 w-4" />
             </Button>
             <Button onClick={handleCreateMemo} size="sm" data-testid="button-create-memo">
               <Plus className="w-4 h-4" />

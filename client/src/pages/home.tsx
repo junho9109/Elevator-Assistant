@@ -2081,7 +2081,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               <div className="flex gap-2">
                 <Button
                   variant={isAdminMode ? "default" : "outline"}
-                  size="sm"
+                  size="icon"
                   onClick={() => {
                     if (isAdminMode) {
                       setIsAdminMode(false);
@@ -2089,8 +2089,10 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                       setIsPasswordDialogOpen(true);
                     }
                   }}
+                  className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
+                  title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
                 >
-                  <Settings className="h-4 w-4 mr-1" />{isAdminMode ? "편집 중" : "편집"}
+                  <Settings className="h-4 w-4" />
                 </Button>
                 {isAdminMode && (
                   <Button size="sm" onClick={openAddModal}>

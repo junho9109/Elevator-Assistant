@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings2, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown } from "lucide-react";
+import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -1812,7 +1812,7 @@ export default function JudgmentPage() {
                 data-testid="button-admin-mode-judgment"
                 title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
               >
-                <Settings2 className="w-4 h-4" />
+                <Settings className="w-4 h-4" />
               </Button>
             </div>
           </div>

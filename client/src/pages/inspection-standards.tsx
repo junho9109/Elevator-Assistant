@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Lock, LockOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import BYULPYO22 from "@/data/별표22_parsed.json";
 
 type Entry = { text?: string; title?: string; source?: string; };
@@ -256,15 +257,18 @@ export default function InspectionStandardsPage() {
             <h1 className="text-sm font-medium leading-tight">검사기준</h1>
             <p className="text-xs text-muted-foreground mt-0.5">{totalCount}개 조문</p>
           </div>
-          <button
+          <Button
+            variant={isAdminMode ? "default" : "outline"}
+            size="icon"
             onClick={() => {
               if (isAdminMode) { setIsAdminMode(false); }
               else { setShowPw(true); }
             }}
-            className={`w-8 h-8 flex items-center justify-center rounded-lg border transition-colors ${isAdminMode ? "border-amber-400 bg-amber-50 dark:bg-amber-900/20" : "border-border hover:bg-secondary"}`}
+            className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
+            title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
           >
-            {isAdminMode ? <LockOpen size={15} className="text-amber-600" /> : <Lock size={15} />}
-          </button>
+            <Settings className="h-4 w-4" />
+          </Button>
           <button
             onClick={() => { setShowSearch(s => !s); setQuery(""); setResults([]); }}
             className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
