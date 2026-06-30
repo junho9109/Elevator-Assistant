@@ -325,7 +325,7 @@ function SearchCatAccordion({ cat, onSelect }: { cat: CatGroup; onSelect: (r: Se
 }
 
 // 키워드로 표준화+검사기준 검색
-function searchAllData(keyword: string, standards: any[]): SearchResult[] {
+function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]): SearchResult[] {
   const kw = keyword.toLowerCase().trim();
   if (!kw || kw.length < 2) return [];
 
@@ -364,6 +364,21 @@ function searchAllData(keyword: string, standards: any[]): SearchResult[] {
       query: s.title
     }, s.title, `${s.ref} ${s.basis} ${s.conclusion}`);
   });
+
+  // 표준화 신규 추가 항목 검색 (STD_ITEMS에 없고 std_item_overrides에만 있는 항목)
+  if (stdOverrides && stdOverrides.length > 0) {
+    const stdTitles = new Set(STD_ITEMS.map(s => s.title));
+    stdOverrides.forEach((ov: any) => {
+      if (!stdTitles.has(ov.title)) {
+        addResult({
+          type: "standard",
+          title: ov.title,
+          content: ov.conclusion ? ov.conclusion.slice(0, 100) : (ov.basis || "").slice(0, 100),
+          query: ov.title
+        }, ov.overrideTitle || ov.title, `${ov.ref || ""} ${ov.basis || ""} ${ov.conclusion || ""}`);
+      }
+    });
+  }
 
   // 검사기준 검색 (inspection-content.json)
   const contentEntries = Object.entries(INSPECTION_CONTENT as unknown as Record<string, {text?: string; effectiveDate?: string; revisions?: any[]}>);
@@ -724,6 +739,22 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
+  // STD_ITEMS(JSON) + 신규 추가 항목(DB 오버라이드 전용) 통합 — 카드 목록/카운트/검색 전부 이걸 사용
+  const allStdItems = useMemo(() => {
+    const stdTitles = new Set(STD_ITEMS.map(s => s.title));
+    const newItemsFromDb = (stdOverrides || [])
+      .filter((ov: any) => !stdTitles.has(ov.title))
+      .map((ov: any) => ({
+        title: ov.title,
+        ref: ov.ref || "",
+        basis: ov.basis || "",
+        conclusion: ov.conclusion || "",
+        source: ov.source || "",
+        typeTag: ov.typeTag || "",
+        category: ov.category || "전체",
+      }));
+    return [...STD_ITEMS, ...newItemsFromDb];
+  }, [stdOverrides]);
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
   const deleteStandard = useDeleteStandard();
@@ -907,11 +938,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     } catch {}
 
     // ⑦ 멀티 쿼리 검색 — 각 검색어로 검색 후 교집합 우선
-    let results = searchAllData(text, standards);
+    let results = searchAllData(text, standards, stdOverrides);
     if (searchQueries.length > 1) {
       const multiResults: Map<string, { result: SearchResult; hitCount: number; maxScore: number }> = new Map();
       for (const q of searchQueries) {
-        const r = searchAllData(q, standards);
+        const r = searchAllData(q, standards, stdOverrides);
         r.forEach(item => {
           const key = `${item.type}:${item.title.slice(0, 30)}`;
           const existing = multiResults.get(key);
@@ -1015,7 +1046,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       } catch {}
 
       // 1) 검사기준(별표22) — 최대 2개 (score 높은 순), 항목당 600자
-      const stdResults = contextResults.filter(r => r.type !== "chat" && r.source !== "standards_db" && !STD_ITEMS.find(s => s.title === r.title));
+      const stdResults = contextResults.filter(r => r.type !== "chat" && r.type !== "standard" && r.source !== "standards_db");
       const inspCtx = stdResults.slice(0, 2).map(r => {
         // 날짜 데이터 포함 — inspection-content.json의 effectiveDate/revisions
         const inspEntry = (INSPECTION_CONTENT as any)[r.query || ""];
@@ -1041,18 +1072,23 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
           ).map(s => ({ type: "standard" as const, title: s.title, content: s.conclusion.slice(0, 100), query: s.title, score: 180 }))
         : [];
       const techResults = [
-        ...contextResults.filter(r => STD_ITEMS.find(s => s.title === r.title)),
+        ...contextResults.filter(r => r.type === "standard"),
         ...crossRefItems.filter(cr => !contextResults.find(r => r.title === cr.title)),
       ];
       const techCtx = techResults.slice(0, 1).map(r => {
-        const std = STD_ITEMS.find(s => s.title === r.title)!;
+        const std = STD_ITEMS.find(s => s.title === r.title);
+        const ov = stdOverrides?.find((o: any) => o.title === r.title);
+        const title = std?.title || ov?.title || r.title;
+        const ref = std?.ref || ov?.ref || "";
+        const basis = (std?.basis || ov?.basis || "").slice(0, 250);
+        const conclusionRaw = std?.conclusion || ov?.conclusion || "";
         return {
           priority: "기술자료(표준화)",
-          title: std.title,
-          ref: std.ref,
-          basis: std.basis.slice(0, 250),
-          conclusion: std.conclusion.length > 10 ? std.conclusion.slice(0, 400) : "",
-          source: std.source,
+          title,
+          ref,
+          basis,
+          conclusion: conclusionRaw.length > 10 ? conclusionRaw.slice(0, 400) : "",
+          source: std?.source || ov?.source || "",
         };
       }).filter(c => c.basis || c.conclusion);
 
@@ -1111,7 +1147,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         const replyKeywords = data.reply.match(/[가-힣]{2,6}/g) || [];
         const uniqueKws = [...new Set(replyKeywords)].slice(0, 5);
         for (const kw of uniqueKws) {
-          const r = searchAllData(kw, standards);
+          const r = searchAllData(kw, standards, stdOverrides);
           finalResults.push(...r);
         }
         const seen = new Set<string>();
@@ -2148,14 +2184,14 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             {/* 표준화 목록 + 상세 */}
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
               <div className="p-3 border-b border-border">
-                <h3 className="font-semibold text-sm mb-2">표준화 자료 ({STD_ITEMS.length}건)</h3>
+                <h3 className="font-semibold text-sm mb-2">표준화 자료 ({allStdItems.length}건)</h3>
                 <div className="relative mb-2">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input placeholder="검색..." value={stdSearch} onChange={e => { setStdSearch(e.target.value); setStdSelected(null); }} className="pl-9 h-8 text-xs bg-secondary border-0" />
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
                   {STD_CATEGORIES.map(cat => {
-                    const cnt = cat === "전체" ? STD_ITEMS.length : STD_ITEMS.filter(x => x.category === cat).length;
+                    const cnt = cat === "전체" ? allStdItems.length : allStdItems.filter(x => x.category === cat).length;
                     if (cnt === 0) return null;
                     return (
                       <button key={cat} onClick={() => { setStdCategory(cat); setStdSelected(null); }}
@@ -2168,7 +2204,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               </div>
               <div className="divide-y divide-border max-h-[480px] overflow-y-auto">
                 {(() => {
-                  const filtered = STD_ITEMS.filter(x =>
+                  const filtered = allStdItems.filter(x =>
                     (stdCategory === "전체" || x.category === stdCategory) &&
                     (!stdSearch || x.title.includes(stdSearch) || x.ref.includes(stdSearch) || x.conclusion.includes(stdSearch))
                   );
