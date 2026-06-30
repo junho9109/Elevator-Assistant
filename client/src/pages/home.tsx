@@ -2166,14 +2166,21 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     (!stdSearch || x.title.includes(stdSearch) || x.ref.includes(stdSearch) || x.conclusion.includes(stdSearch))
                   );
                   if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과 없음</p>;
-                  return filtered.map((item, idx) => (
+                  return filtered.map((item, idx) => {
+                    const headerOv = stdOverrides?.find((o: any) => o.title === item.title);
+                    return (
                     <div key={idx}>
                       <div onClick={() => setStdSelected(stdSelected === item ? null : item)}
                         className={`p-3 cursor-pointer transition-colors ${stdSelected === item ? "bg-blue-500/5" : "hover:bg-muted/50"}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium leading-snug text-foreground mb-1 line-clamp-2">{stdOverrides?.find((o: any) => o.title === item.title)?.overrideTitle || item.title}</div>
-                            <div className="text-[11px] text-muted-foreground">{item.source} · {item.typeTag}</div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <div className="text-sm font-medium leading-snug text-foreground line-clamp-2">{headerOv?.overrideTitle || item.title}</div>
+                              {headerOv && (headerOv.source || headerOv.typeTag || headerOv.basis || headerOv.conclusion) && (
+                                <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">{headerOv?.source || item.source} · {headerOv?.typeTag || item.typeTag}</div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0 mt-0.5">
                             {isAdminMode && (
@@ -2218,7 +2225,6 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         const dispBasis = ov?.basis || item.basis;
                         const dispConclusion = ov?.conclusion || item.conclusion;
                         const dispSource = ov?.source || item.source;
-                        console.log("[DEBUG 펼친카드]", { itemTitle: item.title, stdOverridesCount: stdOverrides?.length, ov, dispSource });
                         return (
                         <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
                           {(dispRef || dispBasis) && (
@@ -2264,7 +2270,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         );
                       })()}
                     </div>
-                  ));
+                  );
+                  });
                 })()}
               </div>
             </div>
