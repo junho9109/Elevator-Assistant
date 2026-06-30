@@ -251,30 +251,41 @@ export default function InspectionStandardsPage() {
     <div className="flex flex-col h-full bg-background">
       {/* 헤더 */}
       <div className="shrink-0 bg-card border-b border-border">
-        <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-          <FileCheck size={18} className="text-primary shrink-0" />
-          <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-medium leading-tight">검사기준</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">{totalCount}개 조문</p>
+        <div className="p-3 bg-muted/30 border-b border-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
+                기
+              </div>
+              <div>
+                <h1 className="text-lg font-bold tracking-tight">검사기준</h1>
+                <p className="text-xs text-muted-foreground">{totalCount}개 조문</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={isAdminMode ? "default" : "outline"}
+                size="icon"
+                onClick={() => {
+                  if (isAdminMode) { setIsAdminMode(false); }
+                  else { setShowPw(true); }
+                }}
+                className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
+                title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => { setShowSearch(s => !s); setQuery(""); setResults([]); }}
+                className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                title={showSearch ? "검색 닫기" : "검색"}
+              >
+                {showSearch ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
-          <Button
-            variant={isAdminMode ? "default" : "outline"}
-            size="icon"
-            onClick={() => {
-              if (isAdminMode) { setIsAdminMode(false); }
-              else { setShowPw(true); }
-            }}
-            className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
-            title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
-          <button
-            onClick={() => { setShowSearch(s => !s); setQuery(""); setResults([]); }}
-            className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors"
-          >
-            {showSearch ? <X size={15} /> : <Search size={15} />}
-          </button>
         </div>
 
         {/* 연도 선택 — Select 드롭다운 */}

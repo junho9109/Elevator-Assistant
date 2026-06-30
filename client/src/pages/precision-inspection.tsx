@@ -289,9 +289,18 @@ export default function PrecisionInspectionPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* 헤더 */}
-      <div className="bg-card border-b border-border px-4 py-3 sticky top-0 z-10">
-        <h1 className="text-lg font-bold tracking-tight">정밀안전검사</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">조건부합격 이행기간 연장 · 필요서류 · 행정처리 안내</p>
+      <div className="bg-card border-b border-border overflow-hidden sticky top-0 z-10">
+        <div className="p-3 bg-muted/30">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
+              정
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight">정밀안전검사</h1>
+              <p className="text-xs text-muted-foreground">조건부합격 이행기간 연장 · 필요서류 · 행정처리 안내</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="p-4 space-y-4 max-w-lg mx-auto">
