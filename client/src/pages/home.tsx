@@ -1630,36 +1630,27 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     if (!form.title.trim()) { toast({ title: "표준화명을 입력해주세요.", variant: "destructive" }); return; }
     try {
       if (editingStandard) {
-        // 1) standards 테이블 업데이트 (body 필수값 보장)
-        const data = {
-          categoryId: form.categoryId ? parseInt(form.categoryId) : null,
-          title: form.title,
-          standardNumber: form.standardNumber || null,
-          body: form.body || form.basis || form.conclusion || editingStandard.body || " ",
-          permitDate: form.permitDate || null,
-          inspectionDate: form.inspectionDate || null,
-          inspectionYear: form.inspectionYear || null,
-          imageUrls: form.images.length > 0 ? form.images : null,
-          hotspotId: null,
-          inspectionRound: null,
-        };
-        try {
-          await updateStandard.mutateAsync({ id: editingStandard.id, standard: data });
-        } catch (e) {
-          console.warn("[standards 업데이트 실패, 오버라이드만 저장]", e);
+        // STD_ITEMS 전용(id=-1)이 아닌 경우만 standards 테이블 업데이트
+        if (editingStandard.id !== -1) {
+          const data = {
+            categoryId: form.categoryId ? parseInt(form.categoryId) : null,
+            title: form.title, standardNumber: form.standardNumber || null,
+            body: form.body || form.basis || form.conclusion || editingStandard.body || " ",
+            permitDate: form.permitDate || null, inspectionDate: form.inspectionDate || null,
+            inspectionYear: form.inspectionYear || null,
+            imageUrls: form.images.length > 0 ? form.images : null, hotspotId: null, inspectionRound: null,
+          };
+          try { await updateStandard.mutateAsync({ id: editingStandard.id, standard: data }); }
+          catch (e) { console.warn("[standards 업데이트 실패, 오버라이드만 저장]", e); }
         }
-        // 2) 오버라이드 저장 (basis, conclusion, source 등 확장 필드)
+        // 오버라이드 저장 (basis, conclusion, source 등 확장 필드) — 핵심
         const ovRes = await fetch(`/api/std-overrides/${encodeURIComponent(editingStandard.title)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          method: "PUT", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            overrideTitle: form.overrideTitle || "",
-            basis: form.basis || "",
-            conclusion: form.conclusion || "",
-            source: form.source || "",
-            ref: form.standardNumber || "",
-            typeTag: (form as any).typeTag || "",
-            category: (form as any).category || "",
+            overrideTitle: (form as any).overrideTitle || "",
+            basis: form.basis || "", conclusion: form.conclusion || "",
+            source: form.source || "", ref: form.standardNumber || "",
+            typeTag: (form as any).typeTag || "", category: (form as any).category || "",
           }),
         });
         if (!ovRes.ok) throw new Error("오버라이드 저장 실패");
@@ -1669,15 +1660,10 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         if (!form.body.trim()) { toast({ title: "내용을 입력해주세요.", variant: "destructive" }); return; }
         const data = {
           categoryId: form.categoryId ? parseInt(form.categoryId) : null,
-          title: form.title,
-          standardNumber: form.standardNumber || null,
-          body: form.body,
-          permitDate: form.permitDate || null,
-          inspectionDate: form.inspectionDate || null,
+          title: form.title, standardNumber: form.standardNumber || null, body: form.body,
+          permitDate: form.permitDate || null, inspectionDate: form.inspectionDate || null,
           inspectionYear: form.inspectionYear || null,
-          imageUrls: form.images.length > 0 ? form.images : null,
-          hotspotId: null,
-          inspectionRound: null,
+          imageUrls: form.images.length > 0 ? form.images : null, hotspotId: null, inspectionRound: null,
         };
         await createStandard.mutateAsync(data);
         toast({ title: "추가되었습니다." });
@@ -2179,7 +2165,38 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                             <div className="text-sm font-medium leading-snug text-foreground mb-1 line-clamp-2">{stdOverrides?.find((o: any) => o.title === item.title)?.overrideTitle || item.title}</div>
                             <div className="text-[11px] text-muted-foreground">{item.source} · {item.typeTag}</div>
                           </div>
-                          <span className="text-muted-foreground shrink-0 mt-0.5 text-xs">{stdSelected === item ? "▲" : "▽"}</span>
+                          <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                            {isAdminMode && (
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  // DB standards에서 매칭 항목 찾기, 없으면 가상 Standard 객체 생성
+                                  const dbStd = standards?.find((s: any) => s.title === item.title);
+                                  const ov = stdOverrides?.find((o: any) => o.title === item.title);
+                                  const virtualStd = dbStd || {
+                                    id: -1,
+                                    title: item.title,
+                                    body: item.basis || item.conclusion || " ",
+                                    standardNumber: item.ref || "",
+                                    categoryId: null,
+                                    imageUrls: null,
+                                    permitDate: null,
+                                    inspectionDate: null,
+                                    inspectionYear: null,
+                                    hotspotId: null,
+                                    inspectionRound: null,
+                                    createdAt: new Date().toISOString(),
+                                  } as any;
+                                  openEditModal(virtualStd);
+                                }}
+                                className="w-6 h-6 rounded-md flex items-center justify-center bg-orange-50 hover:bg-orange-100 border border-orange-200"
+                                title="수정"
+                              >
+                                <Pencil className="h-3 w-3 text-orange-600" />
+                              </button>
+                            )}
+                            <span className="text-muted-foreground text-xs">{stdSelected === item ? "▲" : "▽"}</span>
+                          </div>
                         </div>
                       </div>
                       {stdSelected === item && (
