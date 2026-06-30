@@ -2008,12 +2008,15 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 <label className="block text-sm font-medium mb-1">항목 번호</label>
                 <Input placeholder="예: 6.3.2" value={form.standardNumber} onChange={e => setForm(prev => ({ ...prev, standardNumber: e.target.value }))} />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">내용 *</label>
-                <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.body} onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))} />
-                {editingStandard && (
-                  <>
-                    <div className="space-y-1 mt-2">
+              {!editingStandard && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">내용 *</label>
+                  <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.body} onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))} />
+                </div>
+              )}
+              {editingStandard && (
+                <div className="space-y-4">
+                    <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">수정 제목 (원본 제목 대체)</label>
                       <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} placeholder="비워두면 원본 제목 유지" />
                     </div>
@@ -2037,9 +2040,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                       <label className="text-xs font-medium text-muted-foreground">분류</label>
                       <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.category} onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))} placeholder="예: 기계실, 승강로" />
                     </div>
-                  </>
-                )}
-              </div>
+                </div>
+              )}
               <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
               <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />
               <DatePicker label="검사일" value={form.inspectionYear} onChange={v => setForm(prev => ({ ...prev, inspectionYear: v }))} />
@@ -2349,12 +2351,15 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 <label className="block text-sm font-medium mb-1">항목 번호</label>
                 <Input placeholder="예: 6.3.2" value={form.standardNumber} onChange={e => setForm(prev => ({ ...prev, standardNumber: e.target.value }))} />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">내용 *</label>
-                <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.body} onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))} />
-                {editingStandard && (
-                  <>
-                    <div className="space-y-1 mt-2">
+              {!editingStandard && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">내용 *</label>
+                  <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.body} onChange={e => setForm(prev => ({ ...prev, body: e.target.value }))} />
+                </div>
+              )}
+              {editingStandard && (
+                <div className="space-y-4">
+                    <div className="space-y-1">
                       <label className="text-xs font-medium text-muted-foreground">수정 제목 (원본 제목 대체)</label>
                       <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} placeholder="비워두면 원본 제목 유지" />
                     </div>
@@ -2378,9 +2383,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                       <label className="text-xs font-medium text-muted-foreground">분류</label>
                       <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.category} onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))} placeholder="예: 기계실, 승강로" />
                     </div>
-                  </>
-                )}
-              </div>
+                </div>
+              )}
               <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
               <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />
               <DatePicker label="검사일" value={form.inspectionYear} onChange={v => setForm(prev => ({ ...prev, inspectionYear: v }))} />
