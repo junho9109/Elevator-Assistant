@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Calendar, FileText, ClipboardList, AlertTriangle, CheckCircle2, Info } from "lucide-react";
+import { Calendar, FileText, ClipboardList, AlertTriangle, CheckCircle2, Info, ListChecks, LayoutGrid, ArrowLeft, Building2, Building, Clock } from "lucide-react";
 
 // ── 날짜 계산 유틸 ──
 function addMonths(date: Date, months: number): Date {
@@ -226,6 +226,8 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
 
 // ── 메인 ──
 export default function PrecisionInspectionPage() {
+  const [mode, setMode] = useState<"guide" | "card">("guide");
+  const [cardStep, setCardStep] = useState(0);
   const [buildingType, setBuildingType] = useState("");
   const [inspectionCount, setInspectionCount] = useState("");
   const [cycle, setCycle] = useState("");
@@ -233,6 +235,51 @@ export default function PrecisionInspectionPage() {
   const [inspectionDate, setInspectionDate] = useState("");
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
+
+  const resetAll = () => {
+    setBuildingType(""); setInspectionCount(""); setCycle("");
+    setSituation(""); setInspectionDate(""); setResult(null); setError("");
+    setCardStep(0);
+  };
+
+  const SITUATIONS_APARTMENT = [
+    { value: "apartment_3year", icon: "🏢", title: "서면동의서 제출", sub: "입주민 2/3 이상 동의 → 3년 유예" },
+  ];
+  const SITUATIONS_GENERAL = [
+    { value: "construction_delay", icon: "🔧", title: "공사 지연", sub: "부품 설치 공사 중·예정" },
+    { value: "safety_evaluation", icon: "📋", title: "안전성평가 미완료", sub: "접수했으나 완료 안 됨" },
+    { value: "disaster", icon: "⚠️", title: "재난 발생", sub: "작업자 출입 차단" },
+    { value: "staged_phase1", icon: "🪜", title: "단계적 이행 1단계", sub: "최대 1년 6개월" },
+    { value: "staged_phase2", icon: "🪜", title: "단계적 이행 2단계", sub: "사유별 6개월~1년" },
+    { value: "major_repair", icon: "🚧", title: "대수선 없이 이행 불가", sub: "적용제외 처리" },
+  ];
+
+  const cardSelectBuildingType = (v: string) => {
+    setBuildingType(v); setSituation(""); setResult(null); setError("");
+    setCardStep(1);
+  };
+  const cardSelectInspectionCount = (v: string) => {
+    setInspectionCount(v);
+    setCardStep(2);
+  };
+  const cardSelectCycle = (v: string) => {
+    setCycle(v);
+    setCardStep(2);
+  };
+  const cardSelectSituation = (v: string) => {
+    setSituation(v); setResult(null); setError("");
+    setCardStep(3);
+  };
+  const cardGoBack = () => {
+    if (cardStep === 0) return;
+    if (cardStep === 1) { setCardStep(0); return; }
+    if (cardStep === 2) {
+      setInspectionCount(""); setCycle("");
+      setCardStep(1);
+      return;
+    }
+    if (cardStep === 3) { setSituation(""); setCardStep(2); return; }
+  };
 
   const isApartment = buildingType === "apartment" || buildingType === "collective";
   const isGeneral = buildingType === "general";
@@ -305,6 +352,24 @@ export default function PrecisionInspectionPage() {
 
       <div className="p-4 space-y-4 max-w-lg mx-auto">
 
+        {/* 모드 전환 탭 */}
+        <div className="flex gap-1.5 bg-muted rounded-xl p-1">
+          <button
+            onClick={() => { setMode("guide"); resetAll(); }}
+            className={`flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors ${mode === "guide" ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground"}`}
+          >
+            <ListChecks className="h-3.5 w-3.5" />단계별 안내
+          </button>
+          <button
+            onClick={() => { setMode("card"); resetAll(); }}
+            className={`flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors ${mode === "card" ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground"}`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />현장 진단
+          </button>
+        </div>
+
+        {mode === "guide" && (
+        <>
         {/* 공통사항 배너 */}
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 space-y-1">
           <p className="text-xs font-semibold text-blue-500 flex items-center gap-1"><Info className="h-3.5 w-3.5"/>공통사항</p>
@@ -399,6 +464,142 @@ export default function PrecisionInspectionPage() {
             <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
             <p className="text-xs text-destructive whitespace-pre-line">{error}</p>
           </div>
+        )}
+        </>
+        )}
+
+        {mode === "card" && (
+        <>
+        {/* 카드 진행 표시 + 뒤로가기 */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={cardGoBack}
+            disabled={cardStep === 0}
+            className="w-8 h-8 rounded-lg border border-border bg-card flex items-center justify-center flex-shrink-0 disabled:opacity-30"
+          >
+            <ArrowLeft className="h-4 w-4 text-muted-foreground" />
+          </button>
+          <div className="flex items-center gap-1.5 flex-1">
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className={`h-1 rounded-full flex-1 ${i <= cardStep ? "bg-primary" : "bg-muted"}`} />
+            ))}
+          </div>
+          <span className="text-[11px] text-muted-foreground flex-shrink-0">{cardStep + 1} / 4</span>
+        </div>
+
+        {/* 0단계: 건축물 유형 카드 */}
+        {cardStep === 0 && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground px-1">건축물 유형을 눌러 선택하세요</p>
+            <button
+              onClick={() => cardSelectBuildingType("apartment")}
+              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${buildingType === "apartment" ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+            >
+              <Building2 className="h-6 w-6 text-primary flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold">공동주택 · 집합건축물</p>
+                <p className="text-xs text-muted-foreground mt-0.5">아파트, 오피스텔 등</p>
+              </div>
+              {buildingType === "apartment" && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+            </button>
+            <button
+              onClick={() => cardSelectBuildingType("general")}
+              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${buildingType === "general" ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+            >
+              <Building className="h-6 w-6 text-muted-foreground flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold">일반건축물</p>
+                <p className="text-xs text-muted-foreground mt-0.5">그 외 모든 건축물</p>
+              </div>
+              {buildingType === "general" && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+            </button>
+          </div>
+        )}
+
+        {/* 1단계: 검사 회차 또는 검사 주기 카드 */}
+        {cardStep === 1 && isApartment && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground px-1">검사 회차를 눌러 선택하세요</p>
+            <button
+              onClick={() => cardSelectInspectionCount("third")}
+              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${inspectionCount === "third" ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+            >
+              <div className="flex-1">
+                <p className="text-sm font-semibold">세 번째 정밀안전검사</p>
+              </div>
+              {inspectionCount === "third" && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+            </button>
+            <button
+              onClick={() => cardSelectInspectionCount("fourth")}
+              className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${inspectionCount === "fourth" ? "border-destructive bg-destructive/5" : "border-border bg-card"}`}
+            >
+              <div className="flex-1">
+                <p className="text-sm font-semibold">네 번째 정밀안전검사</p>
+                <p className="text-xs text-destructive mt-0.5">추가연장 불가</p>
+              </div>
+              {inspectionCount === "fourth" && <CheckCircle2 className="h-5 w-5 text-destructive flex-shrink-0" />}
+            </button>
+          </div>
+        )}
+        {cardStep === 1 && isGeneral && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground px-1">검사 주기를 눌러 선택하세요</p>
+            {[{v:"6m",l:"6개월 주기"},{v:"1y",l:"1년 주기"},{v:"2y",l:"2년 주기"}].map(c => (
+              <button
+                key={c.v}
+                onClick={() => cardSelectCycle(c.v)}
+                className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${cycle === c.v ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+              >
+                <Clock className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                <div className="flex-1"><p className="text-sm font-semibold">{c.l}</p></div>
+                {cycle === c.v && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 2단계: 현장 상황 카드 */}
+        {cardStep === 2 && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground px-1">현장 상황을 눌러 선택하세요</p>
+            {(isApartment ? SITUATIONS_APARTMENT : SITUATIONS_GENERAL).map(s => (
+              <button
+                key={s.value}
+                onClick={() => cardSelectSituation(s.value)}
+                className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${situation === s.value ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+              >
+                <span className="text-xl flex-shrink-0">{s.icon}</span>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold">{s.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{s.sub}</p>
+                </div>
+                {situation === s.value && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 3단계: 검사일자 + 계산 */}
+        {cardStep === 3 && (
+          <div className="space-y-3">
+            <div className="bg-card border border-border rounded-xl p-4">
+              <p className="text-xs font-semibold mb-3">정밀안전검사 실시일</p>
+              <DatePicker label="검사일자" value={inspectionDate} onChange={setInspectionDate} />
+            </div>
+            {inspectionDate && (
+              <Button className="w-full font-semibold" onClick={handleCalculate}>
+                이행기간 및 필요서류 확인
+              </Button>
+            )}
+            {error && (
+              <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3 flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-destructive whitespace-pre-line">{error}</p>
+              </div>
+            )}
+          </div>
+        )}
+        </>
         )}
 
         {/* 결과 */}
