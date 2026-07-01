@@ -1,19 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import BYULPYO22 from "@/data/별표22_parsed.json";
 
 type Entry = { text?: string; title?: string; source?: string; };
 const dataMap = BYULPYO22 as unknown as Record<string, Entry>;
 
-const YEARS = [
-  { year: "2022", label: "2022년 (현행)", std: "KC2050-51:2022" },
-  { year: "2020", label: "2020년", std: "KC2050-51:2020" },
-  { year: "2018", label: "2018년", std: "KC2050-51:2018" },
-  { year: "2015", label: "2015년", std: "KC2050-51:2015" },
-];
+// 연도별 데이터 추가 시: YEARS 배열 복원 + dataMap을 연도별로 분기
+// 현재는 현행(2022년, KC2050-51:2022) 단일 데이터 사용
 
 interface Section {
   id: string;
@@ -178,7 +173,7 @@ export default function InspectionStandardsPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<string[]>([]);
   const [showSearch, setShowSearch] = useState(false);
-  const [selectedYear, setSelectedYear] = useState(YEARS[0]);
+  const CURRENT_STD = "KC2050-51:2022";  // 현행 기준
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [editSource, setEditSource] = useState("");
@@ -239,13 +234,6 @@ export default function InspectionStandardsPage() {
     setResults([]);
   };
 
-  const handleYearSelect = (yr: typeof YEARS[0]) => {
-    setSelectedYear(yr);
-    setActiveKey(null);
-    setQuery("");
-    setResults([]);
-    setShowSearch(false);
-  };
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -288,27 +276,10 @@ export default function InspectionStandardsPage() {
           </div>
         </div>
 
-        {/* 연도 선택 — Select 드롭다운 */}
+        {/* 현행 기준 표시 */}
         <div className="flex items-center gap-2 px-4 py-2 border-t border-border">
-          <span className="text-xs text-muted-foreground shrink-0">적용 연도</span>
-          <Select
-            value={selectedYear.year}
-            onValueChange={(val) => {
-              const yr = YEARS.find(y => y.year === val);
-              if (yr) handleYearSelect(yr);
-            }}
-          >
-            <SelectTrigger className="flex-1 h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {YEARS.map(yr => (
-                <SelectItem key={yr.year} value={yr.year} className="text-xs">
-                  {yr.label} <span className="text-muted-foreground ml-1">{yr.std}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <span className="text-xs text-muted-foreground shrink-0">적용 기준</span>
+          <span className="text-xs font-medium text-foreground">2022년 현행 ({CURRENT_STD})</span>
         </div>
 
         {showSearch && (
@@ -352,7 +323,7 @@ export default function InspectionStandardsPage() {
           <div className="flex-1 flex flex-col min-h-0">
             <Detail
               id={activeKey}
-              yearStd={selectedYear.std}
+              yearStd={CURRENT_STD}
               onClose={handleClose}
               isAdminMode={isAdminMode}
               override={getOverride(activeKey)}
