@@ -1547,7 +1547,7 @@ export default function JudgmentPage() {
     const item = getItemWithEdits(originalItem);
     const status = getItemStatus(item);
     const autoResults = getAutoResults(item);  // [v5] 다중 선택용 배열
-    const hasCustomEdit = !!customEdits[item.id];
+    const hasCustomEdit = !!(serverEdits && serverEdits.some((e: any) => e.itemId === item.id));
     
     return (
       <div 
@@ -1577,7 +1577,7 @@ export default function JudgmentPage() {
           >
             {item.text}
             {hasCustomEdit && (
-              <span className="ml-2 text-xs text-muted-foreground font-medium">(수정됨)</span>
+              <span className="ml-1.5 shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>
             )}
             {itemCommentCounts[item.id] > 0 && (
               <span className="ml-1 text-xs font-medium text-orange-500">(댓글 {itemCommentCounts[item.id]})</span>
@@ -2260,12 +2260,16 @@ export default function JudgmentPage() {
                   {(() => {
                     const itemEdit = customEdits[detailItem.id];
                     const dbItem = baseItemMap[detailItem.id];
-                    // 개정 이력은 항목 id로 키된 캐시에서 읽어 항목 전환 시에도 정확히 표시 (공유 상태 revisions 미사용)
                     const detailRevisions = revisionsCache[detailItem.id] || [];
-                    // customEdits 우선, 없으면 DB(standardDates) 사용
+                    const serverEdit = serverEdits?.find((e: any) => e.itemId === detailItem.id);
                     const datesWithMemo: {date: string; memo: string; label?: string}[] = (() => {
-                      // standardDatesWithMemo가 배열로 명시적으로 설정된 경우 (빈 배열 포함) → 무조건 사용
-                      // undefined인 경우에만 원본 JSON으로 폴백
+                      if (serverEdit && serverEdit.standardDates !== null && serverEdit.standardDates !== undefined) {
+                        try {
+                          const parsed = JSON.parse(serverEdit.standardDates);
+                          if (!Array.isArray(parsed)) return [];
+                          return parsed.map((d: string, i: number) => ({ date: d, memo: '', label: `개정 ${i + 1}` }));
+                        } catch { return []; }
+                      }
                       if (Array.isArray((itemEdit as any)?.standardDatesWithMemo)) {
                         return (itemEdit as any).standardDatesWithMemo;
                       }
@@ -2273,24 +2277,26 @@ export default function JudgmentPage() {
                         try {
                           const parsed = JSON.parse(dbItem.standardDates);
                           if (parsed.length > 0) return parsed
-                            .filter((r: any) => !r.pending)  // 피난용 등 보관중 항목 제외
+                            .filter((r: any) => !r.pending)
                             .map((r: any, i: number) => ({
-                            date: r.date || r,
-                            memo: r.text || '',
-                            label: `개정 ${i + 1} (${detailItem.id})`,
-                            raw_label: r.raw_label || '',
-                            is_old: r.is_old
-                          }));
+                              date: r.date || r, memo: r.text || '', label: `개정 ${i + 1}`,
+                            }));
                         } catch {}
                       }
                       return [];
                     })();
-                    const dates: string[] = (itemEdit as any)?.standardDates || [];
-                    const permitDate = (itemEdit as any)?.permitEffectiveDate || dbItem?.permitEffectiveDate;
+                    const dates: string[] = serverEdit?.standardDates ? (() => { try { return JSON.parse(serverEdit.standardDates); } catch { return []; } })() : ((itemEdit as any)?.standardDates || []);
+                    const permitDate = serverEdit?.permitEffectiveDate || (itemEdit as any)?.permitEffectiveDate || null;
                     const hasData = datesWithMemo.length > 0 || dates.length > 0 || permitDate || detailRevisions.length > 0;
                     if (!hasData) return null;
                     return (
                       <div className="border border-border rounded-xl p-4 bg-muted/20">
+                        {permitDate && (
+                          <div className="mb-3">
+                            <p className="text-xs font-medium text-muted-foreground mb-1">🏗 건축허가일 이후 적용</p>
+                            <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 font-medium">{permitDate} 이후 건축허가분부터 적용</p>
+                          </div>
+                        )}
                         <h3 className="font-medium text-sm mb-3">📅 검사기준 적용일 (개정)</h3>
                         {(() => {
                           let list: {date: string; description: string; key: string; source?: string[]}[] = [];
@@ -2301,10 +2307,7 @@ export default function JudgmentPage() {
                           } else if (dates.length > 0) {
                             list = dates.map((d: string, i: number) => ({ date: d, description: "", key: `d-${i}` }));
                           }
-                          // 개정이 없고 항목 시행일만 있는 경우(예: 신설 항목) 시행일을 단일 항목으로 표시
-                          if (list.length === 0 && permitDate) {
-                            list = [{ date: permitDate, description: "", key: "permit" }];
-                          }
+                          // 개정 목록은 실제 개정만 표시 (건축허가일은 위 섹션에서 별도 표시)
                           if (list.length === 0) return null;
                           const sorted = [...list].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
                           let applicableIdx = -1;
