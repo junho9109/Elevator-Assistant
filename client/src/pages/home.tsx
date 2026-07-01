@@ -1801,7 +1801,26 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const openEditModal = (standard: Standard) => {
     setEditingStandard(standard);
     const ov = stdOverrides?.find((o: any) => o.title === standard.title);
-    setForm({ categoryId: standard.categoryId ? String(standard.categoryId) : "", title: standard.title, standardNumber: standard.standardNumber || "", body: standard.body, overrideTitle: ov?.overrideTitle || "", basis: ov?.basis || (standard as any).basis || "", conclusion: ov?.conclusion || (standard as any).conclusion || "", source: ov?.source || (standard as any).source || "", typeTag: ov?.typeTag || (standard as any).typeTag || "", category: ov?.category || (standard as any).category || "", permitDate: standard.permitDate || "", inspectionDate: standard.inspectionDate || "", inspectionYear: standard.inspectionYear || "", images: standard.imageUrls || [] });
+    setForm({
+      categoryId: standard.categoryId ? String(standard.categoryId) : "",
+      // 표준화명: overrideTitle 우선 → 없으면 원본 title
+      title: standard.title,
+      overrideTitle: ov?.overrideTitle || "",
+      // 항목 번호: ov.ref 우선 → 없으면 원본 standardNumber/ref
+      standardNumber: ov?.ref || standard.standardNumber || (standard as any).ref || "",
+      body: standard.body,
+      basis: ov?.basis || (standard as any).basis || "",
+      conclusion: ov?.conclusion || (standard as any).conclusion || "",
+      // 출처: ov.source 우선 → 없으면 원본 source
+      source: ov?.source || (standard as any).source || "",
+      typeTag: ov?.typeTag || (standard as any).typeTag || "",
+      // 분류: ov.category 우선 → 없으면 원본 category
+      category: ov?.category || (standard as any).category || "",
+      permitDate: standard.permitDate || "",
+      inspectionDate: standard.inspectionDate || "",
+      inspectionYear: standard.inspectionYear || "",
+      images: standard.imageUrls || [],
+    });
     setSelectedStandard(null); setShowAddModal(true);
   };
 
@@ -2189,18 +2208,17 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">표준화명 *</label>
-                <Input placeholder="표준화명 입력" value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
+                {editingStandard ? (
+                  // 수정 모드: overrideTitle 수정 (원본 title 키는 유지, 표시 이름만 변경)
+                  <Input placeholder={form.title || "표준화명 입력"} value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} />
+                ) : (
+                  <Input placeholder="표준화명 입력" value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">항목 번호</label>
                 <Input placeholder="예: 6.3.2" value={form.standardNumber} onChange={e => setForm(prev => ({ ...prev, standardNumber: e.target.value }))} />
               </div>
-              {editingStandard && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">수정 제목 (원본 제목 대체)</label>
-                  <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} placeholder="비워두면 원본 제목 유지" />
-                </div>
-              )}
               <div>
                 <label className="block text-sm font-medium mb-1">현안 및 근거 조항{!editingStandard && " *"}</label>
                 <RichTextEditor value={form.basis} onChange={v => setForm(prev => ({ ...prev, basis: v }))} placeholder="현안 사항 및 근거 조항" minHeight="80px" />
@@ -2515,18 +2533,17 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">표준화명 *</label>
-                <Input placeholder="표준화명 입력" value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
+                {editingStandard ? (
+                  // 수정 모드: overrideTitle 수정 (원본 title 키는 유지, 표시 이름만 변경)
+                  <Input placeholder={form.title || "표준화명 입력"} value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} />
+                ) : (
+                  <Input placeholder="표준화명 입력" value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">항목 번호</label>
                 <Input placeholder="예: 6.3.2" value={form.standardNumber} onChange={e => setForm(prev => ({ ...prev, standardNumber: e.target.value }))} />
               </div>
-              {editingStandard && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">수정 제목 (원본 제목 대체)</label>
-                  <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} placeholder="비워두면 원본 제목 유지" />
-                </div>
-              )}
               <div>
                 <label className="block text-sm font-medium mb-1">현안 및 근거 조항{!editingStandard && " *"}</label>
                 <RichTextEditor value={form.basis} onChange={v => setForm(prev => ({ ...prev, basis: v }))} placeholder="현안 사항 및 근거 조항" minHeight="80px" />
