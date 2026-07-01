@@ -1239,7 +1239,24 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         note: "공식 기준 아님 — 현장 검사원 대화 참고용",
       })).filter(c => c.content);
 
-      const context = { inspCtx, techCtx, chatCtx };
+      // 정밀안전검사 RULES — 질문 키워드와 관련된 항목만 추출
+      const PRECISION_RULES_SUMMARY = [
+        { situation: "공사 지연 (부품 설치)", judgment: "조건부합격 2+2개월", basis: "제13조제3항제1호" },
+        { situation: "안전성평가 미완료", judgment: "조건부합격 2+2개월", basis: "제13조제3항제1호" },
+        { situation: "재난 발생 출입차단", judgment: "최대 1년 이내 안전검사", basis: "제13조제3항제2호" },
+        { situation: "단계적 이행 1단계", judgment: "최대 1년6개월 (주기별 분기)", basis: "제13조제3항제2호" },
+        { situation: "단계적 이행 2단계 전체교체/재개발/이동편의", judgment: "추가 1년", basis: "제13조제3항제2호" },
+        { situation: "단계적 이행 2단계 부분교체", judgment: "추가 6개월+6개월", basis: "제13조제3항제2호" },
+        { situation: "단계적 이행 2단계 이사장 인정", judgment: "추가 6개월", basis: "제13조제3항제2호" },
+        { situation: "공동주택 서면동의 3년 유예", judgment: "조건부합격 3년 (입주민 2/3↑)", basis: "부칙 제3조제3항" },
+        { situation: "대수선 없이 이행 불가", judgment: "적용제외 처리", basis: "부칙 제2조제4항" },
+      ];
+      const qLower = text.toLowerCase();
+      const precisionKeywords = ["정밀", "이행기간", "조건부합격", "단계적", "재난", "공사지연", "유예", "대수선", "안전성평가"];
+      const hasPrecisionQ = precisionKeywords.some(k => qLower.includes(k));
+      const precisionCtx = hasPrecisionQ ? PRECISION_RULES_SUMMARY : [];
+
+      const context = { inspCtx, techCtx, chatCtx, precisionCtx };
 
       // AI가 실제로 참고한 항목을 SearchResult로 변환 (카드 표시용)
       const contextUsed: SearchResult[] = [

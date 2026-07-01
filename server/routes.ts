@@ -1078,81 +1078,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
           inspCtx?: { priority: string; title: string; ref: string; content: string }[];
           techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string }[];
           chatCtx?: { priority: string; content: string; note: string }[];
+          memoCtx?: { title: string; content: string }[];
+          precisionCtx?: { situation: string; judgment: string; basis: string; source: string }[];
         };
       };
 
       if (!messages || messages.length === 0) {
-        return res.status(400).json({ error: "messages 필드가 필요합니다." });
+        return res.status(400).json({ error: "messages 필요합니다." });
       }
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const userQuestion = messages[messages.length - 1]?.content || "";
 
-      // 우선순위별 컨텍스트 → 시스템 프롬프트 주입
-      let contextText = "";
-
+      // ── 컨텍스트 텍스트 구성 ──────────────────────────────────────────
+      const sections: string[] = [];
       if (context) {
-        const sections: string[] = [];
-
-        // 1순위: 검사기준(별표22)
-        if (context.inspCtx && context.inspCtx.length > 0) {
-          sections.push("## [1순위] 검사기준 (별표22)\n" +
-            context.inspCtx.map(c =>
-              `■ ${c.title}${c.ref ? ` [${c.ref}]` : ""}\n${c.content}`
-            ).join("\n\n")
-          );
+        if (context.inspCtx?.length) {
+          sections.push("[1순위] 검사기준(별표22)\n" +
+            context.inspCtx.map(c => `■ ${c.title}${c.ref ? ` [${c.ref}]` : ""}\n${c.content}`).join("\n\n"));
         }
-
-        // 2순위: 기술자료(표준화)
-        if (context.techCtx && context.techCtx.length > 0) {
-          sections.push("## [2순위] 기술자료 (표준화)\n" +
+        if (context.techCtx?.length) {
+          sections.push("[2순위] 기술자료(표준화)\n" +
             context.techCtx.map(c =>
-              `■ ${c.title} (${c.ref})\n` +
-              (c.basis ? `현안: ${c.basis}\n` : "") +
-              (c.conclusion ? `표준화결정: ${c.conclusion}\n` : "") +
-              `출처: ${c.source}`
-            ).join("\n\n")
-          );
+              `■ ${c.title}\n${c.basis ? `현안: ${c.basis}\n` : ""}${c.conclusion ? `결정: ${c.conclusion}\n` : ""}출처: ${c.source}`
+            ).join("\n\n"));
         }
-
-        // 3순위: 채팅 참고 (현장 의견 — 공식 기준 아님)
-        if (context.chatCtx && context.chatCtx.length > 0) {
-          sections.push("## [3순위] 채팅 참고 (현장 의견 — 공식 기준 아님, 참고만 할 것)\n" +
-            context.chatCtx.map(c => `• ${c.content}`).join("\n")
-          );
+        if (context.memoCtx?.length) {
+          sections.push("[3순위] 현장메모\n" +
+            context.memoCtx.map(c => `• [${c.title}] ${c.content}`).join("\n"));
         }
-
-        if (sections.length > 0) {
-          contextText = "\n\n---\n" + sections.join("\n\n") + "\n---";
+        if (context.precisionCtx?.length) {
+          sections.push("[4순위] 정밀안전검사 판정기준\n" +
+            context.precisionCtx.map(c =>
+              `• ${c.situation}: ${c.judgment} / 근거: ${c.basis}`
+            ).join("\n"));
+        }
+        if (context.chatCtx?.length) {
+          sections.push("[참고] 현장의견(비공식)\n" +
+            context.chatCtx.map(c => `• ${c.content}`).join("\n"));
         }
       }
+      const contextText = sections.length > 0
+        ? "\n\n---\n" + sections.join("\n\n") + "\n---"
+        : "";
 
-      const systemPrompt = `당신은 승강기 안전검사 현장 전문가다. 검사원이 현장에서 바로 판단에 쓸 수 있는 답을 준다.
+      // ── 에이전트 1: 키워드·관련성 분석 ──────────────────────────────
+      const agent1Res = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 400,
+        system: `승강기 안전검사 전문 분석가다. 주어진 질문과 자료를 분석해 아래 JSON만 반환해라.
+{
+  "coreKeywords": ["핵심 키워드 1~3개"],
+  "relevantSections": ["자료에서 직접 관련된 조문/항목 제목"],
+  "irrelevantSections": ["관련 없는 항목 제목"],
+  "answerAngle": "답변이 집중해야 할 핵심 포인트 한 줄",
+  "confidence": "high|medium|low"
+}
+다른 텍스트 없이 JSON만.${contextText}`,
+        messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
+      });
 
-## 참고 자료 활용 규칙
-아래에 [1순위] [2순위] [3순위] 자료가 제공된다.
-- **[1순위] 검사기준(별표22)** — 가장 먼저 인용. 조문번호와 수치를 그대로 사용
-- **[2순위] 기술자료(표준화)** — 검사기준에 없거나 보완이 필요할 때 인용
-- **[3순위] 채팅참고** — 공식 기준 아님. 현장 분위기 파악용으로만 참고. 답변에 직접 인용 금지
+      let agent1Analysis = "";
+      try {
+        const raw1 = agent1Res.content[0].type === "text" ? agent1Res.content[0].text.trim() : "{}";
+        const parsed1 = JSON.parse(raw1.replace(/```json|```/g, "").trim());
+        agent1Analysis = `[에이전트1 분석]
+핵심 키워드: ${(parsed1.coreKeywords || []).join(", ")}
+관련 조문: ${(parsed1.relevantSections || []).join(", ") || "없음"}
+제외 항목: ${(parsed1.irrelevantSections || []).join(", ") || "없음"}
+답변 포인트: ${parsed1.answerAngle || ""}
+신뢰도: ${parsed1.confidence || "medium"}`;
+      } catch {
+        agent1Analysis = "";
+      }
 
-## 답변 규칙
-- **결론부터** — 첫 문장에 판정(적합/부적합/시정권고/해당없음) 또는 핵심 답
-- **조문번호 명시** — [별표22] X.X.X, 승강기안전관리법 제X조 형식으로
-- **수치 굵게** — **0.5m**, **125%** 처럼
-- **필요한 말만** — "참고사항", "권장 조치", "추가 검토", "주의사항" 섹션 만들지 않음
-- **모를 때** — "기준 없음" 또는 "공단 확인 필요" 한 줄로 끝냄
-- 인사·서론·마무리 없음
-- **표(|---|) 절대 금지** — 마크다운 표는 앱에서 렌더링 안 됨. 여러 항목은 아래처럼 줄바꿈+불릿으로 표현:
-  • 3.1.10(10): 1997.08.18 이후 건축허가분
-  • 16.1.1-9라(6): 2013.09.15 이후 건축허가분
-  • 17.1.5.5: 2019.03.28 이후 건축허가분
+      // ── 에이전트 1 키워드로 메모 자동 검색 → 컨텍스트 보강 ──────────
+      let memoSection = "";
+      try {
+        const keywords = (() => {
+          try {
+            const raw = agent1Res.content[0].type === "text" ? agent1Res.content[0].text.trim() : "{}";
+            const p = JSON.parse(raw.replace(/```json|```/g, "").trim());
+            return (p.coreKeywords || []) as string[];
+          } catch { return []; }
+        })();
 
-## 출처 표시 규칙 (필수)
-답변 마지막에 반드시 다음 형식으로 출처를 표시:
-> 📌 근거: [검사기준] 조문번호 | [기술자료] 표준화명 | [검사가이드] 항목명
-- 실제로 답변에 활용한 자료만 표시
-- [별표22] X.X.X 형식 조문은 [검사기준] 태그로 표시
-- 표준화 자료는 [기술자료] 태그로 표시
-- 검사가이드 항목은 [검사가이드] 태그로 표시${contextText}`
+        if (keywords.length > 0) {
+          // 각 키워드로 메모 검색
+          const memoHits: string[] = [];
+          for (const kw of keywords.slice(0, 2)) {
+            try {
+              const memos = await storage.searchMemos(kw);
+              memos.slice(0, 2).forEach((m: any) => {
+                const content = m.content || m.description || "";
+                if (content) memoHits.push(`• [${m.title || "메모"}] ${content.slice(0, 200)}`);
+              });
+            } catch {}
+          }
+          if (memoHits.length > 0) {
+            memoSection = "\n\n[5순위] 현장메모\n" + [...new Set(memoHits)].slice(0, 3).join("\n");
+          }
+        }
+      } catch {}
+
+      // ── 에이전트 2: 최종 답변 생성 ───────────────────────────────────
+      const systemPrompt = `당신은 승강기 안전검사 현장 전문가다. 검사원이 현장에서 바로 쓸 수 있는 답을 준다.
+
+${agent1Analysis ? agent1Analysis + "\n\n" : ""}## 답변 규칙
+- 결론(판정/핵심날짜/수치)을 첫 줄에
+- 조문번호는 [별표22] X.X.X 형식으로 명시
+- 항목이 2개 이상이면 • 불릿으로 줄 나눔
+- 빈 줄로 단락 구분해 읽기 편하게
+- 인사·서론·마무리·추가검토·공단문의 없음
+- 자료에 없으면 "해당 기준 없음" 한 줄로 끝냄
+- 표(|---|) 절대 금지
+
+## 출처 규칙
+답변 마지막에:
+📌 근거: [검사기준] 조문 | [기술자료] 표준화명 | [메모] 제목
+실제 활용한 자료만 표시${contextText}${memoSection}`;
 
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
