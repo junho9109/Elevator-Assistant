@@ -1802,7 +1802,12 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     setEditingStandard(standard);
     const ov = stdOverrides?.find((o: any) => o.title === standard.title);
     setForm({
-      categoryId: standard.categoryId ? String(standard.categoryId) : "",
+      // form.categoryId는 hotspot.id 기준 (드롭다운 value와 일치)
+      categoryId: (() => {
+        if (!standard.categoryId) return "";
+        const h = hotspots.find(h => h.categoryId === standard.categoryId);
+        return h ? String(h.id) : String(standard.categoryId);
+      })(),
       // 표준화명: overrideTitle 우선 → 없으면 원본 title
       title: standard.title,
       overrideTitle: ov?.overrideTitle || "",
@@ -2201,9 +2206,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">분류</label>
-                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => { const h = hotspots.find(h => String(h.categoryId ?? "") === e.target.value); setForm(prev => ({ ...prev, categoryId: e.target.value, category: h?.label || "" })); }}>
+                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => { const h = hotspots.find(h => String(h.id) === e.target.value); setForm(prev => ({ ...prev, categoryId: e.target.value, category: h?.label || "" })); }}>
                   <option value="">전체</option>
-                  {hotspots.map(h => <option key={h.id} value={h.categoryId ?? ""}>{h.label}</option>)}
+                  {hotspots.map(h => <option key={h.id} value={String(h.id)}>{h.label}</option>)}
                 </select>
               </div>
               <div>
@@ -2526,9 +2531,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">분류</label>
-                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => { const h = hotspots.find(h => String(h.categoryId ?? "") === e.target.value); setForm(prev => ({ ...prev, categoryId: e.target.value, category: h?.label || "" })); }}>
+                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => { const h = hotspots.find(h => String(h.id) === e.target.value); setForm(prev => ({ ...prev, categoryId: e.target.value, category: h?.label || "" })); }}>
                   <option value="">전체</option>
-                  {hotspots.map(h => <option key={h.id} value={h.categoryId ?? ""}>{h.label}</option>)}
+                  {hotspots.map(h => <option key={h.id} value={String(h.id)}>{h.label}</option>)}
                 </select>
               </div>
               <div>
