@@ -20,7 +20,6 @@ import ReactMarkdown from "react-markdown";
 import STD_DATA from "@/data/표준화_parsed.json";
 type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
 const STD_ITEMS = STD_DATA as StdItem[];
-const STD_CATEGORIES = ["전체", "기계실", "피트", "승강로", "카상부", "카·문", "에스컬레이터", "주행성능", "제동장치", "완충기", "과속조절기", "덤웨이터", "휠체어리프트", "안전회로", "기타"];
 
 // ==================== 유사 검색 ====================
 
@@ -827,8 +826,17 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
-  // STD_ITEMS(JSON) + 신규 추가 항목(DB 오버라이드 전용) 통합 — 카드 목록/카운트/검색 전부 이걸 사용
+  // STD_ITEMS(JSON) + 신규 추가 항목(DB 오버라이드) 통합
+  // 오버라이드가 있는 STD_ITEMS 항목은 오버라이드의 category 반영
   const allStdItems = useMemo(() => {
+    const overrideMap = new Map((stdOverrides || []).map((ov: any) => [ov.title, ov]));
+    const baseItems = STD_ITEMS.map(s => {
+      const ov = overrideMap.get(s.title);
+      return {
+        ...s,
+        category: (ov?.category && ov.category !== "") ? ov.category : (s.category || "전체"),
+      };
+    });
     const stdTitles = new Set(STD_ITEMS.map(s => s.title));
     const newItemsFromDb = (stdOverrides || [])
       .filter((ov: any) => !stdTitles.has(ov.title))
@@ -841,7 +849,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         typeTag: ov.typeTag || "",
         category: ov.category || "전체",
       }));
-    return [...STD_ITEMS, ...newItemsFromDb];
+    return [...baseItems, ...newItemsFromDb];
   }, [stdOverrides]);
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
@@ -2271,16 +2279,20 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                   <Input placeholder="검색..." value={stdSearch} onChange={e => { setStdSearch(e.target.value); setStdSelected(null); }} className="pl-9 h-8 text-xs bg-secondary border-0" />
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
-                  {STD_CATEGORIES.map(cat => {
-                    const cnt = cat === "전체" ? allStdItems.length : allStdItems.filter(x => x.category === cat).length;
-                    if (cnt === 0) return null;
-                    return (
-                      <button key={cat} onClick={() => { setStdCategory(cat); setStdSelected(null); }}
-                        className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${stdCategory === cat ? "bg-foreground text-background border-foreground" : "bg-background border-border text-muted-foreground hover:bg-muted"}`}>
-                        {cat} <span className="opacity-60">{cnt}</span>
-                      </button>
-                    );
-                  })}
+                  {/* 전체 탭 */}
+                  {(() => {
+                    const dynCats = ["전체", ...hotspots.map(h => h.label)];
+                    return dynCats.map(cat => {
+                      const cnt = cat === "전체" ? allStdItems.length : allStdItems.filter(x => x.category === cat).length;
+                      if (cat !== "전체" && cnt === 0) return null;
+                      return (
+                        <button key={cat} onClick={() => { setStdCategory(cat); setStdSelected(null); }}
+                          className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${stdCategory === cat ? "bg-foreground text-background border-foreground" : "bg-background border-border text-muted-foreground hover:bg-muted"}`}>
+                          {cat} <span className="opacity-60">{cnt}</span>
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
               <div className="divide-y divide-border max-h-[480px] overflow-y-auto">
