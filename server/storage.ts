@@ -301,10 +301,10 @@ export class DatabaseStorage implements IStorage {
     return await db.select({
       id: memoPhotos.id,
       memoId: memoPhotos.memoId,
-      filename: memoPhotos.filename,
+      fileName: memoPhotos.fileName,   // 스키마 필드명: fileName
       mimeType: memoPhotos.mimeType,
       createdAt: memoPhotos.createdAt,
-      imageData: sql<string>`''`,  // 목록에서 imageData 제외 → 빈 문자열
+      imageData: sql<string>`''`,    // 목록에서 imageData 제외 → 빈 문자열
     }).from(memoPhotos).where(eq(memoPhotos.memoId, memoId));
   }
 
