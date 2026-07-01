@@ -2130,7 +2130,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">분류</label>
-                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => setForm(prev => ({ ...prev, categoryId: e.target.value }))}>
+                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => { const h = hotspots.find(h => String(h.categoryId ?? "") === e.target.value); setForm(prev => ({ ...prev, categoryId: e.target.value, category: h?.label || "" })); }}>
                   <option value="">전체</option>
                   {hotspots.map(h => <option key={h.id} value={h.categoryId ?? ""}>{h.label}</option>)}
                 </select>
@@ -2161,10 +2161,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 <label className="block text-sm font-medium mb-1">출처 (회차)</label>
                 <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2026년 제1차 표준화" />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">분류</label>
-                <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.category} onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))} placeholder="예: 기계실, 승강로" />
-              </div>
+
               <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
               <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />
               <DatePicker label="검사일" value={form.inspectionYear} onChange={v => setForm(prev => ({ ...prev, inspectionYear: v }))} />
@@ -2459,7 +2456,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             <div className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">분류</label>
-                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => setForm(prev => ({ ...prev, categoryId: e.target.value }))}>
+                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => { const h = hotspots.find(h => String(h.categoryId ?? "") === e.target.value); setForm(prev => ({ ...prev, categoryId: e.target.value, category: h?.label || "" })); }}>
                   <option value="">전체</option>
                   {hotspots.map(h => <option key={h.id} value={h.categoryId ?? ""}>{h.label}</option>)}
                 </select>
@@ -2490,10 +2487,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 <label className="block text-sm font-medium mb-1">출처 (회차)</label>
                 <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2026년 제1차 표준화" />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">분류</label>
-                <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.category} onChange={e => setForm(prev => ({ ...prev, category: e.target.value }))} placeholder="예: 기계실, 승강로" />
-              </div>
+
               <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
               <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />
               <DatePicker label="검사일" value={form.inspectionYear} onChange={v => setForm(prev => ({ ...prev, inspectionYear: v }))} />
