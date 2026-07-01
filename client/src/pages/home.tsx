@@ -559,6 +559,94 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
 
 const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", basis: "", conclusion: "", source: "", permitDate: "", inspectionDate: "", inspectionYear: "", images: [] as string[] };
 
+// ── 리치 텍스트 에디터 (글자색 지원) ──
+const COLOR_PALETTE = [
+  { color: "#A32D2D", label: "빨강 (주의/부적합)", cls: "bg-red-700" },
+  { color: "#0C447C", label: "파랑 (검사기준)", cls: "bg-blue-800" },
+  { color: "#854F0B", label: "주황 (적용시기)", cls: "bg-orange-700" },
+  { color: "#1A6B2A", label: "초록 (적합/승인)", cls: "bg-green-700" },
+  { color: "#5F5E5A", label: "회색 (보조설명)", cls: "bg-gray-500" },
+];
+
+function RichTextEditor({ value, onChange, placeholder, minHeight = "80px" }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  minHeight?: string;
+}) {
+  const editorRef = React.useRef<HTMLDivElement>(null);
+  const savedSel = React.useRef<Range | null>(null);
+
+  React.useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, [value]);
+
+  const saveSel = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) savedSel.current = sel.getRangeAt(0).cloneRange();
+  };
+
+  const restoreSel = () => {
+    const sel = window.getSelection();
+    if (sel && savedSel.current) {
+      sel.removeAllRanges();
+      sel.addRange(savedSel.current);
+    }
+  };
+
+  const applyColor = (color: string) => {
+    editorRef.current?.focus();
+    restoreSel();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    document.execCommand("styleWithCSS", false, "true");
+    document.execCommand("foreColor", false, color);
+    if (editorRef.current) onChange(editorRef.current.innerHTML);
+  };
+
+  const removeColor = () => {
+    editorRef.current?.focus();
+    restoreSel();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    document.execCommand("removeFormat", false);
+    if (editorRef.current) onChange(editorRef.current.innerHTML);
+  };
+
+  return (
+    <div className="rounded-xl border border-border overflow-hidden focus-within:ring-2 focus-within:ring-primary/50">
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/40 border-b border-border">
+        <span className="text-[10px] text-muted-foreground shrink-0">색상</span>
+        {COLOR_PALETTE.map(c => (
+          <button key={c.color} type="button" title={c.label}
+            onMouseDown={e => { e.preventDefault(); saveSel(); applyColor(c.color); }}
+            className={`w-4 h-4 rounded-full ${c.cls} border border-white/50 hover:scale-125 transition-transform shrink-0`}
+          />
+        ))}
+        <button type="button" title="색상 제거"
+          onMouseDown={e => { e.preventDefault(); saveSel(); removeColor(); }}
+          className="w-4 h-4 rounded-full bg-card border border-border text-[8px] font-bold text-muted-foreground hover:scale-125 transition-transform flex items-center justify-center shrink-0"
+        >✕</button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={() => { if (editorRef.current) onChange(editorRef.current.innerHTML); }}
+        onMouseUp={saveSel}
+        onKeyUp={saveSel}
+        className="w-full px-3 py-2 text-sm bg-card outline-none"
+        style={{ minHeight, whiteSpace: "pre-wrap" }}
+        data-ph={placeholder}
+      />
+      <style>{`[contenteditable][data-ph]:empty::before{content:attr(data-ph);color:#9CA3AF;pointer-events:none;}`}</style>
+    </div>
+  );
+}
+
+
 // ==================== 표준화 항목 이미지 섹션 ====================
 function StdPhotoSection({ itemKey }: { itemKey: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -2063,11 +2151,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               )}
               <div>
                 <label className="block text-sm font-medium mb-1">현안 및 근거 조항{!editingStandard && " *"}</label>
-                <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.basis} onChange={e => setForm(prev => ({ ...prev, basis: e.target.value }))} placeholder="현안 사항 및 근거 조항" />
+                <RichTextEditor value={form.basis} onChange={v => setForm(prev => ({ ...prev, basis: v }))} placeholder="현안 사항 및 근거 조항" minHeight="80px" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">검사방법 표준화 결정</label>
-                <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.conclusion} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="표준화 결정 내용" />
+                <RichTextEditor value={form.conclusion} onChange={v => setForm(prev => ({ ...prev, conclusion: v }))} placeholder="표준화 결정 내용" minHeight="100px" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">출처 (회차)</label>
@@ -2269,13 +2357,13 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
                               {dispRef && <p className="text-[11px] font-semibold text-blue-600">{dispRef}</p>}
-                              {dispBasis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-card rounded-lg p-2">{dispBasis}</p>}
+                              {dispBasis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-card rounded-lg p-2" dangerouslySetInnerHTML={{ __html: dispBasis }} />}
                             </div>
                           )}
                           {dispConclusion && (
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">표준화</p>
-                              <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2">{dispConclusion}</p>
+                              <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2" dangerouslySetInnerHTML={{ __html: dispConclusion }} />
                             </div>
                           )}
                           <StdPhotoSection itemKey={item.title} />
@@ -2392,11 +2480,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
               )}
               <div>
                 <label className="block text-sm font-medium mb-1">현안 및 근거 조항{!editingStandard && " *"}</label>
-                <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[80px] resize-y" value={form.basis} onChange={e => setForm(prev => ({ ...prev, basis: e.target.value }))} placeholder="현안 사항 및 근거 조항" />
+                <RichTextEditor value={form.basis} onChange={v => setForm(prev => ({ ...prev, basis: v }))} placeholder="현안 사항 및 근거 조항" minHeight="80px" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">검사방법 표준화 결정</label>
-                <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[100px] resize-y" value={form.conclusion} onChange={e => setForm(prev => ({ ...prev, conclusion: e.target.value }))} placeholder="표준화 결정 내용" />
+                <RichTextEditor value={form.conclusion} onChange={v => setForm(prev => ({ ...prev, conclusion: v }))} placeholder="표준화 결정 내용" minHeight="100px" />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">출처 (회차)</label>
@@ -2481,7 +2569,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     {std?.basis && (
                       <div className="bg-secondary rounded-xl p-3">
                         <p className="text-[10px] font-medium text-muted-foreground mb-1.5">기준 내용</p>
-                        <p className="text-xs text-foreground leading-relaxed">{std.basis}</p>
+                        <p className="text-xs text-foreground leading-relaxed" dangerouslySetInnerHTML={{ __html: std.basis }} />
                       </div>
                     )}
                     {/* 표준화 결론 */}
@@ -2489,7 +2577,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                       <div>
                         <p className="text-[10px] font-medium text-muted-foreground mb-1.5">표준화 결론</p>
                         <div className="border-l-2 border-blue-400 pl-3">
-                          <p className="text-xs text-foreground leading-relaxed">{std.conclusion}</p>
+                          <p className="text-xs text-foreground leading-relaxed" dangerouslySetInnerHTML={{ __html: std.conclusion }} />
                         </div>
                       </div>
                     )}
