@@ -21,6 +21,47 @@ import STD_DATA from "@/data/표준화_parsed.json";
 type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
 const STD_ITEMS = STD_DATA as StdItem[];
 
+// STD_ITEMS JSON category → hotspot label 매핑 테이블
+// hotspot이 추가/삭제되어도 이 테이블만 업데이트하면 자동 반영
+const STD_CATEGORY_MAP: Record<string, string> = {
+  "기계실": "기계실",
+  "승강로": "승강로",
+  "피트": "피트",
+  "카상부": "카 상부",
+  "카·문": "카 내",
+  "카": "카 내",
+  "기타": "기타",
+  "엘리베이터": "기타",
+  "주행성능": "기타",
+  "에스컬레이터": "기타",
+  "완충기": "기타",
+  "덤웨이터": "기타",
+  "제동장치": "기타",
+  "구동기": "기타",
+  "휠체어리프트": "기타",
+  "소방구조용": "기타",
+  "안전회로": "기타",
+  "장애인용": "기타",
+  "전기": "기타",
+  "과속조절기": "기타",
+};
+
+// STD_ITEMS category → hotspot label 정규화
+// 매핑 없는 값은 원본 유지 (신규 hotspot 추가 시 자동 대응)
+function normalizeCat(cat: string, hotspotLabels: string[]): string {
+  // 1순위: 매핑 테이블
+  if (STD_CATEGORY_MAP[cat]) return STD_CATEGORY_MAP[cat];
+  // 2순위: hotspot label과 공백 제거 후 일치
+  const normalized = cat.replace(/[\s·]/g, "");
+  const match = hotspotLabels.find(l => l.replace(/[\s·]/g, "") === normalized);
+  if (match) return match;
+  // 3순위: 원본 유지 (hotspot과 정확히 같은 경우)
+  if (hotspotLabels.includes(cat)) return cat;
+  // 4순위: 매핑 안 되면 "기타"로
+  return hotspotLabels.includes("기타") ? "기타" : cat;
+}
+
+
 // ==================== 유사 검색 ====================
 
 // 유사어·약어·오타 사전 (승강기 검사 도메인 특화)
@@ -829,12 +870,15 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   // STD_ITEMS(JSON) + 신규 추가 항목(DB 오버라이드) 통합
   // 오버라이드가 있는 STD_ITEMS 항목은 오버라이드의 category 반영
   const allStdItems = useMemo(() => {
+    const hotspotLabels = hotspots.map(h => h.label);
     const overrideMap = new Map((stdOverrides || []).map((ov: any) => [ov.title, ov]));
     const baseItems = STD_ITEMS.map(s => {
       const ov = overrideMap.get(s.title);
+      // 오버라이드로 직접 지정한 category 있으면 우선, 없으면 JSON category를 hotspot label로 정규화
+      const rawCat = (ov?.category && ov.category !== "") ? ov.category : (s.category || "기타");
       return {
         ...s,
-        category: (ov?.category && ov.category !== "") ? ov.category : (s.category || "전체"),
+        category: normalizeCat(rawCat, hotspotLabels),
       };
     });
     const stdTitles = new Set(STD_ITEMS.map(s => s.title));
@@ -847,10 +891,10 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         conclusion: ov.conclusion || "",
         source: ov.source || "",
         typeTag: ov.typeTag || "",
-        category: ov.category || "전체",
+        category: normalizeCat(ov.category || "기타", hotspotLabels),
       }));
     return [...baseItems, ...newItemsFromDb];
-  }, [stdOverrides]);
+  }, [stdOverrides, hotspots]);
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
   const deleteStandard = useDeleteStandard();
@@ -2279,20 +2323,16 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                   <Input placeholder="검색..." value={stdSearch} onChange={e => { setStdSearch(e.target.value); setStdSelected(null); }} className="pl-9 h-8 text-xs bg-secondary border-0" />
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
-                  {/* 전체 탭 */}
-                  {(() => {
-                    const dynCats = ["전체", ...hotspots.map(h => h.label)];
-                    return dynCats.map(cat => {
-                      const cnt = cat === "전체" ? allStdItems.length : allStdItems.filter(x => x.category === cat).length;
-                      if (cat !== "전체" && cnt === 0) return null;
-                      return (
-                        <button key={cat} onClick={() => { setStdCategory(cat); setStdSelected(null); }}
-                          className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${stdCategory === cat ? "bg-foreground text-background border-foreground" : "bg-background border-border text-muted-foreground hover:bg-muted"}`}>
-                          {cat} <span className="opacity-60">{cnt}</span>
-                        </button>
-                      );
-                    });
-                  })()}
+                  {/* 탭: hotspot 순서 기준, 항목 있는 것만 표시, hotspot 변동 시 자동 반영 */}
+                  {[
+                    { key: "전체", cnt: allStdItems.length },
+                    ...hotspots.map(h => ({ key: h.label, cnt: allStdItems.filter(x => x.category === h.label).length }))
+                  ].filter(({ key, cnt }) => key === "전체" || cnt > 0).map(({ key, cnt }) => (
+                    <button key={key} onClick={() => { setStdCategory(key); setStdSelected(null); }}
+                      className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${stdCategory === key ? "bg-foreground text-background border-foreground" : "bg-background border-border text-muted-foreground hover:bg-muted"}`}>
+                      {key} <span className="opacity-60">{cnt}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="divide-y divide-border max-h-[480px] overflow-y-auto">
