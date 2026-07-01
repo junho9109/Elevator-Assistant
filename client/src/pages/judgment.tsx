@@ -2091,37 +2091,12 @@ export default function JudgmentPage() {
                     <Textarea
                       value={(editForm as any).standardNote || ""}
                       onChange={(e) => setEditForm(prev => ({ ...prev, standardNote: e.target.value } as any))}
-                      placeholder="검사기준 내용 입력 (예: 엘리베이터 안전기준 14.5.5)"
+                      placeholder="예: 엘리베이터 안전기준 14.5.5"
                       rows={2}
                     />
-                    <p className="text-xs text-muted-foreground">입력 시 항목 하단에 회색으로 표시됩니다</p>
+
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">적용 승강기 종류 (복수 선택 가능)</label>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        "엘리베이터-전기식(MR)", "엘리베이터-전기식(MRL)", "엘리베이터-유압식", "엘리베이터-경사형",
-                        "에스컬레이터", "무빙워크", "덤웨이터", "휠체어리프트-수직형", "휠체어리프트-경사형"
-                      ].map(type => {
-                        const selected = ((editForm as any).equipmentTypes || []).includes(type);
-                        return (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => {
-                              const cur: string[] = (editForm as any).equipmentTypes || [];
-                              const next = selected ? cur.filter(t => t !== type) : [...cur, type];
-                              setEditForm(prev => ({ ...prev, equipmentTypes: next } as any));
-                            }}
-                            className={`text-xs px-2 py-1 rounded-full border transition-colors ${selected ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border"}`}
-                          >
-                            {type}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="text-xs text-muted-foreground">선택 안 하면 전체 종류에 표시됩니다</p>
-                  </div>
+
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground">건축허가일자 이후 적용</label>
                     <Input
@@ -2154,7 +2129,7 @@ export default function JudgmentPage() {
                               onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, effectiveDate: e.target.value } : r))} />
                           </div>
                           <div className="flex-1">
-                            <label className="text-xs text-muted-foreground">만료일 (다음 개정 전까지)</label>
+                            <label className="text-xs text-muted-foreground">만료일</label>
                             <Input type="date" value={rev.expiryDate}
                               onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, expiryDate: e.target.value } : r))} />
                           </div>
@@ -2165,9 +2140,7 @@ export default function JudgmentPage() {
                           className="text-xs" />
                       </div>
                     ))}
-                    {editRevisions.length === 0 && (
-                      <p className="text-xs text-muted-foreground">개정 추가 버튼으로 이 항목의 개정 이력을 입력/수정하세요. (저장 시 현행 DB에 반영)</p>
-                    )}
+
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground">판정 결과 고정</label>
@@ -2181,7 +2154,7 @@ export default function JudgmentPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-medium text-muted-foreground">※ 안내문구 (선택사항)</label>
+                    <label className="text-xs font-medium text-muted-foreground">안내문구</label>
                     <Textarea
                       value={editForm.customWarning || ""}
                       onChange={(e) => setEditForm(prev => ({ ...prev, customWarning: e.target.value }))}

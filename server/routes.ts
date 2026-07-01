@@ -563,15 +563,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/inspection-edits/:itemId", async (req, res) => {
     try {
-      const itemId = req.params.itemId;
+      const itemId = decodeURIComponent(req.params.itemId);
+      // 알려진 필드만 추출 — standardDatesWithMemo 등 미지 필드 무시
+      const {
+        text, effectiveDate, expiryDate, introductionType, customWarning,
+        permitEffectiveDate, standardNote, equipmentTypes, fixedResult,
+      } = req.body;
+
+      // standardDates: 배열이면 JSON 문자열로, 이미 문자열이면 그대로
+      let standardDates: string | undefined;
+      if (req.body.standardDates !== undefined) {
+        standardDates = Array.isArray(req.body.standardDates)
+          ? JSON.stringify(req.body.standardDates)
+          : typeof req.body.standardDates === "string"
+            ? req.body.standardDates
+            : undefined;
+      }
+
       const validatedData = insertInspectionItemEditSchema.parse({
-        ...req.body,
-        itemId
+        itemId,
+        text: text ?? null,
+        effectiveDate: effectiveDate ?? null,
+        expiryDate: expiryDate ?? null,
+        introductionType: introductionType ?? null,
+        customWarning: customWarning ?? null,
+        permitEffectiveDate: permitEffectiveDate ?? null,
+        standardDates: standardDates ?? null,
+        standardNote: standardNote ?? null,
+        equipmentTypes: equipmentTypes
+          ? (Array.isArray(equipmentTypes) ? JSON.stringify(equipmentTypes) : String(equipmentTypes))
+          : null,
+        fixedResult: fixedResult ?? null,
       });
       const edit = await storage.upsertInspectionItemEdit(validatedData);
       res.json(edit);
     } catch (error) {
-      res.status(400).json({ error: "Invalid edit data" });
+      console.error("[inspection-edits PUT 오류]", error);
+      res.status(400).json({ error: "Invalid edit data", detail: String(error) });
     }
   });
 
