@@ -724,14 +724,33 @@ export default function JudgmentPage() {
     if (serverEdits && serverEdits.length > 0) {
       serverEdits.forEach((edit: any) => {
         if (edit.itemId) {
+          // standardDates: JSON 파싱
+          const parsedDates: string[] = edit.standardDates
+            ? (() => { try { return JSON.parse(edit.standardDates); } catch { return []; } })()
+            : [];
+          // standardDatesWithMemo: standardDates 배열에서 복원
+          // (서버엔 날짜 배열만 저장되므로, memo/description은 원본 contentMap에서 매칭해서 보강)
+          const contentEntry = (contentMap as any)[edit.itemId];
+          const contentRevisions: any[] = contentEntry?.revisions || [];
+          const datesWithMemo = parsedDates.map((date, i) => {
+            const matched = contentRevisions.find((r: any) => r.effectiveDate === date);
+            return {
+              date,
+              memo: matched?.description || "",
+              label: `개정 ${i + 1}`,
+              source: matched?.source,
+            };
+          });
           map[edit.itemId] = {
             id: edit.itemId,
             text: edit.text || undefined,
             permitEffectiveDate: edit.permitEffectiveDate || undefined,
             fixedResult: edit.fixedResult || undefined,
             customWarning: edit.customWarning || undefined,
-            standardDates: edit.standardDates ? JSON.parse(edit.standardDates) : undefined,
             standardNote: edit.standardNote || undefined,
+            // standardDates가 빈 배열이면 빈 배열로 명시 (원본 JSON 폴백 방지)
+            standardDates: edit.standardDates !== null && edit.standardDates !== undefined ? parsedDates : undefined,
+            standardDatesWithMemo: edit.standardDates !== null && edit.standardDates !== undefined ? datesWithMemo : undefined,
           };
         }
       });
@@ -2245,7 +2264,11 @@ export default function JudgmentPage() {
                     const detailRevisions = revisionsCache[detailItem.id] || [];
                     // customEdits 우선, 없으면 DB(standardDates) 사용
                     const datesWithMemo: {date: string; memo: string; label?: string}[] = (() => {
-                      if ((itemEdit as any)?.standardDatesWithMemo?.length > 0) return (itemEdit as any).standardDatesWithMemo;
+                      // standardDatesWithMemo가 배열로 명시적으로 설정된 경우 (빈 배열 포함) → 무조건 사용
+                      // undefined인 경우에만 원본 JSON으로 폴백
+                      if (Array.isArray((itemEdit as any)?.standardDatesWithMemo)) {
+                        return (itemEdit as any).standardDatesWithMemo;
+                      }
                       if (dbItem?.standardDates) {
                         try {
                           const parsed = JSON.parse(dbItem.standardDates);
