@@ -1122,6 +1122,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? "\n\n---\n" + sections.join("\n\n") + "\n---"
         : "";
 
+      // ── 메모 자동 검색 ─────────────────────────────────────────────────
+      let memoSection = "";
+      try {
+        const kwMatches = userQuestion.match(/[가-힣a-zA-Z]{2,6}/g) || [];
+        const kws = [...new Set(kwMatches)].slice(0, 3);
+        const memoHits: string[] = [];
+        for (const kw of kws) {
+          const memos = await storage.searchMemos(kw);
+          memos.slice(0, 2).forEach((m: any) => {
+            const content = m.content || m.description || "";
+            if (content) memoHits.push(`[${m.title || "메모"}] ${content.slice(0, 250)}`);
+          });
+        }
+        if (memoHits.length > 0) {
+          memoSection = "\n\n[현장메모]\n" + [...new Set(memoHits)].slice(0, 4).join("\n");
+        }
+      } catch {}
+
       // ════════════════════════════════════════════════════════════
       // 3-Agent 파이프라인
       // 규칙1: 어플 내 등록된 데이터만 검색한다 (외부 인터넷 검색 없음)
