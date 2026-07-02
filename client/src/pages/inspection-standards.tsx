@@ -72,7 +72,7 @@ function ItemBtn({ id, isActive, onClick }: { id: string; isActive: boolean; onC
       }`}
     >
       <span className="font-mono text-[10px] text-muted-foreground shrink-0 min-w-[36px]">{id}</span>
-      <span className="text-xs leading-snug">{label.length > 55 ? label.slice(0, 55) + "…" : label}</span>
+      <span className="text-xs leading-relaxed">{label.length > 60 ? label.slice(0, 60) + "…" : label}</span>
     </button>
   );
 }
@@ -94,7 +94,7 @@ function TreeNode({ sec, depth, activeKey, onSelect }: {
     <div>
       <button
         onClick={() => { if (hasChildren) { setOpen(o => !o); } else { onSelect(sec.id); } }}
-        className={`w-full flex items-center gap-1.5 py-2 pr-3 text-left text-xs transition-colors hover:bg-secondary ${
+        className={`w-full flex items-center gap-2 py-2.5 pr-3 text-left text-xs leading-relaxed transition-colors hover:bg-secondary ${
           isActive || hasDescendant ? "text-primary font-medium" : "text-foreground"
         }`}
         style={{ paddingLeft: pl }}
@@ -103,7 +103,7 @@ function TreeNode({ sec, depth, activeKey, onSelect }: {
           ? (open ? <ChevronDown size={12} className="shrink-0 text-muted-foreground" /> : <ChevronRight size={12} className="shrink-0 text-muted-foreground" />)
           : <span className="w-3" />}
         <span className="font-mono text-[10px] text-muted-foreground shrink-0">{sec.id}</span>
-        <span className="truncate">{sec.title}</span>
+        <span className="truncate text-xs leading-relaxed">{sec.title}</span>
       </button>
       {open && (
         <div className="border-l border-border ml-4">
@@ -142,7 +142,7 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
       <div className="flex items-start gap-2 px-4 py-3 border-b border-border shrink-0">
         <div className="flex-1 min-w-0">
           <span className="font-mono text-[10px] text-muted-foreground">[{id}]</span>
-          {override && <span className="ml-2 text-[10px] text-amber-500 font-medium">수정됨</span>}
+          {override && <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>}
           <p className="text-sm font-medium mt-0.5 leading-snug">{firstLine}</p>
         </div>
         {isAdminMode && (
@@ -157,9 +157,9 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-2">조문 내용</p>
-          <p className="text-xs leading-relaxed whitespace-pre-wrap bg-secondary rounded-lg p-3">{body || displayText}</p>
+          <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>
         </div>
-        <p className="text-xs text-muted-foreground border-t border-border pt-3">출처: {displaySource}</p>
+        <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {displaySource}</p>
       </div>
     </div>
   );
@@ -289,7 +289,7 @@ export default function InspectionStandardsPage() {
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="조문 내용 검색…"
-              className="w-full text-xs bg-secondary border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full text-xs bg-card border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
             />
           </div>
         )}
@@ -301,7 +301,7 @@ export default function InspectionStandardsPage() {
         <div className={`${activeKey ? "hidden md:flex md:w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
           {showSearch && results.length > 0 ? (
             <div className="p-2">
-              <p className="text-xs text-muted-foreground px-2 py-1.5">{results.length}건 검색됨</p>
+              <p className="text-xs text-muted-foreground px-2 py-1.5 font-medium">{results.length}건 검색됨</p>
               {results.map(k => (
                 <ItemBtn key={k} id={k} isActive={activeKey === k} onClick={() => { setActiveKey(k); setShowSearch(false); setQuery(""); }} />
               ))}
@@ -312,7 +312,7 @@ export default function InspectionStandardsPage() {
               <p className="text-xs">검색 결과 없음</p>
             </div>
           ) : (
-            <div className="p-1.5">
+            <div className="p-2">
               {tree.map(ch => <TreeNode key={ch.id} sec={ch} depth={0} activeKey={activeKey} onSelect={setActiveKey} />)}
             </div>
           )}
