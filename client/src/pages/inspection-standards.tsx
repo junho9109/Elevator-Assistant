@@ -315,7 +315,7 @@ export default function InspectionStandardsPage() {
 
       {/* 본문 */}
       <div className="flex-1 overflow-hidden flex min-h-0">
-        {selectedDoc === "judgment2016" && <JudgmentDocView />}
+        {selectedDoc === "judgment2016" && <JudgmentDocView isAdminMode={isAdminMode} />}
         <div className={selectedDoc === "byulpyo22" ? "contents" : "hidden"}>
         {/* 좌측: 트리 또는 검색결과 */}
         <div className={`${activeKey ? "hidden md:flex md:w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
@@ -422,38 +422,132 @@ export default function InspectionStandardsPage() {
   );
 }
 // ── 판정지침 뷰 컴포넌트 ──────────────────────────────────────────────
-function JudgmentDocView() {
+function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
   const [sel, setSel] = useState<string | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, { title?: string; text?: string }>>({});
+  const [editMode, setEditMode] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editText, setEditText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [addMode, setAddMode] = useState(false);
+  const [newKey, setNewKey] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newText, setNewText] = useState("");
+  const [customKeys, setCustomKeys] = useState<string[]>([]);
+
+  // 오버라이드 로드
+  useEffect(() => {
+    fetch("/api/insp-std-overrides")
+      .then(r => r.json())
+      .then((rows: any[]) => {
+        const map: Record<string, { title?: string; text?: string }> = {};
+        const customs: string[] = [];
+        rows.forEach((row: any) => {
+          if (row.itemKey?.startsWith("판정지침_")) {
+            const key = row.itemKey.replace("판정지침_", "");
+            const data = (() => { try { return JSON.parse(row.text || "{}"); } catch { return { text: row.text }; } })();
+            map[key] = data;
+            if (!JUDGMENT_SECTIONS[key]) customs.push(key);
+          }
+        });
+        setOverrides(map);
+        setCustomKeys(customs);
+      }).catch(() => {});
+  }, []);
+
   const entries = Object.entries(JUDGMENT_SECTIONS);
-  const cur = sel ? JUDGMENT_SECTIONS[sel] : null;
+  const allKeys = [...new Set([...entries.map(([k]) => k), ...customKeys])];
 
   const groups = [
-    { label: "본문", keys: ["본문"] },
-    { label: "별표1 — 착수전 불합격", keys: ["별표1"] },
-    { label: "별표2 — 완성·정기·수시검사", keys: entries.filter(([k]) => k.startsWith("별표2_")).map(([k]) => k) },
-    { label: "별표3 — 정밀안전검사", keys: entries.filter(([k]) => k.startsWith("별표3_")).map(([k]) => k) },
+    { label: "본문", keys: allKeys.filter(k => k === "본문") },
+    { label: "별표1 — 착수전 불합격", keys: allKeys.filter(k => k === "별표1") },
+    { label: "별표2 — 완성·정기·수시검사", keys: allKeys.filter(k => k.startsWith("별표2_")) },
+    { label: "별표3 — 정밀안전검사", keys: allKeys.filter(k => k.startsWith("별표3_")) },
+    ...(customKeys.filter(k => !["본문","별표1"].includes(k) && !k.startsWith("별표2_") && !k.startsWith("별표3_")).length > 0
+      ? [{ label: "추가 항목", keys: customKeys.filter(k => !["본문","별표1"].includes(k) && !k.startsWith("별표2_") && !k.startsWith("별표3_")) }]
+      : []),
   ];
+
+  const getTitle = (key: string) => overrides[key]?.title || JUDGMENT_SECTIONS[key]?.title || key;
+  const getText  = (key: string) => overrides[key]?.text  || JUDGMENT_SECTIONS[key]?.text  || "";
+  const hasOverride = (key: string) => !!overrides[key];
+
+  const saveOverride = async (key: string, title: string, text: string) => {
+    setSaving(true);
+    try {
+      await fetch(`/api/insp-std-overrides/${encodeURIComponent("판정지침_" + key)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: JSON.stringify({ title, text }), source: "판정지침_수정" }),
+      });
+      setOverrides(prev => ({ ...prev, [key]: { title, text } }));
+      setEditMode(false);
+    } catch {}
+    setSaving(false);
+  };
+
+  const deleteOverride = async (key: string) => {
+    if (!confirm("이 항목의 수정 내용을 초기화하시겠습니까?")) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/insp-std-overrides/${encodeURIComponent("판정지침_" + key)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "", source: "" }),
+      });
+      setOverrides(prev => { const n = { ...prev }; delete n[key]; return n; });
+      if (customKeys.includes(key)) {
+        setCustomKeys(prev => prev.filter(k => k !== key));
+        setSel(null);
+      }
+    } catch {}
+    setSaving(false);
+  };
+
+  const openEdit = (key: string) => {
+    setEditTitle(getTitle(key));
+    setEditText(getText(key));
+    setEditMode(true);
+  };
+
+  const saveNewItem = async () => {
+    if (!newKey.trim() || !newTitle.trim()) return;
+    const key = newKey.trim();
+    await saveOverride(key, newTitle.trim(), newText.trim());
+    if (!JUDGMENT_SECTIONS[key]) setCustomKeys(prev => [...prev, key]);
+    setAddMode(false);
+    setNewKey(""); setNewTitle(""); setNewText("");
+    setSel(key);
+  };
+
+  const cur = sel ? { title: getTitle(sel), text: getText(sel) } : null;
 
   return (
     <div className="flex-1 overflow-hidden flex min-h-0 w-full">
+      {/* 좌측 목록 */}
       <div className={`${cur ? "hidden md:flex md:w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
+        {isAdminMode && (
+          <div className="p-2 border-b border-border">
+            <button onClick={() => setAddMode(true)}
+              className="w-full text-xs py-1.5 px-3 rounded-lg border border-dashed border-primary text-primary hover:bg-primary/5 transition-colors">
+              + 새 항목 추가
+            </button>
+          </div>
+        )}
         <div className="p-2">
-          {groups.map(g => (
+          {groups.map(g => g.keys.length === 0 ? null : (
             <div key={g.label} className="mb-1">
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1.5">{g.label}</p>
               {g.keys.map(key => {
-                const sec = JUDGMENT_SECTIONS[key];
-                if (!sec) return null;
-                const label = sec.title.replace(/\[별표\d+\]\s*/, "").replace(/\s*—.*$/, "").trim();
+                const label = getTitle(key).replace(/\[별표\d+\]\s*/, "").replace(/\s*—.*$/, "").trim();
+                const modified = hasOverride(key);
                 return (
-                  <button
-                    key={key}
-                    onClick={() => setSel(key)}
+                  <button key={key} onClick={() => { setSel(key); setEditMode(false); }}
                     className={`w-full text-left text-xs leading-relaxed px-3 py-2.5 rounded-lg transition-colors mb-0.5 ${
                       sel === key ? "bg-primary text-primary-foreground font-medium" : "hover:bg-secondary text-foreground"
-                    }`}
-                  >
+                    }`}>
                     {label}
+                    {modified && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>}
                   </button>
                 );
               })}
@@ -461,25 +555,95 @@ function JudgmentDocView() {
           ))}
         </div>
       </div>
+
+      {/* 우측 상세 */}
       {cur ? (
         <div className="flex-1 flex flex-col min-h-0">
+          {/* 상세 헤더 */}
           <div className="flex items-start gap-2 px-4 py-3 border-b border-border shrink-0">
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium leading-snug">{cur.title}</p>
+              {editMode
+                ? <input className="w-full text-sm font-medium border border-border rounded-lg px-2 py-1 bg-card" value={editTitle} onChange={e => setEditTitle(e.target.value)} />
+                : <p className="text-sm font-medium leading-snug">{cur.title}</p>
+              }
               <p className="text-[10px] text-muted-foreground mt-0.5">📌 승강기 검사결과 판정지침 (2016.12.23 제정)</p>
             </div>
-            <button onClick={() => setSel(null)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors shrink-0">
-              <X size={14} />
-            </button>
+            <div className="flex gap-1 shrink-0">
+              {isAdminMode && !editMode && (
+                <>
+                  <button onClick={() => openEdit(sel!)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 transition-colors">
+                    <Pencil size={13} className="text-amber-600" />
+                  </button>
+                  <button onClick={() => deleteOverride(sel!)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 transition-colors">
+                    <X size={13} className="text-red-500" />
+                  </button>
+                </>
+              )}
+              {editMode && (
+                <>
+                  <button onClick={() => saveOverride(sel!, editTitle, editText)} disabled={saving}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">
+                    {saving ? "저장중..." : "저장"}
+                  </button>
+                  <button onClick={() => setEditMode(false)}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-border">취소</button>
+                </>
+              )}
+              {!editMode && (
+                <button onClick={() => setSel(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* 상세 내용 */}
           <div className="flex-1 overflow-y-auto p-4">
-            <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{cur.text}</p>
+            {editMode
+              ? <textarea
+                  className="w-full h-full min-h-[300px] text-xs leading-relaxed bg-muted/40 border border-border rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  value={editText}
+                  onChange={e => setEditText(e.target.value)}
+                />
+              : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{cur.text}</p>
+            }
           </div>
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3 p-6">
           <FileCheck size={32} className="opacity-20" />
           <p className="text-xs text-center leading-relaxed">좌측 목록에서 항목을 선택하세요</p>
+        </div>
+      )}
+
+      {/* 새 항목 추가 모달 */}
+      {addMode && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl p-5 w-full max-w-sm flex flex-col gap-3">
+            <p className="text-sm font-semibold">새 항목 추가</p>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">항목 키 (예: 별표2_경사형리프트2)</label>
+              <input className="text-xs border border-border rounded-lg px-3 py-2 bg-card" value={newKey} onChange={e => setNewKey(e.target.value)} placeholder="고유 키 입력" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">제목</label>
+              <input className="text-xs border border-border rounded-lg px-3 py-2 bg-card" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="항목 제목" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">내용</label>
+              <textarea className="text-xs border border-border rounded-lg px-3 py-2 bg-card min-h-[120px] resize-none" value={newText} onChange={e => setNewText(e.target.value)} placeholder="항목 내용" />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setAddMode(false)} className="flex-1 py-2 text-xs border border-border rounded-xl">취소</button>
+              <button onClick={saveNewItem} disabled={!newKey || !newTitle || saving}
+                className="flex-1 py-2 text-xs bg-primary text-primary-foreground rounded-xl disabled:opacity-50">
+                {saving ? "저장중..." : "추가"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
