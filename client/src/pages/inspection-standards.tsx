@@ -3,12 +3,21 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import BYULPYO22 from "@/data/별표22_parsed.json";
+import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 
 type Entry = { text?: string; title?: string; source?: string; };
 const dataMap = BYULPYO22 as unknown as Record<string, Entry>;
 
 // 연도별 데이터 추가 시: YEARS 배열 복원 + dataMap을 연도별로 분기
 // 현재는 현행(2022년, KC2050-51:2022) 단일 데이터 사용
+
+type JudgmentSection = { id: string; title: string; text: string };
+const JUDGMENT_SECTIONS = JUDGMENT_DATA as unknown as Record<string, JudgmentSection>;
+const DOCUMENTS = [
+  { id: "byulpyo22", label: "별표22 검사기준 (KC2050-51:2022)" },
+  { id: "judgment2016", label: "판정지침 2016.12.23" },
+] as const;
+type DocId = typeof DOCUMENTS[number]["id"];
 
 interface Section {
   id: string;
@@ -178,6 +187,7 @@ export default function InspectionStandardsPage() {
   const [editText, setEditText] = useState("");
   const [editSource, setEditSource] = useState("");
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
   const [pwInput, setPwInput] = useState("");
   const [showPw, setShowPw] = useState(false);
   const queryClient = useQueryClient();
@@ -276,10 +286,18 @@ export default function InspectionStandardsPage() {
           </div>
         </div>
 
-        {/* 현행 기준 표시 */}
+        {/* 문서 선택 드롭다운 */}
         <div className="flex items-center gap-2 px-4 py-2 border-t border-border">
-          <span className="text-xs text-muted-foreground shrink-0">적용 기준</span>
-          <span className="text-xs font-medium text-foreground">2022년 현행 ({CURRENT_STD})</span>
+          <span className="text-xs text-muted-foreground shrink-0">문서</span>
+          <select
+            value={selectedDoc}
+            onChange={e => { setSelectedDoc(e.target.value as DocId); setActiveKey(null); setQuery(""); setResults([]); }}
+            className="flex-1 text-xs bg-card border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary/50"
+          >
+            {DOCUMENTS.map(d => (
+              <option key={d.id} value={d.id}>{d.label}</option>
+            ))}
+          </select>
         </div>
 
         {showSearch && (
@@ -297,6 +315,8 @@ export default function InspectionStandardsPage() {
 
       {/* 본문 */}
       <div className="flex-1 overflow-hidden flex min-h-0">
+        {selectedDoc === "judgment2016" && <JudgmentDocView />}
+        <div className={selectedDoc === "byulpyo22" ? "contents" : "hidden"}>
         {/* 좌측: 트리 또는 검색결과 */}
         <div className={`${activeKey ? "hidden md:flex md:w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
           {showSearch && results.length > 0 ? (
@@ -346,6 +366,7 @@ export default function InspectionStandardsPage() {
         )}
       </div>
 
+        </div>
     {/* 비밀번호 다이얼로그 */}
     {showPw && (
       <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
@@ -397,6 +418,70 @@ export default function InspectionStandardsPage() {
         </div>
       </div>
     )}
+    </div>
+  );
+}
+// ── 판정지침 뷰 컴포넌트 ──────────────────────────────────────────────
+function JudgmentDocView() {
+  const [sel, setSel] = useState<string | null>(null);
+  const entries = Object.entries(JUDGMENT_SECTIONS);
+  const cur = sel ? JUDGMENT_SECTIONS[sel] : null;
+
+  const groups = [
+    { label: "본문", keys: ["본문"] },
+    { label: "별표1 — 착수전 불합격", keys: ["별표1"] },
+    { label: "별표2 — 완성·정기·수시검사", keys: entries.filter(([k]) => k.startsWith("별표2_")).map(([k]) => k) },
+    { label: "별표3 — 정밀안전검사", keys: entries.filter(([k]) => k.startsWith("별표3_")).map(([k]) => k) },
+  ];
+
+  return (
+    <div className="flex-1 overflow-hidden flex min-h-0 w-full">
+      <div className={`${cur ? "hidden md:flex md:w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
+        <div className="p-2">
+          {groups.map(g => (
+            <div key={g.label} className="mb-1">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1.5">{g.label}</p>
+              {g.keys.map(key => {
+                const sec = JUDGMENT_SECTIONS[key];
+                if (!sec) return null;
+                const label = sec.title.replace(/\[별표\d+\]\s*/, "").replace(/\s*—.*$/, "").trim();
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSel(key)}
+                    className={`w-full text-left text-xs leading-relaxed px-3 py-2.5 rounded-lg transition-colors mb-0.5 ${
+                      sel === key ? "bg-primary text-primary-foreground font-medium" : "hover:bg-secondary text-foreground"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      {cur ? (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="flex items-start gap-2 px-4 py-3 border-b border-border shrink-0">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium leading-snug">{cur.title}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">📌 승강기 검사결과 판정지침 (2016.12.23 제정)</p>
+            </div>
+            <button onClick={() => setSel(null)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors shrink-0">
+              <X size={14} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{cur.text}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3 p-6">
+          <FileCheck size={32} className="opacity-20" />
+          <p className="text-xs text-center leading-relaxed">좌측 목록에서 항목을 선택하세요</p>
+        </div>
+      )}
     </div>
   );
 }
