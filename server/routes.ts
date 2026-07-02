@@ -1122,69 +1122,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ? "\n\n---\n" + sections.join("\n\n") + "\n---"
         : "";
 
-      // ── 에이전트 1: 키워드·관련성 분석 ──────────────────────────────
+      // ── 에이전트 1: 질문 분석 + 키워드 추출 + 유형 분류 ──────────────
       const agent1Res = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 400,
-        system: `승강기 안전검사 전문 분석가다. 주어진 질문과 자료를 분석해 아래 JSON만 반환해라.
+        max_tokens: 500,
+        system: `승강기 안전검사 전문 분석가다. 질문을 분석해 아래 JSON만 반환해라.
 {
+  "questionType": "factual|calculation|procedure",
   "coreKeywords": ["핵심 키워드 1~3개"],
+  "requiredValues": ["계산에 필요한 측정값 목록 (calculation 유형만)"],
+  "formula": "계산식 (calculation 유형만, 없으면 null)",
   "relevantSections": ["자료에서 직접 관련된 조문/항목 제목"],
-  "irrelevantSections": ["관련 없는 항목 제목"],
   "answerAngle": "답변이 집중해야 할 핵심 포인트 한 줄",
   "confidence": "high|medium|low"
 }
+
+questionType 기준:
+- factual: 규정/판정/적용시기 단순 조회 (예: "불합격이야?", "언제부터야?")
+- calculation: 수치 계산이 필요한 질문 (예: "여유거리 구해줘", "행정 계산해줘", "몇 mm야?")
+- procedure: 방법/절차 안내 (예: "어떻게 해?", "순서가 어떻게 돼?")
+
 다른 텍스트 없이 JSON만.${contextText}`,
         messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
       });
 
-      let agent1Analysis = "";
+      // 에이전트 1 결과 파싱
+      let agent1Data: any = {};
       try {
         const raw1 = agent1Res.content[0].type === "text" ? agent1Res.content[0].text.trim() : "{}";
-        const parsed1 = JSON.parse(raw1.replace(/```json|```/g, "").trim());
-        agent1Analysis = `[에이전트1 분석]
-핵심 키워드: ${(parsed1.coreKeywords || []).join(", ")}
-관련 조문: ${(parsed1.relevantSections || []).join(", ") || "없음"}
-제외 항목: ${(parsed1.irrelevantSections || []).join(", ") || "없음"}
-답변 포인트: ${parsed1.answerAngle || ""}
-신뢰도: ${parsed1.confidence || "medium"}`;
-      } catch {
-        agent1Analysis = "";
-      }
+        agent1Data = JSON.parse(raw1.replace(/```json|```/g, "").trim());
+      } catch {}
 
-      // ── 에이전트 1 키워드로 메모 자동 검색 → 컨텍스트 보강 ──────────
+      const questionType: string = agent1Data.questionType || "factual";
+      const coreKeywords: string[] = agent1Data.coreKeywords || [];
+      const requiredValues: string[] = agent1Data.requiredValues || [];
+      const formula: string = agent1Data.formula || "";
+
+      // ── 에이전트 1 키워드로 메모 자동 검색 ──────────────────────────
       let memoSection = "";
-      try {
-        const keywords = (() => {
-          try {
-            const raw = agent1Res.content[0].type === "text" ? agent1Res.content[0].text.trim() : "{}";
-            const p = JSON.parse(raw.replace(/```json|```/g, "").trim());
-            return (p.coreKeywords || []) as string[];
-          } catch { return []; }
-        })();
+      const memoFoundValues: Record<string, string> = {};  // 메모에서 찾은 측정값
 
-        if (keywords.length > 0) {
-          // 각 키워드로 메모 검색
+      try {
+        if (coreKeywords.length > 0) {
           const memoHits: string[] = [];
-          for (const kw of keywords.slice(0, 2)) {
+          for (const kw of coreKeywords.slice(0, 3)) {
             try {
               const memos = await storage.searchMemos(kw);
-              memos.slice(0, 2).forEach((m: any) => {
+              memos.slice(0, 3).forEach((m: any) => {
                 const content = m.content || m.description || "";
-                if (content) memoHits.push(`• [${m.title || "메모"}] ${content.slice(0, 200)}`);
+                if (content) {
+                  memoHits.push(`• [${m.title || "메모"}] ${content.slice(0, 300)}`);
+                  // 메모에서 측정값 추출 시도 (숫자+단위 패턴)
+                  const numMatch = content.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|kg|N|kN)/gi);
+                  if (numMatch) {
+                    memoFoundValues[m.title || kw] = numMatch.join(", ");
+                  }
+                }
               });
             } catch {}
           }
           if (memoHits.length > 0) {
-            memoSection = "\n\n[5순위] 현장메모\n" + [...new Set(memoHits)].slice(0, 3).join("\n");
+            memoSection = "\n\n[5순위] 현장메모\n" + [...new Set(memoHits)].slice(0, 4).join("\n");
           }
         }
       } catch {}
 
+      // ── calculation 유형: 에이전트 2에게 넘기기 전 값 수집 상태 판단 ──
+      // 메모에서 필요한 값이 충분히 있으면 바로 계산, 없으면 되묻기
+      const hasMemoValues = Object.keys(memoFoundValues).length > 0;
+      const missingValues = questionType === "calculation" && requiredValues.length > 0
+        ? requiredValues.filter(v => {
+            const valLower = v.toLowerCase();
+            return !Object.values(memoFoundValues).some(mv =>
+              mv.toLowerCase().includes(valLower.split(" ")[0])
+            ) && !memoSection.toLowerCase().includes(valLower.split(" ")[0]);
+          })
+        : [];
+
+      const agent1Analysis = [
+        `[에이전트1 분석]`,
+        `질문유형: ${questionType}`,
+        `핵심 키워드: ${coreKeywords.join(", ")}`,
+        formula ? `계산식: ${formula}` : "",
+        requiredValues.length > 0 ? `필요 측정값: ${requiredValues.join(", ")}` : "",
+        hasMemoValues ? `메모에서 발견된 값: ${JSON.stringify(memoFoundValues)}` : "",
+        missingValues.length > 0 ? `누락된 값: ${missingValues.join(", ")}` : "",
+        `답변 포인트: ${agent1Data.answerAngle || ""}`,
+      ].filter(Boolean).join("\n");
+
       // ── 에이전트 2: 최종 답변 생성 ───────────────────────────────────
+      const calcInstructions = questionType === "calculation" ? `
+## 계산형 질문 처리 규칙
+- 계산식과 각 변수의 의미를 먼저 설명
+- 메모에서 찾은 측정값이 있으면 그 값으로 바로 계산해서 결과 제시
+- 메모에서 찾은 값: ${hasMemoValues ? JSON.stringify(memoFoundValues) : "없음"}
+- 누락된 측정값: ${missingValues.length > 0 ? missingValues.join(", ") : "없음"}
+- 누락된 값이 있으면: 계산식 먼저 알려주고, 마지막에 "계산을 위해 다음 값이 필요합니다:"로 구체적으로 질문
+- 되물을 때는 한 번에 모든 필요한 값을 정확히 명시 (예: "완충기 행정(mm)과 완충기 높이(mm)를 알려주세요")
+- 사용자가 값을 주면 바로 계산해서 최종 답 제시` : "";
+
       const systemPrompt = `당신은 승강기 안전검사 현장 전문가다. 검사원이 현장에서 바로 쓸 수 있는 답을 준다.
 
-${agent1Analysis ? agent1Analysis + "\n\n" : ""}## 답변 규칙
+${agent1Analysis}
+
+## 답변 규칙
 - 결론(판정/핵심날짜/수치)을 첫 줄에
 - 조문번호는 [별표22] X.X.X 형식으로 명시
 - 항목이 2개 이상이면 • 불릿으로 줄 나눔
@@ -1192,6 +1233,7 @@ ${agent1Analysis ? agent1Analysis + "\n\n" : ""}## 답변 규칙
 - 인사·서론·마무리·추가검토·공단문의 없음
 - 자료에 없으면 "해당 기준 없음" 한 줄로 끝냄
 - 표(|---|) 절대 금지
+${calcInstructions}
 
 ## 출처 규칙
 답변 마지막에:
