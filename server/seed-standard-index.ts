@@ -43,6 +43,11 @@ export async function seedStandardIndex(): Promise<void> {
     const entries = Object.entries(data);
 
     console.log(`[SEED] standard_index: ${entries.length}개 항목, DB 현재: ${existingCount}개`);
+
+    if (existingCount >= entries.length * 0.9) {
+      console.log(`[SEED] 이미 충분한 데이터 존재 (${existingCount}개) — SEED 스킵`);
+      return;
+    }
     console.log(`[SEED] inspection_base_items 저장 시작...`);
 
     const items = entries.map(([itemId, v], i) => {
