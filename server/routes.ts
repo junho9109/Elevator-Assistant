@@ -1123,180 +1123,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : "";
 
       // ════════════════════════════════════════════════════════════
-      // 멀티턴 에이전트 파이프라인
-      // ① Haiku  — 1차 분석 (키워드, 유형, 필요값, 관련 조문)
-      // ② Sonnet — 분석 검토 + 보완 지시
-      // ③ Haiku  — 보완 분석 (메모 검색 + 누락값 확인 + 최종 컨텍스트)
-      // ④ Sonnet — 최종 답변 생성 (자연스럽게)
+      // 3-Agent 파이프라인
+      // 규칙1: 어플 내 등록된 데이터만 검색한다 (외부 인터넷 검색 없음)
+      // 규칙2: 에이전트1(Sonnet,초안) → 에이전트2(Haiku,독립 재검증)
+      //        → 불일치 시에만 에이전트3(Sonnet,중재)
+      // 규칙3: 에이전트 간 대화는 노출하지 않고 최종 결론만 반환한다
       // ════════════════════════════════════════════════════════════
 
-      // ── ① Haiku: 1차 분석 ────────────────────────────────────────
-      const a1r1 = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 600,
-        system: `승강기 안전검사 전문 분석가(에이전트1)다.
-질문과 제공된 참고 자료를 분석해 아래 JSON만 반환해라.
-{
-  "questionType": "factual|calculation|procedure",
-  "coreKeywords": ["핵심 키워드 최대 4개"],
-  "requiredValues": ["calculation 유형일 때 계산에 필요한 측정값"],
-  "formula": "계산식 또는 null",
-  "relevantSections": ["참고 자료에서 직접 관련된 조문/항목명"],
-  "irrelevantSections": ["관련 없거나 오해 유발할 항목명"],
-  "answerAngle": "핵심 답변 포인트 한 줄",
-  "confidence": "high|medium|low",
-  "needMoreContext": "추가로 확인이 필요한 사항 또는 null"
-}
-다른 텍스트 없이 JSON만.${contextText}`,
-        messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
-      });
-
-      let a1d1: any = {};
-      try {
-        const raw = a1r1.content[0].type === "text" ? a1r1.content[0].text.trim() : "{}";
-        a1d1 = JSON.parse(raw.replace(/```json|```/g, "").trim());
-      } catch {}
-
-      const questionType: string = a1d1.questionType || "factual";
-      const coreKeywords: string[] = a1d1.coreKeywords || [];
-
-      // ── ① 메모 검색 (키워드 기반) ────────────────────────────────
-      const memoFoundValues: Record<string, string> = {};
-      const memoHits: string[] = [];
-      try {
-        for (const kw of coreKeywords.slice(0, 3)) {
-          const memos = await storage.searchMemos(kw);
-          memos.slice(0, 3).forEach((m: any) => {
-            const content = m.content || m.description || "";
-            if (content) {
-              memoHits.push(`[${m.title || "메모"}] ${content.slice(0, 300)}`);
-              const nums = content.match(/\d+(?:\.\d+)?\s*(?:mm|cm|m\/s|kg|N|kN)/gi);
-              if (nums) memoFoundValues[m.title || kw] = nums.join(", ");
-            }
-          });
-        }
-      } catch {}
-      const memoSection = memoHits.length > 0
-        ? "\n\n[현장메모]\n" + [...new Set(memoHits)].slice(0, 4).join("\n")
-        : "";
-
-      // ── ② Sonnet: 에이전트1 분석 검토 + 보완 지시 ────────────────
-      const a2Review = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 500,
-        system: `당신은 승강기 안전검사 수석 전문가(에이전트2)다.
-에이전트1의 1차 분석을 검토하고 보완 지시를 내려라.
-아래 JSON만 반환해라.
-{
-  "agree": true|false,
-  "correctedKeywords": ["수정된 키워드 (동의하면 원본 그대로)"],
-  "additionalContext": "에이전트1이 놓친 중요 맥락 또는 null",
-  "missingValues": ["아직 없는 측정값 목록 (calculation이면 필수)"],
-  "answerStrategy": "최종 답변 전략 한 줄 (어떤 방식으로 답할지)",
-  "criticalPoint": "검사원이 현장에서 반드시 알아야 할 핵심 한 줄"
-}
-다른 텍스트 없이 JSON만.${contextText}${memoSection}`,
-        messages: [
-          { role: "user", content: `사용자 질문: "${userQuestion}"` },
-          { role: "assistant", content: `에이전트1 1차 분석: ${JSON.stringify(a1d1)}` },
-          { role: "user", content: "이 분석을 검토하고 보완 지시를 내려줘." },
-        ],
-      });
-
-      let a2Review_data: any = {};
-      try {
-        const raw2 = a2Review.content[0].type === "text" ? a2Review.content[0].text.trim() : "{}";
-        a2Review_data = JSON.parse(raw2.replace(/```json|```/g, "").trim());
-      } catch {}
-
-      // ── ③ Haiku: 보완 분석 ───────────────────────────────────────
-      const a1r2 = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 500,
-        system: `승강기 안전검사 전문 분석가(에이전트1)다.
-에이전트2의 검토를 반영해 최종 컨텍스트를 정리해라.
-아래 JSON만 반환해라.
-{
-  "finalKeywords": ["최종 확정 키워드"],
-  "finalFormula": "최종 계산식 또는 null",
-  "availableValues": {"변수명": "값(메모에서 발견된 경우)"},
-  "missingValues": ["여전히 없는 값"],
-  "finalContext": "에이전트2에게 전달할 최종 컨텍스트 요약 (200자 이내)",
-  "answerReady": true|false
-}
-다른 텍스트 없이 JSON만.${contextText}${memoSection}`,
-        messages: [
-          { role: "user", content: `질문: "${userQuestion}"` },
-          { role: "assistant", content: `1차 분석: ${JSON.stringify(a1d1)}` },
-          { role: "user", content: `에이전트2 검토: ${JSON.stringify(a2Review_data)}\n메모 발견값: ${JSON.stringify(memoFoundValues)}\n보완 분석을 완료해줘.` },
-        ],
-      });
-
-      let a1Final: any = {};
-      try {
-        const raw3 = a1r2.content[0].type === "text" ? a1r2.content[0].text.trim() : "{}";
-        a1Final = JSON.parse(raw3.replace(/```json|```/g, "").trim());
-      } catch {}
-
-      // ── ④ Sonnet: 최종 답변 생성 ─────────────────────────────────
-      const missingValues: string[] = a1Final.missingValues || a2Review_data.missingValues || [];
-      const availableValues = a1Final.availableValues || memoFoundValues;
-      const finalContext = a1Final.finalContext || "";
-      const answerStrategy = a2Review_data.answerStrategy || "";
-      const criticalPoint = a2Review_data.criticalPoint || "";
-
-      const agentSummary = [
-        finalContext ? `[분석 요약] ${finalContext}` : "",
-        answerStrategy ? `[답변 전략] ${answerStrategy}` : "",
-        criticalPoint ? `[핵심 포인트] ${criticalPoint}` : "",
-        Object.keys(availableValues).length > 0 ? `[확보된 측정값] ${JSON.stringify(availableValues)}` : "",
-        missingValues.length > 0 ? `[누락된 값] ${missingValues.join(", ")}` : "",
-      ].filter(Boolean).join("\n");
-
-      const calcRule = questionType === "calculation" ? `
-
-## 계산 처리
-- 확보된 측정값으로 바로 계산해서 수치 제시
-- 누락된 값이 있으면: 계산식 먼저 설명 후 마지막에 필요한 값 한 번에 질문
-- 사용자가 이전 대화에서 값을 준 경우 그 값으로 계산 완료` : "";
-
-      const systemPrompt = `당신은 승강기 안전검사 현장 전문가(에이전트2)다.
-에이전트1과의 협업 분석을 바탕으로 검사원에게 최적의 답을 준다.
-
-${agentSummary}
-
-## 답변 규칙
+      const answerRules = `## 답변 규칙
 - 결론을 첫 줄에 (판정/핵심 수치/날짜)
 - 조문번호는 [별표22] X.X.X 형식으로 명시
 - 항목 2개 이상이면 • 불릿으로 줄 나눔
 - 빈 줄로 단락 구분
 - 인사·서론·마무리·공단문의 없음
 - 자료에 없으면 "해당 기준 없음" 한 줄
-- 표(|---|) 금지${calcRule}
+- 표(|---|) 금지
+- 외부 인터넷 정보는 절대 사용하지 않는다. 제공된 자료에 없으면 없다고 답한다.
 
 ## 출처
 답변 마지막:
 📌 근거: [검사기준] 조문 | [기술자료] 표준화명 | [메모] 제목
-실제 활용한 자료만${contextText}${memoSection}`;
+실제 활용한 자료만`;
 
-      const response = await anthropic.messages.create({
+      // ── 에이전트1 (Sonnet) — 초안 ──────────────────────────────────
+      const agent1 = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
-        max_tokens: 2048,
-        system: systemPrompt,
+        max_tokens: 1200,
+        system: `당신은 승강기 안전검사 현장 전문가(에이전트1)다. 제공된 어플 내부 자료만 근거로 답한다.
+
+먼저 첫 줄에 "[핵심결론] 한 줄 요약"을 쓰고, 빈 줄 하나 띄운 뒤 아래 형식의 최종 답변을 작성해라.
+
+${answerRules}${contextText}${memoSection}`,
         messages: messages,
       });
+      const agent1Text = agent1.content[0].type === "text" ? agent1.content[0].text.trim() : "";
+      const agent1Match = agent1Text.match(/^\[핵심결론\]\s*(.+)$/m);
+      const agent1Summary = agent1Match ? agent1Match[1].trim() : "";
+      const agent1Answer = agent1Text.replace(/^\[핵심결론\].*\n+/, "").trim();
 
-      const reply = response.content[0].type === "text" ? response.content[0].text : "";
+      // ── 에이전트2 (Haiku) — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
+      const agent2 = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 400,
+        system: `승강기 안전검사 전문 분석가(에이전트2)다. 제공된 어플 내부 자료만으로 이 질문의 결론을 처음부터 독립적으로 도출해라. 다른 사람의 답은 본 적이 없다.
+아래 JSON만 반환해라.
+{
+  "독립결론": "핵심 판정/수치를 한 줄로",
+  "근거조문": ["관련 조문번호"],
+  "확신도": "high|medium|low"
+}
+다른 텍스트 없이 JSON만.${contextText}${memoSection}`,
+        messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
+      });
+      let agent2Data: any = {};
+      try {
+        const raw2 = agent2.content[0].type === "text" ? agent2.content[0].text.trim() : "{}";
+        agent2Data = JSON.parse(raw2.replace(/```json|```/g, "").trim());
+      } catch {}
+
+      // ── 일치 여부 판정 (Haiku, 경량 비교) ───────────────────────────
+      const compare = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 200,
+        system: `두 결론이 실질적으로 같은 판정/수치를 말하는지 비교해라. 표현이 달라도 같은 판정이면 일치로 본다.
+아래 JSON만 반환해라.
+{ "일치여부": true|false, "불일치_사유": "구체적 차이점 또는 null" }
+다른 텍스트 없이 JSON만.`,
+        messages: [{
+          role: "user",
+          content: `결론A(에이전트1): "${agent1Summary}"\n결론B(에이전트2): "${agent2Data.독립결론 || ""}"`,
+        }],
+      });
+      let compareData: any = { 일치여부: true, 불일치_사유: null };
+      try {
+        const raw3 = compare.content[0].type === "text" ? compare.content[0].text.trim() : "{}";
+        compareData = JSON.parse(raw3.replace(/```json|```/g, "").trim());
+      } catch {}
+
+      let reply = agent1Answer;
+      let agent3: any = null;
+
+      // ── 에이전트3 (Sonnet) — 불일치 시에만 중재 ─────────────────────
+      if (compareData.일치여부 === false) {
+        agent3 = await anthropic.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1200,
+          system: `당신은 승강기 안전검사 수석 전문가(에이전트3, 중재자)다.
+두 결론이 불일치했다. 제공된 어플 내부 자료를 다시 확인해 최종 판정을 확정하고, 아래 형식으로 최종 답변만 작성해라(중재 과정은 쓰지 마라).
+
+에이전트1 결론: "${agent1Summary}"
+에이전트2 결론: "${agent2Data.독립결론 || ""}"
+불일치 사유: "${compareData.불일치_사유 || ""}"
+
+${answerRules}${contextText}${memoSection}`,
+          messages: messages,
+        });
+        reply = agent3.content[0].type === "text" ? agent3.content[0].text.trim() : agent1Answer;
+      }
 
       // AI 사용량 DB 저장 (모든 사용자 누적 — 껐다 켜도 DB에 영구 보존)
       try {
         const { db: uDb } = await import("./db");
         const { aiUsage } = await import("@shared/schema");
-        // 4회 호출 토큰 합산 (Haiku: $0.25/$1.25 per 1M, Sonnet: $3/$15 per 1M)
-        const haikuIn  = (a1r1.usage?.input_tokens  || 0) + (a1r2.usage?.input_tokens  || 0);
-        const haikuOut = (a1r1.usage?.output_tokens || 0) + (a1r2.usage?.output_tokens || 0);
-        const sonnetIn  = (a2Review.usage?.input_tokens  || 0) + (response.usage?.input_tokens  || 0);
-        const sonnetOut = (a2Review.usage?.output_tokens || 0) + (response.usage?.output_tokens || 0);
+        // Haiku: $0.25/$1.25 per 1M, Sonnet: $3/$15 per 1M
+        const haikuIn  = (agent2.usage?.input_tokens  || 0) + (compare.usage?.input_tokens  || 0);
+        const haikuOut = (agent2.usage?.output_tokens || 0) + (compare.usage?.output_tokens || 0);
+        const sonnetIn  = (agent1.usage?.input_tokens  || 0) + (agent3?.usage?.input_tokens  || 0);
+        const sonnetOut = (agent1.usage?.output_tokens || 0) + (agent3?.usage?.output_tokens || 0);
         const inputTok = haikuIn + sonnetIn;
         const outputTok = haikuOut + sonnetOut;
         const cost = (
@@ -1316,6 +1249,7 @@ ${agentSummary}
       }
 
       res.json({ reply });
+
 
     } catch (error: any) {
       console.error("Chat API error:", error?.message || error);
