@@ -1163,9 +1163,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 📌 근거: [검사기준] 조문 | [기술자료] 표준화명 | [메모] 제목
 실제 활용한 자료만`;
 
-      // ── 에이전트1 (Sonnet) — 초안 ──────────────────────────────────
+      // ── 에이전트1 (Opus) — 초안 ──────────────────────────────────
       const agent1 = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
+        model: "claude-opus-4-8",
         max_tokens: 1200,
         system: `당신은 승강기 안전검사 현장 전문가(에이전트1)다. 제공된 어플 내부 자료만 근거로 답한다.
 
@@ -1179,9 +1179,9 @@ ${answerRules}${contextText}${memoSection}`,
       const agent1Summary = agent1Match ? agent1Match[1].trim() : "";
       const agent1Answer = agent1Text.replace(/^\[핵심결론\].*\n+/, "").trim();
 
-      // ── 에이전트2 (Haiku) — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
+      // ── 에이전트2 (Sonnet) — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
       const agent2 = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-6",
         max_tokens: 400,
         system: `승강기 안전검사 전문 분석가(에이전트2)다. 제공된 어플 내부 자료만으로 이 질문의 결론을 처음부터 독립적으로 도출해라. 다른 사람의 답은 본 적이 없다.
 아래 JSON만 반환해라.
@@ -1224,7 +1224,7 @@ ${answerRules}${contextText}${memoSection}`,
       // ── 에이전트3 (Sonnet) — 불일치 시에만 중재 ─────────────────────
       if (compareData.일치여부 === false) {
         agent3 = await anthropic.messages.create({
-          model: "claude-sonnet-4-6",
+          model: "claude-opus-4-8",
           max_tokens: 1200,
           system: `당신은 승강기 안전검사 수석 전문가(에이전트3, 중재자)다.
 두 결론이 불일치했다. 제공된 어플 내부 자료를 다시 확인해 최종 판정을 확정하고, 아래 형식으로 최종 답변만 작성해라(중재 과정은 쓰지 마라).
@@ -1243,15 +1243,19 @@ ${answerRules}${contextText}${memoSection}`,
       try {
         const { db: uDb } = await import("./db");
         const { aiUsage } = await import("@shared/schema");
-        // Haiku: $0.25/$1.25 per 1M, Sonnet: $3/$15 per 1M
-        const haikuIn  = (agent2.usage?.input_tokens  || 0) + (compare.usage?.input_tokens  || 0);
-        const haikuOut = (agent2.usage?.output_tokens || 0) + (compare.usage?.output_tokens || 0);
-        const sonnetIn  = (agent1.usage?.input_tokens  || 0) + (agent3?.usage?.input_tokens  || 0);
-        const sonnetOut = (agent1.usage?.output_tokens || 0) + (agent3?.usage?.output_tokens || 0);
-        const inputTok = haikuIn + sonnetIn;
-        const outputTok = haikuOut + sonnetOut;
+        // Opus: $15/$75, Sonnet: $3/$15, Haiku: $0.25/$1.25 per 1M
+        const haikuIn   = compare.usage?.input_tokens  || 0;
+        const haikuOut  = compare.usage?.output_tokens || 0;
+        const sonnetIn  = agent2.usage?.input_tokens   || 0;
+        const sonnetOut = agent2.usage?.output_tokens  || 0;
+        const opusIn    = (agent1.usage?.input_tokens  || 0) + (agent3?.usage?.input_tokens  || 0);
+        const opusOut   = (agent1.usage?.output_tokens || 0) + (agent3?.usage?.output_tokens || 0);
+        const inputTok  = haikuIn + sonnetIn + opusIn;
+        const outputTok = haikuOut + sonnetOut + opusOut;
         const cost = (
-          (haikuIn * 0.25 + haikuOut * 1.25 + sonnetIn * 3 + sonnetOut * 15) / 1_000_000
+          (haikuIn * 0.25 + haikuOut * 1.25 +
+           sonnetIn * 3 + sonnetOut * 15 +
+           opusIn * 15 + opusOut * 75) / 1_000_000
         ).toFixed(6);
         const question = Array.isArray(messages) && messages.length > 0
           ? String(messages[messages.length - 1]?.content || "").slice(0, 200)
