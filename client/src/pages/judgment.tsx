@@ -512,8 +512,8 @@ export default function JudgmentPage() {
   const [revisions, setRevisions] = useState<{id?:number; effectiveDate:string; expiryDate:string; introductionType:string; description:string}[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
   // 관리자 개정 편집용 (inspection_item_revisions 직접 편집)
-  const [editRevisions, setEditRevisions] = useState<{id?: number; effectiveDate: string; expiryDate: string; description: string}[]>([]);
-  const editRevisionsSnapshot = useRef<{id: number; effectiveDate: string; expiryDate: string; description: string}[]>([]);
+  const [editRevisions, setEditRevisions] = useState<{id?: number; effectiveDate: string; expiryDate: string; description: string; textBefore?: string; textAfter?: string}[]>([]);
+  const editRevisionsSnapshot = useRef<{id: number; effectiveDate: string; expiryDate: string; description: string; textBefore?: string; textAfter?: string}[]>([]);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
@@ -727,20 +727,24 @@ export default function JudgmentPage() {
       serverEdits.forEach((edit: any) => {
         if (edit.itemId) {
           // standardDates: JSON 파싱
-          const parsedDates: string[] = edit.standardDates
+          const rawParsed: any[] = edit.standardDates
             ? (() => { try { return JSON.parse(edit.standardDates); } catch { return []; } })()
             : [];
-          // standardDatesWithMemo: standardDates 배열에서 복원
-          // (서버엔 날짜 배열만 저장되므로, memo/description은 원본 contentMap에서 매칭해서 보강)
+          // 저장된 형태가 {date, textBefore, textAfter, memo} 객체 배열인지 확인
+          const isObjectArray = rawParsed.length > 0 && typeof rawParsed[0] === "object" && rawParsed[0] !== null && "date" in rawParsed[0];
+          const parsedDates: string[] = isObjectArray ? rawParsed.map((r: any) => r.date) : rawParsed;
           const contentEntry = (contentMap as any)[edit.itemId];
           const contentRevisions: any[] = contentEntry?.revisions || [];
           const datesWithMemo = parsedDates.map((date, i) => {
+            const saved   = isObjectArray ? rawParsed[i] : null;
             const matched = contentRevisions.find((r: any) => r.effectiveDate === date);
             return {
               date,
-              memo: matched?.description || "",
-              label: `개정 ${i + 1}`,
-              source: matched?.source,
+              textBefore: saved?.textBefore || "",
+              textAfter:  saved?.textAfter  || "",
+              memo:       saved?.memo || matched?.description || "",
+              label:      `개정 ${i + 1}`,
+              source:     matched?.source,
             };
           });
           map[edit.itemId] = {
@@ -1096,11 +1100,19 @@ export default function JudgmentPage() {
     setIsDetailDialogOpen(true);
     // [통합] 개정 이력 편집용 — inspection-content.json 에서 직접 읽기
     const cEntry = contentMap[item.id] as ContentEntry | undefined;
-    const editArr = (cEntry?.revisions || []).map(r => ({
-      effectiveDate: r.effectiveDate || "",
-      expiryDate: r.expiryDate || "",
-      description: r.description || "",
-    }));
+    const editArr = (cEntry?.revisions || []).map(r => {
+      // description이 JSON이면 파싱해서 textBefore/textAfter 복원
+      let textBefore = "", textAfter = "", desc = r.description || "";
+      try {
+        const parsed = JSON.parse(desc);
+        if (parsed && typeof parsed === "object" && ("before" in parsed || "after" in parsed)) {
+          textBefore = parsed.before || "";
+          textAfter  = parsed.after  || "";
+          desc = "";
+        }
+      } catch {}
+      return { effectiveDate: r.effectiveDate || "", expiryDate: r.expiryDate || "", description: desc, textBefore, textAfter };
+    });
     setEditRevisions(editArr);
     editRevisionsSnapshot.current = [];
   };
@@ -1114,7 +1126,14 @@ export default function JudgmentPage() {
     const syncedForm = {
       ...editForm,
       standardDates: revForSync.map(r => r.effectiveDate || ""),
-      standardDatesWithMemo: revForSync.map((r, i) => ({ date: r.effectiveDate || "", memo: r.description || "", label: `개정 ${i + 1}`, source: (r as any).source })),
+      standardDatesWithMemo: revForSync.map((r, i) => ({
+        date: r.effectiveDate || "",
+        memo: r.description || "",
+        textBefore: (r as any).textBefore || "",
+        textAfter:  (r as any).textAfter  || "",
+        label: `개정 ${i + 1}`,
+        source: (r as any).source,
+      })),
     };
     setCustomEdits(prev => ({
       ...prev,
@@ -2151,10 +2170,29 @@ export default function JudgmentPage() {
                               onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, expiryDate: e.target.value } : r))} />
                           </div>
                         </div>
-                        <Textarea value={rev.description} rows={3}
-                          placeholder="개정 본문 (해당 시기 적용 기준)"
-                          onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, description: e.target.value } : r))}
-                          className="text-xs" />
+                        <div className="space-y-2">
+                          <div>
+                            <label className="text-[10px] text-muted-foreground font-medium">이전 본문 (이 날짜 이전에 적용되던 기준)</label>
+                            <Textarea value={(rev as any).textBefore || ""} rows={2}
+                              placeholder="이 개정일 이전에 적용되던 기준 본문"
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, textBefore: e.target.value } : r))}
+                              className="text-xs mt-1" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground font-medium">이후 본문 (이 날짜 이후에 적용되는 기준)</label>
+                            <Textarea value={(rev as any).textAfter || ""} rows={2}
+                              placeholder="이 개정일 이후에 적용되는 기준 본문"
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, textAfter: e.target.value } : r))}
+                              className="text-xs mt-1" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground">개정 내용 메모 (선택)</label>
+                            <Textarea value={rev.description} rows={1}
+                              placeholder="변경 요약 메모 (선택사항)"
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, description: e.target.value } : r))}
+                              className="text-xs mt-1" />
+                          </div>
+                        </div>
                       </div>
                     ))}
 
@@ -2548,9 +2586,16 @@ function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, 
                   <div className={`text-[10px] px-2 py-1 rounded mb-2 ${isAfter ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400'}`}>
                     {isAfter ? `${fmt(r.date)} 이후 기준 적용` : `${fmt(r.date)} 이전 기준 적용 (개정 전 본문)`}
                   </div>
-                  {r.memo && r.memo.trim() && (
-                    <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{r.memo}</p>
-                  )}
+                  {/* 이전/이후 본문 표시 */}
+                  {(() => {
+                    const body = isAfter
+                      ? ((r as any).textAfter || r.memo || "")
+                      : ((r as any).textBefore || "");
+                    if (!body.trim()) return isAfter ? null : (
+                      <p className="text-xs text-muted-foreground italic">이전 본문이 입력되지 않았습니다.</p>
+                    );
+                    return <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{body}</p>;
+                  })()}
                 </div>
               );
             })}

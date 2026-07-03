@@ -570,9 +570,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         permitEffectiveDate, standardNote, equipmentTypes, fixedResult,
       } = req.body;
 
-      // standardDates: 배열이면 JSON 문자열로, 이미 문자열이면 그대로
+      // standardDates 저장 — standardDatesWithMemo가 있으면 전체 객체(날짜+이전/이후본문) 저장
       let standardDates: string | undefined;
-      if (req.body.standardDates !== undefined) {
+      if (req.body.standardDatesWithMemo !== undefined && Array.isArray(req.body.standardDatesWithMemo)) {
+        // 날짜 + textBefore + textAfter 포함해서 저장
+        standardDates = JSON.stringify(req.body.standardDatesWithMemo.map((m: any) => ({
+          date: m.date || "",
+          textBefore: m.textBefore || "",
+          textAfter: m.textAfter || "",
+          memo: m.memo || "",
+          label: m.label || "",
+        })));
+      } else if (req.body.standardDates !== undefined) {
         standardDates = Array.isArray(req.body.standardDates)
           ? JSON.stringify(req.body.standardDates)
           : typeof req.body.standardDates === "string"
