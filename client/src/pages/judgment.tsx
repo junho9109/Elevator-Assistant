@@ -489,6 +489,7 @@ export default function JudgmentPage() {
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
   const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
+  const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({}); // 개정별 이전/이후 선택
 
   const [customItems, setCustomItems] = useState<(InspectionItem & { sectionId?: string })[]>([]);
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
@@ -2335,29 +2336,55 @@ export default function JudgmentPage() {
                           };
                           return (
                             <div className="space-y-2">
-                              {sorted.map((r, idx) => (
-                                <div key={r.key} className={cn("border rounded-lg p-3", idx === applicableIdx ? "border-amber-400/50 bg-amber-500/5" : "border-border bg-card")}>
-                                  <div className="flex items-center gap-2 mb-1">
-                                    {idx === applicableIdx && (
-                                      <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full">적용 기준</span>
-                                    )}
-                                    <span className="text-xs font-medium text-muted-foreground">{fmtPeriod(r.date)}</span>
-                                  </div>
-                                  {(() => {
-                                    const desc = (r.description || "").replace(/^\s*\[[^\]]*\]\s*/, "").trim();
-                                    if (!desc || isPeriodOnly(desc)) return null;
-                                    return <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mt-1">{desc}</p>;
-                                  })()}
-                                  {(r as any).source?.length > 0 && (
-                                    <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                                      <span className="text-xs text-muted-foreground shrink-0">출처</span>
-                                      {(r as any).source.map((s: string, si: number) => (
-                                        <span key={si} className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">{s}</span>
-                                      ))}
+                              {sorted.map((r, idx) => {
+                                const [sel, setSel] = [
+                                  (detailRevSel[r.key] ?? (idx === applicableIdx ? "after" : "after")),
+                                  (v: string) => setDetailRevSel(prev => ({ ...prev, [r.key]: v }))
+                                ];
+                                const isAfter = sel === "after";
+                                const isApplicable = idx === applicableIdx;
+                                return (
+                                  <div key={r.key} className={cn("border rounded-lg p-3", isApplicable ? "border-amber-400/50 bg-amber-500/5" : "border-border bg-card")}>
+                                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                      {isApplicable && (
+                                        <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full shrink-0">적용 기준</span>
+                                      )}
+                                      <span className="text-xs font-medium text-muted-foreground flex-1">{fmtPeriod(r.date)}</span>
+                                      {/* 이전/이후 토글 */}
+                                      <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
+                                        <button
+                                          onClick={() => setSel("before")}
+                                          className={`text-[10px] px-2 py-1 transition-colors ${!isAfter ? "bg-primary text-primary-foreground font-medium" : "bg-card text-muted-foreground hover:bg-muted"}`}
+                                        >이전</button>
+                                        <button
+                                          onClick={() => setSel("after")}
+                                          className={`text-[10px] px-2 py-1 transition-colors ${isAfter ? "bg-primary text-primary-foreground font-medium" : "bg-card text-muted-foreground hover:bg-muted"}`}
+                                        >이후</button>
+                                      </div>
                                     </div>
-                                  )}
-                                </div>
-                              ))}
+                                    {/* 이전/이후 상태 표시 */}
+                                    <div className={`text-[10px] px-2 py-1 rounded mb-2 ${isAfter ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300" : "bg-gray-50 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400"}`}>
+                                      {isAfter
+                                        ? `${fmtPeriod(r.date).replace(" 이후 건축허가분부터 적용","").replace(" 이후 소급 적용","")} 이후 기준 적용`
+                                        : `${fmtPeriod(r.date).replace(" 이후 건축허가분부터 적용","").replace(" 이후 소급 적용","")} 이전 기준 적용`
+                                      }
+                                    </div>
+                                    {(() => {
+                                      const desc = (r.description || "").replace(/^\s*\[[^\]]*\]\s*/, "").trim();
+                                      if (!desc || isPeriodOnly(desc)) return null;
+                                      return <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{desc}</p>;
+                                    })()}
+                                    {(r as any).source?.length > 0 && (
+                                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                                        <span className="text-xs text-muted-foreground shrink-0">출처</span>
+                                        {(r as any).source.map((s: string, si: number) => (
+                                          <span key={si} className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">{s}</span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })()}
