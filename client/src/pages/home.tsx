@@ -1853,7 +1853,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         // STD_ITEMS 전용(id=-1)이 아닌 경우만 standards 테이블 업데이트
         if (editingStandard.id !== -1) {
           const data = {
-            categoryId: form.categoryId ? parseInt(form.categoryId) : null,
+            categoryId: (form.categoryId && !isNaN(parseInt(form.categoryId))) ? parseInt(form.categoryId) : null,
             title: form.title, standardNumber: form.standardNumber || null,
             body: form.body || form.basis || form.conclusion || editingStandard.body || " ",
             permitDate: form.permitDate || null, inspectionDate: form.inspectionDate || null,
@@ -1886,7 +1886,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       } else {
         if (!form.basis.trim()) { toast({ title: "현안 및 근거 조항을 입력해주세요.", variant: "destructive" }); return; }
         const data = {
-          categoryId: form.categoryId ? parseInt(form.categoryId) : null,
+          categoryId: (form.categoryId && !isNaN(parseInt(form.categoryId))) ? parseInt(form.categoryId) : null,
           title: form.title, standardNumber: form.standardNumber || null,
           body: form.basis || form.conclusion || " ",
           permitDate: form.permitDate || null, inspectionDate: form.inspectionDate || null,
