@@ -630,7 +630,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [row] = await db.insert(stdItemOverrides).values({ title, overrideTitle, basis, conclusion, source, ref, typeTag, category }).returning();
       }
       res.json(row);
-    } catch (e) { res.status(500).json({ error: "Failed to save std override" }); }
+    } catch (e) {
+      console.error("[PUT /api/std-overrides 오류]", e);
+      res.status(500).json({ error: "Failed to save std override", detail: String(e) });
+    }
   });
 
   // ── 검사기준 오버라이드 API ──
