@@ -2091,14 +2091,10 @@ export default function JudgmentPage() {
               {/* 관리자 편집 섹션 */}
               {isAdminMode && editingItem?.id === detailItem.id && (
                 <div className="border border-primary/30 rounded-xl bg-primary/5 mb-4">
-                  <button
-                    className="w-full flex items-center justify-between p-4 text-left"
-                    onClick={() => setEditSectionExpanded(prev => !prev)}
-                  >
+                  <div className="px-4 pb-1 pt-3">
                     <h3 className="font-semibold text-sm text-primary">✏️ 항목 수정</h3>
-                    <span className="text-xs text-primary">{editSectionExpanded ? "▲ 접기" : "▼ 펼치기"}</span>
-                  </button>
-                  {editSectionExpanded && <div className="px-4 pb-4 space-y-4">
+                  </div>
+                  {true && <div className="px-4 pb-4 space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground">검사 내용</label>
                     <Textarea
@@ -2262,6 +2258,7 @@ export default function JudgmentPage() {
                   <RevisionDateSection
                     itemId={detailItem.id}
                     customEdits={customEdits}
+                    baseItemMap={baseItemMap}
                     referenceDate={referenceDate}
                     detailRevSel={detailRevSel}
                     setDetailRevSel={setDetailRevSel}
@@ -2430,9 +2427,10 @@ export default function JudgmentPage() {
 }
 
 // ── 개정 날짜 섹션 컴포넌트 (esbuild JSX 파서 이슈 회피를 위해 분리) ──
-function RevisionDateSection({ itemId, customEdits, referenceDate, detailRevSel, setDetailRevSel, detailPermitSel, setDetailPermitSel }: {
+function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, detailRevSel, setDetailRevSel, detailPermitSel, setDetailPermitSel }: {
   itemId: string;
   customEdits: Record<string, any>;
+  baseItemMap: Record<string, any>;
   referenceDate: Date | null;
   detailRevSel: Record<string, "before"|"after">;
   setDetailRevSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
@@ -2440,13 +2438,27 @@ function RevisionDateSection({ itemId, customEdits, referenceDate, detailRevSel,
   setDetailPermitSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
 }) {
   const itemEdit = customEdits[itemId];
-  // customEdits 기반 — 목록과 동일 소스
-  const standardDates: string[] = (itemEdit as any)?.standardDates || [];
+  const dbItem = baseItemMap[itemId];
+
+  // 1순위: customEdits, 2순위: baseItemMap (JSON 원본)
+  const standardDates: string[] = (itemEdit as any)?.standardDates
+    || (() => { try { const p = JSON.parse(dbItem?.standardDates||'[]'); return Array.isArray(p) ? p.map((r:any) => r.date||r).filter(Boolean) : []; } catch { return []; } })();
+
   const datesWithMemo: {date: string; memo: string; label?: string}[] =
-    (itemEdit as any)?.standardDatesWithMemo ||
-    standardDates.map((d, i) => ({ date: d, memo: '', label: `개정 ${i+1}` }));
-  const permitDate: string = (itemEdit as any)?.permitEffectiveDate || '';
-  const enforce: string = (itemEdit as any)?.enforcementType || '';
+    (itemEdit as any)?.standardDatesWithMemo
+    || standardDates.map((d, i) => {
+      // baseItemMap에서 해당 날짜의 description 매핑
+      let memo = '';
+      try {
+        const parsed = JSON.parse(dbItem?.standardDates||'[]');
+        const match = parsed.find((r:any) => (r.date||r) === d);
+        memo = match?.text || match?.description || '';
+      } catch {}
+      return { date: d, memo, label: `개정 ${i+1}` };
+    });
+
+  const permitDate: string = (itemEdit as any)?.permitEffectiveDate || dbItem?.permitEffectiveDate || '';
+  const enforce: string = (itemEdit as any)?.enforcementType || (dbItem as any)?.enforcementType || '';
 
   if (!permitDate && datesWithMemo.length === 0) return null;
 
