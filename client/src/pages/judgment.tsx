@@ -2264,6 +2264,7 @@ export default function JudgmentPage() {
                     setDetailRevSel={setDetailRevSel}
                     detailPermitSel={detailPermitSel}
                     setDetailPermitSel={setDetailPermitSel}
+                    isAdminMode={isAdminMode}
                   />
                   {false && (() => { return ( // placeholder to preserve JSX structure
                     <div className="border border-border rounded-xl p-4 bg-muted/20">
@@ -2427,7 +2428,7 @@ export default function JudgmentPage() {
 }
 
 // ── 개정 날짜 섹션 컴포넌트 (esbuild JSX 파서 이슈 회피를 위해 분리) ──
-function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, detailRevSel, setDetailRevSel, detailPermitSel, setDetailPermitSel }: {
+function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, detailRevSel, setDetailRevSel, detailPermitSel, setDetailPermitSel, isAdminMode }: {
   itemId: string;
   customEdits: Record<string, any>;
   baseItemMap: Record<string, any>;
@@ -2436,6 +2437,7 @@ function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, 
   setDetailRevSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
   detailPermitSel: Record<string, "before"|"after">;
   setDetailPermitSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
+  isAdminMode: boolean;
 }) {
   const itemEdit = customEdits[itemId];
   const dbItem = baseItemMap[itemId];
@@ -2489,21 +2491,23 @@ function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, 
         <div>
           <div className="flex items-center gap-2 mb-1">
             <p className="text-xs font-medium text-muted-foreground flex-1">🏗 건축허가일 적용</p>
-            <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
-              <button
-                onClick={() => setDetailPermitSel(prev => ({ ...prev, [itemId]: 'before' }))}
-                className={`text-[10px] px-2 py-1 transition-colors ${permitSel === 'before' ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-              >이전</button>
-              <button
-                onClick={() => setDetailPermitSel(prev => ({ ...prev, [itemId]: 'after' }))}
-                className={`text-[10px] px-2 py-1 transition-colors ${permitSel === 'after' ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-              >이후</button>
-            </div>
+            {isAdminMode && (
+              <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
+                <button
+                  onClick={() => setDetailPermitSel(prev => ({ ...prev, [itemId]: 'before' }))}
+                  className={`text-[10px] px-2 py-1 transition-colors ${permitSel === 'before' ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                >이전</button>
+                <button
+                  onClick={() => setDetailPermitSel(prev => ({ ...prev, [itemId]: 'after' }))}
+                  className={`text-[10px] px-2 py-1 transition-colors ${permitSel === 'after' ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                >이후</button>
+              </div>
+            )}
           </div>
           <p className={`text-xs rounded-lg px-3 py-2 font-medium ${permitSel === 'after' ? 'text-amber-700 bg-amber-50 dark:bg-amber-950/30' : 'text-gray-600 bg-gray-50 dark:bg-gray-800/30'}`}>
             {permitSel === 'after'
               ? `${fmt(permitDate)} 이후 건축허가분부터 적용`
-              : `${fmt(permitDate)} 이전 건축허가분 — 현행 기준 미적용`}
+              : `${fmt(permitDate)} 이전 건축허가분에는 이 기준이 적용되지 않음`}
           </p>
         </div>
       )}
@@ -2528,19 +2532,21 @@ function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, 
                       <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full shrink-0">적용 기준</span>
                     )}
                     <span className="text-xs font-medium text-muted-foreground flex-1">{dateLabel}</span>
-                    <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
-                      <button
-                        onClick={() => setDetailRevSel(prev => ({ ...prev, [key]: 'before' }))}
-                        className={`text-[10px] px-2 py-1 transition-colors ${!isAfter ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-                      >이전</button>
-                      <button
-                        onClick={() => setDetailRevSel(prev => ({ ...prev, [key]: 'after' }))}
-                        className={`text-[10px] px-2 py-1 transition-colors ${isAfter ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-                      >이후</button>
-                    </div>
+                    {isAdminMode && (
+                      <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
+                        <button
+                          onClick={() => setDetailRevSel(prev => ({ ...prev, [key]: 'before' }))}
+                          className={`text-[10px] px-2 py-1 transition-colors ${!isAfter ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        >이전</button>
+                        <button
+                          onClick={() => setDetailRevSel(prev => ({ ...prev, [key]: 'after' }))}
+                          className={`text-[10px] px-2 py-1 transition-colors ${isAfter ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        >이후</button>
+                      </div>
+                    )}
                   </div>
                   <div className={`text-[10px] px-2 py-1 rounded mb-2 ${isAfter ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400'}`}>
-                    {isAfter ? `${fmt(r.date)} 이후 기준 적용` : `${fmt(r.date)} 이전 기준 적용`}
+                    {isAfter ? `${fmt(r.date)} 이후 기준 적용` : `${fmt(r.date)} 이전 기준 적용 (개정 전 본문)`}
                   </div>
                   {r.memo && r.memo.trim() && (
                     <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{r.memo}</p>
