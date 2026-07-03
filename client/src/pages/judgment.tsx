@@ -489,7 +489,8 @@ export default function JudgmentPage() {
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
   const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
-  const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({}); // 개정별 이전/이후 선택
+  const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({});
+  const [detailPermitSel, setDetailPermitSel] = useState<Record<string, "before"|"after">>({});
 
   const [customItems, setCustomItems] = useState<(InspectionItem & { sectionId?: string })[]>([]);
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
@@ -2257,137 +2258,25 @@ export default function JudgmentPage() {
                 onTouchEnd={handleDragEnd}
               >
                 <div className="space-y-6 pr-4">
-                  {/* 검사기준 적용일 (개정) 섹션 */}
-                  {(() => {
-                    const itemEdit = customEdits[detailItem.id];
-                    const dbItem = baseItemMap[detailItem.id];
-                    const detailRevisions = revisionsCache[detailItem.id] || [];
-                    const serverEdit = serverEdits?.find((e: any) => e.itemId === detailItem.id);
-                    const datesWithMemo: {date: string; memo: string; label?: string}[] = (() => {
-                      if (serverEdit && serverEdit.standardDates !== null && serverEdit.standardDates !== undefined) {
-                        try {
-                          const parsed = JSON.parse(serverEdit.standardDates);
-                          if (!Array.isArray(parsed)) return [];
-                          return parsed.map((d: string, i: number) => ({ date: d, memo: '', label: `개정 ${i + 1}` }));
-                        } catch { return []; }
-                      }
-                      if (Array.isArray((itemEdit as any)?.standardDatesWithMemo)) {
-                        return (itemEdit as any).standardDatesWithMemo;
-                      }
-                      if (dbItem?.standardDates) {
-                        try {
-                          const parsed = JSON.parse(dbItem.standardDates);
-                          if (parsed.length > 0) return parsed
-                            .filter((r: any) => !r.pending)
-                            .map((r: any, i: number) => ({
-                              date: r.date || r, memo: r.text || '', label: `개정 ${i + 1}`,
-                            }));
-                        } catch {}
-                      }
-                      return [];
-                    })();
-                    const dates: string[] = serverEdit?.standardDates ? (() => { try { return JSON.parse(serverEdit.standardDates); } catch { return []; } })() : ((itemEdit as any)?.standardDates || []);
-                    const permitDate = serverEdit?.permitEffectiveDate || (itemEdit as any)?.permitEffectiveDate || null;
-                    const hasData = datesWithMemo.length > 0 || dates.length > 0 || permitDate || detailRevisions.length > 0;
-                    if (!hasData) return null;
-                    return (
-                      <div className="border border-border rounded-xl p-4 bg-muted/20">
-                        {permitDate && (
-                          <div className="mb-3">
-                            <p className="text-xs font-medium text-muted-foreground mb-1">🏗 건축허가일 이후 적용</p>
-                            <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 font-medium">{permitDate} 이후 건축허가분부터 적용</p>
-                          </div>
-                        )}
-                        <h3 className="font-medium text-sm mb-3">📅 검사기준 적용일 (개정)</h3>
-                        {(() => {
-                          let list: {date: string; description: string; key: string; source?: string[]}[] = [];
-                          if (datesWithMemo.length > 0) {
-                            list = datesWithMemo.map((e: any, i: number) => ({ date: e.date || "", description: e.memo || "", key: `dm-${i}`, source: e.source }));
-                          } else if (detailRevisions.length > 0) {
-                            list = detailRevisions.map((r: any, i: number) => ({ date: r.effectiveDate || "", description: r.description || "", key: `dr-${r.id ?? i}`, source: r.source }));
-                          } else if (dates.length > 0) {
-                            list = dates.map((d: string, i: number) => ({ date: d, description: "", key: `d-${i}` }));
-                          }
-                          // 개정 목록은 실제 개정만 표시 (건축허가일은 위 섹션에서 별도 표시)
-                          if (list.length === 0) return null;
-                          const sorted = [...list].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-                          let applicableIdx = -1;
-                          if (referenceDate) {
-                            let bestDate = "";
-                            sorted.forEach((r, i) => {
-                              if (r.date && new Date(r.date) <= referenceDate && r.date > bestDate) { applicableIdx = i; bestDate = r.date; }
-                            });
-                          }
-                          const enforce = (customEdits[detailItem.id] as any)?.enforcementType ?? (detailItem as any).enforcementType;
-                          const fmtPeriod = (date: string) => {
-                            if (!date) return "시행일 미입력";
-                            const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-                            const k = m ? `${m[1]}년 ${parseInt(m[2], 10)}월 ${parseInt(m[3], 10)}일` : date;
-                            return enforce === "retroactive" ? `${k} 이후 소급 적용` : `${k} 이후 건축허가분부터 적용`;
-                          };
-                          const isPeriodOnly = (s: string) => {
-                            const stripped = s
-                              .replace(/\d{4}\s*[년.\-]\s*\d{1,2}\s*[월.\-]\s*\d{1,2}\s*일?/g, "")
-                              .replace(/이후|이전|건축허가분|부터|적용|종전|신설|현행/g, "")
-                              .replace(/[~\-()\s.,]/g, "");
-                            if (s.includes("~") && stripped.length === 0) return true;
-                            if (/\d{4}년.+이전 건축허가분에는 이 검사기준이 적용되지 않습니다/.test(s)) return true;
-                            return false;
-                          };
-                          return (
-                            <div className="space-y-2">
-                              {sorted.map((r, idx) => {
-                                const [sel, setSel] = [
-                                  (detailRevSel[r.key] ?? (idx === applicableIdx ? "after" : "after")),
-                                  (v: string) => setDetailRevSel(prev => ({ ...prev, [r.key]: v }))
-                                ];
-                                const isAfter = sel === "after";
-                                const isApplicable = idx === applicableIdx;
-                                return (
-                                  <div key={r.key} className={cn("border rounded-lg p-3", isApplicable ? "border-amber-400/50 bg-amber-500/5" : "border-border bg-card")}>
-                                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                                      {isApplicable && (
-                                        <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full shrink-0">적용 기준</span>
-                                      )}
-                                      <span className="text-xs font-medium text-muted-foreground flex-1">{fmtPeriod(r.date)}</span>
-                                      {/* 이전/이후 토글 */}
-                                      <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
-                                        <button
-                                          onClick={() => setSel("before")}
-                                          className={`text-[10px] px-2 py-1 transition-colors ${!isAfter ? "bg-primary text-primary-foreground font-medium" : "bg-card text-muted-foreground hover:bg-muted"}`}
-                                        >이전</button>
-                                        <button
-                                          onClick={() => setSel("after")}
-                                          className={`text-[10px] px-2 py-1 transition-colors ${isAfter ? "bg-primary text-primary-foreground font-medium" : "bg-card text-muted-foreground hover:bg-muted"}`}
-                                        >이후</button>
-                                      </div>
-                                    </div>
-                                    {/* 이전/이후 상태 표시 */}
-                                    <div className={`text-[10px] px-2 py-1 rounded mb-2 ${isAfter ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300" : "bg-gray-50 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400"}`}>
-                                      {isAfter
-                                        ? `${fmtPeriod(r.date).replace(" 이후 건축허가분부터 적용","").replace(" 이후 소급 적용","")} 이후 기준 적용`
-                                        : `${fmtPeriod(r.date).replace(" 이후 건축허가분부터 적용","").replace(" 이후 소급 적용","")} 이전 기준 적용`
-                                      }
-                                    </div>
-                                    {(() => {
-                                      const desc = (r.description || "").replace(/^\s*\[[^\]]*\]\s*/, "").trim();
-                                      if (!desc || isPeriodOnly(desc)) return null;
-                                      return <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{desc}</p>;
-                                    })()}
-                                    {(r as any).source?.length > 0 && (
-                                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                                        <span className="text-xs text-muted-foreground shrink-0">출처</span>
-                                        {(r as any).source.map((s: string, si: number) => (
-                                          <span key={si} className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">{s}</span>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
+                  {/* 검사기준 적용일 (개정) 섹션 — 별도 컴포넌트로 분리 (esbuild JSX 파서 이슈 회피) */}
+                  <RevisionDateSection
+                    itemId={detailItem.id}
+                    customEdits={customEdits}
+                    referenceDate={referenceDate}
+                    detailRevSel={detailRevSel}
+                    setDetailRevSel={setDetailRevSel}
+                    detailPermitSel={detailPermitSel}
+                    setDetailPermitSel={setDetailPermitSel}
+                  />
+                  {false && (() => { return ( // placeholder to preserve JSX structure
+                    <div className="border border-border rounded-xl p-4 bg-muted/20">
+                      {false && (
+                        <div className="mb-3">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">🏗 건축허가일 이후 적용</p>
+                          <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 font-medium">placeholder</p>
+                        </div>
+                      )}
+                        <p className="text-xs">placeholder</p>
                       </div>
                     );
                   })()}
@@ -2537,5 +2426,119 @@ export default function JudgmentPage() {
         document.body
       )}
     </>
+  );
+}
+
+// ── 개정 날짜 섹션 컴포넌트 (esbuild JSX 파서 이슈 회피를 위해 분리) ──
+function RevisionDateSection({ itemId, customEdits, referenceDate, detailRevSel, setDetailRevSel, detailPermitSel, setDetailPermitSel }: {
+  itemId: string;
+  customEdits: Record<string, any>;
+  referenceDate: Date | null;
+  detailRevSel: Record<string, "before"|"after">;
+  setDetailRevSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
+  detailPermitSel: Record<string, "before"|"after">;
+  setDetailPermitSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
+}) {
+  const itemEdit = customEdits[itemId];
+  // customEdits 기반 — 목록과 동일 소스
+  const standardDates: string[] = (itemEdit as any)?.standardDates || [];
+  const datesWithMemo: {date: string; memo: string; label?: string}[] =
+    (itemEdit as any)?.standardDatesWithMemo ||
+    standardDates.map((d, i) => ({ date: d, memo: '', label: `개정 ${i+1}` }));
+  const permitDate: string = (itemEdit as any)?.permitEffectiveDate || '';
+  const enforce: string = (itemEdit as any)?.enforcementType || '';
+
+  if (!permitDate && datesWithMemo.length === 0) return null;
+
+  const permitSel = detailPermitSel[itemId] ?? 'after';
+
+  const fmt = (date: string) => {
+    if (!date) return '시행일 미입력';
+    const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[1]}년 ${parseInt(m[2])}월 ${parseInt(m[3])}일` : date;
+  };
+
+  // 적용 기준 인덱스 (referenceDate 기준)
+  const sorted = [...datesWithMemo].sort((a, b) => (b.date||'').localeCompare(a.date||''));
+  let applicableIdx = -1;
+  if (referenceDate) {
+    let bestDate = '';
+    sorted.forEach((r, i) => {
+      if (r.date && new Date(r.date) <= referenceDate && r.date > bestDate) {
+        applicableIdx = i; bestDate = r.date;
+      }
+    });
+  }
+
+  return (
+    <div className="border border-border rounded-xl p-4 bg-muted/20 space-y-3">
+      {/* 건축허가일 이전/이후 토글 */}
+      {permitDate && (
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-xs font-medium text-muted-foreground flex-1">🏗 건축허가일 적용</p>
+            <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
+              <button
+                onClick={() => setDetailPermitSel(prev => ({ ...prev, [itemId]: 'before' }))}
+                className={`text-[10px] px-2 py-1 transition-colors ${permitSel === 'before' ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+              >이전</button>
+              <button
+                onClick={() => setDetailPermitSel(prev => ({ ...prev, [itemId]: 'after' }))}
+                className={`text-[10px] px-2 py-1 transition-colors ${permitSel === 'after' ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+              >이후</button>
+            </div>
+          </div>
+          <p className={`text-xs rounded-lg px-3 py-2 font-medium ${permitSel === 'after' ? 'text-amber-700 bg-amber-50 dark:bg-amber-950/30' : 'text-gray-600 bg-gray-50 dark:bg-gray-800/30'}`}>
+            {permitSel === 'after'
+              ? `${fmt(permitDate)} 이후 건축허가분부터 적용`
+              : `${fmt(permitDate)} 이전 건축허가분 — 현행 기준 미적용`}
+          </p>
+        </div>
+      )}
+
+      {/* 개정 목록 이전/이후 토글 */}
+      {sorted.length > 0 && (
+        <div>
+          <h3 className="font-medium text-sm mb-2">📅 검사기준 적용일 (개정)</h3>
+          <div className="space-y-2">
+            {sorted.map((r, idx) => {
+              const key = `${itemId}-${idx}`;
+              const sel = detailRevSel[key] ?? 'after';
+              const isAfter = sel === 'after';
+              const isApplicable = idx === applicableIdx;
+              const dateLabel = enforce === 'retroactive'
+                ? `${fmt(r.date)} 이후 소급 적용`
+                : `${fmt(r.date)} 이후 건축허가분부터 적용`;
+              return (
+                <div key={key} className={`border rounded-lg p-3 ${isApplicable ? 'border-amber-400/50 bg-amber-500/5' : 'border-border bg-card'}`}>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    {isApplicable && (
+                      <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full shrink-0">적용 기준</span>
+                    )}
+                    <span className="text-xs font-medium text-muted-foreground flex-1">{dateLabel}</span>
+                    <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
+                      <button
+                        onClick={() => setDetailRevSel(prev => ({ ...prev, [key]: 'before' }))}
+                        className={`text-[10px] px-2 py-1 transition-colors ${!isAfter ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                      >이전</button>
+                      <button
+                        onClick={() => setDetailRevSel(prev => ({ ...prev, [key]: 'after' }))}
+                        className={`text-[10px] px-2 py-1 transition-colors ${isAfter ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                      >이후</button>
+                    </div>
+                  </div>
+                  <div className={`text-[10px] px-2 py-1 rounded mb-2 ${isAfter ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400'}`}>
+                    {isAfter ? `${fmt(r.date)} 이후 기준 적용` : `${fmt(r.date)} 이전 기준 적용`}
+                  </div>
+                  {r.memo && r.memo.trim() && (
+                    <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{r.memo}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
