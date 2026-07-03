@@ -620,7 +620,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const db = (await import("./db")).db;
       const { stdItemOverrides } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
-      const title = decodeURIComponent(req.params.title);
+      const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
       const { overrideTitle, basis, conclusion, source, ref, typeTag, category } = req.body;
       const existing = await db.select().from(stdItemOverrides).where(eq(stdItemOverrides.title, title)).limit(1);
       let row;
