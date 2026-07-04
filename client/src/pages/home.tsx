@@ -1138,7 +1138,17 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       }
     } catch {}
 
-    const searchResults = results.length > 0 ? results : undefined;
+    // 타입별 최대 3개로 제한 — 관련성 낮은 카드 과다 표시 방지
+    const limitedResults = results.length > 0 ? (() => {
+      const typeCounts: Record<string, number> = {};
+      return results.filter(r => {
+        const cnt = typeCounts[r.type] || 0;
+        if (cnt >= 3) return false;
+        typeCounts[r.type] = cnt + 1;
+        return true;
+      });
+    })() : [];
+    const searchResults = limitedResults.length > 0 ? limitedResults : undefined;
 
     // AI API 호출
     try {
@@ -1163,8 +1173,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
           })
         : results;
 
-      // ③ score 임계값 상향 — 100 미만 제외 (기존 70 → 100)
-      const filteredResults = hardFiltered.filter(r => (r.score || 0) >= 100);
+      // ③ score 임계값 상향 — 130 미만 제외 (관련성 낮은 카드 제거)
+      const filteredResults = hardFiltered.filter(r => (r.score || 0) >= 130);
       let contextResults = filteredResults.length > 0 ? filteredResults : hardFiltered.slice(0, 4);
 
       // ★ Rerank — Sonnet으로 정밀 관련성 판단 (Haiku→Sonnet 업그레이드)
