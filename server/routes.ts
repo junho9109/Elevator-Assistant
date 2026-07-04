@@ -520,6 +520,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const itemId = req.params.itemId;
       const validatedData = insertJudgmentCommentSchema.parse({
         ...req.body,
+        author: req.body.author || "",
         itemId
       });
       const comment = await storage.createJudgmentComment(validatedData);
@@ -527,6 +528,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       res.status(400).json({ error: "Invalid comment data" });
     }
+  });
+
+  // ── 기술자료(표준화) 댓글 API — judgment_comments 테이블 재사용 (itemId: "std_" + title) ──
+  app.get("/api/std-comments/:title", async (req, res) => {
+    try {
+      const itemId = "std_" + decodeURIComponent(req.params.title);
+      const comments = await storage.getJudgmentCommentsByItem(itemId);
+      res.json(comments);
+    } catch (e) { res.status(500).json({ error: "Failed to get comments" }); }
+  });
+
+  app.post("/api/std-comments/:title", async (req, res) => {
+    try {
+      const itemId = "std_" + decodeURIComponent(req.params.title);
+      const comment = await storage.createJudgmentComment({
+        itemId, author: "", content: req.body.content || ""
+      });
+      res.status(201).json(comment);
+    } catch (e) { res.status(500).json({ error: "Failed to create comment" }); }
+  });
+
+  app.delete("/api/std-comments/:id", async (req, res) => {
+    try {
+      await storage.deleteJudgmentComment(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (e) { res.status(500).json({ error: "Failed to delete comment" }); }
+  });
+
+  app.get("/api/std-comments-counts", async (req, res) => {
+    res.json({});
   });
 
   app.delete("/api/judgment-comments/:id", async (req, res) => {

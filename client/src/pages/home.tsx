@@ -958,6 +958,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   // 카드 오프셋 (핫스팟 id → 카드 중심의 캔버스 % 위치)
   const [cardOffsets, setCardOffsets] = useState<Record<number, {cx: number, cy: number}>>({});
+  const [stdComments, setStdComments] = useState<Record<string, any[]>>({});
+  const [stdCommentInput, setStdCommentInput] = useState<Record<string, string>>({});
+  const [stdDeleteConfirm, setStdDeleteConfirm] = useState<number | null>(null);;
   const cardOffsetsRef = useRef<Record<number, {cx: number, cy: number}>>({});
   const [cardOffsetsLoaded, setCardOffsetsLoaded] = useState(false);
   const pinDragPosRef = useRef<{id: number, x: number, y: number} | null>(null);
@@ -2456,6 +2459,16 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                             </div>
                           )}
                           <StdPhotoSection itemKey={item.title} />
+                          <StdCommentSection
+                            title={item.title}
+                            isAdminMode={isAdminMode}
+                            stdComments={stdComments}
+                            setStdComments={setStdComments}
+                            stdCommentInput={stdCommentInput}
+                            setStdCommentInput={setStdCommentInput}
+                            stdDeleteConfirm={stdDeleteConfirm}
+                            setStdDeleteConfirm={setStdDeleteConfirm}
+                          />
                           {isAdminMode && (
                             <div className="pt-1.5 border-t border-border/50 flex items-center justify-end">
                               <button
@@ -2845,6 +2858,109 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         document.body
       )}
 
+    </div>
+  );
+}
+
+// ── 기술자료 댓글 섹션 컴포넌트 ──────────────────────────────────────
+function StdCommentSection({ title, isAdminMode, stdComments, setStdComments, stdCommentInput, setStdCommentInput, stdDeleteConfirm, setStdDeleteConfirm }: {
+  title: string;
+  isAdminMode: boolean;
+  stdComments: Record<string, any[]>;
+  setStdComments: React.Dispatch<React.SetStateAction<Record<string, any[]>>>;
+  stdCommentInput: Record<string, string>;
+  setStdCommentInput: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  stdDeleteConfirm: number | null;
+  setStdDeleteConfirm: React.Dispatch<React.SetStateAction<number | null>>;
+}) {
+  const comments = stdComments[title] || [];
+  const input = stdCommentInput[title] || "";
+  const [loaded, setLoaded] = React.useState(false);
+
+  React.useEffect(() => {
+    if (loaded) return;
+    setLoaded(true);
+    fetch(`/api/std-comments/${encodeURIComponent(title)}`)
+      .then(r => r.json())
+      .then(data => setStdComments(prev => ({ ...prev, [title]: data })))
+      .catch(() => {});
+  }, [title]);
+
+  const addComment = async () => {
+    if (!input.trim()) return;
+    const res = await fetch(`/api/std-comments/${encodeURIComponent(title)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: input.trim() }),
+    });
+    if (res.ok) {
+      const newC = await res.json();
+      setStdComments(prev => ({ ...prev, [title]: [...(prev[title] || []), newC] }));
+      setStdCommentInput(prev => ({ ...prev, [title]: "" }));
+    }
+  };
+
+  const deleteComment = async (id: number) => {
+    await fetch(`/api/std-comments/${id}`, { method: "DELETE" });
+    setStdComments(prev => ({ ...prev, [title]: (prev[title] || []).filter((c: any) => c.id !== id) }));
+    setStdDeleteConfirm(null);
+  };
+
+  const fmtDate = (s: string) => {
+    const d = new Date(s);
+    return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;
+  };
+
+  return (
+    <div className="border-t border-border/50 pt-2.5 space-y-2">
+      <p className="text-xs font-semibold text-muted-foreground">
+        댓글 {comments.length > 0 ? `${comments.length}개` : ""}
+      </p>
+      {comments.length > 0 && (
+        <div className="space-y-1.5">
+          {comments.map((c: any) => (
+            <div key={c.id} className="bg-card border border-border rounded-lg px-3 py-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-muted-foreground">{fmtDate(c.createdAt)}</span>
+                <button
+                  onClick={() => setStdDeleteConfirm(c.id)}
+                  className="text-[10px] text-red-500 hover:text-red-700 transition-colors"
+                >삭제</button>
+              </div>
+              <p className="text-xs text-foreground leading-relaxed">{c.content}</p>
+              {stdDeleteConfirm === c.id && (
+                <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <p className="text-xs text-red-700 dark:text-red-300 mb-2">이 댓글을 삭제하시겠습니까?</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => deleteComment(c.id)}
+                      className="flex-1 text-xs py-1 rounded-lg bg-red-500 text-white"
+                    >삭제</button>
+                    <button
+                      onClick={() => setStdDeleteConfirm(null)}
+                      className="flex-1 text-xs py-1 rounded-lg border border-border text-muted-foreground"
+                    >취소</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={e => setStdCommentInput(prev => ({ ...prev, [title]: e.target.value }))}
+          onKeyDown={e => { if (e.key === "Enter") addComment(); }}
+          placeholder="댓글 입력..."
+          className="flex-1 text-xs px-3 py-1.5 border border-border rounded-lg bg-card text-foreground outline-none focus:ring-1 focus:ring-primary/50"
+        />
+        <button
+          onClick={addComment}
+          className="text-xs px-3 py-1.5 border border-border rounded-lg bg-card text-foreground hover:bg-muted transition-colors"
+        >등록</button>
+      </div>
     </div>
   );
 }
