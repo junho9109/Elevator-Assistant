@@ -2452,7 +2452,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                           {dispConclusion && (
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">표준화</p>
-                              <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2" dangerouslySetInnerHTML={{ __html: dispConclusion }} />
+                              <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: dispConclusion }} />
                             </div>
                           )}
                           <StdPhotoSection itemKey={item.title} />
