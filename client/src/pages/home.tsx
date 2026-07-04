@@ -395,14 +395,19 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
     }, s.title || "", `${s.body || ""}`);
   });
 
-  // 표준화 파싱 데이터 검색
+  // 표준화 파싱 데이터 검색 — DB 오버라이드 값 우선 반영
   STD_ITEMS.forEach(s => {
+    const ov = stdOverrides?.find((o: any) => o.title === s.title);
+    const conclusion = ov?.conclusion || s.conclusion || "";
+    const basis = ov?.basis || s.basis || "";
+    const ref = ov?.ref || s.ref || "";
+    const title = ov?.overrideTitle || s.title;
     addResult({
       type: "standard",
       title: s.title,
-      content: s.conclusion ? s.conclusion.slice(0, 100) + (s.conclusion.length > 100 ? "..." : "") : s.basis.slice(0, 100),
+      content: conclusion ? conclusion.slice(0, 100) + (conclusion.length > 100 ? "..." : "") : basis.slice(0, 100),
       query: s.title
-    }, s.title, `${s.ref} ${s.basis} ${s.conclusion}`);
+    }, title, `${ref} ${basis} ${conclusion}`);
   });
 
   // 표준화 신규 추가 항목 검색 (STD_ITEMS에 없고 std_item_overrides에만 있는 항목)
@@ -1210,9 +1215,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       // + 검사기준 조문번호로 표준화 교차검색 (ref 역참조)
       const inspRefNums = inspCtx.map(c => c.ref).filter(Boolean);
       const crossRefItems = inspRefNums.length > 0
-        ? STD_ITEMS.filter(s =>
-            inspRefNums.some(ref => s.ref.includes(ref.replace(/\[.*?\]\s*/, '').trim()))
-          ).map(s => ({ type: "standard" as const, title: s.title, content: s.conclusion.slice(0, 100), query: s.title, score: 180 }))
+        ? allStdItems.filter(s =>
+            inspRefNums.some(ref => (s.ref||"").includes(ref.replace(/\[.*?\]\s*/, '').trim()))
+          ).map(s => ({ type: "standard" as const, title: s.title, content: (s.conclusion||"").slice(0, 100), query: s.title, score: 180 }))
         : [];
       const techResults = [
         ...contextResults.filter(r => r.type === "standard"),
@@ -1221,17 +1226,18 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       const techCtx = techResults.slice(0, 1).map(r => {
         const std = STD_ITEMS.find(s => s.title === r.title);
         const ov = stdOverrides?.find((o: any) => o.title === r.title);
-        const title = std?.title || ov?.title || r.title;
-        const ref = std?.ref || ov?.ref || "";
-        const basis = (std?.basis || ov?.basis || "").slice(0, 250);
-        const conclusionRaw = std?.conclusion || ov?.conclusion || "";
+        const title = ov?.overrideTitle || std?.title || ov?.title || r.title;
+        // DB 오버라이드 우선 — 최신 수정값 반영
+        const ref   = ov?.ref   || std?.ref   || "";
+        const basis = (ov?.basis || std?.basis || "").slice(0, 250);
+        const conclusionRaw = ov?.conclusion || std?.conclusion || "";
         return {
           priority: "기술자료(표준화)",
           title,
           ref,
           basis,
           conclusion: conclusionRaw.length > 10 ? conclusionRaw.slice(0, 400) : "",
-          source: std?.source || ov?.source || "",
+          source: ov?.source || std?.source || "",
         };
       }).filter(c => c.basis || c.conclusion);
 
