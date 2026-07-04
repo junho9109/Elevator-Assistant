@@ -2457,15 +2457,16 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                       {stdSelected === item && (() => {
                         const ov = stdOverrides?.find((o: any) => o.title === item.title);
                         const dispRef = ov?.ref || item.ref;
-                        const dispBasis = ov?.basis || item.basis;
-                        const dispConclusion = ov?.conclusion || item.conclusion;
+                        const fmtText = (s: string) => (s || '').replace(/\u2023\s*/g, '\n\u2023 ').replace(/\u25B8\s*/g, '\n\u25B8 ').replace(/\u2605\s*/g, '\n\u2605 ').replace(/\u203B\s*/g, '\n\u203B ').replace(/\n{3,}/g, '\n\n').trim();
+                        const dispBasis = fmtText(ov?.basis || item.basis);
+                        const dispConclusion = fmtText(ov?.conclusion || item.conclusion);
                         return (
                         <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
                           {(dispRef || dispBasis) && (
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
                               {dispRef && <p className="text-[11px] font-semibold text-blue-600">{dispRef}</p>}
-                              {dispBasis && <p className="text-[11px] text-muted-foreground leading-relaxed bg-card rounded-lg p-2" dangerouslySetInnerHTML={{ __html: dispBasis }} />}
+                              {dispBasis && <p className="text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap bg-card rounded-lg p-2" dangerouslySetInnerHTML={{ __html: dispBasis }} />}
                             </div>
                           )}
                           {dispConclusion && (
@@ -2683,7 +2684,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     {std?.basis && (
                       <div className="bg-secondary rounded-xl p-3">
                         <p className="text-[10px] font-medium text-muted-foreground mb-1.5">기준 내용</p>
-                        <p className="text-xs text-foreground leading-relaxed" dangerouslySetInnerHTML={{ __html: std.basis }} />
+                        <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: std.basis }} />
                       </div>
                     )}
                     {/* 표준화 결론 */}
