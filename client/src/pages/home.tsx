@@ -2398,7 +2398,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 {(() => {
                   const filtered = allStdItems.filter(x =>
                     (stdCategory === "전체" || x.category === stdCategory) &&
-                    (!stdSearch || x.title.includes(stdSearch) || x.ref.includes(stdSearch) || x.conclusion.includes(stdSearch))
+                    (!stdSearch || (x.title||"").includes(stdSearch) || (x.ref||"").includes(stdSearch) || (x.conclusion||"").includes(stdSearch) || (x.basis||"").includes(stdSearch))
                   );
                   if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과 없음</p>;
                   return filtered.map((item, idx) => {
