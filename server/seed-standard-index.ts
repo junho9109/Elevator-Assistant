@@ -92,3 +92,38 @@ export async function seedStandardIndex(): Promise<void> {
     // seed 실패해도 서버는 계속 실행
   }
 }
+
+// ── 표준화 원본 356개 → std_item_overrides SEED ──────────────────────
+export async function seedStdItems() {
+  try {
+    const { db } = await import("./db");
+    const { stdItemOverrides } = await import("../shared/schema");
+    const { sql } = await import("drizzle-orm");
+
+    const existing = await db.select({ count: sql<number>`count(*)` }).from(stdItemOverrides);
+    const cnt = Number(existing[0]?.count || 0);
+
+    if (cnt >= 83) {
+      console.log(`[SEED] std_item_overrides: ${cnt}개 존재 — 원본 SEED 스킵`);
+      return;
+    }
+
+    // 원본 JSON import
+    const STD_DATA = (await import("../client/src/data/표준화_parsed.json", { assert: { type: "json" } })).default as any[];
+    let inserted = 0;
+
+    for (const it of STD_DATA) {
+      try {
+        await db.execute(sql`
+          INSERT INTO std_item_overrides (title, "overrideTitle", ref, basis, conclusion, source, "typeTag", category, "updatedAt")
+          VALUES (${it.title}, '', ${it.ref||''}, ${it.basis||''}, ${it.conclusion||''}, ${it.source||''}, ${it.typeTag||''}, ${it.category||''}, NOW())
+          ON CONFLICT (title) DO NOTHING
+        `);
+        inserted++;
+      } catch {}
+    }
+    console.log(`[SEED] std_item_overrides: 원본 ${inserted}개 삽입 완료`);
+  } catch (e) {
+    console.error("[SEED] std_items 오류:", e);
+  }
+}

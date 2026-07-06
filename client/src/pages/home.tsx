@@ -395,20 +395,52 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
     }, s.title || "", `${s.body || ""}`);
   });
 
-  // 표준화 파싱 데이터 검색 — DB 오버라이드 값 우선 반영
-  STD_ITEMS.forEach(s => {
-    const ov = stdOverrides?.find((o: any) => o.title === s.title);
-    const conclusion = ov?.conclusion || s.conclusion || "";
-    const basis = ov?.basis || s.basis || "";
-    const ref = ov?.ref || s.ref || "";
-    const title = ov?.overrideTitle || s.title;
-    addResult({
-      type: "standard",
-      title: s.title,
-      content: conclusion ? conclusion.slice(0, 100) + (conclusion.length > 100 ? "..." : "") : basis.slice(0, 100),
-      query: s.title
-    }, title, `${ref} ${basis} ${conclusion}`);
-  });
+  // 표준화 검색 — DB(stdOverrides)가 충분하면 DB 전용, 아니면 JSON+DB 병합
+  const dbItems = stdOverrides || [];
+  if (dbItems.length >= 83) {
+    // DB SEED 완료 — DB만 사용
+    dbItems.forEach((ov: any) => {
+      const title = ov.overrideTitle || ov.title;
+      const conclusion = ov.conclusion || "";
+      const basis = ov.basis || "";
+      const ref = ov.ref || "";
+      addResult({
+        type: "standard",
+        title: ov.title,
+        content: conclusion ? conclusion.slice(0, 100) + (conclusion.length > 100 ? "..." : "") : basis.slice(0, 100),
+        query: ov.title
+      }, title, `${ref} ${basis} ${conclusion}`);
+    });
+  } else {
+    // DB SEED 전 — JSON + DB 오버라이드 병합
+    STD_ITEMS.forEach(s => {
+      const ov = dbItems.find((o: any) => o.title === s.title);
+      const conclusion = ov?.conclusion || s.conclusion || "";
+      const basis = ov?.basis || s.basis || "";
+      const ref = ov?.ref || s.ref || "";
+      const title = ov?.overrideTitle || s.title;
+      addResult({
+        type: "standard",
+        title: s.title,
+        content: conclusion ? conclusion.slice(0, 100) + (conclusion.length > 100 ? "..." : "") : basis.slice(0, 100),
+        query: s.title
+      }, title, `${ref} ${basis} ${conclusion}`);
+    });
+    // DB 전용 신규 항목
+    const stdTitles = new Set(STD_ITEMS.map(s => s.title));
+    dbItems.filter((ov: any) => !stdTitles.has(ov.title)).forEach((ov: any) => {
+      const title = ov.overrideTitle || ov.title;
+      const conclusion = ov.conclusion || "";
+      const basis = ov.basis || "";
+      const ref = ov.ref || "";
+      addResult({
+        type: "standard",
+        title: ov.title,
+        content: conclusion ? conclusion.slice(0, 100) + (conclusion.length > 100 ? "..." : "") : basis.slice(0, 100),
+        query: ov.title
+      }, title, `${ref} ${basis} ${conclusion}`);
+    });
+  }
 
   // 표준화 신규 추가 항목 검색 (STD_ITEMS에 없고 std_item_overrides에만 있는 항목)
   if (stdOverrides && stdOverrides.length > 0) {
@@ -872,25 +904,38 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
-  // STD_ITEMS(JSON) + 신규 추가 항목(DB 오버라이드) 통합
-  // 오버라이드가 있는 STD_ITEMS 항목은 오버라이드의 category 반영
+  // allStdItems — DB(std_item_overrides) 우선, JSON(STD_ITEMS)은 DB에 없는 항목 폴백용
   const allStdItems = useMemo(() => {
     const hotspotLabels = hotspots.map(h => h.label);
-    const overrideMap = new Map((stdOverrides || []).map((ov: any) => [ov.title, ov]));
+    const dbItems = stdOverrides || [];
+
+    if (dbItems.length >= 83) {
+      // DB에 원본이 SEED됐으면 DB만 사용
+      return dbItems.map((ov: any) => ({
+        title: ov.overrideTitle || ov.title,
+        _key: ov.title,  // 원본 key 유지
+        ref: ov.ref || "",
+        basis: ov.basis || "",
+        conclusion: ov.conclusion || "",
+        source: ov.source || "",
+        typeTag: ov.typeTag || "",
+        category: normalizeCat(ov.category || "기타", hotspotLabels),
+      }));
+    }
+
+    // DB SEED 전 — JSON + DB 오버라이드 병합 (기존 방식)
+    const overrideMap = new Map(dbItems.map((ov: any) => [ov.title, ov]));
     const baseItems = STD_ITEMS.map(s => {
       const ov = overrideMap.get(s.title);
-      // 오버라이드로 직접 지정한 category 있으면 우선, 없으면 JSON category를 hotspot label로 정규화
       const rawCat = (ov?.category && ov.category !== "") ? ov.category : (s.category || "기타");
-      return {
-        ...s,
-        category: normalizeCat(rawCat, hotspotLabels),
-      };
+      return { ...s, _key: s.title, category: normalizeCat(rawCat, hotspotLabels) };
     });
     const stdTitles = new Set(STD_ITEMS.map(s => s.title));
-    const newItemsFromDb = (stdOverrides || [])
+    const newItemsFromDb = dbItems
       .filter((ov: any) => !stdTitles.has(ov.title))
       .map((ov: any) => ({
-        title: ov.title,
+        title: ov.overrideTitle || ov.title,
+        _key: ov.title,
         ref: ov.ref || "",
         basis: ov.basis || "",
         conclusion: ov.conclusion || "",
