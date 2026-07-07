@@ -179,6 +179,7 @@ export const stdItemOverrides = pgTable("std_item_overrides", {
   typeTag: text("type_tag"),                // 유형 태그 수정값
   category: text("category"),              // 분류 수정값
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  manuallyEdited: boolean("manually_edited").default(false),  // 수동 수정 여부
 });
 
 export const insertStdItemOverrideSchema = createInsertSchema(stdItemOverrides).omit({ id: true, updatedAt: true });

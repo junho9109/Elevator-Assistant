@@ -656,9 +656,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existing = await db.select().from(stdItemOverrides).where(eq(stdItemOverrides.title, title)).limit(1);
       let row;
       if (existing.length > 0) {
-        [row] = await db.update(stdItemOverrides).set({ overrideTitle, basis, conclusion, source, ref, typeTag, category, updatedAt: new Date() }).where(eq(stdItemOverrides.title, title)).returning();
+        [row] = await db.update(stdItemOverrides).set({ overrideTitle, basis, conclusion, source, ref, typeTag, category, updatedAt: new Date(), manuallyEdited: true }).where(eq(stdItemOverrides.title, title)).returning();
       } else {
-        [row] = await db.insert(stdItemOverrides).values({ title, overrideTitle, basis, conclusion, source, ref, typeTag, category }).returning();
+        [row] = await db.insert(stdItemOverrides).values({ title, overrideTitle, basis, conclusion, source, ref, typeTag, category, manuallyEdited: true }).returning();
       }
       res.json(row);
     } catch (e) {
