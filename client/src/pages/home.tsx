@@ -921,6 +921,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         source: ov.source || "",
         typeTag: ov.typeTag || "",
         category: normalizeCat(ov.category || "기타", hotspotLabels),
+        manuallyEdited: ov.manuallyEdited || false,
       }));
     }
 
@@ -2458,7 +2459,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 mb-1">
                               <div className="text-sm font-medium leading-snug text-foreground line-clamp-2">{(item as any).displayTitle || item.title}</div>
-                              {headerOv?.manually_edited && (
+                              {((item as any).manuallyEdited || headerOv?.manuallyEdited) && (
                                 <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>
                               )}
                             </div>
