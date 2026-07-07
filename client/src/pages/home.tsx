@@ -1186,15 +1186,21 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       }
     } catch {}
 
-    // 타입별 최대 3개로 제한 — 관련성 낮은 카드 과다 표시 방지
+    // 카드 표시 제한:
+    // 1) score 기준 정렬
+    // 2) 타입별 최대 1개 (정확도 높은 것 1개씩)
+    // 3) 전체 최대 3개
     const limitedResults = results.length > 0 ? (() => {
-      const typeCounts: Record<string, number> = {};
-      return results.filter(r => {
-        const cnt = typeCounts[r.type] || 0;
-        if (cnt >= 3) return false;
-        typeCounts[r.type] = cnt + 1;
-        return true;
-      });
+      const sorted = [...results].sort((a, b) => (b.score || 0) - (a.score || 0));
+      const typeSeen = new Set<string>();
+      const out: typeof sorted = [];
+      for (const r of sorted) {
+        if (typeSeen.has(r.type)) continue;
+        typeSeen.add(r.type);
+        out.push(r);
+        if (out.length >= 3) break;
+      }
+      return out;
     })() : [];
     const searchResults = limitedResults.length > 0 ? limitedResults : undefined;
 
@@ -1366,27 +1372,25 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         .slice(0, 6);
       let finalResults = [...contextUsed, ...extraResults];
 
-      // 검색 결과가 아예 없으면 AI 답변에서 키워드 추출해 보충
-      if (contextUsed.length === 0 && results.length === 0 && data.reply) {
-        const replyKeywords = data.reply.match(/[가-힣]{2,6}/g) || [];
-        const uniqueKws = [...new Set(replyKeywords)].slice(0, 5);
-        for (const kw of uniqueKws) {
-          const r = searchAllData(kw, standards, stdOverrides);
-          finalResults.push(...r);
-        }
-        const seen = new Set<string>();
-        finalResults = finalResults.filter(r => {
-          if (seen.has(r.title)) return false;
-          seen.add(r.title);
+      // 관련 결과 없으면 카드 표시 안 함 (억지 보충 제거)
+
+      // 최종 카드 — score 130 미만 제거 + 타입별 1개 + 전체 3개 이하
+      const scored = finalResults.filter(r => (r.score || 0) >= 130);
+      const typeSeen = new Set<string>();
+      const displayCards = scored
+        .sort((a, b) => (b.score || 0) - (a.score || 0))
+        .filter(r => {
+          if (typeSeen.has(r.type)) return false;
+          typeSeen.add(r.type);
           return true;
-        }).slice(0, 10);
-      }
+        })
+        .slice(0, 3);
 
       setMessages(prev => [...prev, {
         role: "assistant",
         content: data.reply,
         time: formatTime(),
-        searchResults: finalResults.length > 0 ? finalResults : undefined,
+        searchResults: displayCards.length > 0 ? displayCards : undefined,
       }]);
     } catch (err: any) {
       console.error("Chat fetch error:", err);
