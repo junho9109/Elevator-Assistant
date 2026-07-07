@@ -912,8 +912,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     if (dbItems.length >= 83) {
       // DB에 원본이 SEED됐으면 DB만 사용
       return dbItems.map((ov: any) => ({
-        title: ov.overrideTitle || ov.title,
-        _key: ov.title,  // 원본 key 유지
+        title: ov.title,           // 검색/매칭 키
+        displayTitle: ov.overrideTitle || ov.title,  // 화면 표시용
+        _key: ov.title,
         ref: ov.ref || "",
         basis: ov.basis || "",
         conclusion: ov.conclusion || "",
@@ -934,7 +935,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
     const newItemsFromDb = dbItems
       .filter((ov: any) => !stdTitles.has(ov.title))
       .map((ov: any) => ({
-        title: ov.overrideTitle || ov.title,
+        title: ov.title,
+        displayTitle: ov.overrideTitle || ov.title,
         _key: ov.title,
         ref: ov.ref || "",
         basis: ov.basis || "",
@@ -2447,7 +2449,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                   );
                   if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과 없음</p>;
                   return filtered.map((item, idx) => {
-                    const headerOv = stdOverrides?.find((o: any) => o.title === item.title);
+                    const headerOv = stdOverrides?.find((o: any) => o.title === (item._key || item.title));
                     return (
                     <div key={idx}>
                       <div onClick={() => setStdSelected(stdSelected === item ? null : item)}
@@ -2455,7 +2457,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 mb-1">
-                              <div className="text-sm font-medium leading-snug text-foreground line-clamp-2">{headerOv?.overrideTitle || item.title}</div>
+                              <div className="text-sm font-medium leading-snug text-foreground line-clamp-2">{(item as any).displayTitle || item.title}</div>
                               {headerOv?.manually_edited && (
                                 <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>
                               )}
