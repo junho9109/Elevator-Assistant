@@ -17,9 +17,9 @@ import type { Standard, Hotspot } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 import INSPECTION_CONTENT from "@/data/inspection-content.json";
 import ReactMarkdown from "react-markdown";
-import STD_DATA from "@/data/표준화_parsed.json";
+// STD_DATA JSON 제거 — DB(std_item_overrides) 전용으로 이전 완료
 type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
-const STD_ITEMS = STD_DATA as StdItem[];
+const STD_ITEMS: StdItem[] = []; // DB 전용 — JSON 폴백 제거
 
 // STD_ITEMS JSON category → hotspot label 매핑 테이블
 // hotspot이 추가/삭제되어도 이 테이블만 업데이트하면 자동 반영
@@ -896,6 +896,25 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       localStorage.setItem("hotspots_cache_ts", String(Date.now()));
     }
   }, [hotspots]);
+  // 검사기준 DB 로드 (inspection-content.json 대체)
+  const { data: inspectionBaseItems } = useQuery({
+    queryKey: ["/api/inspection-base-items"],
+    queryFn: () => fetch("/api/inspection-base-items").then(r => r.json()),
+    staleTime: 1000 * 60 * 10,
+  });
+  const INSPECTION_CONTENT = Object.fromEntries(
+    (inspectionBaseItems || []).map((item: any) => [
+      item.itemId,
+      {
+        text: item.text || "",
+        effectiveDate: item.effectiveDate,
+        revisions: item.standardDates
+          ? (() => { try { return JSON.parse(item.standardDates); } catch { return []; } })()
+          : []
+      }
+    ])
+  );
+
   const { data: stdOverrides, refetch: refetchStdOverrides } = useQuery<any[]>({
     queryKey: ["/api/std-overrides"],
     queryFn: () => fetch("/api/std-overrides", { cache: "no-store" }).then(r => r.json()),
