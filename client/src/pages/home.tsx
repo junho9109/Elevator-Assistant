@@ -1384,26 +1384,54 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
       if (!resp.ok) throw new Error("서버 오류");
       const data = await resp.json();
 
-      // 최종 카드 목록: 컨텍스트 사용 항목 우선 + 나머지 검색 결과 보충
-      const contextTitles = new Set(contextUsed.map(r => r.title));
-      const extraResults = results
-        .filter(r => !contextTitles.has(r.title))
-        .slice(0, 6);
-      let finalResults = [...contextUsed, ...extraResults];
+      // ── 에이전트가 실제 사용한 자료를 카드로 변환 ──────────────
+      const usedSources: { type: string; title: string; ref: string }[] = data.usedSources || [];
 
-      // 관련 결과 없으면 카드 표시 안 함 (억지 보충 제거)
+      const sourceCards: SearchResult[] = usedSources.map(s => {
+        if (s.type === "inspection") {
+          // 검사기준 — INSPECTION_CONTENT에서 내용 찾기
+          const entry = Object.entries(INSPECTION_CONTENT).find(([, v]: any) =>
+            (v.text || "").includes(s.ref.replace(/\[별표22\]\s*/, "").trim().split(".")[0])
+          );
+          return {
+            type: "inspection" as const,
+            title: s.title,
+            content: (entry?.[1] as any)?.text?.slice(0, 150) || s.title,
+            query: entry?.[0] || s.ref,
+            score: 200,
+          };
+        }
+        if (s.type === "standard") {
+          // 표준화 — stdOverrides에서 찾기
+          const ov = (stdOverrides || []).find((o: any) =>
+            (o.overrideTitle || o.title || "").includes(s.title.slice(0, 10))
+          );
+          return {
+            type: "standard" as const,
+            title: ov?.title || s.title,
+            content: ov?.conclusion || s.title,
+            query: ov?.title || s.title,
+            score: 200,
+          };
+        }
+        return { type: s.type as any, title: s.title, content: s.title, query: s.title, score: 200 };
+      }).filter(Boolean);
 
-      // 최종 카드 — score 130 미만 제거 + 타입별 1개 + 전체 3개 이하
-      const scored = finalResults.filter(r => (r.score || 0) >= 130);
-      const typeSeen = new Set<string>();
-      const displayCards = scored
-        .sort((a, b) => (b.score || 0) - (a.score || 0))
-        .filter(r => {
-          if (typeSeen.has(r.type)) return false;
-          typeSeen.add(r.type);
-          return true;
-        })
-        .slice(0, 3);
+      // usedSources 카드 없으면 기존 키워드 검색 카드 사용 (타입별 1개, 최대 3개)
+      let displayCards: SearchResult[];
+      if (sourceCards.length > 0) {
+        displayCards = sourceCards.slice(0, 3);
+      } else {
+        const contextTitles = new Set(contextUsed.map(r => r.title));
+        const extraResults = results.filter(r => !contextTitles.has(r.title)).slice(0, 6);
+        const finalResults = [...contextUsed, ...extraResults];
+        const scored = finalResults.filter(r => (r.score || 0) >= 130);
+        const typeSeen = new Set<string>();
+        displayCards = scored
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+          .filter(r => { if (typeSeen.has(r.type)) return false; typeSeen.add(r.type); return true; })
+          .slice(0, 3);
+      }
 
       setMessages(prev => [...prev, {
         role: "assistant",

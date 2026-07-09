@@ -1325,7 +1325,28 @@ ${answerRules}${contextText}${memoSection}`,
         console.error("[usage 저장 오류]", e);
       }
 
-      res.json({ reply });
+      // ── 에이전트가 실제 사용한 자료 파싱 → 카드 연동용 ──────────
+      const usedSources: { type: string; title: string; ref: string }[] = [];
+      // 📌 근거: [검사기준] 조문 | [기술자료] 표준화명 | [메모] 제목 파싱
+      const sourceMatch = reply.match(/📌\s*근거[:\s]+(.+)$/m);
+      if (sourceMatch) {
+        const sourceStr = sourceMatch[1];
+        const parts = sourceStr.split(/\s*\|\s*/);
+        parts.forEach(part => {
+          const insp = part.match(/\[검사기준\]\s*(.+)/);
+          const tech = part.match(/\[기술자료\]\s*(.+)/);
+          const guide = part.match(/\[검사가이드\]\s*(.+)/);
+          const memo = part.match(/\[메모\]\s*(.+)/);
+          const judg = part.match(/\[판정지침\]\s*(.+)/);
+          if (insp) usedSources.push({ type: "inspection", title: insp[1].trim(), ref: insp[1].trim() });
+          if (tech)  usedSources.push({ type: "standard",   title: tech[1].trim(),  ref: tech[1].trim() });
+          if (guide) usedSources.push({ type: "guide",      title: guide[1].trim(), ref: guide[1].trim() });
+          if (memo)  usedSources.push({ type: "memo",       title: memo[1].trim(),  ref: memo[1].trim() });
+          if (judg)  usedSources.push({ type: "judgment",   title: judg[1].trim(),  ref: judg[1].trim() });
+        });
+      }
+
+      res.json({ reply, usedSources });
 
 
     } catch (error: any) {
