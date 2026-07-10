@@ -11,7 +11,12 @@ const dataMap = BYULPYO22 as unknown as Record<string, Entry>;
 // 연도별 데이터 추가 시: YEARS 배열 복원 + dataMap을 연도별로 분기
 // 현재는 현행(2022년, KC2050-51:2022) 단일 데이터 사용
 
-type JudgmentSection = { id: string; title: string; text: string };
+type JudgmentRow   = { ref: string; target: string; content: string };
+type JudgmentItem  = { num: string; content: string };
+type JudgmentSection =
+  | { type: "text";  title: string; text: string }
+  | { type: "list";  title: string; items: JudgmentItem[] }
+  | { type: "table"; title: string; rows: JudgmentRow[] };
 const JUDGMENT_SECTIONS = JUDGMENT_DATA as unknown as Record<string, JudgmentSection>;
 const DOCUMENTS = [
   { id: "byulpyo22", label: "별표22 검사기준 (KC2050-51:2022)" },
@@ -469,7 +474,11 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
   ];
 
   const getTitle = (key: string) => overrides[key]?.title || JUDGMENT_SECTIONS[key]?.title || key;
-  const getText  = (key: string) => overrides[key]?.text  || JUDGMENT_SECTIONS[key]?.text  || "";
+  const getSection = (key: string): JudgmentSection | null => {
+    const base = JUDGMENT_SECTIONS[key];
+    if (!base) return null;
+    return base;
+  };
   const hasOverride = (key: string) => !!overrides[key];
 
   const saveOverride = async (key: string, title: string, text: string) => {
@@ -520,7 +529,8 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
     setSel(key);
   };
 
-  const cur = sel ? { title: getTitle(sel), text: getText(sel) } : null;
+  const cur = sel ? getSection(sel) : null;
+  const curTitle = sel ? getTitle(sel) : "";
 
   return (
     <div className="flex-1 overflow-hidden flex min-h-0 w-full">
@@ -564,7 +574,7 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
             <div className="flex-1 min-w-0">
               {editMode
                 ? <input className="w-full text-sm font-medium border border-border rounded-lg px-2 py-1 bg-card" value={editTitle} onChange={e => setEditTitle(e.target.value)} />
-                : <p className="text-sm font-medium leading-snug">{cur.title}</p>
+                : <p className="text-sm font-medium leading-snug">{curTitle}</p>
               }
               <p className="text-[10px] text-muted-foreground mt-0.5">📌 승강기 검사결과 판정지침 (2016.12.23 제정)</p>
             </div>
@@ -602,13 +612,45 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
 
           {/* 상세 내용 */}
           <div className="flex-1 overflow-y-auto p-4">
-            {editMode
+            {cur?.type === "text" && editMode
               ? <textarea
                   className="w-full h-full min-h-[300px] text-xs leading-relaxed bg-muted/40 border border-border rounded-xl p-3 resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
                   value={editText}
                   onChange={e => setEditText(e.target.value)}
                 />
-              : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{cur.text}</p>
+              : cur?.type === "text"
+                ? <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{cur.text}</p>
+              : cur?.type === "list"
+                ? <div className="space-y-2">
+                    {cur.items.map((item, i) => (
+                      <div key={i} className="bg-muted/40 border border-border rounded-xl p-3">
+                        <p className="text-xs font-semibold text-primary mb-1">{item.num}.</p>
+                        <p className="text-xs leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                      </div>
+                    ))}
+                  </div>
+              : cur?.type === "table"
+                ? <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-xs" style={{tableLayout:"fixed"}}>
+                      <thead>
+                        <tr className="bg-muted/60">
+                          <th className="border border-border px-2 py-1.5 text-left text-muted-foreground font-medium w-20">검사항목</th>
+                          <th className="border border-border px-2 py-1.5 text-left text-muted-foreground font-medium w-24">검사대상</th>
+                          <th className="border border-border px-2 py-1.5 text-left text-muted-foreground font-medium">불합격 내용</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cur.rows.map((row, i) => (
+                          <tr key={i} className={i % 2 === 0 ? "" : "bg-muted/20"}>
+                            <td className="border border-border px-2 py-1.5 text-accent font-medium align-top whitespace-pre-wrap">{row.ref}</td>
+                            <td className="border border-border px-2 py-1.5 align-top">{row.target}</td>
+                            <td className="border border-border px-2 py-1.5 leading-relaxed whitespace-pre-wrap align-top">{row.content}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+              : null
             }
           </div>
         </div>
