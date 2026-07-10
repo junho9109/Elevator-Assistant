@@ -630,21 +630,21 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
                     ))}
                   </div>
               : cur?.type === "table"
-                ? <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-xs" style={{tableLayout:"fixed"}}>
+                ? <div className="overflow-x-auto -mx-1">
+                    <table className="w-full border-collapse text-xs">
                       <thead>
                         <tr className="bg-muted/60">
-                          <th className="border border-border px-2 py-1.5 text-left text-muted-foreground font-medium w-20">검사항목</th>
-                          <th className="border border-border px-2 py-1.5 text-left text-muted-foreground font-medium w-24">검사대상</th>
-                          <th className="border border-border px-2 py-1.5 text-left text-muted-foreground font-medium">불합격 내용</th>
+                          <th className="border border-border px-2 py-2 text-left text-muted-foreground font-medium" style={{minWidth:"70px",width:"70px"}}>검사항목</th>
+                          <th className="border border-border px-2 py-2 text-left text-muted-foreground font-medium" style={{minWidth:"90px",width:"90px"}}>검사대상</th>
+                          <th className="border border-border px-2 py-2 text-left text-muted-foreground font-medium">불합격 내용</th>
                         </tr>
                       </thead>
                       <tbody>
                         {cur.rows.map((row, i) => (
                           <tr key={i} className={i % 2 === 0 ? "" : "bg-muted/20"}>
-                            <td className="border border-border px-2 py-1.5 text-accent font-medium align-top whitespace-pre-wrap">{row.ref}</td>
-                            <td className="border border-border px-2 py-1.5 align-top">{row.target}</td>
-                            <td className="border border-border px-2 py-1.5 leading-relaxed whitespace-pre-wrap align-top">{row.content}</td>
+                            <td className="border border-border px-2 py-2 text-primary font-semibold align-top text-[11px] leading-relaxed">{row.ref}</td>
+                            <td className="border border-border px-2 py-2 align-top leading-relaxed">{row.target}</td>
+                            <td className="border border-border px-2 py-2 leading-relaxed whitespace-pre-wrap align-top">{row.content}</td>
                           </tr>
                         ))}
                       </tbody>
