@@ -314,7 +314,7 @@ function scoreMatch(
 
 
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
-type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat"; title: string; content: string; query: string; score?: number; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
+type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat"; title: string; content: string; query: string; score?: number; priority?: number; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
 // ==================== 검색결과 아코디언 ====================
 type CatGroup = { key: string; label: string; color: string; bg: string; dot: string; items: SearchResult[] };
@@ -1358,7 +1358,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
           title: c.title,
           content: c.content.slice(0, 150),
           query: c.ref,
-          score: 200, // 컨텍스트 사용 항목 최우선
+          score: 200,
+          priority: 1,
         })),
         // 2순위: 표준화 컨텍스트 항목
         ...techCtx.map(c => ({
@@ -1367,11 +1368,13 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
           content: c.conclusion ? c.conclusion.slice(0, 150) : c.basis.slice(0, 150),
           query: c.ref,
           score: 190,
+          priority: 2,
         })),
         // 3순위: 채팅 참고 항목
         ...chatResults.slice(0, 2).map(r => ({
           ...r,
           score: 100,
+          priority: 3,
         })),
       ];
 
@@ -1399,6 +1402,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             content: (entry?.[1] as any)?.text?.slice(0, 150) || s.title,
             query: entry?.[0] || s.ref,
             score: 200,
+            priority: 1,
           };
         }
         if (s.type === "standard") {
@@ -1412,6 +1416,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             content: ov?.conclusion || s.title,
             query: ov?.title || s.title,
             score: 200,
+            priority: 2,
           };
         }
         return { type: s.type as any, title: s.title, content: s.title, query: s.title, score: 200 };
@@ -2207,29 +2212,53 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                 )}
                   <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
                   {msg.searchResults && msg.searchResults.length > 0 && (() => {
-                    const cats: { key: string; label: string; color: string; bg: string; dot: string; items: SearchResult[] }[] = [
-                      { key: "standard", label: "표준화", color: "#185FA5", bg: "#E6F1FB", dot: "#378ADD", items: [] },
-                      { key: "judgment", label: "검사기준", color: "#0F6E56", bg: "#E1F5EE", dot: "#1D9E75", items: [] },
-                      { key: "inspection", label: "검사가이드", color: "#854F0B", bg: "#FAEEDA", dot: "#BA7517", items: [] },
-                      { key: "chat", label: "채팅", color: "#533AB7", bg: "#EEEDFE", dot: "#7F77DD", items: [] },
-                    ];
-                    msg.searchResults.forEach((r: SearchResult) => {
-                      const cat = cats.find(c => c.key === r.type) ?? cats[2];
-                      cat.items.push(r);
-                    });
-                    const filled = cats.filter(c => c.items.length > 0);
+                    const TYPE_LABEL: Record<string, string> = {
+                      inspection: "검사기준", standard: "기술자료",
+                      judgment: "검사가이드", chat: "채팅"
+                    };
+                    const PRIORITY_STYLE: Record<number, { bg: string; text: string; label: string }> = {
+                      1: { bg: "#4B7BF5", text: "white", label: "1순위" },
+                      2: { bg: "#22C55E", text: "white", label: "2순위" },
+                      3: { bg: "#F59E0B", text: "white", label: "3순위" },
+                    };
+                    const sorted = [...msg.searchResults].sort((a, b) => (a.priority || 9) - (b.priority || 9));
                     return (
-                      <div className="mt-2 flex flex-col gap-2">
-                        {filled.map(cat => (
-                          <SearchCatAccordion key={cat.key} cat={cat} onSelect={(r: SearchResult) => {
-                            if (r.type === "chat") {
-                              window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
-                              setTimeout(() => window.dispatchEvent(new CustomEvent("scrollToChatMsg", { detail: { id: r.chatMeta?.id } })), 300);
-                            } else {
-                              setSelectedSearchResult(r);
-                            }
-                          }} />
-                        ))}
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        <p className="text-[10px] text-muted-foreground font-medium px-0.5">참고 자료</p>
+                        {sorted.map((r: SearchResult, i: number) => {
+                          const pStyle = PRIORITY_STYLE[r.priority || (i + 1)] || { bg: "#9CA3AF", text: "white", label: `${i+1}순위` };
+                          return (
+                            <button
+                              key={i}
+                              className="w-full text-left bg-card border border-border rounded-xl overflow-hidden hover:bg-muted/30 transition-colors"
+                              onClick={() => {
+                                if (r.type === "chat") {
+                                  window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
+                                  setTimeout(() => window.dispatchEvent(new CustomEvent("scrollToChatMsg", { detail: { id: r.chatMeta?.id } })), 300);
+                                } else {
+                                  setSelectedSearchResult(r);
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: pStyle.bg, color: pStyle.text }}>{pStyle.label}</span>
+                                <span className="text-[10px] text-muted-foreground">{TYPE_LABEL[r.type] || r.type}</span>
+                              </div>
+                              <div className="px-3 pb-2">
+                                <p className="text-[11px] font-semibold text-foreground leading-snug mb-0.5">{r.title}</p>
+                                {r.content && r.type !== "chat" && (
+                                  <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">{r.content}</p>
+                                )}
+                                {r.type === "chat" && r.chatMeta && (
+                                  <p className="text-[10px] text-muted-foreground">
+                                    <span className="text-purple-500 font-medium">{r.chatMeta.userName}</span>
+                                    {r.chatMeta.replyToUser && <span> → {r.chatMeta.replyToUser}</span>}
+                                  </p>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     );
                   })()}
