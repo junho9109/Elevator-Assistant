@@ -999,7 +999,7 @@ export default function JudgmentPage() {
     setRefRevisions([]);
 
     // 본문에서 6항 참조 조문번호 추출 (예: 6.3.3, 6.5.2.2.1)
-    const refMatches = (item.text || "").match(/6\.\d+(?:\.\d+)*/g) || [];
+    const refMatches = (item.text || "").match(/(?<![\d.])6\.\d+(?:\.\d+)*/g) || [];
     const uniqueRefs = [...new Set(refMatches)];
     if (uniqueRefs.length > 0) {
       const refResults = await Promise.all(
@@ -1628,7 +1628,7 @@ export default function JudgmentPage() {
     const hasCustomEdit = !!(serverEdits && serverEdits.some((e: any) => e.itemId === item.id));
     // 연혁집 데이터 여부 — 직접 또는 참조 조문에 연혁 데이터 있음
     const directRevision = !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
-    const refRevisionExists = (item.text || "").match(/6\.\d+(?:\.\d+)*/g)?.some(
+    const refRevisionExists = (item.text || "").match(/(?<![\d.])6\.\d+(?:\.\d+)*/g)?.some(
       (ref: string) => revisionCounts[ref] && revisionCounts[ref] > 0
     ) || false;
     const hasRevisionData = directRevision || refRevisionExists;
