@@ -490,6 +490,7 @@ export default function JudgmentPage() {
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
   const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
   const [revisionCounts, setRevisionCounts] = useState<Record<string, number>>({});
+  const [refRevisions, setRefRevisions] = useState<{refId: string; versions: any[]}[]>([]);
   const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({});
   const [detailPermitSel, setDetailPermitSel] = useState<Record<string, "before"|"after">>({});
 
@@ -995,6 +996,32 @@ export default function JudgmentPage() {
     setDetailItem(item);
     setIsDetailDialogOpen(true);
     setRevisionsLoading(true);
+    setRefRevisions([]);
+
+    // 본문에서 6항 참조 조문번호 추출 (예: 6.3.3, 6.5.2.2.1)
+    const refMatches = (item.text || "").match(/6\.\d+(?:\.\d+)*/g) || [];
+    const uniqueRefs = [...new Set(refMatches)];
+    if (uniqueRefs.length > 0) {
+      const refResults = await Promise.all(
+        uniqueRefs.map(async (refId) => {
+          try {
+            const r = await fetch(`/api/inspection-revisions/${encodeURIComponent(refId)}`);
+            const data = r.ok ? await r.json() : [];
+            if (data.length === 0) return null;
+            return {
+              refId,
+              versions: data.map((rv: any) => ({
+                effectiveDate: rv.effective_date || rv.effectiveDate || "",
+                expiryDate: rv.expiry_date || rv.expiryDate || "",
+                introductionType: rv.introduction_type || rv.introductionType || "old",
+                description: rv.description || "",
+              }))
+            };
+          } catch { return null; }
+        })
+      );
+      setRefRevisions(refResults.filter(Boolean) as {refId: string; versions: any[]}[]);
+    }
 
     // 1) JSON 기반 revision 데이터
     const entry = contentMap[item.id] as ContentEntry | undefined;
@@ -1599,8 +1626,12 @@ export default function JudgmentPage() {
     const status = getItemStatus(item);
     const autoResults = getAutoResults(item);  // [v5] 다중 선택용 배열
     const hasCustomEdit = !!(serverEdits && serverEdits.some((e: any) => e.itemId === item.id));
-    // 연혁집 데이터 여부 — 서버에서 미리 로드한 counts 기준
-    const hasRevisionData = !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
+    // 연혁집 데이터 여부 — 직접 또는 참조 조문에 연혁 데이터 있음
+    const directRevision = !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
+    const refRevisionExists = (item.text || "").match(/6\.\d+(?:\.\d+)*/g)?.some(
+      (ref: string) => revisionCounts[ref] && revisionCounts[ref] > 0
+    ) || false;
+    const hasRevisionData = directRevision || refRevisionExists;
     
     return (
       <div 
@@ -2403,6 +2434,41 @@ export default function JudgmentPage() {
                       />
                     )}
                   </div>
+
+                  {/* 참조 조문 연혁 섹션 */}
+                  {refRevisions.length > 0 && (
+                    <div className="border border-amber-200 dark:border-amber-800 rounded-xl p-3 bg-amber-50 dark:bg-amber-900/10 mb-4">
+                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">📎 참조 조문 연혁</p>
+                      <div className="space-y-3">
+                        {refRevisions.map(({ refId, versions }) => (
+                          <div key={refId}>
+                            <p className="text-[10px] font-bold text-amber-800 dark:text-amber-300 mb-1.5">[별표22] {refId}</p>
+                            <div className="space-y-1.5">
+                              {versions.map((v: any, i: number) => {
+                                const isCurrent = v.introductionType === 'current';
+                                return (
+                                  <div key={i} className="flex gap-2">
+                                    <div className="flex flex-col items-center w-3 flex-shrink-0 mt-1">
+                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isCurrent ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                                      {i < versions.length - 1 && <div className="w-px bg-gray-200 flex-1 mt-1 mb-1" />}
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className={`text-[9px] font-bold mb-0.5 ${isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>
+                                        {isCurrent ? '현행 · 2022.3.2. 시행' : v.effectiveDate ? `${v.effectiveDate} 이후 건축허가분` : '종전'}
+                                      </p>
+                                      <p className={`text-[10px] leading-relaxed px-2 py-1.5 rounded-lg ${isCurrent ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-500 border border-gray-100'}`}>
+                                        {(v.description || "").slice(0, 200)}{(v.description || "").length > 200 ? "..." : ""}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* 댓글 섹션 */}
                   <div>
