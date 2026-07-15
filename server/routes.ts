@@ -1033,6 +1033,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 항목별 댓글 수 일괄 조회
+  // 연혁집 데이터 보유 항목 목록 (revision이 1개 이상인 item_id 목록)
+  app.get("/api/inspection-items/revision-counts", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(
+        sql`SELECT item_id, COUNT(*) as cnt FROM inspection_item_revisions GROUP BY item_id HAVING COUNT(*) > 0`
+      );
+      const result: Record<string, number> = {};
+      (rows.rows || rows).forEach((r: any) => {
+        result[r.item_id] = Number(r.cnt);
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({});
+    }
+  });
+
   app.get("/api/judgment-items/comment-counts", async (req, res) => {
     try {
       const counts = await storage.getItemCommentCounts();
@@ -1043,6 +1061,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 항목별 댓글 수 일괄 조회
+  // 연혁집 데이터 보유 항목 목록 (revision이 1개 이상인 item_id 목록)
+  app.get("/api/inspection-items/revision-counts", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(
+        sql`SELECT item_id, COUNT(*) as cnt FROM inspection_item_revisions GROUP BY item_id HAVING COUNT(*) > 0`
+      );
+      const result: Record<string, number> = {};
+      (rows.rows || rows).forEach((r: any) => {
+        result[r.item_id] = Number(r.cnt);
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({});
+    }
+  });
+
   app.get("/api/judgment-items/comment-counts", async (req, res) => {
     try {
       const counts = await storage.getItemCommentCounts();

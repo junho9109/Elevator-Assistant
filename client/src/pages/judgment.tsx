@@ -689,6 +689,14 @@ export default function JudgmentPage() {
     enabled: !!detailItem
   });
 
+  // 연혁집 데이터 보유 항목 목록 로드
+  useEffect(() => {
+    fetch("/api/inspection-items/revision-counts")
+      .then(r => r.json())
+      .then(data => setRevisionCounts(data))
+      .catch(() => {});
+  }, []);
+
   // DB에서 서버 편집값 fetch → 재접속 시 자동 최신화
   const { data: serverEdits } = useQuery<any[]>({
     queryKey: ["/api/inspection-edits"],
@@ -1569,8 +1577,8 @@ export default function JudgmentPage() {
     const status = getItemStatus(item);
     const autoResults = getAutoResults(item);  // [v5] 다중 선택용 배열
     const hasCustomEdit = !!(serverEdits && serverEdits.some((e: any) => e.itemId === item.id));
-    // 연혁집 데이터 여부 (6항 조문 + revisionsCache에 데이터 있음)
-    const hasRevisionData = !!(revisionsCache[item.id] && revisionsCache[item.id].length > 0);
+    // 연혁집 데이터 여부 — 서버에서 미리 로드한 counts 기준
+    const hasRevisionData = !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
     
     return (
       <div 
