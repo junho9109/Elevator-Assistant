@@ -489,6 +489,7 @@ export default function JudgmentPage() {
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
   const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
+  const [revisionCounts, setRevisionCounts] = useState<Record<string, number>>({});
   const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({});
   const [detailPermitSel, setDetailPermitSel] = useState<Record<string, "before"|"after">>({});
 
