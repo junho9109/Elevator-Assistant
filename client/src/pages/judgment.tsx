@@ -991,18 +991,39 @@ export default function JudgmentPage() {
     }
   });
 
-  const handleOpenDetail = (item: InspectionItem) => {
+  const handleOpenDetail = async (item: InspectionItem) => {
     setDetailItem(item);
     setIsDetailDialogOpen(true);
-    // [통합] inspection-content.json 에서 직접 읽기
+    setRevisionsLoading(true);
+
+    // 1) JSON 기반 revision 데이터
     const entry = contentMap[item.id] as ContentEntry | undefined;
-    const revData = (entry?.revisions || []).map(r => ({
+    const jsonRevData = (entry?.revisions || []).map(r => ({
       id: undefined, item_id: item.id,
       effective_date: r.effectiveDate, expiry_date: r.expiryDate,
       introduction_type: r.introductionType, description: r.description,
     }));
-    setRevisions(revData);
-    setRevisionsCache(prev => ({...prev, [item.id]: revData}));
+
+    // 2) DB 연혁집 데이터 조회
+    try {
+      const dbRevRes = await fetch(`/api/inspection-revisions/${encodeURIComponent(item.id)}`);
+      const dbRevRaw = dbRevRes.ok ? await dbRevRes.json() : [];
+      // DB snake_case → camelCase 변환
+      const dbRevData = dbRevRaw.map((r: any) => ({
+        id: r.id,
+        effectiveDate: r.effective_date || r.effectiveDate || "",
+        expiryDate: r.expiry_date || r.expiryDate || "",
+        introductionType: r.introduction_type || r.introductionType || "old",
+        description: r.description || "",
+      }));
+      // DB 데이터 우선, JSON은 DB에 없을 때 폴백
+      const merged = dbRevData.length > 0 ? dbRevData : jsonRevData;
+      setRevisions(merged);
+      setRevisionsCache(prev => ({...prev, [item.id]: merged}));
+    } catch {
+      setRevisions(jsonRevData);
+      setRevisionsCache(prev => ({...prev, [item.id]: jsonRevData}));
+    }
     setRevisionsLoading(false);
   };
 
