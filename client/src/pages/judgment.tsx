@@ -1660,9 +1660,6 @@ export default function JudgmentPage() {
             onClick={() => handleOpenDetail(item)}
           >
             {item.text}
-            {hasCustomEdit && (
-              <span className="ml-1.5 shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>
-            )}
             {hasRevisionData && (
               <span className="ml-1.5 shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">연혁</span>
             )}
