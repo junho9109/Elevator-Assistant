@@ -2442,21 +2442,37 @@ export default function JudgmentPage() {
                       <div className="space-y-3">
                         {refRevisions.map(({ refId, versions }) => (
                           <div key={refId}>
-                            <p className="text-[10px] font-bold text-amber-800 dark:text-amber-300 mb-1.5">[별표22] {refId}</p>
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">[별표22] {refId}</span>
+                              {referenceDate && <span className="text-[9px] text-amber-600 dark:text-amber-400">({permitDate || inspectionDate} 기준)</span>}
+                            </div>
                             <div className="space-y-1.5">
                               {versions.map((v: any, i: number) => {
                                 const isCurrent = v.introductionType === 'current';
+                                // referenceDate 기준 적용 버전 판정
+                                const vFrom = v.effectiveDate ? new Date(v.effectiveDate) : null;
+                                const vTo   = v.expiryDate   ? new Date(v.expiryDate)   : null;
+                                const isApplied = referenceDate
+                                  ? (!vFrom || referenceDate >= vFrom) && (!vTo || referenceDate <= vTo)
+                                  : isCurrent;
                                 return (
                                   <div key={i} className="flex gap-2">
                                     <div className="flex flex-col items-center w-3 flex-shrink-0 mt-1">
-                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isCurrent ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isApplied ? 'bg-blue-500' : 'bg-gray-300'}`} />
                                       {i < versions.length - 1 && <div className="w-px bg-gray-200 flex-1 mt-1 mb-1" />}
                                     </div>
                                     <div className="flex-1">
-                                      <p className={`text-[9px] font-bold mb-0.5 ${isCurrent ? 'text-blue-600' : 'text-gray-400'}`}>
-                                        {isCurrent ? '현행 · 2022.3.2. 시행' : v.effectiveDate ? `${v.effectiveDate} 이후 건축허가분` : '종전'}
-                                      </p>
-                                      <p className={`text-[10px] leading-relaxed px-2 py-1.5 rounded-lg ${isCurrent ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-500 border border-gray-100'}`}>
+                                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                        <p className={`text-[9px] font-bold ${isApplied ? 'text-blue-600' : 'text-gray-400'}`}>
+                                          {isCurrent ? '현행 · 2022.3.2. 시행' : v.effectiveDate ? `${v.effectiveDate} 이후 건축허가분` : '종전'}
+                                        </p>
+                                        {isApplied && (
+                                          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                                            📍 적용 중
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className={`text-[10px] leading-relaxed px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-500 border border-gray-100'}`}>
                                         {(v.description || "").slice(0, 200)}{(v.description || "").length > 200 ? "..." : ""}
                                       </p>
                                     </div>
