@@ -1663,7 +1663,7 @@ export default function JudgmentPage() {
             {hasCustomEdit && (
               <span className="ml-1.5 shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>
             )}
-            {hasRevisionData && !hasCustomEdit && (
+            {hasRevisionData && (
               <span className="ml-1.5 shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">연혁</span>
             )}
             {itemCommentCounts[item.id] > 0 && (
@@ -1791,11 +1791,34 @@ export default function JudgmentPage() {
                 적용 안내
                 <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
               </summary>
-              <div className="mt-2 p-3 bg-muted/40 border border-border rounded">
-                {lead}
-                <div className="border-t border-border my-2.5" />
-                <div className="text-[12px] text-muted-foreground mb-1.5">현장 상태를 확인해 직접 판정하세요</div>
-                {rows}
+              <div className="mt-2 border border-border rounded-xl overflow-hidden">
+                {/* 날짜 칩 */}
+                {(permitDate || inspectionDate) && (
+                  <div className="flex gap-2 px-3 pt-3 pb-2">
+                    {permitDate && (
+                      <div className="flex-1 bg-muted/40 border border-border rounded-lg px-2.5 py-1.5">
+                        <div className="text-[9px] text-muted-foreground mb-0.5">건축허가일</div>
+                        <div className="text-[11px] font-semibold text-foreground">{permitDate}</div>
+                      </div>
+                    )}
+                    {inspectionDate && (
+                      <div className="flex-1 bg-muted/40 border border-border rounded-lg px-2.5 py-1.5">
+                        <div className="text-[9px] text-muted-foreground mb-0.5">검사기준 적용일</div>
+                        <div className="text-[11px] font-semibold text-foreground">{inspectionDate}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* 적용 기준 설명 */}
+                <div className="px-3 pb-2">
+                  {lead}
+                </div>
+                <div className="border-t border-border" />
+                {/* 판정 행 */}
+                <div className="px-3 pt-2 pb-1">
+                  <div className="text-[10px] text-muted-foreground mb-1.5">현장 상태를 확인해 직접 판정하세요</div>
+                  {rows}
+                </div>
               </div>
             </details>
           );
