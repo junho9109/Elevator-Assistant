@@ -999,7 +999,7 @@ export default function JudgmentPage() {
     setRefRevisions([]);
 
     // 본문에서 6항 참조 조문번호 추출 (예: 6.3.3, 6.5.2.2.1)
-    const refMatches = (item.text || "").match(/(?<![\d.])6\.\d+(?:\.\d+)*/g) || [];
+    const refMatches = (item.text || "").match(/(?<![\d.])[6-8]\.\d+(?:\.\d+)*/g) || [];
     const uniqueRefs = [...new Set(refMatches)];
     if (uniqueRefs.length > 0) {
       const refResults = await Promise.all(
@@ -1626,12 +1626,11 @@ export default function JudgmentPage() {
     const status = getItemStatus(item);
     const autoResults = getAutoResults(item);  // [v5] 다중 선택용 배열
     const hasCustomEdit = !!(serverEdits && serverEdits.some((e: any) => e.itemId === item.id));
-    // 연혁 뱃지 — 본문에 6.x.x 참조 조문이 있고 해당 조문에 연혁 데이터 있을 때만
-    const refRevisionExists = (item.text || "").match(/(?<![\d.])6\.\d+(?:\.\d+)*/g)?.some(
+    // 연혁 뱃지 — 6~8항 참조 조문이 있고 연혁 데이터 있을 때
+    const refRevisionExists = (item.text || "").match(/(?<![\d.])[6-8]\.\d+(?:\.\d+)*/g)?.some(
       (ref: string) => revisionCounts[ref] && revisionCounts[ref] > 0
     ) || false;
-    // 직접 연혁 — item.id가 6.으로 시작하는 경우만
-    const directRevision = item.id.startsWith("6.") && !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
+    const directRevision = /^[6-8]\./.test(item.id) && !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
     const hasRevisionData = directRevision || refRevisionExists;
     
     return (
