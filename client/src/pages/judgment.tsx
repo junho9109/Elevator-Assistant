@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ZoomControl } from "@/components/ZoomControl";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
-import INSPECTION_CONTENT from "@/data/inspection-content.json";
+// inspection-content.json → DB로 이전
 type ContentEntry = {
   text?: string;
   effectiveDate?: string;
@@ -28,7 +28,6 @@ type ContentEntry = {
   standardNote?: string;
   revisions?: { effectiveDate: string | null; expiryDate: string | null; introductionType: string | null; description: string; source?: string[] }[];
 };
-const contentMap: Record<string, ContentEntry> = INSPECTION_CONTENT as Record<string, ContentEntry>;
 import type { InspectionItemEdit, CustomInspectionItem } from "@shared/schema";
 
 // Image Viewer State
@@ -491,6 +490,7 @@ export default function JudgmentPage() {
   const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
   const [revisionCounts, setRevisionCounts] = useState<Record<string, number>>({});
   const [refRevisions, setRefRevisions] = useState<{refId: string; versions: any[]}[]>([]);
+  const [detailRevisionOpen, setDetailRevisionOpen] = useState(true);
   const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({});
   const [detailPermitSel, setDetailPermitSel] = useState<Record<string, "before"|"after">>({});
 
@@ -690,6 +690,30 @@ export default function JudgmentPage() {
     },
     enabled: !!detailItem
   });
+
+  const { data: inspectionBaseItems = [] } = useQuery<any[]>({
+    queryKey: ["/api/inspection-base-items"],
+    queryFn: () => fetch("/api/inspection-base-items").then(r => r.json()),
+    staleTime: 1000 * 60 * 10,
+  });
+  const contentMap = useMemo(() => {
+    const map: Record<string, ContentEntry> = {};
+    inspectionBaseItems.forEach((item: any) => {
+      let revisions: any[] = [];
+      try { revisions = item.standardDates ? JSON.parse(item.standardDates) : []; } catch {}
+      map[item.itemId] = {
+        text: item.text || "",
+        effectiveDate: item.effectiveDate || "",
+        revisions: revisions.map((r: any) => ({
+          effectiveDate: r.effectiveDate || r.date || "",
+          introductionType: r.introductionType || "old",
+          description: r.description || r.memo || "",
+          source: r.source || "",
+        })),
+      } as ContentEntry;
+    });
+    return map;
+  }, [inspectionBaseItems]);
 
   // 연혁집 데이터 보유 항목 목록 로드
   useEffect(() => {
@@ -2458,8 +2482,11 @@ export default function JudgmentPage() {
                   {/* 참조 조문 연혁 섹션 */}
                   {refRevisions.length > 0 && (
                     <div className="border border-amber-200 dark:border-amber-800 rounded-xl p-3 bg-amber-50 dark:bg-amber-900/10 mb-4">
-                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">📎 참조 조문 연혁</p>
-                      <div className="space-y-3">
+                      <button onClick={() => setDetailRevisionOpen(v => !v)} className="w-full flex items-center gap-2 mb-2">
+                        <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</span>
+                        <span className="ml-auto text-[10px] text-amber-500">{detailRevisionOpen ? "▲" : "▼"}</span>
+                      </button>
+                      <div className={detailRevisionOpen ? "space-y-3" : "hidden"}>
                         {refRevisions.map(({ refId, versions }) => (
                           <div key={refId}>
                             <div className="flex items-center gap-2 mb-1.5">
