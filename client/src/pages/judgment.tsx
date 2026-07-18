@@ -491,6 +491,7 @@ export default function JudgmentPage() {
   const [revisionCounts, setRevisionCounts] = useState<Record<string, number>>({});
   const [refRevisions, setRefRevisions] = useState<{refId: string; versions: any[]}[]>([]);
   const [detailRevisionOpen, setDetailRevisionOpen] = useState(true);
+  const [detailMediaOpen, setDetailMediaOpen] = useState(true);
   const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({});
   const [detailPermitSel, setDetailPermitSel] = useState<Record<string, "before"|"after">>({});
 
