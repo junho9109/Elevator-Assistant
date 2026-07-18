@@ -2426,7 +2426,13 @@ export default function JudgmentPage() {
                       </div>
                     );
                   })()}
-              {/* 사진 섹션 */}
+              {/* 사진/댓글 B방식 */}
+                  <div className="border border-border rounded-xl overflow-hidden mb-2">
+                    <button onClick={() => setDetailMediaOpen(v => !v)} className="w-full flex items-center gap-2 px-3 py-2 bg-muted/30 text-left">
+                      <span className="text-[11px] font-semibold">📷 사진 {itemPhotos.length}장 &nbsp;·&nbsp; 💬 댓글 {itemComments.length}개</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground">{detailMediaOpen ? "▲" : "▼"}</span>
+                    </button>
+                  <div className={detailMediaOpen ? "p-3" : "hidden"}>
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-medium flex items-center gap-2">
@@ -2606,6 +2612,8 @@ export default function JudgmentPage() {
                   </div>
                 </div>
               </div>
+                  </div>
+                  </div>
             </div>
           )}
           <DialogFooter>
