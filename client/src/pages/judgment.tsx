@@ -1807,13 +1807,8 @@ export default function JudgmentPage() {
           }
 
           return (
-            <details className="ml-10 mr-4 mb-2 group">
-              <summary className="inline-flex items-center gap-1 w-fit px-2 py-1 text-[11px] text-muted-foreground border border-border rounded cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-                <Info className="w-3 h-3" />
-                적용 안내
-                <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
-              </summary>
-              <div className="mt-2 border border-border rounded-xl overflow-hidden">
+            <div className="ml-0 mr-0 mb-3">
+              <div className="border border-border rounded-xl overflow-hidden">
                 {/* 날짜 칩 */}
                 {(permitDate || inspectionDate) && (
                   <div className="flex gap-2 px-3 pt-3 pb-2">
@@ -1842,7 +1837,7 @@ export default function JudgmentPage() {
                   {rows}
                 </div>
               </div>
-            </details>
+            </div>
           );
         })()}
         {customEdits[item.id]?.customWarning && (
@@ -2403,6 +2398,66 @@ export default function JudgmentPage() {
                 onTouchEnd={handleDragEnd}
               >
                 <div className="space-y-6 pr-4">
+                  {/* 참조 조문 연혁 섹션 */}
+                  {refRevisions.length > 0 && (
+                    <div className="border border-amber-200 dark:border-amber-800 rounded-xl p-3 bg-amber-50 dark:bg-amber-900/10 mb-4">
+                      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</p>
+                      <div className="space-y-3">
+                        {refRevisions.map(({ refId, versions }) => (
+                          <div key={refId}>
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">[별표22] {refId}</span>
+                              {referenceDate && <span className="text-[9px] text-amber-600 dark:text-amber-400">({permitDate || inspectionDate} 기준)</span>}
+                            </div>
+                            <div className="space-y-1.5">
+                              {versions.map((v: any, i: number) => {
+                                const isCurrent = v.introductionType === 'current';
+                                // referenceDate 기준 적용 버전 판정
+                                const vFrom = v.effectiveDate ? new Date(v.effectiveDate) : null;
+                                const vTo   = v.expiryDate   ? new Date(v.expiryDate)   : null;
+                                const isApplied = referenceDate
+                                  ? (!vFrom || referenceDate >= vFrom) && (!vTo || referenceDate <= vTo)
+                                  : isCurrent;
+                                // 현행 버전은 간략 표시 (내용은 아래 검사기준 섹션에 있음)
+                                if (isCurrent) return (
+                                  <div key={i} className="flex items-center gap-2 py-1 px-2 bg-blue-50 dark:bg-blue-900/10 rounded-lg mb-1">
+                                    <span className="text-[8px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded">현행</span>
+                                    <span className="text-[9px] text-blue-600 dark:text-blue-400">{v.effectiveDate || "2022.3.2."} 시행 — 아래 검사기준 참조</span>
+                                    {isApplied && referenceDate && <span className="text-[8px] font-bold bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full ml-auto">📍 현행 적용</span>}
+                                  </div>
+                                );
+                                return (
+                                  <div key={i} className="flex gap-2">
+                                    <div className="flex flex-col items-center w-3 flex-shrink-0 mt-1">
+                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isApplied ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                                      {i < versions.length - 1 && <div className="w-px bg-gray-200 flex-1 mt-1 mb-1" />}
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                        <p className={`text-[9px] font-bold ${isApplied ? 'text-blue-600' : 'text-gray-400'}`}>
+                                          {isCurrent ? '현행 · 2022.3.2. 시행' : v.effectiveDate ? `${v.effectiveDate} 이후 건축허가분` : '종전'}
+                                        </p>
+                                        {isApplied && (
+                                          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                                            📍 적용 중
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className={`text-[10px] leading-relaxed px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-500 border border-gray-100'}`}>
+                                        {v.description || ""}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+
                   {/* 검사기준 적용일 (개정) 섹션 — 별도 컴포넌트로 분리 (esbuild JSX 파서 이슈 회피) */}
                   <RevisionDateSection
                     itemId={detailItem.id}
@@ -2428,12 +2483,8 @@ export default function JudgmentPage() {
                     );
                   })()}
               {/* 사진/댓글 B방식 */}
-                  <div className="border border-border rounded-xl overflow-hidden mb-2">
-                    <button onClick={() => setDetailMediaOpen(v => !v)} className="w-full flex items-center gap-2 px-3 py-2 bg-muted/30 text-left">
-                      <span className="text-[11px] font-semibold">📷 사진 {itemPhotos.length}장 &nbsp;·&nbsp; 💬 댓글 {itemComments.length}개</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground">{detailMediaOpen ? "▲" : "▼"}</span>
-                    </button>
-                  <div className={detailMediaOpen ? "p-3" : "hidden"}>
+                  <div className="mb-2">
+                  <div className="p-0">
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="font-medium flex items-center gap-2">
@@ -2485,60 +2536,6 @@ export default function JudgmentPage() {
                       />
                     )}
                   </div>
-
-                  {/* 참조 조문 연혁 섹션 */}
-                  {refRevisions.length > 0 && (
-                    <div className="border border-amber-200 dark:border-amber-800 rounded-xl p-3 bg-amber-50 dark:bg-amber-900/10 mb-4">
-                      <button onClick={() => setDetailRevisionOpen(v => !v)} className="w-full flex items-center gap-2 mb-2">
-                        <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</span>
-                        <span className="ml-auto text-[10px] text-amber-500">{detailRevisionOpen ? "▲" : "▼"}</span>
-                      </button>
-                      <div className={detailRevisionOpen ? "space-y-3" : "hidden"}>
-                        {refRevisions.map(({ refId, versions }) => (
-                          <div key={refId}>
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">[별표22] {refId}</span>
-                              {referenceDate && <span className="text-[9px] text-amber-600 dark:text-amber-400">({permitDate || inspectionDate} 기준)</span>}
-                            </div>
-                            <div className="space-y-1.5">
-                              {versions.map((v: any, i: number) => {
-                                const isCurrent = v.introductionType === 'current';
-                                // referenceDate 기준 적용 버전 판정
-                                const vFrom = v.effectiveDate ? new Date(v.effectiveDate) : null;
-                                const vTo   = v.expiryDate   ? new Date(v.expiryDate)   : null;
-                                const isApplied = referenceDate
-                                  ? (!vFrom || referenceDate >= vFrom) && (!vTo || referenceDate <= vTo)
-                                  : isCurrent;
-                                return (
-                                  <div key={i} className="flex gap-2">
-                                    <div className="flex flex-col items-center w-3 flex-shrink-0 mt-1">
-                                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isApplied ? 'bg-blue-500' : 'bg-gray-300'}`} />
-                                      {i < versions.length - 1 && <div className="w-px bg-gray-200 flex-1 mt-1 mb-1" />}
-                                    </div>
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                                        <p className={`text-[9px] font-bold ${isApplied ? 'text-blue-600' : 'text-gray-400'}`}>
-                                          {isCurrent ? '현행 · 2022.3.2. 시행' : v.effectiveDate ? `${v.effectiveDate} 이후 건축허가분` : '종전'}
-                                        </p>
-                                        {isApplied && (
-                                          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
-                                            📍 적용 중
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className={`text-[10px] leading-relaxed px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-500 border border-gray-100'}`}>
-                                        {(v.description || "").slice(0, 200)}{(v.description || "").length > 200 ? "..." : ""}
-                                      </p>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   {/* 댓글 섹션 */}
                   <div>
