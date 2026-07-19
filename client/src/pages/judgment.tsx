@@ -2337,53 +2337,6 @@ export default function JudgmentPage() {
               )}
               <div className="p-3 bg-muted rounded-lg text-sm mb-4">
                 <p className="leading-relaxed">{detailItem.text}</p>
-                {(customEdits[detailItem.id] as any)?.standardNote && (
-                  <div className="mt-2 pt-2 border-t border-border">
-                    <p className="text-xs text-muted-foreground font-medium mb-2">📋 검사기준</p>
-                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
-                      {(() => {
-                        const note: string = (customEdits[detailItem.id] as any).standardNote;
-                        const lines = note.split("\n").filter((l: string) => l.trim());
-                        const sections: { header: string; body: string[] }[] = [];
-                        let cur: { header: string; body: string[] } | null = null;
-                        for (const line of lines) {
-                          const headerMatch = line.match(/^\[(\d[\d.]*)\]\s*(.*)/);
-                          if (headerMatch) {
-                            if (cur) sections.push(cur);
-                            cur = { header: headerMatch[1], body: [] };
-                            const rest = headerMatch[2].replace(/^\d[\d.]*\s+/, "").trim();
-                            if (rest) cur.body.push(rest);
-                          } else if (cur) {
-                            cur.body.push(line.trim());
-                          } else {
-                            sections.push({ header: "", body: [line.trim()] });
-                          }
-                        }
-                        if (cur) sections.push(cur);
-                        return sections.map((sec, si) => (
-                          <div key={si}>
-                            {sec.header && (
-                              <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 mb-1">{sec.header}</span>
-                            )}
-                            <div className="space-y-1">
-                              {sec.body.map((line: string, li: number) => {
-                                const isItem = /^[가-하]\s*\)/.test(line) || /^\d+\s*\)/.test(line);
-                                return isItem ? (
-                                  <div key={li} className="flex gap-1.5 text-xs text-foreground/80 leading-relaxed">
-                                    <span className="text-muted-foreground shrink-0 w-5">{line.match(/^([가-하]\s*\)|\d+\s*\))/)?.[0]}</span>
-                                    <span>{line.replace(/^[가-하]\s*\)|^\d+\s*\)/, "").trim()}</span>
-                                  </div>
-                                ) : (
-                                  <p key={li} className="text-xs text-foreground/80 leading-relaxed">{line}</p>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                  </div>
-                )}
               </div>
               
               <div 
@@ -2418,14 +2371,7 @@ export default function JudgmentPage() {
                                 const isApplied = referenceDate
                                   ? (!vFrom || referenceDate >= vFrom) && (!vTo || referenceDate <= vTo)
                                   : isCurrent;
-                                // 현행 버전은 간략 표시 (내용은 아래 검사기준 섹션에 있음)
-                                if (isCurrent) return (
-                                  <div key={i} className="flex items-center gap-2 py-1 px-2 bg-blue-50 dark:bg-blue-900/10 rounded-lg mb-1">
-                                    <span className="text-[8px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded">현행</span>
-                                    <span className="text-[9px] text-blue-600 dark:text-blue-400">{v.effectiveDate || "2022.3.2."} 시행 — 아래 검사기준 참조</span>
-                                    {isApplied && referenceDate && <span className="text-[8px] font-bold bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full ml-auto">📍 현행 적용</span>}
-                                  </div>
-                                );
+                                // 현행 포함 전체 표시
                                 return (
                                   <div key={i} className="flex gap-2">
                                     <div className="flex flex-col items-center w-3 flex-shrink-0 mt-1">
