@@ -30,6 +30,16 @@ type ContentEntry = {
 };
 import type { InspectionItemEdit, CustomInspectionItem } from "@shared/schema";
 
+// expiryDate(마지막 유효일, 예: '1997-08-17')를 받아 그 다음날('1997-08-18') 문자열을 반환.
+// 가장 오래된 연혁(effectiveDate가 없는 항목)의 "OOOO-MM-DD 이전 건축허가분" 라벨 계산용.
+function dayAfter(dateStr: string): string {
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return dateStr;
+  const d = new Date(Date.UTC(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3])));
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 // Image Viewer State
 interface ImageViewerState {
   isOpen: boolean;
@@ -2381,7 +2391,13 @@ export default function JudgmentPage() {
                                     <div className="flex-1">
                                       <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                                         <p className={`text-[9px] font-bold ${isApplied ? 'text-blue-600' : 'text-gray-400'}`}>
-                                          {isCurrent ? '현행 · 2022.3.2. 시행' : v.effectiveDate ? `${v.effectiveDate} 이후 건축허가분` : '종전'}
+                                          {isCurrent
+                                            ? '현행 · 2022.3.2. 시행'
+                                            : v.effectiveDate
+                                              ? `${v.effectiveDate} 이후 건축허가분`
+                                              : v.expiryDate
+                                                ? `${dayAfter(v.expiryDate)} 이전 건축허가분`
+                                                : '종전'}
                                         </p>
                                         {isApplied && (
                                           <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
