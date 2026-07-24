@@ -498,9 +498,11 @@ export class DatabaseStorage implements IStorage {
   }
   // Inspection item revisions
   async getItemRevisions(itemId: string): Promise<InspectionItemRevision[]> {
+    // effective_date가 NULL인 항목은 "최초 이전(가장 오래된) 기준"이므로 맨 앞에 오도록 NULLS FIRST 명시.
+    // 기본 ASC 정렬은 Postgres에서 NULL을 맨 뒤로 보내 순서가 뒤섞이는 문제가 있었음.
     return await db.select().from(inspectionItemRevisions)
       .where(eq(inspectionItemRevisions.itemId, itemId))
-      .orderBy(inspectionItemRevisions.effectiveDate);
+      .orderBy(sql`${inspectionItemRevisions.effectiveDate} ASC NULLS FIRST`);
   }
   async createItemRevision(data: InsertInspectionItemRevision): Promise<InspectionItemRevision> {
     const [created] = await db.insert(inspectionItemRevisions).values(data).returning();
