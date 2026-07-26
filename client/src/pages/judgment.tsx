@@ -2402,7 +2402,7 @@ export default function JudgmentPage() {
                                       </span>
                                     )}
                                   </div>
-                                  <p className={`text-[10px] leading-relaxed px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-500 border border-gray-100'}`}>
+                                  <p className={`text-[10px] leading-relaxed whitespace-pre-wrap px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-500 border border-gray-100'}`}>
                                     {v.description || ""}
                                   </p>
                                 </div>
