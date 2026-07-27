@@ -1744,119 +1744,6 @@ export default function JudgmentPage() {
                  [가능한 옵션 안내]
             
             버튼은 모든 상태에서 유지, 안내문구만 동적                      */}
-        {/* [개선] 적용 안내 — 접힌 토글 + 한글 날짜 카드 (버튼/amber 로직은 그대로) */}
-        {referenceDate && (() => {
-          const standardDates: string[] = (customEdits[item.id] as any)?.standardDates || [];
-          let latestDate = item.effectiveDate || "";
-          for (const d of standardDates) { if (d > latestDate) latestDate = d; }
-          const enforcementType = (customEdits[item.id] as any)?.enforcementType;
-          const refK = formatKoreanDate(referenceDate.toISOString().split("T")[0]);
-          const effK = formatKoreanDate(item.effectiveDate);
-          const latestK = formatKoreanDate(latestDate) || effK;
-
-          const row = (cond: string, label: string, tone: string) => (
-            <div className="flex items-center justify-between py-1">
-              <span className="text-[12px] text-muted-foreground">{cond}</span>
-              <span className={cn("text-[12px] font-medium px-3 py-0.5 rounded", tone)}>{label}</span>
-            </div>
-          );
-
-          let lead: JSX.Element;
-          let rows: JSX.Element;
-
-          if (status === "not-applicable") {
-            lead = (
-              <>
-                <div className="text-[11px] text-muted-foreground mb-1">적용 기준일</div>
-                <div className="text-[14px] font-medium text-foreground">{effK || "도입일 이전"} 도입</div>
-                <div className="text-[12px] text-muted-foreground mt-1">검사기준 적용일({refK})에는 적용되지 않아 「해당없음」으로 자동 처리됩니다.</div>
-              </>
-            );
-            rows = row("해당 시점 미도입", "해당없음", "bg-gray-100 text-gray-600");
-          } else if (status === "previous") {
-            lead = (
-              <>
-                <div className="text-[11px] text-muted-foreground mb-1">적용 기준일</div>
-                <div className="text-[14px] font-medium text-foreground">{effK} 도입 → {latestK} 개정</div>
-                <div className="text-[12px] text-muted-foreground mt-1">검사기준 적용일({refK})에는 옛 본문이 적용됩니다.</div>
-              </>
-            );
-            rows = (
-              <>
-                {row("옛 본문에 부합", "종전", "bg-amber-100 text-amber-700")}
-                {row(`현행 기준(${latestK}~) 부합`, "적합", "bg-green-100 text-green-700")}
-                {row("미흡", "부적합 · 시정권고", "bg-orange-100 text-orange-700")}
-                {row("해당 설비 없음", "해당없음", "bg-gray-100 text-gray-600")}
-              </>
-            );
-          } else if (enforcementType === "retroactive") {
-            lead = (
-              <>
-                <div className="text-[11px] text-muted-foreground mb-1">소급적용 항목</div>
-                <div className="text-[13px] text-foreground">건축허가일·검사기준 적용일과 <span className="font-medium">무관하게 항상 검사 대상</span>입니다.</div>
-                <div className="text-[11px] text-muted-foreground mt-1">근거: 승강기 검사기준 부칙 제2조 ① 단서</div>
-              </>
-            );
-            rows = (
-              <>
-                {row("현행 기준 충족", "적합", "bg-green-100 text-green-700")}
-                {row("미흡", "부적합 · 시정권고", "bg-orange-100 text-orange-700")}
-                {row("해당 설비 없음", "해당없음", "bg-gray-100 text-gray-600")}
-              </>
-            );
-          } else {
-            lead = (
-              <>
-                <div className="text-[11px] text-muted-foreground mb-1">적용 기준일</div>
-                <div className="text-[14px] font-medium text-foreground">{latestK} 이후</div>
-                <div className="text-[12px] text-muted-foreground mt-1">
-                  <span className="bg-blue-100 text-blue-700 text-[11px] px-2 py-0.5 rounded mr-1">건축허가</span>
-                  신청분부터 현행 기준 적용
-                </div>
-              </>
-            );
-            rows = (
-              <>
-                {row("현행 기준 부합", "적합", "bg-green-100 text-green-700")}
-                {row("미흡", "부적합 · 시정권고", "bg-orange-100 text-orange-700")}
-              </>
-            );
-          }
-
-          return (
-            <div className="ml-0 mr-0 mb-3">
-              <div className="border border-border rounded-xl overflow-hidden">
-                {/* 날짜 칩 */}
-                {(permitDate || inspectionDate) && (
-                  <div className="flex gap-2 px-3 pt-3 pb-2">
-                    {permitDate && (
-                      <div className="flex-1 bg-muted/40 border border-border rounded-lg px-2.5 py-1.5">
-                        <div className="text-[9px] text-muted-foreground mb-0.5">건축허가일</div>
-                        <div className="text-[11px] font-semibold text-foreground">{permitDate}</div>
-                      </div>
-                    )}
-                    {inspectionDate && (
-                      <div className="flex-1 bg-muted/40 border border-border rounded-lg px-2.5 py-1.5">
-                        <div className="text-[9px] text-muted-foreground mb-0.5">검사기준 적용일</div>
-                        <div className="text-[11px] font-semibold text-foreground">{inspectionDate}</div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                {/* 적용 기준 설명 */}
-                <div className="px-3 pb-2">
-                  {lead}
-                </div>
-                <div className="border-t border-border" />
-                {/* 판정 행 */}
-                <div className="px-3 pt-2 pb-1">
-                  <div className="text-[10px] text-muted-foreground mb-1.5">현장 상태를 확인해 직접 판정하세요</div>
-                  {rows}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
         {customEdits[item.id]?.customWarning && (
           <div className="px-4 pb-2 text-xs text-blue-600 ml-10 font-medium bg-blue-50 rounded mx-4 p-2 whitespace-pre-wrap">
             ※ {customEdits[item.id].customWarning}
@@ -2062,17 +1949,37 @@ export default function JudgmentPage() {
             </div>
           )}
 
-          {/* 기준일 안내 */}
+          {/* 기준일 안내 + 판정 기준 */}
           {(permitDate || inspectionDate) && (
-            <div className="p-2.5 bg-blue-500/10 rounded-lg border border-blue-500/20 text-xs space-y-0.5 mb-2">
-              {permitDate && <p className="text-foreground">건축허가일: <strong>{permitDate}</strong></p>}
-              {inspectionDate && <p className="text-foreground">검사기준 적용일: <strong>{inspectionDate}</strong></p>}
-              {installType && <p className="text-primary font-medium">교체 구분: {installType}</p>}
-              <p className="text-xs text-blue-500 mt-1">
-                {permitDate && inspectionDate && permitDate !== inspectionDate
-                  ? `${permitDate > inspectionDate ? permitDate : inspectionDate} 기준으로 판정됩니다.`
-                  : "입력된 날짜 기준으로 검사항목 적용 여부가 판정됩니다."}
-              </p>
+            <div className="space-y-2 mb-2">
+              <div className="p-2.5 bg-blue-500/10 rounded-lg border border-blue-500/20 text-xs space-y-0.5">
+                {permitDate && <p className="text-foreground">건축허가일: <strong>{permitDate}</strong></p>}
+                {inspectionDate && <p className="text-foreground">검사기준 적용일: <strong>{inspectionDate}</strong></p>}
+                {installType && <p className="text-primary font-medium">교체 구분: {installType}</p>}
+                <p className="text-xs text-blue-500 mt-1">
+                  {permitDate && inspectionDate && permitDate !== inspectionDate
+                    ? `${permitDate > inspectionDate ? permitDate : inspectionDate} 기준으로 판정됩니다.`
+                    : "입력된 날짜 기준으로 검사항목 적용 여부가 판정됩니다."}
+                </p>
+              </div>
+              <div className="border border-border rounded-xl overflow-hidden text-xs">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+                  <span className="font-semibold text-[11px]">📋 판정 기준</span>
+                  <span className="text-[9px] text-muted-foreground">{permitDate} 기준</span>
+                </div>
+                {[
+                  { badge: "적합", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", desc: "현행 검사기준에 적합한 경우" },
+                  { badge: "종전", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", desc: "건축허가일 또는 검사기준 적용일에 해당하는 종전 검사기준에 적합한 경우" },
+                  { badge: "부적합", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", desc: "현행 및 종전 검사기준 모두에 적합하지 않은 경우" },
+                  { badge: "시정권고", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", desc: "현행 검사기준에는 없으나 안전상 위험이 우려되어 개선이 필요한 경우" },
+                  { badge: "해당없음", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", desc: "해당 설비가 없거나 적용 제외 대상인 경우" },
+                ].map((r, i) => (
+                  <div key={i} className="flex items-start gap-2.5 px-3 py-2 border-b border-border last:border-b-0">
+                    <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5", r.color)}>{r.badge}</span>
+                    <span className="text-[10px] text-muted-foreground leading-relaxed">{r.desc}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -2109,27 +2016,6 @@ export default function JudgmentPage() {
           
           <div className="max-h-[600px] overflow-y-auto">
 
-            {/* 판정 기준 안내 카드 */}
-            {referenceDate && (
-              <div className="mx-3 mb-3 border border-border rounded-xl overflow-hidden text-xs">
-                <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
-                  <span className="font-semibold text-[11px]">📋 판정 기준</span>
-                  <span className="text-[9px] text-muted-foreground">건축허가일 {permitDate} 기준</span>
-                </div>
-                {[
-                  { badge: "적합", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", desc: "현행 검사기준에 적합한 경우" },
-                  { badge: "종전", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", desc: "건축허가일 또는 검사기준 적용일에 해당하는 종전 검사기준에 적합한 경우" },
-                  { badge: "부적합", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", desc: "현행 및 종전 검사기준 모두에 적합하지 않은 경우" },
-                  { badge: "시정권고", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", desc: "현행 검사기준에는 없으나 안전상 위험이 우려되어 개선이 필요한 경우" },
-                  { badge: "해당없음", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", desc: "해당 설비가 없거나 적용 제외 대상인 경우" },
-                ].map((r, i) => (
-                  <div key={i} className="flex items-start gap-2.5 px-3 py-2 border-b border-border last:border-b-0">
-                    <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5", r.color)}>{r.badge}</span>
-                    <span className="text-[10px] text-muted-foreground leading-relaxed">{r.desc}</span>
-                  </div>
-                ))}
-              </div>
-            )}
             {visibleSections.map(section => renderSection(section))}
           </div>
         </div>
