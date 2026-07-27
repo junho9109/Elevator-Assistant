@@ -2317,11 +2317,19 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                           return (
                             <button
                               key={i}
-                              className="w-full text-left bg-card border border-border rounded-xl overflow-hidden hover:bg-muted/30 transition-colors"
+                              className="w-full text-left bg-card border border-border rounded-xl overflow-hidden hover:bg-muted/30 active:bg-muted/50 transition-colors"
                               onClick={() => {
                                 if (r.type === "chat") {
                                   window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
                                   setTimeout(() => window.dispatchEvent(new CustomEvent("scrollToChatMsg", { detail: { id: r.chatMeta?.id } })), 300);
+                                } else if (r.type === "inspection" || r.type === "judgment") {
+                                  // 검사가이드로 딥링크
+                                  sessionStorage.setItem("pendingJudgmentItem", r.query);
+                                  window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
+                                } else if (r.type === "standard") {
+                                  // 표준화 자료로 딥링크
+                                  sessionStorage.setItem("pendingStdItem", r.query);
+                                  window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
                                 } else {
                                   setSelectedSearchResult(r);
                                 }
@@ -2331,7 +2339,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: pStyle.bg, color: pStyle.text }}>{pStyle.label}</span>
                                 <span className="text-[10px] text-muted-foreground">{TYPE_LABEL[r.type] || r.type}</span>
                               </div>
-                              <div className="px-3 pb-2">
+                              <div className="px-3 pb-1.5">
                                 <p className="text-[11px] font-semibold text-foreground leading-snug mb-0.5">{r.title}</p>
                                 {r.content && r.type !== "chat" && (
                                   <p className="text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">{r.content}</p>
@@ -2342,6 +2350,18 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                                     {r.chatMeta.replyToUser && <span> → {r.chatMeta.replyToUser}</span>}
                                   </p>
                                 )}
+                              </div>
+                              {/* 딥링크 목적지 표시 */}
+                              <div className="flex items-center justify-between px-3 pb-2">
+                                {r.query && r.type !== "chat" && (
+                                  <span className="text-[9px] bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-100 dark:border-blue-800">
+                                    {r.query}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-blue-500 dark:text-blue-400 flex items-center gap-0.5 ml-auto">
+                                  {r.type === "inspection" || r.type === "judgment" ? "검사가이드에서 열기" : r.type === "standard" ? "표준화에서 열기" : r.type === "chat" ? "채팅에서 보기" : "보기"}
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                                </span>
                               </div>
                             </button>
                           );
