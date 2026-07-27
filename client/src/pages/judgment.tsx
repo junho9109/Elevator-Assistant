@@ -40,6 +40,12 @@ function dayAfter(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+// 검사가이드 본문에 조문번호가 문장으로 표기되지 않아 정규식 추출로는 못 잡는 예외 항목.
+// key: 검사항목 id, value: 강제로 표시할 참조 조문번호 목록.
+const EXTRA_REF_IDS: Record<string, string[]> = {
+  "1.3.2-가": ["6.5.7.2"],
+};
+
 // Image Viewer State
 interface ImageViewerState {
   isOpen: boolean;
@@ -1035,7 +1041,8 @@ export default function JudgmentPage() {
 
     // 본문에서 6항 참조 조문번호 추출 (예: 6.3.3, 6.5.2.2.1)
     const refMatches = (item.text || "").match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
-    const uniqueRefs = [...new Set(refMatches)];
+    // 본문에 번호가 안 적혀 있어 정규식으로 못 잡는 예외 항목은 수동으로 추가
+    const uniqueRefs = [...new Set([...refMatches, ...(EXTRA_REF_IDS[item.id] || [])])];
     if (uniqueRefs.length > 0) {
       const refResults = await Promise.all(
         uniqueRefs.map(async (refId) => {
