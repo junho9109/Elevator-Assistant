@@ -1212,7 +1212,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch {}
 
       // ════════════════════════════════════════════════════════════
-      // 3-Agent 파이프라인
+      // 0단계: 질문 유형 분류 (Haiku — 경량 빠름)
+      // 유형: LOOKUP(조문/기준조회) | JUDGMENT(판정/판단) | CALCULATE(계산)
+      // ════════════════════════════════════════════════════════════
+      let questionType: "LOOKUP" | "JUDGMENT" | "CALCULATE" = "LOOKUP";
+      try {
+        const classifier = await anthropic.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 20,
+          system: `승강기 검사 질문을 분류한다. 아래 중 하나만 반환한다.
+LOOKUP: 조문·기준·규정·수치를 묻는 질문 (예: "기준이 뭐야", "몇mm야")
+JUDGMENT: 판정·적부·합격여부를 묻는 질문 (예: "적합한가", "지적해야 하나")
+CALCULATE: 값을 계산해달라는 질문 (예: "구해줘", "계산해줘", "얼마야")
+단어 하나만 반환.`,
+          messages: [{ role: "user", content: userQuestion }],
+        });
+        const cls = classifier.content[0].type === "text" ? classifier.content[0].text.trim() : "";
+        if (cls === "JUDGMENT") questionType = "JUDGMENT";
+        else if (cls === "CALCULATE") questionType = "CALCULATE";
+      } catch {}
+
+      // CALCULATE: 자료에서 공식 추출 → 필요 변수 질문 → 계산
+      if (questionType === "CALCULATE") {
+        // 대화 히스토리에 이미 변수값이 있는지 확인
+        const prevMessages = messages.slice(0, -1);
+        const hasVariables = prevMessages.some(m => m.role === "user" && /\d+(\.\d+)?/.test(m.content));
+
+        const calcSystem = hasVariables
+          ? `승강기 검사 계산 전문가다. 제공된 자료에서 공식을 찾아 대화에서 수집된 변수값으로 계산하고 결과와 적합/부적합 판정을 내린다. 계산 과정을 단계별로 보여준다.${contextText}${memoSection}`
+          : `승강기 검사 계산 전문가다. 제공된 자료(메모 포함)에서 계산 공식과 필요한 변수를 파악한다.
+공식을 찾으면: "계산을 위해 다음 값이 필요합니다:" 로 시작하여 필요한 변수만 번호로 나열한다.
+공식이 없으면: "해당 계산 기준 없음" 한 줄만 출력한다.
+불필요한 설명 없이 필요한 변수 목록만 출력한다.${contextText}${memoSection}`;
+
+        const calcResp = await anthropic.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 800,
+          system: calcSystem,
+          messages: messages,
+        });
+        const calcText = calcResp.content[0].type === "text" ? calcResp.content[0].text.trim() : "";
+        return res.json({ answer: calcText, sources: [], type: "CALCULATE" });
+      }
+
+      // ════════════════════════════════════════════════════════════
+      // 3-Agent 파이프라인 (LOOKUP / JUDGMENT)
       // 규칙1: 어플 내 등록된 데이터만 검색한다 (외부 인터넷 검색 없음)
       // 규칙2: 에이전트1(Sonnet,초안) → 에이전트2(Haiku,독립 재검증)
       //        → 불일치 시에만 에이전트3(Sonnet,중재)
