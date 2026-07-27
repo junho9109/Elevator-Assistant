@@ -1252,7 +1252,7 @@ CALCULATE: 값을 계산해달라는 질문 (예: "구해줘", "계산해줘", "
           messages: messages,
         });
         const calcText = calcResp.content[0].type === "text" ? calcResp.content[0].text.trim() : "";
-        return res.json({ answer: calcText, sources: [], type: "CALCULATE" });
+        return res.json({ reply: calcText, usedSources: [], type: "CALCULATE" });
       }
 
       // ════════════════════════════════════════════════════════════
