@@ -1252,6 +1252,18 @@ CALCULATE: 값을 계산해달라는 질문 (예: "구해줘", "계산해줘", "
           messages: messages,
         });
         const calcText = calcResp.content[0].type === "text" ? calcResp.content[0].text.trim() : "";
+
+        // 균형추 여유거리 계산 카드 감지
+        const isCounterWeight = /균형추.*여유거리|여유거리.*균형추/i.test(userQuestion);
+        if (isCounterWeight) {
+          return res.json({
+            reply: "균형추 최대 여유거리를 계산해드릴게요. 아래 정보를 입력해주세요.",
+            usedSources: [],
+            type: "CALCULATE",
+            calcCard: "COUNTER_WEIGHT",
+          });
+        }
+
         return res.json({ reply: calcText, usedSources: [], type: "CALCULATE" });
       }
 

@@ -313,7 +313,7 @@ function scoreMatch(
 }
 
 
-type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; };
+type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat"; title: string; content: string; query: string; score?: number; priority?: number; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
 // ==================== 검색결과 아코디언 ====================
@@ -883,6 +883,89 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 }
 
 // ==================== 메인 ====================
+// ── 균형추 최대 여유거리 계산 카드 ──────────────────────────────
+function CounterWeightCalcCard() {
+  const [targetStd, setTargetStd] = React.useState(0.5);
+  const [targetLabel, setTargetLabel] = React.useState("가) 일반 부품");
+  const [measured, setMeasured] = React.useState("");
+  const [buffer, setBuffer] = React.useState("");
+  const [speed, setSpeed] = React.useState("");
+  const [result, setResult] = React.useState<{value: number; formula: string; pass: boolean} | null>(null);
+
+  const targets = [
+    { label: "가) 일반 부품", std: 0.5 },
+    { label: "나) 가이드슈/롤러", std: 0.1 },
+    { label: "다-1) 난간 안쪽", std: 0.3 },
+    { label: "다-2) 난간 바깥쪽", std: 0.5 },
+  ];
+
+  const calculate = () => {
+    const m = parseFloat(measured);
+    const b = parseFloat(buffer);
+    const s = parseFloat(speed);
+    if (isNaN(m) || isNaN(b) || isNaN(s)) return;
+    const bufM = b / 1000;
+    const speedTerm = 0.035 * s * s;
+    const val = m - targetStd - bufM - speedTerm;
+    setResult({
+      value: val,
+      formula: `${m} − ${targetStd} − ${bufM.toFixed(3)} − (0.035 × ${s}²) = ${val.toFixed(3)} m`,
+      pass: val >= 0,
+    });
+  };
+
+  return (
+    <div className="mt-2 rounded-xl border border-border overflow-hidden text-xs w-full max-w-sm">
+      <div className="bg-blue-700 text-white px-3 py-2">
+        <p className="font-bold text-[11px]">🔧 균형추 최대 여유거리 계산</p>
+        <p className="text-[10px] opacity-80">공식: 측정값 − 기준값 − 완충기 행정 − (0.035 × 속도²)</p>
+      </div>
+      <div className="p-3 border-b border-border">
+        <p className="text-[10px] font-bold text-muted-foreground mb-2">① 측정 대상</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {targets.map(tgt => (
+            <button key={tgt.label} onClick={() => { setTargetStd(tgt.std); setTargetLabel(tgt.label); setResult(null); }}
+              className={"rounded-lg border-2 p-2 text-left transition-colors " + (targetStd === tgt.std && targetLabel === tgt.label ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-border")}>
+              <p className={"font-semibold text-[10px] " + (targetStd === tgt.std && targetLabel === tgt.label ? "text-blue-700 dark:text-blue-300" : "text-foreground")}>{tgt.label}</p>
+              <p className="text-[9px] text-muted-foreground">기준값: {tgt.std} m</p>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="p-3 border-b border-border flex flex-col gap-2">
+        <p className="text-[10px] font-bold text-muted-foreground">② 측정값 입력</p>
+        {[
+          { label: "현장 측정값", unit: "m", val: measured, set: setMeasured },
+          { label: "완충기 행정", unit: "mm", val: buffer, set: setBuffer },
+          { label: "정격속도", unit: "m/s", val: speed, set: setSpeed },
+        ].map(row => (
+          <div key={row.label} className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground w-20 flex-shrink-0">{row.label}</span>
+            <input type="number" value={row.val} onChange={e => { row.set(e.target.value); setResult(null); }}
+              className="flex-1 border border-border rounded-lg px-2 py-1.5 text-[12px] bg-background outline-none focus:border-blue-500" placeholder="0" />
+            <span className="text-[10px] text-muted-foreground w-6">{row.unit}</span>
+          </div>
+        ))}
+      </div>
+      <div className="p-3">
+        <button onClick={calculate} className="w-full bg-blue-600 text-white rounded-lg py-2 text-[12px] font-semibold">계산하기</button>
+        {result && (
+          <div className="mt-3 bg-muted/40 rounded-lg p-2.5">
+            <p className="text-[10px] text-muted-foreground mb-1">계산 과정</p>
+            <p className="font-mono text-[10px] text-foreground mb-2">{result.formula}</p>
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-bold text-foreground">{result.value.toFixed(3)} m</span>
+              <span className={"text-[11px] font-bold px-3 py-1 rounded-full " + (result.pass ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")}>
+                {result.pass ? "✅ 적합" : "❌ 부적합"}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "map" }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1440,9 +1523,10 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
 
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: data.reply,
+        content: data.type === "CALCULATE" ? "" : data.reply,
         time: formatTime(),
-        searchResults: displayCards.length > 0 ? displayCards : undefined,
+        searchResults: data.type === "CALCULATE" ? undefined : (displayCards.length > 0 ? displayCards : undefined),
+        calcCard: data.type === "CALCULATE" ? data.calcCard : undefined,
       }]);
     } catch (err: any) {
       console.error("Chat fetch error:", err);
@@ -2210,6 +2294,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     )}
                   </div>
                 )}
+                  {msg.calcCard === "COUNTER_WEIGHT" && (
+                    <CounterWeightCalcCard />
+                  )}
                   <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
                   {msg.searchResults && msg.searchResults.length > 0 && (() => {
                     const TYPE_LABEL: Record<string, string> = {
