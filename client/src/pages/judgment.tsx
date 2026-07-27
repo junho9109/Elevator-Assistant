@@ -2108,6 +2108,28 @@ export default function JudgmentPage() {
           </div>
           
           <div className="max-h-[600px] overflow-y-auto">
+
+            {/* 판정 기준 안내 카드 */}
+            {referenceDate && (
+              <div className="mx-3 mb-3 border border-border rounded-xl overflow-hidden text-xs">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+                  <span className="font-semibold text-[11px]">📋 판정 기준</span>
+                  <span className="text-[9px] text-muted-foreground">건축허가일 {permitDate} 기준</span>
+                </div>
+                {[
+                  { badge: "적합", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", desc: "현행 검사기준에 적합한 경우" },
+                  { badge: "종전", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", desc: "건축허가일 또는 검사기준 적용일에 해당하는 종전 검사기준에 적합한 경우" },
+                  { badge: "부적합", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", desc: "현행 및 종전 검사기준 모두에 적합하지 않은 경우" },
+                  { badge: "시정권고", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", desc: "현행 검사기준에는 없으나 안전상 위험이 우려되어 개선이 필요한 경우" },
+                  { badge: "해당없음", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", desc: "해당 설비가 없거나 적용 제외 대상인 경우" },
+                ].map((r, i) => (
+                  <div key={i} className="flex items-start gap-2.5 px-3 py-2 border-b border-border last:border-b-0">
+                    <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5", r.color)}>{r.badge}</span>
+                    <span className="text-[10px] text-muted-foreground leading-relaxed">{r.desc}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {visibleSections.map(section => renderSection(section))}
           </div>
         </div>
