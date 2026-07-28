@@ -1246,15 +1246,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const refMatches = userQuestion.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g);
         if (refMatches && refMatches.length > 0) {
           const uniqueRefs = [...new Set(refMatches)].slice(0, 5) as string[];
-          const { sql: sqlTag } = await import("drizzle-orm");
-          const inClause = uniqueRefs.map(r => `'${r.replace(/'/g, "''")}'`).join(", ");
-          const revRows = await db.execute(
-            sqlTag`SELECT item_id, introduction_type, effective_date, expiry_date, description
+          const { pool: pgPool } = await import("./db");
+          const placeholders = uniqueRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
+          const revRows = await pgPool.query(
+            `SELECT item_id, introduction_type, effective_date, expiry_date, description
              FROM inspection_item_revisions
-             WHERE item_id IN (${sqlTag.raw(inClause)})
+             WHERE item_id IN (${placeholders})
              AND introduction_type IN ('current', 'old')
              AND description IS NOT NULL AND TRIM(description) != ''
-             ORDER BY item_id, effective_date DESC NULLS FIRST`
+             ORDER BY item_id, effective_date DESC NULLS FIRST`,
+            uniqueRefs
           );
           if (revRows.rows && revRows.rows.length > 0) {
             // 컨텍스트용 텍스트
@@ -1560,15 +1561,16 @@ ${answerRules}${contextText}${memoSection}`,
         const existingIds = new Set(articleCards.map((a: any) => a.itemId));
         const newRefs = allRefs.filter(r => !existingIds.has(r));
         if (newRefs.length > 0) {
-          const { sql: sqlTag2 } = await import("drizzle-orm");
-          const inClause2 = newRefs.map((r: string) => `'${r.replace(/'/g, "''")}'`).join(", ");
-          const revRows = await db.execute(
-            sqlTag2`SELECT item_id, introduction_type, effective_date, expiry_date, description
+          const { pool: pgPool2 } = await import("./db");
+          const placeholders2 = newRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
+          const revRows = await pgPool2.query(
+            `SELECT item_id, introduction_type, effective_date, expiry_date, description
              FROM inspection_item_revisions
-             WHERE item_id IN (${sqlTag2.raw(inClause2)})
+             WHERE item_id IN (${placeholders2})
              AND introduction_type IN ('current', 'old')
              AND description IS NOT NULL AND TRIM(description) != ''
-             ORDER BY item_id, effective_date DESC NULLS FIRST`
+             ORDER BY item_id, effective_date DESC NULLS FIRST`,
+            newRefs
           );
           if (revRows.rows && revRows.rows.length > 0) {
             const grouped: Record<string, any[]> = {};
