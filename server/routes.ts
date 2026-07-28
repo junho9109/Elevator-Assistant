@@ -1275,20 +1275,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const userQuestion = messages[messages.length - 1]?.content || "";
 
-      // 승강기 고유번호 감지 (4자리-3자리 형식 예: 1234-567)
+      // 승강기 고유번호 감지 (7자리 숫자 또는 4자리-3자리 형식)
       let elevatorInfoSection = "";
-      const elvtrMatch = userQuestion.match(/\b(\d{4}-\d{3})\b/);
+      const elvtrMatch = userQuestion.match(/\b(\d{4}-\d{3}|\d{7})\b/);
       if (elvtrMatch) {
         try {
           const elvtrNo = elvtrMatch[1];
           const apiKey = process.env.ELEVATOR_API_KEY;
-          const url = `http://openapi.elevator.go.kr/openapi/service/ElevatorInstallationService/getInstallationElvtrList?serviceKey=${apiKey}&elvtrNo=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+          const url = `http://openapi.elevator.go.kr/openapi/service/ElevatorInstallationService/getInstallationElvtrList?serviceKey=${encodeURIComponent(apiKey)}&elvtrNo=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
           const elvResp = await fetch(url);
           const elvData = await elvResp.json();
+          console.log("[승강기API] elvtrNo:", elvtrNo, "response:", JSON.stringify(elvData?.response?.header));
           const item = elvData?.response?.body?.items?.item;
           if (item) {
             const info = Array.isArray(item) ? item[0] : item;
-            elevatorInfoSection = `\n\n[승강기 정보 - ${elvtrNo}]\n건물명: ${info.buldNm || "-"}\n주소: ${info.address1 || "-"}\n종류: ${info.elvtrKindNm || "-"}\n설치일자: ${info.installationDe || "-"}\n최초설치일자: ${info.frstInstallationDe || "-"}\n정격속도: ${info.ratedSpeed || "-"} m/s\n적재하중: ${info.ratedLoadCap || "-"} kg`;
+            const installDate = info.installationDe || info.frstInstallationDe || "";
+            elevatorInfoSection = `\n\n[승강기 정보 - ${elvtrNo}]\n건물명: ${info.buldNm || "-"}\n주소: ${info.address1 || info.adres || "-"}\n종류: ${info.elvtrKindNm || "-"}\n상태: ${info.elvtrSttsNm || "-"}\n설치일자: ${installDate || "-"}\n최초설치일자: ${info.frstInstallationDe || "-"}\n정격속도: ${info.ratedSpeed || "-"} m/s\n적재하중: ${info.ratedLoadCap || "-"} kg`;
+          } else {
+            console.log("[승강기API] 항목 없음:", JSON.stringify(elvData?.response?.body));
           }
         } catch (e) {
           // 조회 실패 시 무시
@@ -1477,13 +1481,17 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
 ★ 메모가 검사기준과 다르면 검사기준이 정답이다.
 ★ 키워드가 비슷해도 질문의 맥락과 다른 메모는 무시한다.
 
-## 승강기번호 분석
-승강기 정보([승강기 정보 - XXXX-XXX])가 컨텍스트에 있는 경우:
-1. 설치일자를 건축허가일 근사값으로 사용하여 종전 기준 적용 여부를 판단한다
-2. 설치 시기 기준으로 현행과 다른 주요 항목을 안내한다
-3. "위험"이 아닌 "현행 기준과 차이 있는 항목" 으로 표현한다
-4. 설치일자가 2022년 3월 2일 이전이면 종전 기준 적용 가능성 안내
-5. 구체적 항목명과 어떤 점이 다른지 간략히 설명한다
+## 승강기번호 분석 (최우선 처리)
+[승강기 정보 - XXXXXXX] 가 컨텍스트에 있는 경우 반드시 다음을 수행한다:
+1. 설치일자(또는 최초설치일자)를 건축허가일 근사값으로 사용
+2. 2022년 3월 2일 이전 설치 → 종전 기준 적용 항목 존재 가능성 명시
+3. 설치 시기별로 검사 시 유의해야 할 주요 항목을 구체적으로 안내:
+   - 피트 정지장치 위치/개수 기준 변경 여부
+   - 승강장문 잠금장치 기준 변경 여부
+   - 카 상부틈새/균형추 여유거리 기준 변경 여부
+   - 비상통화장치 기준 변경 여부 등
+4. "검사 시 유의사항" 형태로 표현 (위험이라는 단어 대신)
+5. 설치일자가 없으면 "설치일자 확인 필요" 안내
 
 ## 계산/판정 질문 처리 (최우선)
 질문이 수치 계산 또는 현장 판정을 요구하는 경우:
