@@ -1051,6 +1051,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
+  app.get("/api/inspection-items/previous-ranges", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(
+        sql`SELECT item_id, MIN(effective_date) as min_date, MAX(expiry_date) as max_expiry
+            FROM inspection_item_revisions
+            WHERE introduction_type = 'old'
+            AND effective_date IS NOT NULL
+            GROUP BY item_id`
+      );
+      const result: Record<string, { minDate: string; maxExpiry: string }> = {};
+      (rows.rows || rows).forEach((r: any) => {
+        result[r.item_id] = {
+          minDate: r.min_date,
+          maxExpiry: r.max_expiry,
+        };
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({});
+    }
+  });
+
   app.get("/api/judgment-items/comment-counts", async (req, res) => {
     try {
       const counts = await storage.getItemCommentCounts();
@@ -1072,6 +1097,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result: Record<string, number> = {};
       (rows.rows || rows).forEach((r: any) => {
         result[r.item_id] = Number(r.cnt);
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({});
+    }
+  });
+
+  // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
+  app.get("/api/inspection-items/previous-ranges", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(
+        sql`SELECT item_id, MIN(effective_date) as min_date, MAX(expiry_date) as max_expiry
+            FROM inspection_item_revisions
+            WHERE introduction_type = 'old'
+            AND effective_date IS NOT NULL
+            GROUP BY item_id`
+      );
+      const result: Record<string, { minDate: string; maxExpiry: string }> = {};
+      (rows.rows || rows).forEach((r: any) => {
+        result[r.item_id] = {
+          minDate: r.min_date,
+          maxExpiry: r.max_expiry,
+        };
       });
       res.json(result);
     } catch (e) {
@@ -1273,7 +1323,8 @@ LOOKUP: 조문·기준·규정을 묻는 질문 (예: "기준이 뭐야", "조�
 JUDGMENT: 판정·적부·합격여부를 묻는 질문 (예: "적합한가", "지적해야 하나")
 CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하는 질문
   - 동사형: "구해줘", "계산해줘", "얼마야"
-  - 명사형: "균형추 여유거리", "카 상부틈새", "완충기 행정", "피트깊이" 등 수치로 판정하는 항목명만 있어도 해당
+  - 명사형: "균형추 여유거리", "카 상부틈새", "완충기 행정" 등 수치 계산이 명확히 필요한 항목명만 해당
+  - 단순 기준 조회("높이 기준", "거리 기준", "설치 높이" 등)는 LOOKUP으로 분류
 단어 하나만 반환.`,
           messages: [{ role: "user", content: userQuestion }],
         });
