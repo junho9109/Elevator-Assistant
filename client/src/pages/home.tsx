@@ -313,7 +313,7 @@ function scoreMatch(
 }
 
 
-type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; };
+type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
@@ -884,6 +884,80 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 }
 
 // ==================== 메인 ====================
+// ── 승강기 기본정보 + 안전 포인트 카드 ──────────────────────────
+function ElevatorInfoCard({ elevatorData, safetyPoints }: { elevatorData: any; safetyPoints: any[] }) {
+  const fmt = (d: number | string) => {
+    const s = String(d);
+    return s.length === 8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : s;
+  };
+  const installDate = fmt(elevatorData.installationDe || elevatorData.frstInstallationDe || "");
+
+  return (
+    <div className="mt-2 space-y-2 w-full max-w-sm text-xs">
+      {/* 기본정보 카드 */}
+      <div className="rounded-xl border border-border overflow-hidden">
+        <div className="bg-[#1e3a5f] text-white px-3 py-2.5">
+          <p className="font-bold text-[12px]">{elevatorData.buldNm || "-"}</p>
+          <p className="text-[10px] opacity-70">{elevatorData.address1} {elevatorData.address2 || ""}</p>
+        </div>
+        <div className="grid grid-cols-2">
+          {[
+            ["종류", `${elevatorData.elvtrKindNm || "-"}`],
+            ["형식", `${elevatorData.elvtrForm || "-"} ${elevatorData.elvtrDetailForm || ""}`],
+            ["정격속도", `${elevatorData.ratedSpeed || "-"} m/s`],
+            ["적재하중", `${elevatorData.liveLoad || "-"} kg`],
+            ["정원", `${elevatorData.ratedCap || "-"}명`],
+            ["운행층수", `${elevatorData.shuttleFloorCnt || "-"}층`],
+          ].map(([label, value], i) => (
+            <div key={i} className={`px-3 py-2 border-b border-border ${i % 2 === 0 ? "border-r" : ""}`}>
+              <p className="text-[9px] text-muted-foreground">{label}</p>
+              <p className="text-[11px] font-semibold text-foreground">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-100 dark:border-blue-800">
+          <div>
+            <p className="text-[10px] font-semibold text-blue-700 dark:text-blue-400">📅 설치일자</p>
+            <p className="text-[9px] text-blue-500">건축허가일 근사값으로 사용</p>
+          </div>
+          <p className="text-[13px] font-bold text-blue-700 dark:text-blue-400">{installDate}</p>
+        </div>
+      </div>
+
+      {/* 안전 포인트 */}
+      {safetyPoints.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-[11px] font-bold text-foreground">🔍 오늘의 안전 포인트</p>
+            <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">{installDate.slice(0,4)}년 설치 기준</span>
+          </div>
+          {safetyPoints.map((pt: any, i: number) => (
+            <div key={i} className="rounded-xl border border-border overflow-hidden mb-2">
+              <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
+                <span className="text-[9px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{i + 1}</span>
+                <span className="text-[9px] font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded">{pt.item_id}</span>
+              </div>
+              <div className="px-3 pb-1.5 space-y-1.5">
+                <div className="flex gap-2 items-start">
+                  <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">종전</span>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">{pt.old_desc}</p>
+                </div>
+                <div className="flex gap-2 items-start">
+                  <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">현행</span>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">{pt.cur_desc}</p>
+                </div>
+              </div>
+              <div className="mx-3 mb-2.5 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800 rounded-lg px-2.5 py-2">
+                <p className="text-[10px] text-orange-800 dark:text-orange-400">⚠️ 현행 기준과 차이 있는 항목입니다. 현장 확인 시 유의하세요.</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── 균형추 최대 여유거리 계산 카드 ──────────────────────────────
 function CounterWeightCalcCard() {
   const [targetStd, setTargetStd] = React.useState(0.5);
@@ -1539,6 +1613,8 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         time: formatTime(),
         searchResults: data.type === "CALCULATE" ? undefined : (displayCards.length > 0 ? displayCards : undefined),
         calcCard: data.type === "CALCULATE" ? data.calcCard : undefined,
+        elevatorData: data.elevatorData || null,
+        safetyPoints: data.safetyPoints || [],
       }]);
     } catch (err: any) {
       console.error("Chat fetch error:", err);
@@ -2306,6 +2382,9 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     )}
                   </div>
                 )}
+                  {msg.elevatorData && (
+                    <ElevatorInfoCard elevatorData={msg.elevatorData} safetyPoints={msg.safetyPoints || []} />
+                  )}
                   {msg.calcCard === "COUNTER_WEIGHT" && (
                     <CounterWeightCalcCard />
                   )}

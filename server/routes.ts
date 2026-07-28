@@ -1289,10 +1289,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const item = elvData?.response?.body?.items?.item;
           if (item) {
             const info = Array.isArray(item) ? item[0] : item;
+            (req as any).elevatorData = info;
             const installDate = String(info.installationDe || info.frstInstallationDe || "");
             // 날짜 포맷 변환 (20020910 → 2002-09-10)
             const formatDate = (d: string) => d.length === 8 ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : d;
             elevatorInfoSection = `\n\n[승강기 정보 - ${elvtrNo}]\n건물명: ${info.buldNm || "-"}\n주소: ${info.address1 || "-"} ${info.address2 || ""}\n종류: ${info.elvtrKindNm || "-"} (${info.elvtrDiv || "-"})\n형식: ${info.elvtrForm || "-"} ${info.elvtrDetailForm || ""}\n설치일자: ${installDate ? formatDate(installDate) : "-"}\n최초설치일자: ${info.frstInstallationDe ? formatDate(String(info.frstInstallationDe)) : "-"}\n정격속도: ${info.ratedSpeed || "-"} m/s\n적재하중: ${info.liveLoad || "-"} kg\n정원: ${info.ratedCap || "-"}명\n운행층수: ${info.shuttleFloorCnt || "-"}층\n설치장소: ${info.installationPlace || "-"}`;
+
+            // 설치일자 기준 종전 조문 랜덤 3개 추출 → safetyPoints
+            if (installDate) {
+              try {
+                const { pool: safetyPool } = await import("./db");
+                const isoDate = formatDate(installDate);
+                const safetyRows = await safetyPool.query(
+                  `SELECT r.item_id, r.description as old_desc, c.description as cur_desc, r.effective_date, r.expiry_date
+                   FROM inspection_item_revisions r
+                   JOIN inspection_item_revisions c ON c.item_id = r.item_id AND c.introduction_type = 'current'
+                   WHERE r.introduction_type = 'old'
+                   AND r.effective_date <= $1
+                   AND (r.expiry_date >= $1 OR r.expiry_date IS NULL)
+                   AND r.description IS NOT NULL AND TRIM(r.description) != ''
+                   AND c.description IS NOT NULL AND TRIM(c.description) != ''
+                   ORDER BY RANDOM()
+                   LIMIT 3`,
+                  [isoDate]
+                );
+                (req as any).safetyPoints = safetyRows.rows;
+              } catch(e) {}
+            }
           } else {
             console.log("[승강기API] 항목 없음:", JSON.stringify(elvData?.response?.body));
           }
@@ -1691,7 +1714,10 @@ ${answerRules}${contextText}${memoSection}`,
         }
       } catch (e) {}
 
-      res.json({ reply, usedSources, articleCards });
+      // 승강기 정보 + 안전 포인트 응답에 포함
+      const safetyPoints = (req as any).safetyPoints || [];
+      const elevatorData = (req as any).elevatorData || null;
+      res.json({ reply, usedSources, articleCards, safetyPoints, elevatorData });
 
 
     } catch (error: any) {
