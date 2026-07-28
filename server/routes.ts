@@ -1269,9 +1269,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           model: "claude-haiku-4-5-20251001",
           max_tokens: 20,
           system: `승강기 검사 질문을 분류한다. 아래 중 하나만 반환한다.
-LOOKUP: 조문·기준·규정·수치를 묻는 질문 (예: "기준이 뭐야", "몇mm야")
+LOOKUP: 조문·기준·규정을 묻는 질문 (예: "기준이 뭐야", "조문 알려줘")
 JUDGMENT: 판정·적부·합격여부를 묻는 질문 (예: "적합한가", "지적해야 하나")
-CALCULATE: 값을 계산해달라는 질문 (예: "구해줘", "계산해줘", "얼마야")
+CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하는 질문
+  - 동사형: "구해줘", "계산해줘", "얼마야"
+  - 명사형: "균형추 여유거리", "카 상부틈새", "완충기 행정", "피트깊이" 등 수치로 판정하는 항목명만 있어도 해당
 단어 하나만 반환.`,
           messages: [{ role: "user", content: userQuestion }],
         });
@@ -1304,8 +1306,12 @@ CALCULATE: 값을 계산해달라는 질문 (예: "구해줘", "계산해줘", "
         // 균형추 여유거리 계산 카드 감지
         const isCounterWeight = /균형추.*여유거리|여유거리.*균형추/i.test(userQuestion);
         if (isCounterWeight) {
+          const hasVerb = /구해|계산|얼마|알려|나와/.test(userQuestion);
+          const replyText = hasVerb
+            ? "균형추 최대 여유거리를 계산해드릴게요. 아래 정보를 입력해주세요."
+            : "균형추 최대 여유거리는 측정값·완충기 행정·속도로 계산합니다. 아래 카드로 바로 계산해보세요.";
           return res.json({
-            reply: "균형추 최대 여유거리를 계산해드릴게요. 아래 정보를 입력해주세요.",
+            reply: replyText,
             usedSources: [],
             type: "CALCULATE",
             calcCard: "COUNTER_WEIGHT",
