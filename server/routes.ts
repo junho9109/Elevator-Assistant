@@ -1189,6 +1189,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
             context.chatCtx.map(c => `• ${c.content}`).join("\n"));
         }
       }
+      // ── 조문 DB 검색 (inspection_item_revisions) ──────────────────
+      // 질문에서 조문번호 감지 → DB 조회 → 컨텍스트 추가
+      try {
+        const refMatches = userQuestion.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g);
+        if (refMatches && refMatches.length > 0) {
+          const uniqueRefs = [...new Set(refMatches)].slice(0, 5);
+          const placeholders = uniqueRefs.map((_, i) => `$${i + 1}`).join(", ");
+          const revRows = await db.execute(
+            `SELECT item_id, introduction_type, effective_date, expiry_date, description
+             FROM inspection_item_revisions
+             WHERE item_id IN (${placeholders})
+             AND introduction_type IN ('current', 'old')
+             AND description IS NOT NULL AND TRIM(description) != ''
+             ORDER BY item_id, effective_date DESC NULLS FIRST`,
+            uniqueRefs
+          );
+          if (revRows.rows && revRows.rows.length > 0) {
+            const revText = revRows.rows.map((r: any) => {
+              const dateInfo = r.introduction_type === 'current'
+                ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
+                : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
+              return `[${r.item_id}] ${dateInfo}\n${r.description}`;
+            }).join("\n\n");
+            sections.push("[별표22 조문 원문]\n" + revText);
+          }
+        }
+      } catch (e) {
+        // 조문 DB 조회 실패 시 무시
+      }
+
       const contextText = sections.length > 0
         ? "\n\n---\n" + sections.join("\n\n") + "\n---"
         : "";
