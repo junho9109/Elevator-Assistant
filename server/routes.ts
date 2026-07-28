@@ -1052,6 +1052,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
+  // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
+  app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
+    try {
+      const { elvtrNo } = req.params;
+      const apiKey = process.env.ELEVATOR_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API 키 없음" });
+
+      const url = `http://openapi.elevator.go.kr/openapi/service/ElevatorInstallationService/getInstallationElvtrList?serviceKey=${apiKey}&elvtrNo=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+
+      const item = data?.response?.body?.items?.item;
+      if (!item) return res.status(404).json({ error: "승강기 정보 없음" });
+
+      const info = Array.isArray(item) ? item[0] : item;
+      res.json({
+        elvtrNo: info.elvtrNo,
+        buldNm: info.buldNm,
+        address: info.address1,
+        elvtrKindNm: info.elvtrKindNm,
+        elvtrSttsNm: info.elvtrSttsNm,
+        installationDe: info.installationDe,   // 설치일자
+        frstInstallationDe: info.frstInstallationDe, // 최초설치일자
+        hoistwyCnt: info.hoistwyCnt,
+        ratedLoadCap: info.ratedLoadCap,
+        ratedSpeed: info.ratedSpeed,
+      });
+    } catch (e) {
+      res.status(500).json({ error: "API 조회 실패" });
+    }
+  });
+
   app.get("/api/inspection-items/previous-ranges", async (req, res) => {
     try {
       const { db } = await import("./db");
@@ -1105,6 +1137,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
+  // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
+  app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
+    try {
+      const { elvtrNo } = req.params;
+      const apiKey = process.env.ELEVATOR_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API 키 없음" });
+
+      const url = `http://openapi.elevator.go.kr/openapi/service/ElevatorInstallationService/getInstallationElvtrList?serviceKey=${apiKey}&elvtrNo=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+
+      const item = data?.response?.body?.items?.item;
+      if (!item) return res.status(404).json({ error: "승강기 정보 없음" });
+
+      const info = Array.isArray(item) ? item[0] : item;
+      res.json({
+        elvtrNo: info.elvtrNo,
+        buldNm: info.buldNm,
+        address: info.address1,
+        elvtrKindNm: info.elvtrKindNm,
+        elvtrSttsNm: info.elvtrSttsNm,
+        installationDe: info.installationDe,   // 설치일자
+        frstInstallationDe: info.frstInstallationDe, // 최초설치일자
+        hoistwyCnt: info.hoistwyCnt,
+        ratedLoadCap: info.ratedLoadCap,
+        ratedSpeed: info.ratedSpeed,
+      });
+    } catch (e) {
+      res.status(500).json({ error: "API 조회 실패" });
+    }
+  });
+
   app.get("/api/inspection-items/previous-ranges", async (req, res) => {
     try {
       const { db } = await import("./db");
@@ -1211,6 +1275,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const userQuestion = messages[messages.length - 1]?.content || "";
 
+      // 승강기 고유번호 감지 (4자리-3자리 형식 예: 1234-567)
+      let elevatorInfoSection = "";
+      const elvtrMatch = userQuestion.match(/\b(\d{4}-\d{3})\b/);
+      if (elvtrMatch) {
+        try {
+          const elvtrNo = elvtrMatch[1];
+          const apiKey = process.env.ELEVATOR_API_KEY;
+          const url = `http://openapi.elevator.go.kr/openapi/service/ElevatorInstallationService/getInstallationElvtrList?serviceKey=${apiKey}&elvtrNo=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+          const elvResp = await fetch(url);
+          const elvData = await elvResp.json();
+          const item = elvData?.response?.body?.items?.item;
+          if (item) {
+            const info = Array.isArray(item) ? item[0] : item;
+            elevatorInfoSection = `\n\n[승강기 정보 - ${elvtrNo}]\n건물명: ${info.buldNm || "-"}\n주소: ${info.address1 || "-"}\n종류: ${info.elvtrKindNm || "-"}\n설치일자: ${info.installationDe || "-"}\n최초설치일자: ${info.frstInstallationDe || "-"}\n정격속도: ${info.ratedSpeed || "-"} m/s\n적재하중: ${info.ratedLoadCap || "-"} kg`;
+          }
+        } catch (e) {
+          // 조회 실패 시 무시
+        }
+      }
+
       // ── 컨텍스트 텍스트 구성 ──────────────────────────────────────────
       const sections: string[] = [];
       if (context) {
@@ -1288,8 +1372,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // 조문 DB 조회 실패 시 무시
       }
 
-      const contextText = sections.length > 0
-        ? "\n\n---\n" + sections.join("\n\n") + "\n---"
+      const contextText = (sections.length > 0 || elevatorInfoSection)
+        ? "\n\n---\n" + sections.join("\n\n") + elevatorInfoSection + "\n---"
         : "";
 
       // ── 메모 자동 검색 ─────────────────────────────────────────────────
@@ -1392,6 +1476,14 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
 
 ★ 메모가 검사기준과 다르면 검사기준이 정답이다.
 ★ 키워드가 비슷해도 질문의 맥락과 다른 메모는 무시한다.
+
+## 승강기번호 분석
+승강기 정보([승강기 정보 - XXXX-XXX])가 컨텍스트에 있는 경우:
+1. 설치일자를 건축허가일 근사값으로 사용하여 종전 기준 적용 여부를 판단한다
+2. 설치 시기 기준으로 현행과 다른 주요 항목을 안내한다
+3. "위험"이 아닌 "현행 기준과 차이 있는 항목" 으로 표현한다
+4. 설치일자가 2022년 3월 2일 이전이면 종전 기준 적용 가능성 안내
+5. 구체적 항목명과 어떤 점이 다른지 간략히 설명한다
 
 ## 계산/판정 질문 처리 (최우선)
 질문이 수치 계산 또는 현장 판정을 요구하는 경우:
