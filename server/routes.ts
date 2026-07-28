@@ -1280,7 +1280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const elvtrMatch = userQuestion.match(/\b(\d{4}-\d{3}|\d{7})\b/);
       if (elvtrMatch) {
         try {
-          const elvtrNo = elvtrMatch[1];
+          const elvtrNo = elvtrMatch[1].replace(/-/g, "");  // 하이픈 제거
           const apiKey = process.env.ELEVATOR_API_KEY;
           const url = `https://apis.data.go.kr/B553664/ElevatorInstallationService/getInstallationElvtrListV2?serviceKey=${encodeURIComponent(apiKey)}&elevator_no=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
           const elvResp = await fetch(url);
