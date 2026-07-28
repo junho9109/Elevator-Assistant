@@ -307,13 +307,13 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.3.2-다",
             text: "다) 간접 유압식 엘리베이터의 경우, 승강로 천장의 가장 낮은 부분과 램의 가장 높은 부분 사이의 거리가「엘리베이터 안전기준」6.5.7.4에 따라 0.1 m 이상인지 확인한다.",
             result: null,
-            effectiveDate: "2013-09-15"
+            effectiveDate: "2019-03-28"
           },
           {
             id: "1.3.2-라",
             text: "라) 피난공간의 허용 가능 인원 및 자세 유형 표지가「엘리베이터 안전기준」6.5.7.1 및 6.5.8.1에 따라 카지붕 및 피트에 부착되어 있는지 확인한다.",
             result: null,
-            effectiveDate: "2013-09-15"
+            effectiveDate: "2019-03-28"
           }
         ]
       },
