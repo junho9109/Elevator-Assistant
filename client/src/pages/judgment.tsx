@@ -1632,12 +1632,7 @@ export default function JudgmentPage() {
     if (isSelected) {
       return (
         <button
-          className={cn(
-            baseClasses, 
-            isAutoSelected 
-              ? "bg-amber-500 text-white border-amber-500 ring-2 ring-amber-300" 
-              : "bg-primary text-primary-foreground border-primary"
-          )}
+          className={cn(baseClasses, "bg-green-100 text-green-700 border-green-400 dark:bg-green-900/30 dark:text-green-400 dark:border-green-600")}
           onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
           data-testid={`result-${itemId}-${resultType}`}
         >
@@ -1652,7 +1647,7 @@ export default function JudgmentPage() {
           baseClasses,
           isDisabled 
             ? "bg-muted text-muted-foreground border-muted cursor-not-allowed opacity-50" 
-            : "bg-background hover:bg-accent border-border"
+            : "bg-background text-muted-foreground hover:bg-accent border-border"
         )}
         onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
         disabled={isDisabled}
