@@ -1059,7 +1059,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const apiKey = process.env.ELEVATOR_API_KEY;
       if (!apiKey) return res.status(500).json({ error: "API 키 없음" });
 
-      const url = `http://openapi.elevator.go.kr/openapi/service/ElevatorInstallationService/getInstallationElvtrList?serviceKey=${apiKey}&elvtrNo=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+      const url = `https://apis.data.go.kr/B553664/ElevatorInstallationService/getInstallationElvtrListV2?serviceKey=${encodeURIComponent(apiKey)}&elevator_no=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
       const resp = await fetch(url);
       const data = await resp.json();
 
@@ -1144,7 +1144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const apiKey = process.env.ELEVATOR_API_KEY;
       if (!apiKey) return res.status(500).json({ error: "API 키 없음" });
 
-      const url = `http://openapi.elevator.go.kr/openapi/service/ElevatorInstallationService/getInstallationElvtrList?serviceKey=${apiKey}&elvtrNo=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+      const url = `https://apis.data.go.kr/B553664/ElevatorInstallationService/getInstallationElvtrListV2?serviceKey=${encodeURIComponent(apiKey)}&elevator_no=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
       const resp = await fetch(url);
       const data = await resp.json();
 
@@ -1282,15 +1282,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const elvtrNo = elvtrMatch[1];
           const apiKey = process.env.ELEVATOR_API_KEY;
-          const url = `http://openapi.elevator.go.kr/openapi/service/ElevatorInstallationService/getInstallationElvtrList?serviceKey=${encodeURIComponent(apiKey)}&elvtrNo=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+          const url = `https://apis.data.go.kr/B553664/ElevatorInstallationService/getInstallationElvtrListV2?serviceKey=${encodeURIComponent(apiKey)}&elevator_no=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
           const elvResp = await fetch(url);
           const elvData = await elvResp.json();
           console.log("[승강기API] elvtrNo:", elvtrNo, "response:", JSON.stringify(elvData?.response?.header));
           const item = elvData?.response?.body?.items?.item;
           if (item) {
             const info = Array.isArray(item) ? item[0] : item;
-            const installDate = info.installationDe || info.frstInstallationDe || "";
-            elevatorInfoSection = `\n\n[승강기 정보 - ${elvtrNo}]\n건물명: ${info.buldNm || "-"}\n주소: ${info.address1 || info.adres || "-"}\n종류: ${info.elvtrKindNm || "-"}\n상태: ${info.elvtrSttsNm || "-"}\n설치일자: ${installDate || "-"}\n최초설치일자: ${info.frstInstallationDe || "-"}\n정격속도: ${info.ratedSpeed || "-"} m/s\n적재하중: ${info.ratedLoadCap || "-"} kg`;
+            const installDate = String(info.installationDe || info.frstInstallationDe || "");
+            // 날짜 포맷 변환 (20020910 → 2002-09-10)
+            const formatDate = (d: string) => d.length === 8 ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : d;
+            elevatorInfoSection = `\n\n[승강기 정보 - ${elvtrNo}]\n건물명: ${info.buldNm || "-"}\n주소: ${info.address1 || "-"} ${info.address2 || ""}\n종류: ${info.elvtrKindNm || "-"} (${info.elvtrDiv || "-"})\n형식: ${info.elvtrForm || "-"} ${info.elvtrDetailForm || ""}\n설치일자: ${installDate ? formatDate(installDate) : "-"}\n최초설치일자: ${info.frstInstallationDe ? formatDate(String(info.frstInstallationDe)) : "-"}\n정격속도: ${info.ratedSpeed || "-"} m/s\n적재하중: ${info.liveLoad || "-"} kg\n정원: ${info.ratedCap || "-"}명\n운행층수: ${info.shuttleFloorCnt || "-"}층\n설치장소: ${info.installationPlace || "-"}`;
           } else {
             console.log("[승강기API] 항목 없음:", JSON.stringify(elvData?.response?.body));
           }
