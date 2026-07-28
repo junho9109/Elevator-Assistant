@@ -1486,20 +1486,8 @@ export default function JudgmentPage() {
   //   applicable + 일반         → ["적합","부적합","시정권고"]
   const getAutoResults = (item: InspectionItem): ResultType[] => {
     const status = getItemStatus(item);
+    // 해당없음만 자동 선택 — 나머지는 검사원이 직접 선택
     if (status === "not-applicable") return ["해당없음"];
-    
-    const edit = customEdits[item.id];
-    const enforcementType = (edit as any)?.enforcementType;
-    
-    if (status === "previous") {
-      return ["종전", "적합", "부적합", "시정권고", "해당없음"];
-    }
-    if (status === "applicable") {
-      if (enforcementType === "retroactive") {
-        return ["적합", "부적합", "시정권고", "해당없음"];
-      }
-      return ["적합", "부적합", "시정권고"];
-    }
     return [];
   };
   
@@ -1632,7 +1620,7 @@ export default function JudgmentPage() {
     if (isSelected) {
       return (
         <button
-          className={cn(baseClasses, "bg-green-100 text-green-700 border-green-400 dark:bg-green-900/30 dark:text-green-400 dark:border-green-600")}
+          className={cn(baseClasses, "bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-600")}
           onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
           data-testid={`result-${itemId}-${resultType}`}
         >
