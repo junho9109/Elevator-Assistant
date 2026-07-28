@@ -1190,12 +1190,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       // ── 조문 DB 검색 (inspection_item_revisions) ──────────────────
-      // 질문에서 조문번호 감지 → DB 조회 → 컨텍스트 추가
+      let articleCards: any[] = [];
       try {
         const refMatches = userQuestion.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g);
         if (refMatches && refMatches.length > 0) {
-          const uniqueRefs = [...new Set(refMatches)].slice(0, 5);
-          const placeholders = uniqueRefs.map((_, i) => `$${i + 1}`).join(", ");
+          const uniqueRefs = [...new Set(refMatches)].slice(0, 5) as string[];
+          const placeholders = uniqueRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
           const revRows = await db.execute(
             `SELECT item_id, introduction_type, effective_date, expiry_date, description
              FROM inspection_item_revisions
@@ -1206,6 +1206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             uniqueRefs
           );
           if (revRows.rows && revRows.rows.length > 0) {
+            // 컨텍스트용 텍스트
             const revText = revRows.rows.map((r: any) => {
               const dateInfo = r.introduction_type === 'current'
                 ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
@@ -1213,6 +1214,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return `[${r.item_id}] ${dateInfo}\n${r.description}`;
             }).join("\n\n");
             sections.push("[별표22 조문 원문]\n" + revText);
+
+            // 카드용 데이터 — item_id별로 그룹핑
+            const grouped: Record<string, any[]> = {};
+            for (const r of revRows.rows as any[]) {
+              if (!grouped[r.item_id]) grouped[r.item_id] = [];
+              grouped[r.item_id].push({
+                type: r.introduction_type === 'current' ? 'current' : 'old',
+                effectiveDate: r.effective_date,
+                expiryDate: r.expiry_date,
+                description: r.description,
+              });
+            }
+            articleCards = Object.entries(grouped).map(([itemId, versions]) => ({
+              itemId,
+              versions,
+            }));
           }
         }
       } catch (e) {
@@ -1477,7 +1494,7 @@ ${answerRules}${contextText}${memoSection}`,
         });
       }
 
-      res.json({ reply, usedSources });
+      res.json({ reply, usedSources, articleCards });
 
 
     } catch (error: any) {

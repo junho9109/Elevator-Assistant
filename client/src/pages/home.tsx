@@ -314,7 +314,8 @@ function scoreMatch(
 
 
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; };
-type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat"; title: string; content: string; query: string; score?: number; priority?: number; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
+type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
+type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
 // ==================== 검색결과 아코디언 ====================
 type CatGroup = { key: string; label: string; color: string; bg: string; dot: string; items: SearchResult[] };
@@ -1505,10 +1506,21 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         return { type: s.type as any, title: s.title, content: s.title, query: s.title, score: 200 };
       }).filter(Boolean);
 
+      // 조문 카드 (서버에서 받은 article 데이터)
+      const articleCards: SearchResult[] = (data.articleCards || []).map((a: any) => ({
+        type: "article" as const,
+        title: `[별표22] ${a.itemId}`,
+        content: (a.versions?.find((v: any) => v.type === "current")?.description || "").slice(0, 80),
+        query: a.itemId,
+        score: 300,
+        priority: 0,
+        versions: a.versions,
+      }));
+
       // usedSources 카드 없으면 기존 키워드 검색 카드 사용 (타입별 1개, 최대 3개)
       let displayCards: SearchResult[];
-      if (sourceCards.length > 0) {
-        displayCards = sourceCards.slice(0, 3);
+      if (sourceCards.length > 0 || articleCards.length > 0) {
+        displayCards = [...articleCards, ...sourceCards].slice(0, 5);
       } else {
         const contextTitles = new Set(contextUsed.map(r => r.title));
         const extraResults = results.filter(r => !contextTitles.has(r.title)).slice(0, 6);
@@ -2319,22 +2331,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                               key={i}
                               className="w-full text-left bg-card border border-border rounded-xl overflow-hidden hover:bg-muted/30 active:bg-muted/50 transition-colors"
                               onClick={() => {
-                                if (r.type === "chat") {
-                                  window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
-                                  setTimeout(() => window.dispatchEvent(new CustomEvent("scrollToChatMsg", { detail: { id: r.chatMeta?.id } })), 300);
-                                } else if (r.type === "judgment") {
-                                  // 검사가이드 항목 딥링크 (item.id 형식)
-                                  sessionStorage.setItem("pendingJudgmentItem", r.query);
-                                  window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
-                                } else if (r.type === "inspection") {
-                                  // 조문 원문 — 모달로 표시
-                                  setSelectedSearchResult(r);
-                                } else if (r.type === "standard") {
-                                  // 표준화 자료 — 모달로 표시
-                                  setSelectedSearchResult(r);
-                                } else {
-                                  setSelectedSearchResult(r);
-                                }
+                                setSelectedSearchResult(r);
                               }}
                             >
                               <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
@@ -2361,7 +2358,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                                   </span>
                                 )}
                                 <span className="text-[10px] text-blue-500 dark:text-blue-400 flex items-center gap-0.5 ml-auto">
-                                  {r.type === "judgment" ? "검사가이드에서 열기" : r.type === "inspection" ? "조문 원문 보기" : r.type === "standard" ? "내용 보기" : r.type === "chat" ? "채팅에서 보기" : "보기"}
+                                  {"상세보기"}
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                                 </span>
                               </div>
@@ -2885,9 +2882,11 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     ? "bg-blue-50 text-blue-700"
                     : selectedSearchResult.type === "judgment"
                     ? "bg-green-50 text-green-700"
+                    : selectedSearchResult.type === "article"
+                    ? "bg-indigo-50 text-indigo-700"
                     : "bg-amber-50 text-amber-700"
                 }`}>
-                  {selectedSearchResult.type === "standard" ? "기술자료" : selectedSearchResult.type === "judgment" ? "검사가이드" : "검사기준"}
+                  {selectedSearchResult.type === "standard" ? "기술자료" : selectedSearchResult.type === "judgment" ? "검사가이드" : selectedSearchResult.type === "article" ? "📋 조문 원문" : "검사기준"}
                 </span>
               </div>
               <button onClick={() => setSelectedSearchResult(null)} className="w-7 h-7 rounded-full flex items-center justify-center bg-secondary text-muted-foreground hover:bg-muted">
@@ -2896,7 +2895,31 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
             </div>
 
             <div className="p-4 space-y-4">
-              {selectedSearchResult.type === "standard" ? (() => {
+              {selectedSearchResult.type === "article" ? (() => {
+                const versions = selectedSearchResult.versions || [];
+                return (
+                  <>
+                    <h2 className="text-sm font-semibold text-foreground mb-3">{selectedSearchResult.title}</h2>
+                    <div className="space-y-3">
+                      {versions.map((v, i) => (
+                        <div key={i} className={`rounded-xl p-3 border ${v.type === "current" ? "bg-blue-50/50 border-blue-100" : "bg-amber-50/30 border-amber-100"}`}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${v.type === "current" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+                              {v.type === "current" ? "현행" : "종전"}
+                            </span>
+                            {v.effectiveDate && (
+                              <span className="text-[9px] text-muted-foreground">
+                                {v.effectiveDate}{v.expiryDate ? ` ~ ${v.expiryDate}` : ""}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-foreground leading-relaxed whitespace-pre-wrap">{v.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })() : selectedSearchResult.type === "standard" ? (() => {
                 const std = STD_ITEMS.find(x => x.title === selectedSearchResult.title) || null;
                 return (
                   <>
