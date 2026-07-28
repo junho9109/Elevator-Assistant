@@ -1191,6 +1191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       // ── 조문 DB 검색 (inspection_item_revisions) ──────────────────
       let articleCards: any[] = [];
+      // articleCards는 최종 답변 확정 후 채워짐 (아래 참고)
       try {
         const refMatches = userQuestion.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g);
         if (refMatches && refMatches.length > 0) {
@@ -1493,6 +1494,41 @@ ${answerRules}${contextText}${memoSection}`,
           if (judg)  usedSources.push({ type: "judgment",   title: judg[1].trim(),  ref: judg[1].trim() });
         });
       }
+
+      // AI 답변에서 조문번호 추출 → articleCards 보완
+      try {
+        const answerRefs = reply.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
+        const questionRefs = userQuestion.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
+        const allRefs = [...new Set([...answerRefs, ...questionRefs])].slice(0, 5) as string[];
+        const existingIds = new Set(articleCards.map((a: any) => a.itemId));
+        const newRefs = allRefs.filter(r => !existingIds.has(r));
+        if (newRefs.length > 0) {
+          const placeholders = newRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
+          const revRows = await db.execute(
+            `SELECT item_id, introduction_type, effective_date, expiry_date, description
+             FROM inspection_item_revisions
+             WHERE item_id IN (${placeholders})
+             AND introduction_type IN ('current', 'old')
+             AND description IS NOT NULL AND TRIM(description) != ''
+             ORDER BY item_id, effective_date DESC NULLS FIRST`,
+            newRefs
+          );
+          if (revRows.rows && revRows.rows.length > 0) {
+            const grouped: Record<string, any[]> = {};
+            for (const r of revRows.rows as any[]) {
+              if (!grouped[r.item_id]) grouped[r.item_id] = [];
+              grouped[r.item_id].push({
+                type: r.introduction_type === 'current' ? 'current' : 'old',
+                effectiveDate: r.effective_date,
+                expiryDate: r.expiry_date,
+                description: r.description,
+              });
+            }
+            const newCards = Object.entries(grouped).map(([itemId, versions]) => ({ itemId, versions }));
+            articleCards = [...articleCards, ...newCards];
+          }
+        }
+      } catch (e) {}
 
       res.json({ reply, usedSources, articleCards });
 
