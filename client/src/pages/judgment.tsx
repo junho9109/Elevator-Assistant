@@ -505,6 +505,7 @@ export default function JudgmentPage() {
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
   const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
   const [revisionCounts, setRevisionCounts] = useState<Record<string, number>>({});
+  const [previousRanges, setPreviousRanges] = useState<Record<string, { minDate: string; maxExpiry: string }>>({});
   const [refRevisions, setRefRevisions] = useState<{refId: string; versions: any[]}[]>([]);
   const [detailRevisionOpen, setDetailRevisionOpen] = useState(true);
   const [detailMediaOpen, setDetailMediaOpen] = useState(true);
@@ -737,6 +738,10 @@ export default function JudgmentPage() {
     fetch("/api/inspection-items/revision-counts")
       .then(r => r.json())
       .then(data => setRevisionCounts(data))
+      .catch(() => {});
+    fetch("/api/inspection-items/previous-ranges")
+      .then(r => r.json())
+      .then(data => setPreviousRanges(data))
       .catch(() => {});
   }, []);
 
@@ -1472,6 +1477,20 @@ export default function JudgmentPage() {
       return "previous";
     }
     
+    // [v6] DB 연혁집 종전 데이터 기반 판정
+    const refMatches = (item.text || "").match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
+    const directRef = /^(?:6|7|8|9|1[0-7])\./.test(item.id) ? [item.id] : [];
+    const allRefs = [...new Set([...refMatches, ...directRef])];
+    for (const ref of allRefs) {
+      const range = (previousRanges as any)[ref];
+      if (!range) continue;
+      const minDate = new Date(range.minDate);
+      const maxExpiry = range.maxExpiry ? new Date(range.maxExpiry) : new Date("2022-03-01");
+      if (referenceDate >= minDate && referenceDate <= maxExpiry) {
+        return "previous";
+      }
+    }
+
     // T ≥ L: 현행 시기
     return "applicable";
   };
@@ -1486,9 +1505,14 @@ export default function JudgmentPage() {
   //   applicable + 일반         → ["적합","부적합","시정권고"]
   const getAutoResults = (item: InspectionItem): ResultType[] => {
     const status = getItemStatus(item);
-    // 해당없음만 자동 선택 — 나머지는 검사원이 직접 선택
     if (status === "not-applicable") return ["해당없음"];
+    if (status === "previous") return ["종전"];
     return [];
+  };
+
+  // 종전 상태 여부 — 버튼 힌트용
+  const isPreviousItem = (item: InspectionItem): boolean => {
+    return getItemStatus(item) === "previous";
   };
   
   // 하위 호환 (단일 결과 기대하는 곳에서 사용 - 첫 번째 자동 결과 반환)
@@ -1628,13 +1652,13 @@ export default function JudgmentPage() {
         </button>
       );
     }
-    
+
     return (
       <button
         className={cn(
           baseClasses,
-          isDisabled 
-            ? "bg-muted text-muted-foreground border-muted cursor-not-allowed opacity-50" 
+          isDisabled
+            ? "bg-muted text-muted-foreground border-muted cursor-not-allowed opacity-50"
             : "bg-background text-muted-foreground hover:bg-accent border-border"
         )}
         onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
