@@ -2322,14 +2322,16 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                                 if (r.type === "chat") {
                                   window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
                                   setTimeout(() => window.dispatchEvent(new CustomEvent("scrollToChatMsg", { detail: { id: r.chatMeta?.id } })), 300);
-                                } else if (r.type === "inspection" || r.type === "judgment") {
-                                  // 검사가이드로 딥링크
+                                } else if (r.type === "judgment") {
+                                  // 검사가이드 항목 딥링크 (item.id 형식)
                                   sessionStorage.setItem("pendingJudgmentItem", r.query);
                                   window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 2 } }));
+                                } else if (r.type === "inspection") {
+                                  // 조문 원문 — 모달로 표시
+                                  setSelectedSearchResult(r);
                                 } else if (r.type === "standard") {
-                                  // 표준화 자료로 딥링크
-                                  sessionStorage.setItem("pendingStdItem", r.query);
-                                  window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
+                                  // 표준화 자료 — 모달로 표시
+                                  setSelectedSearchResult(r);
                                 } else {
                                   setSelectedSearchResult(r);
                                 }
@@ -2359,7 +2361,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                                   </span>
                                 )}
                                 <span className="text-[10px] text-blue-500 dark:text-blue-400 flex items-center gap-0.5 ml-auto">
-                                  {r.type === "inspection" || r.type === "judgment" ? "검사가이드에서 열기" : r.type === "standard" ? "표준화에서 열기" : r.type === "chat" ? "채팅에서 보기" : "보기"}
+                                  {r.type === "judgment" ? "검사가이드에서 열기" : r.type === "inspection" ? "조문 원문 보기" : r.type === "standard" ? "내용 보기" : r.type === "chat" ? "채팅에서 보기" : "보기"}
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                                 </span>
                               </div>
