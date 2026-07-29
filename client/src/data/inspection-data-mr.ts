@@ -566,7 +566,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.4.4-나",
             text: "나) 카 내부의 열림 버튼이「엘리베이터 안전기준」7.6.3에 따라 작동하는지 확인한다.",
             result: null,
-            effectiveDate: "2013-09-15"
+            effectiveDate: "2005-06-01"
           },
           {
             id: "1.4.4-다",
@@ -590,25 +590,25 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.4.4-바",
             text: "바) 승강장문의 비상잠금해제가「엘리베이터 안전기준」7.9.3.1에 따라 비상잠금해제 삼각열쇠를 사용하여 외부에서 잠금해제 할 수 있는지 확인한다.",
             result: null,
-            effectiveDate: "2013-09-15"
+            effectiveDate: "2015-05-13"
           },
           {
             id: "1.4.4-사",
             text: "사) 비상잠금해제 삼각열쇠가 특수 도구로 간주되는 경우「엘리베이터 안전기준」7.9.3.2에 따라 해당 엘리베이터가 설치되어 있는 장소에 비치되어 있는지 확인한다.",
             result: null,
-            effectiveDate: "2013-09-15"
+            effectiveDate: "2015-05-13"
           },
           {
             id: "1.4.4-아",
             text: "아) 비상잠금해제 후, 승강장문 잠금장치는「엘리베이터 안전기준」7.9.3.3에 따라 잠금해제 상태로 유지되지 않는지 확인한다.",
             result: null,
-            effectiveDate: "2013-09-15"
+            effectiveDate: "2015-05-13"
           },
           {
             id: "1.4.4-자",
             text: "자) 카 문의 개방을 제한하기 위해「엘리베이터 안전기준」7.15.2에 따라 카 문의 열림이 50 mm 이상 열리지 않는지 확인한다.",
             result: null,
-            effectiveDate: "2013-09-15"
+            effectiveDate: "1997-08-18"
           },
           {
             id: "1.4.4-차",
@@ -626,7 +626,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
             id: "1.4.4-타",
             text: "타) 카 문의 잠금장치가「엘리베이터 안전기준」7.9.2에 따라 적합한지 확인한다.",
             result: null,
-            effectiveDate: "2013-09-15"
+            effectiveDate: "2019-03-28"
           },
           {
             id: "1.4.4-파",
