@@ -1052,6 +1052,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
+  // ── Firebase Admin SDK 초기화 ──────────────────────────────────
+  let firebaseAdmin: any = null;
+  try {
+    const admin = await import("firebase-admin");
+    if (!admin.default.apps.length) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_ADMINSDK || "{}");
+      admin.default.initializeApp({
+        credential: admin.default.credential.cert(serviceAccount),
+      });
+    }
+    firebaseAdmin = admin.default;
+  } catch (e) {
+    console.error("[FCM] Firebase Admin 초기화 실패:", e);
+  }
+
+  // FCM 토큰 등록
+  app.post("/api/push/register", async (req, res) => {
+    try {
+      const { token, platform } = req.body;
+      if (!token) return res.status(400).json({ error: "토큰 없음" });
+      const { pool: pgPool } = await import("./db");
+      await pgPool.query(
+        `INSERT INTO push_tokens (token, platform, created_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (token) DO UPDATE SET platform = $2, updated_at = NOW()`,
+        [token, platform || "android"]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: "등록 실패" });
+    }
+  });
+
+  // FCM 푸시 전송 (채팅 새 메시지)
+  app.post("/api/push/send", async (req, res) => {
+    try {
+      const { title, body, data } = req.body;
+      if (!firebaseAdmin) return res.status(500).json({ error: "FCM 미초기화" });
+      const { pool: pgPool } = await import("./db");
+      const rows = await pgPool.query(`SELECT token FROM push_tokens`);
+      const tokens = rows.rows.map((r: any) => r.token).filter(Boolean);
+      if (tokens.length === 0) return res.json({ sent: 0 });
+      const results = await Promise.allSettled(
+        tokens.map((token: string) =>
+          firebaseAdmin.messaging().send({
+            token,
+            notification: { title: title || "승벼리", body: body || "새 메시지가 있습니다." },
+            data: data || {},
+            android: { priority: "high" },
+          })
+        )
+      );
+      const sent = results.filter(r => r.status === "fulfilled").length;
+      res.json({ sent, total: tokens.length });
+    } catch (e) {
+      res.status(500).json({ error: "전송 실패" });
+    }
+  });
+
   // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
   app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
     try {
@@ -1137,6 +1196,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
+  // ── Firebase Admin SDK 초기화 ──────────────────────────────────
+  let firebaseAdmin: any = null;
+  try {
+    const admin = await import("firebase-admin");
+    if (!admin.default.apps.length) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_ADMINSDK || "{}");
+      admin.default.initializeApp({
+        credential: admin.default.credential.cert(serviceAccount),
+      });
+    }
+    firebaseAdmin = admin.default;
+  } catch (e) {
+    console.error("[FCM] Firebase Admin 초기화 실패:", e);
+  }
+
+  // FCM 토큰 등록
+  app.post("/api/push/register", async (req, res) => {
+    try {
+      const { token, platform } = req.body;
+      if (!token) return res.status(400).json({ error: "토큰 없음" });
+      const { pool: pgPool } = await import("./db");
+      await pgPool.query(
+        `INSERT INTO push_tokens (token, platform, created_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (token) DO UPDATE SET platform = $2, updated_at = NOW()`,
+        [token, platform || "android"]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: "등록 실패" });
+    }
+  });
+
+  // FCM 푸시 전송 (채팅 새 메시지)
+  app.post("/api/push/send", async (req, res) => {
+    try {
+      const { title, body, data } = req.body;
+      if (!firebaseAdmin) return res.status(500).json({ error: "FCM 미초기화" });
+      const { pool: pgPool } = await import("./db");
+      const rows = await pgPool.query(`SELECT token FROM push_tokens`);
+      const tokens = rows.rows.map((r: any) => r.token).filter(Boolean);
+      if (tokens.length === 0) return res.json({ sent: 0 });
+      const results = await Promise.allSettled(
+        tokens.map((token: string) =>
+          firebaseAdmin.messaging().send({
+            token,
+            notification: { title: title || "승벼리", body: body || "새 메시지가 있습니다." },
+            data: data || {},
+            android: { priority: "high" },
+          })
+        )
+      );
+      const sent = results.filter(r => r.status === "fulfilled").length;
+      res.json({ sent, total: tokens.length });
+    } catch (e) {
+      res.status(500).json({ error: "전송 실패" });
+    }
+  });
+
   // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
   app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
     try {
@@ -1894,6 +2012,32 @@ ${answerRules}${contextText}${memoSection}`,
         videoMime: videoMime || null,
       }).returning();
       res.json(msg);
+
+      // FCM 푸시 알림 전송 (비동기 — 응답 후 실행)
+      setImmediate(async () => {
+        try {
+          if (!firebaseAdmin) return;
+          const { pool: pushPool } = await import("./db");
+          const tokenRows = await pushPool.query(`SELECT token FROM push_tokens`);
+          const tokens = tokenRows.rows.map((r: any) => r.token).filter(Boolean);
+          if (tokens.length === 0) return;
+          const msgContent = content?.trim().slice(0, 50) || (imageData ? "📷 사진" : videoData ? "🎥 영상" : "새 메시지");
+          await Promise.allSettled(
+            tokens.map((token: string) =>
+              firebaseAdmin.messaging().send({
+                token,
+                notification: {
+                  title: `💬 ${userName.trim()}`,
+                  body: msgContent,
+                },
+                android: { priority: "high", notification: { sound: "default", channelId: "chat" } },
+              })
+            )
+          );
+        } catch (e) {
+          console.error("[FCM] 푸시 전송 오류:", e);
+        }
+      });
     } catch (e) {
       res.status(500).json({ error: "Failed to send message" });
     }
