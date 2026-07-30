@@ -1,55 +1,50 @@
 name: Build APK
-
 on:
   push:
     branches: [ main ]
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
       - name: Install root dependencies
         run: npm install --ignore-scripts
-
       - name: Run database seed
         run: npm run db:seed
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
       - name: Install client dependencies & build
         run: |
           cd client
           npm install
           cd ..
           npm run build
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
-
       - name: Check build output
         run: ls -la dist/public/
-
       - name: Sync Capacitor
         run: npx cap sync android
-
+      - name: Create google-services.json
+        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 -d > android/app/google-services.json
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --warning-mode all
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
         with:
-          name: app-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          tag_name: latest
+          name: "AI 검사가이드 최신버전"
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
