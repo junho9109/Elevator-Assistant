@@ -3,6 +3,7 @@ import { queryClient } from './client/src/lib/queryClient';
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useEffect, useState } from "react";
 import Home from "@/pages/home";
 import JudgmentPage from "@/pages/judgment";
 import InspectionStandardsPage from "@/pages/inspection-standards";
@@ -54,9 +55,36 @@ function Router() {
   );
 }
 
+// 인앱 푸시 알림 토스트
+function InAppNotificationToast() {
+  const [toast, setToast] = useState<{ title: string; body: string } | null>(null);
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      setToast(e.detail);
+      setTimeout(() => setToast(null), 4000);
+    };
+    window.addEventListener("inAppNotification", handler as EventListener);
+    return () => window.removeEventListener("inAppNotification", handler as EventListener);
+  }, []);
+  if (!toast) return null;
+  return (
+    <div
+      onClick={() => { setToast(null); window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } })); }}
+      style={{ position:"fixed", top:16, left:16, right:16, zIndex:99999, background:"#1f2937", color:"white", borderRadius:14, padding:"12px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.3)", display:"flex", alignItems:"flex-start", gap:10 }}
+    >
+      <span style={{ fontSize:20 }}>💬</span>
+      <div>
+        <p style={{ fontSize:13, fontWeight:700, marginBottom:2 }}>{toast.title}</p>
+        <p style={{ fontSize:12, opacity:0.8 }}>{toast.body}</p>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <InAppNotificationToast />
       <TooltipProvider>
         <Toaster />
         <Router />

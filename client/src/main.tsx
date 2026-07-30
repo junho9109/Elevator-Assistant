@@ -18,10 +18,17 @@ async function initPushNotifications() {
       });
     } catch (e) {}
   });
+  // 포그라운드 알림 — 인앱 토스트 이벤트 발생
   PushNotifications.addListener("pushNotificationReceived", (notification) => {
-    console.log("[FCM] 수신:", notification);
+    window.dispatchEvent(new CustomEvent("inAppNotification", {
+      detail: {
+        title: notification.title || "새 메시지",
+        body: notification.body || "",
+      }
+    }));
   });
-  PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
+  // 알림 클릭 — 채팅 페이지로 이동
+  PushNotifications.addListener("pushNotificationActionPerformed", () => {
     window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
   });
 }
