@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">승벼리</string>
-    <string name="title_activity_main">승벼리</string>
+    <string name="app_name">AI 검사가이드</string>
+    <string name="title_activity_main">AI 검사가이드</string>
     <string name="package_name">com.junho.elevatorassistant</string>
     <string name="custom_url_scheme">com.junho.elevatorassistant</string>
 </resources>
