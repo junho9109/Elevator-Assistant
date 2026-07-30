@@ -1,0 +1,55 @@
+import { createRoot } from "react-dom/client";
+import App from "../../App";
+import "./index.css";
+import { PushNotifications } from "@capacitor/push-notifications";
+import { Capacitor } from "@capacitor/core";
+
+// 푸시 알림 초기화 (Android)
+async function initPushNotifications() {
+  if (!Capacitor.isNativePlatform()) return;
+
+  // 권한 요청
+  const permission = await PushNotifications.requestPermissions();
+  if (permission.receive !== "granted") return;
+
+  // FCM 등록
+  await PushNotifications.register();
+
+  // FCM 토큰 수신 → 서버에 저장
+  PushNotifications.addListener("registration", async (token) => {
+    console.log("[FCM] 토큰:", token.value);
+    try {
+      await fetch("/api/push/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token.value, platform: "android" }),
+      });
+    } catch (e) {
+      console.error("[FCM] 토큰 등록 실패", e);
+    }
+  });
+
+  // 푸시 수신 (포그라운드)
+  PushNotifications.addListener("pushNotificationReceived", (notification) => {
+    console.log("[FCM] 메시지 수신:", notification);
+  });
+
+  // 푸시 탭 (백그라운드에서 알림 클릭)
+  PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
+    console.log("[FCM] 알림 클릭:", action);
+    // 채팅 페이지로 이동
+    window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
+  });
+
+  // 등록 오류
+  PushNotifications.addListener("registrationError", (err) => {
+    console.error("[FCM] 등록 오류:", err);
+  });
+}
+
+initPushNotifications();
+
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  createRoot(rootElement).render(<App />);
+}

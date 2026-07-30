@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "231212681935",
+    "project_id": "ai-elevator-145aa",
+    "storage_bucket": "ai-elevator-145aa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:231212681935:android:c3ef17f1c741652c0605ba",
+        "android_client_info": {
+          "package_name": "com.junho.elevatorassistant"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGo09BSQC1Ozn49P9S7QGJV8XPrvTQIRs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

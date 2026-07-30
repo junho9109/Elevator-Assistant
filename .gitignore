@@ -10,3 +10,4 @@ vite.config.ts.*
 *.pdf
 deployed.js
 output.txt
+server/firebase-adminsdk.json
