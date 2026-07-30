@@ -11,3 +11,4 @@ vite.config.ts.*
 deployed.js
 output.txt
 server/firebase-adminsdk.json
+android/app/google-services.json
