@@ -2311,7 +2311,7 @@ export default function JudgmentPage() {
                                   <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                                     <p className={`text-[9px] font-bold ${isApplied ? 'text-blue-600' : 'text-gray-400'}`}>
                                       {isCurrent
-                                        ? '현행 · 2022.3.2. 시행'
+                                        ? `현행 · ${v.effectiveDate || '2022-03-02'} 시행`
                                         : v.effectiveDate
                                           ? `${v.effectiveDate} 이후 건축허가분`
                                           : v.expiryDate
