@@ -1197,7 +1197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
   // ── Firebase Admin SDK 초기화 ──────────────────────────────────
-  let firebaseAdmin: any = null;
+
   try {
     const admin = await import("firebase-admin");
     if (!admin.default.apps.length) {
