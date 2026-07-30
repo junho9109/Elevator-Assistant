@@ -2,6 +2,8 @@ name: Build APK
 on:
   push:
     branches: [ main ]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,7 +43,6 @@ jobs:
           ./gradlew assembleDebug --warning-mode all
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v2
-        if: github.ref == 'refs/heads/main'
         with:
           tag_name: latest
           name: "AI 검사가이드 최신버전"
