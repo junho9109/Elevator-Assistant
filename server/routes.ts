@@ -2030,7 +2030,7 @@ ${answerRules}${contextText}${memoSection}`,
                   title: `💬 ${userName.trim()}`,
                   body: msgContent,
                 },
-                android: { priority: "high", notification: { sound: "default", channelId: "chat" } },
+                android: { priority: "high", notification: { sound: "default", channelId: "chat", visibility: "public", notificationPriority: "PRIORITY_MAX" } },
               })
             )
           );
