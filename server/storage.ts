@@ -69,7 +69,7 @@ import {
   inspectionBaseItems
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, or, asc, sql } from "drizzle-orm";
+import { eq, ilike, like, or, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -502,9 +502,19 @@ export class DatabaseStorage implements IStorage {
     // 기본 ASC 정렬은 Postgres에서 NULL을 맨 뒤로 보내 순서가 뒤섞이는 문제가 있었음.
     // introduction_type = 'additional'(추가 종전 기준)은 본 연혁 계보와 무관한 보충 참고 조문이므로
     // 시간순 정렬에서 제외하고 항상 맨 뒤로 보낸다.
+    // itemId 완전일치뿐 아니라 "itemId." 로 시작하는 하위(소분류) 조문도 함께 반환한다.
+    // (예: "9.7" 조회 시 "9.7.1", "9.7.2" 등 하위 조문도 함께 포함 — 대분류만 인용된 체크리스트
+    // 항목에서도 실제 이력이 담긴 소분류 내용이 참조 조문 연혁에 표시되도록 하기 위함)
+    // item_id 자체로 먼저 정렬해 같은 조문끼리 묶이도록 한 뒤, 그 안에서 기존 시간순 정렬을 적용한다.
     return await db.select().from(inspectionItemRevisions)
-      .where(eq(inspectionItemRevisions.itemId, itemId))
-      .orderBy(sql`(${inspectionItemRevisions.introductionType} = 'additional') ASC, ${inspectionItemRevisions.effectiveDate} ASC NULLS FIRST`);
+      .where(or(
+        eq(inspectionItemRevisions.itemId, itemId),
+        like(inspectionItemRevisions.itemId, `${itemId}.%`)
+      ))
+      .orderBy(
+        inspectionItemRevisions.itemId,
+        sql`(${inspectionItemRevisions.introductionType} = 'additional') ASC, ${inspectionItemRevisions.effectiveDate} ASC NULLS FIRST`
+      );
   }
   async createItemRevision(data: InsertInspectionItemRevision): Promise<InspectionItemRevision> {
     const [created] = await db.insert(inspectionItemRevisions).values(data).returning();

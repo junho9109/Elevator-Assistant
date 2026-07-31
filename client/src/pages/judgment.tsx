@@ -1054,20 +1054,30 @@ export default function JudgmentPage() {
           try {
             const r = await fetch(`/api/inspection-revisions/${encodeURIComponent(refId)}`);
             const data = r.ok ? await r.json() : [];
-            if (data.length === 0) return null;
-            return {
-              refId,
-              versions: data.map((rv: any) => ({
-                effectiveDate: rv.effective_date || rv.effectiveDate || "",
-                expiryDate: rv.expiry_date || rv.expiryDate || "",
-                introductionType: rv.introduction_type || rv.introductionType || "old",
-                description: rv.description || "",
-              }))
-            };
-          } catch { return null; }
+            return { refId, data };
+          } catch { return { refId, data: [] as any[] }; }
         })
       );
-      setRefRevisions(refResults.filter(Boolean) as {refId: string; versions: any[]}[]);
+      // 대분류(refId)를 조회하면 서버가 "refId." 로 시작하는 소분류 하위 조문까지 함께 내려준다.
+      // 실제 item_id 기준으로 그룹핑해 각 조문을 기존과 동일한 형식의 별도 카드로 표시하고,
+      // 여러 refId 조회 결과에 같은 소분류가 중복으로 잡히는 경우 한 번만 표시되도록 병합한다.
+      const grouped = new Map<string, any[]>();
+      const order: string[] = [];
+      for (const { data } of refResults) {
+        for (const rv of data) {
+          const actualId: string | undefined = rv.item_id || rv.itemId;
+          if (!actualId) continue;
+          if (!grouped.has(actualId)) { grouped.set(actualId, []); order.push(actualId); }
+          grouped.get(actualId)!.push({
+            effectiveDate: rv.effective_date || rv.effectiveDate || "",
+            expiryDate: rv.expiry_date || rv.expiryDate || "",
+            introductionType: rv.introduction_type || rv.introductionType || "old",
+            description: rv.description || "",
+          });
+        }
+      }
+      order.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      setRefRevisions(order.map(id => ({ refId: id, versions: grouped.get(id)! })));
     }
 
     // 1) JSON 기반 revision 데이터
