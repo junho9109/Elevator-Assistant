@@ -1059,14 +1059,21 @@ export default function JudgmentPage() {
         })
       );
       // 대분류(refId)를 조회하면 서버가 "refId." 로 시작하는 소분류 하위 조문까지 함께 내려준다.
-      // 실제 item_id 기준으로 그룹핑해 각 조문을 기존과 동일한 형식의 별도 카드로 표시하고,
-      // 여러 refId 조회 결과에 같은 소분류가 중복으로 잡히는 경우 한 번만 표시되도록 병합한다.
+      // 실제 item_id 기준으로 그룹핑해 각 조문을 기존과 동일한 형식의 별도 카드로 표시한다.
+      // 한 checklist 항목이 대분류와 그 하위 소분류를 동시에 인용하는 경우(예: "9.7"과 "9.7.1"이
+      // 같은 문장에 함께 있는 경우), "9.7" 조회의 하위 확장 결과와 "9.7.1" 자체 조회 결과가
+      // 겹쳐서 같은 이력 행이 두 번 들어올 수 있으므로, DB 행의 고유 id로 행 단위까지 중복 제거한다.
       const grouped = new Map<string, any[]>();
+      const seenRowIds = new Set<number>();
       const order: string[] = [];
       for (const { data } of refResults) {
         for (const rv of data) {
           const actualId: string | undefined = rv.item_id || rv.itemId;
           if (!actualId) continue;
+          if (typeof rv.id === "number") {
+            if (seenRowIds.has(rv.id)) continue;
+            seenRowIds.add(rv.id);
+          }
           if (!grouped.has(actualId)) { grouped.set(actualId, []); order.push(actualId); }
           grouped.get(actualId)!.push({
             effectiveDate: rv.effective_date || rv.effectiveDate || "",
