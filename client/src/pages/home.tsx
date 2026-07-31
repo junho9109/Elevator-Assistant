@@ -313,7 +313,7 @@ function scoreMatch(
 }
 
 
-type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; };
+type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
@@ -947,9 +947,11 @@ function ElevatorInfoCard({ elevatorData, safetyPoints }: { elevatorData: any; s
                   <p className="text-[10px] text-muted-foreground leading-relaxed line-clamp-2">{pt.cur_desc}</p>
                 </div>
               </div>
-              <div className="mx-3 mb-2.5 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800 rounded-lg px-2.5 py-2">
-                <p className="text-[10px] text-orange-800 dark:text-orange-400">⚠️ 현행 기준과 차이 있는 항목입니다. 현장 확인 시 유의하세요.</p>
-              </div>
+              {pt.warn && (
+                <div className={cn("mx-3 mb-2.5 rounded-lg px-2.5 py-2 border", pt.warn.startsWith("⚠️") ? "bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800" : "bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800")}>
+                  <p className={cn("text-[10px]", pt.warn.startsWith("⚠️") ? "text-red-800 dark:text-red-400" : "text-green-800 dark:text-green-400")}>{pt.warn}</p>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1615,6 +1617,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
         calcCard: data.type === "CALCULATE" ? data.calcCard : undefined,
         elevatorData: data.elevatorData || null,
         safetyPoints: data.safetyPoints || [],
+        isElevatorQuery: data.isElevatorQuery || false,
       }]);
     } catch (err: any) {
       console.error("Chat fetch error:", err);
@@ -2389,7 +2392,7 @@ export default function Home({ defaultTab = "chat" }: { defaultTab?: "chat" | "m
                     <CounterWeightCalcCard />
                   )}
                   <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
-                  {msg.searchResults && msg.searchResults.length > 0 && (() => {
+                  {msg.searchResults && msg.searchResults.length > 0 && !msg.isElevatorQuery && (() => {
                     const TYPE_LABEL: Record<string, string> = {
                       inspection: "검사기준", standard: "기술자료",
                       judgment: "검사가이드", chat: "채팅"
