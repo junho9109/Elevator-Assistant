@@ -1003,8 +1003,8 @@ function ElevatorInfoCard({ elevatorData, safetyPoints }: { elevatorData: any; s
                 </div>
               </div>
               {pt.warn && (
-                <div className={cn("mx-3 mb-2.5 rounded-lg px-2.5 py-2 border", pt.warn.startsWith("⚠️") ? "bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800" : "bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800")}>
-                  <p className={cn("text-[10px]", pt.warn.startsWith("⚠️") ? "text-red-800 dark:text-red-400" : "text-green-800 dark:text-green-400")}>{pt.warn}</p>
+                <div className={"mx-3 mb-2.5 rounded-lg px-2.5 py-2 border " + (pt.warn.startsWith("⚠️") ? "bg-red-50 border-red-100" : "bg-green-50 border-green-100")}>
+                  <p className={"text-[10px] " + (pt.warn.startsWith("⚠️") ? "text-red-800" : "text-green-800")}>{pt.warn}</p>
                 </div>
               )}
             </div>
