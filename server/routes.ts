@@ -1413,13 +1413,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const formatDate = (d: string) => d.length === 8 ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : d;
             elevatorInfoSection = `\n\n[승강기 정보 - ${elvtrNo}]\n건물명: ${info.buldNm || "-"}\n주소: ${info.address1 || "-"} ${info.address2 || ""}\n종류: ${info.elvtrKindNm || "-"} (${info.elvtrDiv || "-"})\n형식: ${info.elvtrForm || "-"} ${info.elvtrDetailForm || ""}\n설치일자: ${installDate ? formatDate(installDate) : "-"}\n최초설치일자: ${info.frstInstallationDe ? formatDate(String(info.frstInstallationDe)) : "-"}\n정격속도: ${info.ratedSpeed || "-"} m/s\n적재하중: ${info.liveLoad || "-"} kg\n정원: ${info.ratedCap || "-"}명\n운행층수: ${info.shuttleFloorCnt || "-"}층\n설치장소: ${info.installationPlace || "-"}`;
 
-            // 설치일자 기준 종전 조문 랜덤 3개 추출 → safetyPoints + AI 유의사항 생성
+            // 설치일자 기준 안전 포인트 추출 (종전 or 신설)
             if (installDate) {
               try {
                 const { pool: safetyPool } = await import("./db");
                 const isoDate = formatDate(installDate);
-                const safetyRows = await safetyPool.query(
-                  `SELECT r.item_id, r.description as old_desc, c.description as cur_desc, r.effective_date, r.expiry_date
+
+                let safetyRows = await safetyPool.query(
+                  `SELECT r.item_id, r.description as old_desc, c.description as cur_desc,
+                          r.effective_date, r.expiry_date, 'previous' as point_type
                    FROM inspection_item_revisions r
                    JOIN inspection_item_revisions c ON c.item_id = r.item_id AND c.introduction_type = 'current'
                    WHERE r.introduction_type = 'old'
@@ -1427,22 +1429,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
                    AND (r.expiry_date >= $1 OR r.expiry_date IS NULL)
                    AND r.description IS NOT NULL AND TRIM(r.description) != ''
                    AND c.description IS NOT NULL AND TRIM(c.description) != ''
-                   ORDER BY RANDOM()
-                   LIMIT 3`,
+                   ORDER BY RANDOM() LIMIT 3`,
                   [isoDate]
                 );
+
+                if (safetyRows.rows.length === 0) {
+                  safetyRows = await safetyPool.query(
+                    `SELECT sub.item_id, r.description as old_desc, c.description as cur_desc,
+                            sub.first_date as effective_date, NULL as expiry_date, 'new' as point_type
+                     FROM (
+                       SELECT item_id, MIN(effective_date) as first_date
+                       FROM inspection_item_revisions
+                       WHERE introduction_type = 'old'
+                       GROUP BY item_id
+                       HAVING MIN(effective_date) > $1
+                     ) sub
+                     JOIN inspection_item_revisions r ON r.item_id = sub.item_id
+                       AND r.introduction_type = 'old' AND r.effective_date = sub.first_date
+                     JOIN inspection_item_revisions c ON c.item_id = sub.item_id AND c.introduction_type = 'current'
+                     WHERE r.description IS NOT NULL AND TRIM(r.description) != ''
+                     AND c.description IS NOT NULL AND TRIM(c.description) != ''
+                     ORDER BY RANDOM() LIMIT 3`,
+                    [isoDate]
+                  );
+                }
                 // AI로 각 항목 유의사항 생성
                 const rows = safetyRows.rows;
                 const safetyWithWarn = await Promise.all(rows.map(async (row: any) => {
                   try {
+                    const isNew = row.point_type === 'new';
                     const warnResp = await anthropic.messages.create({
                       model: "claude-haiku-4-5-20251001",
                       max_tokens: 150,
-                      system: `승강기 검사 전문가. 종전 기준과 현행 기준의 차이를 분석해서 현장 검사원에게 한 문장으로 유의사항을 안내한다.
-위험한 경우: "⚠️ [구체적 위험 상황]이 있을 수 있습니다. [확인 방법]을 반드시 점검하세요." 형식
-확인 필요: "✅ [확인 포인트]를 중점 확인하세요." 형식
-한 문장만 출력. 마크다운 없음.`,
-                      messages: [{ role: "user", content: `종전: ${row.old_desc.slice(0,200)}
+                      system: isNew
+                        ? `승강기 검사 전문가. 설치 이후 신설/강화된 기준을 안내한다. "✅ [강화된 내용 요약]. 소급 적용 여부를 확인하세요." 형식으로 한 문장만 출력. 마크다운 없음.`
+                        : `승강기 검사 전문가. 종전/현행 차이 분석해 한 문장 유의사항. 위험: "⚠️ [위험상황]. [확인방법]을 반드시 점검하세요." 확인: "✅ [확인포인트]를 중점 확인하세요." 한 문장만. 마크다운 없음.`,
+                      messages: [{ role: "user", content: isNew
+                        ? `신설/강화 기준: ${row.cur_desc.slice(0,200)}`
+                        : `종전: ${row.old_desc.slice(0,200)}
 현행: ${row.cur_desc.slice(0,200)}` }],
                     });
                     const warnText = warnResp.content[0].type === "text" ? warnResp.content[0].text.trim() : "";

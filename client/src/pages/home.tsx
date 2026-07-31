@@ -884,8 +884,59 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 }
 
 // ==================== 메인 ====================
+// ── 안전 포인트 상세 모달 ─────────────────────────────────────
+function SafetyPointModal({ pt, onClose }: { pt: any; onClose: () => void }) {
+  const isNew = pt.point_type === 'new';
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:99999, display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
+      <div style={{ background:"var(--card, white)", borderRadius:"16px 16px 0 0", width:"100%", maxWidth:480, maxHeight:"80vh", overflowY:"auto", padding:16 }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className={"text-[9px] font-bold px-2 py-0.5 rounded-full " + (isNew ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700")}>{isNew ? "신설/강화" : "조문"}</span>
+            <span className="text-[11px] font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded">{pt.item_id}</span>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground text-lg px-2">✕</button>
+        </div>
+        <div className="space-y-3">
+          {isNew ? (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">신설/강화</span>
+                {pt.effective_date && <span className="text-[9px] text-muted-foreground">{pt.effective_date} 시행</span>}
+              </div>
+              <p className="text-[9px] text-blue-600 mb-2">설치 이후 강화된 기준 — 소급 적용 여부 확인 필요</p>
+              <p className="text-[11px] text-foreground leading-relaxed whitespace-pre-wrap">{pt.old_desc}</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">종전</span>
+                {pt.effective_date && <span className="text-[9px] text-muted-foreground">{String(pt.effective_date)}{pt.expiry_date ? ` ~ ${pt.expiry_date}` : ""}</span>}
+              </div>
+              <p className="text-[11px] text-foreground leading-relaxed whitespace-pre-wrap">{pt.old_desc}</p>
+            </div>
+          )}
+          <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">현행</span>
+              <span className="text-[9px] text-muted-foreground">2022.3.2 시행</span>
+            </div>
+            <p className="text-[11px] text-foreground leading-relaxed whitespace-pre-wrap">{pt.cur_desc}</p>
+          </div>
+          {pt.warn && (
+            <div className={"rounded-xl border p-3 " + (pt.warn.startsWith("⚠️") ? "bg-red-50 border-red-100" : "bg-green-50 border-green-100")}>
+              <p className={"text-[11px] leading-relaxed " + (pt.warn.startsWith("⚠️") ? "text-red-800" : "text-green-800")}>{pt.warn}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 승강기 기본정보 + 안전 포인트 카드 ──────────────────────────
 function ElevatorInfoCard({ elevatorData, safetyPoints }: { elevatorData: any; safetyPoints: any[] }) {
+  const [selectedPt, setSelectedPt] = React.useState<any>(null);
   const fmt = (d: number | string) => {
     const s = String(d);
     return s.length === 8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : s;
@@ -929,10 +980,14 @@ function ElevatorInfoCard({ elevatorData, safetyPoints }: { elevatorData: any; s
         <div>
           <div className="flex items-center gap-2 mb-2">
             <p className="text-[11px] font-bold text-foreground">🔍 오늘의 안전 포인트</p>
-            <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">{installDate.slice(0,4)}년 설치 기준</span>
+            {safetyPoints[0]?.point_type === 'new'
+              ? <span className="text-[9px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">{installDate.slice(0,4)}년 이후 신설/강화 기준</span>
+              : <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">{installDate.slice(0,4)}년 설치 기준</span>
+            }
           </div>
+          {selectedPt && <SafetyPointModal pt={selectedPt} onClose={() => setSelectedPt(null)} />}
           {safetyPoints.map((pt: any, i: number) => (
-            <div key={i} className="rounded-xl border border-border overflow-hidden mb-2">
+            <div key={i} className="rounded-xl border border-border overflow-hidden mb-2 cursor-pointer" onClick={() => setSelectedPt(pt)}>
               <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
                 <span className="text-[9px] font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">{i + 1}</span>
                 <span className="text-[9px] font-mono bg-muted text-muted-foreground px-1.5 py-0.5 rounded">{pt.item_id}</span>
