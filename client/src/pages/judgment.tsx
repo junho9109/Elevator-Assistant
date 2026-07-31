@@ -44,6 +44,8 @@ function dayAfter(dateStr: string): string {
 // key: 검사항목 id, value: 강제로 표시할 참조 조문번호 목록.
 const EXTRA_REF_IDS: Record<string, string[]> = {
   "1.3.2-가": ["6.5.7.2"],
+  // "부속서 Ⅳ"로만 인용되어 정규식으로 조문번호를 못 잡는 예외 항목
+  "1.7.2-다": ["10.2.2.1.3"],
 };
 
 // Image Viewer State
