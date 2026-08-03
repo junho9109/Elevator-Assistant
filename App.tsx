@@ -20,7 +20,7 @@ function MainApp() {
   return (
     <SwipeNavigator
       pages={[
-        <Home key="home" />,
+        <Home key="home" role={userRole} onLogout={handleLogout} />,
         <TechnicalDataPage key="technical" />,
         <JudgmentPage key="judgment" />,
         <InspectionStandardsPage key="inspection-standards" />,
