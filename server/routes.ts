@@ -1111,6 +1111,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── 로그인 API ──────────────────────────────────────────────────
+  app.get("/api/auth/organizations", async (req, res) => {
+    try {
+      const { pool } = await import("./db");
+      const rows = await pool.query("SELECT name FROM organizations ORDER BY name");
+      res.json(rows.rows.map((r: any) => r.name));
+    } catch (e) {
+      res.status(500).json([]);
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { org, password } = req.body;
+      if (!org || !password) return res.status(400).json({ error: "소속과 비밀번호를 입력하세요." });
+      const { pool } = await import("./db");
+      const rows = await pool.query("SELECT * FROM organizations WHERE name = $1", [org]);
+      if (rows.rows.length === 0) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
+      const org_row = rows.rows[0];
+      const bcrypt = await import("bcrypt");
+      const isUser = await bcrypt.default.compare(password, org_row.user_pw_hash);
+      const isAdmin = await bcrypt.default.compare(password, org_row.admin_pw_hash);
+      if (!isUser && !isAdmin) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
+      const role = isAdmin ? "admin" : "user";
+      const jwt = await import("jsonwebtoken");
+      const token = jwt.default.sign({ orgId: org_row.id, org, role }, process.env.JWT_SECRET || "elevator-secret-key", { expiresIn: "30d" });
+      res.json({ token, org, role });
+    } catch (e) {
+      res.status(500).json({ error: "서버 오류" });
+    }
+  });
+
+  app.get("/api/auth/verify", async (req, res) => {
+    try {
+      const auth = req.headers.authorization;
+      if (!auth) return res.status(401).json({ error: "인증 필요" });
+      const token = auth.replace("Bearer ", "");
+      const jwt = await import("jsonwebtoken");
+      const decoded = jwt.default.verify(token, process.env.JWT_SECRET || "elevator-secret-key");
+      res.json(decoded);
+    } catch (e) {
+      res.status(401).json({ error: "토큰 만료 또는 유효하지 않음" });
+    }
+  });
+
   // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
   app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
     try {
@@ -1252,6 +1297,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ sent, total: tokens.length });
     } catch (e) {
       res.status(500).json({ error: "전송 실패" });
+    }
+  });
+
+  // ── 로그인 API ──────────────────────────────────────────────────
+  app.get("/api/auth/organizations", async (req, res) => {
+    try {
+      const { pool } = await import("./db");
+      const rows = await pool.query("SELECT name FROM organizations ORDER BY name");
+      res.json(rows.rows.map((r: any) => r.name));
+    } catch (e) {
+      res.status(500).json([]);
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { org, password } = req.body;
+      if (!org || !password) return res.status(400).json({ error: "소속과 비밀번호를 입력하세요." });
+      const { pool } = await import("./db");
+      const rows = await pool.query("SELECT * FROM organizations WHERE name = $1", [org]);
+      if (rows.rows.length === 0) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
+      const org_row = rows.rows[0];
+      const bcrypt = await import("bcrypt");
+      const isUser = await bcrypt.default.compare(password, org_row.user_pw_hash);
+      const isAdmin = await bcrypt.default.compare(password, org_row.admin_pw_hash);
+      if (!isUser && !isAdmin) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
+      const role = isAdmin ? "admin" : "user";
+      const jwt = await import("jsonwebtoken");
+      const token = jwt.default.sign({ orgId: org_row.id, org, role }, process.env.JWT_SECRET || "elevator-secret-key", { expiresIn: "30d" });
+      res.json({ token, org, role });
+    } catch (e) {
+      res.status(500).json({ error: "서버 오류" });
+    }
+  });
+
+  app.get("/api/auth/verify", async (req, res) => {
+    try {
+      const auth = req.headers.authorization;
+      if (!auth) return res.status(401).json({ error: "인증 필요" });
+      const token = auth.replace("Bearer ", "");
+      const jwt = await import("jsonwebtoken");
+      const decoded = jwt.default.verify(token, process.env.JWT_SECRET || "elevator-secret-key");
+      res.json(decoded);
+    } catch (e) {
+      res.status(401).json({ error: "토큰 만료 또는 유효하지 않음" });
     }
   });
 

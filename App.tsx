@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect, useState } from "react";
+import LoginPage from "@/pages/login";
 import Home from "@/pages/home";
 import JudgmentPage from "@/pages/judgment";
 import InspectionStandardsPage from "@/pages/inspection-standards";
@@ -82,6 +83,32 @@ function InAppNotificationToast() {
 }
 
 function App() {
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [isChecking, setIsChecking] = useState(true);
+
+  useEffect(() => {
+    const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+    if (saved.autoLogin && saved.token) {
+      fetch("/api/auth/verify", { headers: { Authorization: `Bearer ${saved.token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data) setAuthToken(saved.token); })
+        .catch(() => {})
+        .finally(() => setIsChecking(false));
+    } else {
+      setIsChecking(false);
+    }
+  }, []);
+
+  if (isChecking) return null;
+
+  if (!authToken) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <LoginPage onLogin={(token) => setAuthToken(token)} />
+      </QueryClientProvider>
+    );
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <InAppNotificationToast />
