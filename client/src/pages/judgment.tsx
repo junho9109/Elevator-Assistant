@@ -2305,7 +2305,7 @@ export default function JudgmentPage() {
                   {/* 참조 조문 연혁 섹션 */}
                   {refRevisions.length > 0 && (
                     <div className="border border-amber-200 dark:border-amber-800 rounded-xl p-3 bg-amber-50 dark:bg-amber-900/10 mb-4">
-                      <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 mb-2">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</p>
+                      <p className="text-xs font-semibold text-gray-900 dark:text-amber-300 mb-2">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</p>
                       <div className="space-y-3">
                         {refRevisions.map(({ refId, versions }) => {
                           // "추가 종전 기준"(introductionType === 'additional')은 시간순 계보와 무관한
