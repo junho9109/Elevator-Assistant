@@ -16,37 +16,9 @@ import ChatPage from "@/pages/chat";
 import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
 
-function MainApp() {
-  return (
-    <SwipeNavigator
-      pages={[
-        <Home key="home" role={userRole} onLogout={handleLogout} />,
-        <TechnicalDataPage key="technical" />,
-        <JudgmentPage key="judgment" />,
-        <InspectionStandardsPage key="inspection-standards" />,
-        <PrecisionInspectionPage key="precision" />,
-        <MemoPage key="memo" />,
-        <SafetyPage key="safety" />,
-        <ChatPage key="chat" />,
-      ]}
-      pageNames={[
-        "AI검색",
-        "기술자료",
-        "검사가이드",
-        "검사기준",
-        "정밀안전검사",
-        "메모",
-        "안전보건",
-        "채팅",
-      ]}
-    />
-  );
-}
-
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={MainApp} />
       <Route path="/judgment" component={JudgmentPage} />
       <Route path="/precision" component={PrecisionInspectionPage} />
       <Route path="/memo" component={MemoPage} />
@@ -84,6 +56,7 @@ function InAppNotificationToast() {
 
 function App() {
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string>("user");
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
@@ -91,7 +64,7 @@ function App() {
     if (saved.autoLogin && saved.token) {
       fetch("/api/auth/verify", { headers: { Authorization: `Bearer ${saved.token}` } })
         .then(r => r.ok ? r.json() : null)
-        .then(data => { if (data) setAuthToken(saved.token); })
+        .then(data => { if (data) { setAuthToken(saved.token); setUserRole(data.role || "user"); } })
         .catch(() => {})
         .finally(() => setIsChecking(false));
     } else {
@@ -99,12 +72,19 @@ function App() {
     }
   }, []);
 
+  const handleLogout = () => {
+    const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+    localStorage.setItem("loginInfo", JSON.stringify({ org: saved.org, pw: saved.pw }));
+    setAuthToken(null);
+    setUserRole("user");
+  };
+
   if (isChecking) return null;
 
   if (!authToken) {
     return (
       <QueryClientProvider client={queryClient}>
-        <LoginPage onLogin={(token) => setAuthToken(token)} />
+        <LoginPage onLogin={(token, org, role) => { setAuthToken(token); setUserRole(role); }} />
       </QueryClientProvider>
     );
   }
@@ -114,7 +94,28 @@ function App() {
       <InAppNotificationToast />
       <TooltipProvider>
         <Toaster />
-        <Router />
+        <SwipeNavigator
+          pages={[
+            <Home key="home" role={userRole} onLogout={handleLogout} />,
+            <TechnicalDataPage key="technical" />,
+            <JudgmentPage key="judgment" />,
+            <InspectionStandardsPage key="inspection-standards" />,
+            <PrecisionInspectionPage key="precision" />,
+            <MemoPage key="memo" />,
+            <SafetyPage key="safety" />,
+            <ChatPage key="chat" />,
+          ]}
+          pageNames={[
+            "AI검색",
+            "기술자료",
+            "검사가이드",
+            "검사기준",
+            "정밀안전검사",
+            "메모",
+            "안전보건",
+            "채팅",
+          ]}
+        />
       </TooltipProvider>
     </QueryClientProvider>
   );
