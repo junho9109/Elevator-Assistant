@@ -2353,7 +2353,7 @@ export default function JudgmentPage() {
                           return (
                             <div key={refId}>
                               <div className="flex items-center gap-2 mb-1.5">
-                                <span className="text-[10px] font-bold text-gray-900 dark:text-gray-100">[별표22] {refId}</span>
+                                <span className="text-[10px] font-bold text-gray-900 dark:text-amber-300">[별표22] {refId}</span>
                                 {referenceDate && <span className="text-[9px] text-amber-600 dark:text-amber-400">({permitDate || inspectionDate} 기준)</span>}
                               </div>
                               <div className="space-y-1.5">
