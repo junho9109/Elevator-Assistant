@@ -379,12 +379,24 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
 
   const scored: { result: SearchResult; score: number }[] = [];
 
+  // 질문 자체에 타입을 명시했는지 감지 — "OOO 검사기준 뭐야" vs "OOO 표준화 뭐야"
+  const asksInspection = /검사\s*기준|안전\s*기준|별표\s*22/.test(keyword);
+  const asksStandard = /표준화|검사업무표준화/.test(keyword);
+
   // ② 제목과 본문을 분리해서 점수 계산
   const addResult = (r: SearchResult, titleText: string, bodyText: string) => {
     let score = scoreMatch(bodyText, kwList, kw, titleText, undefined, intent, allTerms);
     // 세부 소항목(1.2.1.4-마 같은 가/나/다 항목)은 적용시기 질문에서 패널티
     if (intent === "timing" && /[가나다라마바사아자차카타파하]-?$/.test(r.query || "")) {
       score = Math.max(0, score - 60);
+    }
+    // 질문이 특정 타입을 명시하면 해당 타입에 강한 가산점, 반대 타입엔 감점
+    if (r.type === "inspection") {
+      if (asksInspection && !asksStandard) score += 90;
+      else if (asksStandard && !asksInspection) score -= 40;
+    } else if (r.type === "standard") {
+      if (asksStandard && !asksInspection) score += 90;
+      else if (asksInspection && !asksStandard) score -= 40;
     }
     if (score >= 50) scored.push({ result: r, score }); // ③ 임계값 50 미만 제외
   };
@@ -1809,15 +1821,21 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
 
       const sourceCards: SearchResult[] = usedSources.map(s => {
         if (s.type === "inspection") {
-          // 검사기준 — INSPECTION_CONTENT에서 내용 찾기
-          const entry = Object.entries(INSPECTION_CONTENT).find(([, v]: any) =>
-            (v.text || "").includes(s.ref.replace(/\[별표22\]\s*/, "").trim().split(".")[0])
-          );
+          // 검사기준 — s.ref/s.title에서 정확한 조문번호(예: "1.9.1") 추출 후 정확히 매칭
+          const refText = `${s.ref || ""} ${s.title || ""}`;
+          const numMatch = refText.match(/(?<![\d.])(?:[1-9]|1[0-7])(?:\.\d+){1,5}/);
+          const itemNo = numMatch ? numMatch[0] : "";
+          // 1순위: key(조문번호)가 정확히 일치하는 항목
+          let entry = itemNo ? Object.entries(INSPECTION_CONTENT).find(([k]) => k === itemNo) : undefined;
+          // 2순위: key가 itemNo로 시작하는 항목(하위 조문 등)
+          if (!entry && itemNo) {
+            entry = Object.entries(INSPECTION_CONTENT).find(([k]) => k.startsWith(itemNo + "-") || k === itemNo);
+          }
           return {
             type: "inspection" as const,
             title: s.title,
-            content: (entry?.[1] as any)?.text?.slice(0, 150) || s.title,
-            query: entry?.[0] || s.ref,
+            content: (entry?.[1] as any)?.text?.slice(0, 300) || s.title,
+            query: entry?.[0] || itemNo || s.ref,
             score: 200,
             priority: 1,
           };
@@ -3425,18 +3443,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                         <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{fullText.slice(0, 400)}{fullText.length > 400 ? "..." : ""}</p>
                       </div>
                     )}
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-border">
+                    <div className="pt-1 border-t border-border">
                       <p className="text-[10px] font-medium text-amber-600">[검사기준] {itemId}</p>
-                      <button
-                        className="text-xs bg-primary text-primary-foreground rounded-xl px-3 py-2 hover:bg-primary/90"
-                        onClick={() => {
-                          setSelectedSearchResult(null);
-                          sessionStorage.setItem("pendingInspectionDetail", itemId);
-                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
-                        }}
-                      >
-                        검사기준에서 보기 →
-                      </button>
                     </div>
                   </>
                 );
