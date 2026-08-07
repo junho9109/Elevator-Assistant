@@ -1099,25 +1099,49 @@ function CounterWeightCalcCard() {
 }
 
 export default function Home({ defaultTab = "chat", role = "user", onLogout }: { defaultTab?: "chat" | "map"; role?: string; onLogout?: () => void }) {
-  // 표준화 데이터 DB 로드
+  // 표준화 데이터 DB 로드 (standards + std_item_overrides 병합)
   useEffect(() => {
     if (STD_ITEMS.length > 0) return;
-    fetch("/api/standards")
-      .then(r => r.json())
-      .then((rows: any[]) => {
-        rows.forEach((r: any) => {
-          STD_ITEMS.push({
-            title: r.title || "",
-            ref: "",
-            basis: r.body || "",
-            conclusion: "",
-            source: r.inspectionYear ? `${r.inspectionYear}년 제${r.inspectionRound}차 표준화` : (r.inspection_year ? `${r.inspection_year}년 제${r.inspection_round}차 표준화` : ""),
-            typeTag: "",
-            category: "",
-          });
+    Promise.all([
+      fetch("/api/standards").then(r => r.json()),
+      fetch("/api/std-item-overrides").then(r => r.json()).catch(() => []),
+    ]).then(([rows, overrides]) => {
+      // std_item_overrides를 Map으로 변환 (title 기준 우선 적용)
+      const overrideMap: Record<string, any> = {};
+      (overrides || []).forEach((o: any) => {
+        if (o.title) overrideMap[o.title] = o;
+      });
+
+      rows.forEach((r: any) => {
+        const ov = overrideMap[r.title];
+        STD_ITEMS.push({
+          title: r.title || "",
+          ref: ov?.ref || "",
+          basis: ov?.basis || r.body || "",
+          conclusion: ov?.conclusion || "",
+          source: r.inspection_year ? `${r.inspection_year}년 제${r.inspection_round}차 표준화` : "",
+          typeTag: ov?.type_tag || "",
+          category: ov?.category || "",
         });
-      })
-      .catch(() => {});
+        // override에만 있는 추가 항목 제거 (standards에 없는 것)
+        delete overrideMap[r.title];
+      });
+
+      // std_item_overrides에만 있는 항목 추가
+      Object.values(overrideMap).forEach((o: any) => {
+        if (o.title) {
+          STD_ITEMS.push({
+            title: o.title || "",
+            ref: o.ref || "",
+            basis: o.basis || "",
+            conclusion: o.conclusion || "",
+            source: o.source || "",
+            typeTag: o.type_tag || "",
+            category: o.category || "",
+          });
+        }
+      });
+    }).catch(() => {});
   }, []);
   const queryClient = useQueryClient();
   const { toast } = useToast();
