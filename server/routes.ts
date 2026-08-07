@@ -97,6 +97,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI 답변 피드백 API
+  // OpenAI 임베딩 생성 헬퍼
+  async function getEmbedding(text: string): Promise<number[] | null> {
+    try {
+      const resp = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "text-embedding-3-small",
+          input: text.slice(0, 8000),
+        }),
+      });
+      const data = await resp.json();
+      return data?.data?.[0]?.embedding || null;
+    } catch (e) {
+      console.error("[임베딩] 생성 실패:", e);
+      return null;
+    }
+  }
+
+  // 유사 질문 검색 — approved 답변 중 가장 유사한 것 반환
+  app.post("/api/ai-similar-answers", async (req, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) return res.json([]);
+      const embedding = await getEmbedding(question);
+      if (!embedding) return res.json([]);
+
+      const { pool } = await import("./db");
+      const vecStr = `[${embedding.join(",")}]`;
+      const rows = await pool.query(
+        `SELECT question, answer, thumbs_up,
+                1 - (embedding <=> $1::vector) as similarity
+         FROM ai_answer_pool
+         WHERE status = 'approved' AND embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector
+         LIMIT 2`,
+        [vecStr]
+      );
+      // 유사도 0.82 이상만 반환 (너무 다른 질문 배제)
+      const filtered = rows.rows.filter((r: any) => r.similarity >= 0.82);
+      res.json(filtered);
+    } catch (e) {
+      res.json([]);
+    }
+  });
+
   app.post("/api/ai-feedback", async (req, res) => {
     try {
       const { question, answer, rating, sections, reasons, comment } = req.body;
@@ -141,6 +190,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (thumbsUp >= 3) newStatus = 'approved';
       if (thumbsDown >= 3) newStatus = 'excluded';
       await pool.query(`UPDATE ai_answer_pool SET status = $1 WHERE id = $2`, [newStatus, poolId]);
+
+      // 3-1) approved로 새로 전환되는 순간 임베딩 생성 (최초 1회)
+      if (newStatus === 'approved' && thumbsUp === 3) {
+        getEmbedding(question).then(async (emb) => {
+          if (emb) {
+            const vecStr = `[${emb.join(",")}]`;
+            await pool.query(`UPDATE ai_answer_pool SET embedding = $1::vector WHERE id = $2`, [vecStr, poolId]);
+          }
+        }).catch(() => {});
+      }
 
       // 4) 👎 3+ 도달 시 관리자에게 FCM 알림
       if (thumbsDown === 3) {
@@ -1570,6 +1629,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const userQuestion = messages[messages.length - 1]?.content || "";
 
+      // 좋은 평가를 받은 유사 답변 참고 (RAG) — 참고만 하고 그대로 복사하지 않도록 프롬프트에 명시
+      let goodAnswerRefSection = "";
+      try {
+        const embedding = await getEmbedding(userQuestion);
+        if (embedding) {
+          const { pool: ragPool } = await import("./db");
+          const vecStr = `[${embedding.join(",")}]`;
+          const simRows = await ragPool.query(
+            `SELECT question, answer, 1 - (embedding <=> $1::vector) as similarity
+             FROM ai_answer_pool
+             WHERE status = 'approved' AND embedding IS NOT NULL
+             ORDER BY embedding <=> $1::vector LIMIT 1`,
+            [vecStr]
+          );
+          if (simRows.rows.length > 0 && simRows.rows[0].similarity >= 0.82) {
+            const ref = simRows.rows[0];
+            goodAnswerRefSection = `\n\n[참고 — 과거 유사 질문에 좋은 평가를 받은 답변 스타일]\n질문: ${ref.question}\n답변: ${ref.answer.slice(0, 500)}\n(참고만 하고 현재 질문에 맞게 새로 작성할 것. 그대로 복사하지 말 것)`;
+          }
+        }
+      } catch (e) {}
+
       // 승강기 고유번호 감지 (7자리 숫자 또는 4자리-3자리 형식)
       let elevatorInfoSection = "";
       const elvtrMatch = userQuestion.match(/\b(\d{4}-\d{3}|\d{7})\b/);
@@ -1741,8 +1821,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // 조문 DB 조회 실패 시 무시
       }
 
-      const contextText = (sections.length > 0 || elevatorInfoSection)
-        ? "\n\n---\n" + sections.join("\n\n") + elevatorInfoSection + "\n---"
+      const contextText = (sections.length > 0 || elevatorInfoSection || goodAnswerRefSection)
+        ? "\n\n---\n" + sections.join("\n\n") + elevatorInfoSection + goodAnswerRefSection + "\n---"
         : "";
 
       // ── 메모 자동 검색 ─────────────────────────────────────────────────
