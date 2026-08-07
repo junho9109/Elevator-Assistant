@@ -3111,7 +3111,28 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   </>
                 );
               })() : selectedSearchResult.type === "standard" ? (() => {
-                const std = STD_ITEMS.find(x => x.title === selectedSearchResult.title) || null;
+                // STD_ITEMS 또는 stdOverrides에서 데이터 찾기
+                const stdFromItems = STD_ITEMS.find(x => x.title === selectedSearchResult.title) || null;
+                const stdFromDB = stdOverrides?.find((x: any) => x.title === selectedSearchResult.title) || null;
+                const std = stdFromItems
+                  ? {
+                      ...stdFromItems,
+                      ref: stdFromDB?.ref || stdFromItems.ref || "",
+                      basis: stdFromDB?.basis || stdFromItems.basis || "",
+                      conclusion: stdFromDB?.conclusion || stdFromItems.conclusion || "",
+                      source: stdFromDB?.source || stdFromItems.source || "",
+                    }
+                  : stdFromDB
+                  ? {
+                      title: stdFromDB.title,
+                      ref: stdFromDB.ref || "",
+                      basis: stdFromDB.basis || "",
+                      conclusion: stdFromDB.conclusion || "",
+                      source: stdFromDB.source || "",
+                      typeTag: stdFromDB.type_tag || "",
+                      category: stdFromDB.category || "",
+                    }
+                  : null;
                 return (
                   <>
                     {/* 제목 */}
