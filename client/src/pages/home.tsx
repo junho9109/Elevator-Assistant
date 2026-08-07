@@ -1812,15 +1812,29 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           };
         }
         if (s.type === "standard") {
-          // 표준화 — stdOverrides에서 찾기
-          const ov = (stdOverrides || []).find((o: any) =>
-            (o.overrideTitle || o.title || "").includes(s.title.slice(0, 10))
+          // 표준화 — 2단계 검증
+          // 1차: AI가 인용한 s.title(=source 값, 예 "2016년 제3차 표준화")과 DB source가 일치하는 후보군 추출
+          const sourcePool = [...(stdOverrides || []), ...STD_ITEMS];
+          const candidates = sourcePool.filter((o: any) =>
+            o.source && (s.title.includes(o.source) || o.source.includes(s.title))
           );
+          // 2차: 후보가 여러 개면 AI 답변 본문(data.reply)에 해당 항목의 실제 결론/기준 문구가
+          // 실제로 등장하는지 확인해서 정확한 1개로 좁힌다 (동일 차수 표준화 내 중복 방지)
+          let ov: any = candidates[0];
+          if (candidates.length > 1) {
+            const replyText: string = data.reply || "";
+            const matched = candidates.find((c: any) => {
+              const snippet = (c.conclusion || c.basis || "").slice(0, 30).trim();
+              return snippet.length > 5 && replyText.includes(snippet);
+            });
+            if (matched) ov = matched;
+          }
+          const realTitle = ov?.overrideTitle || ov?.title || s.title;
           return {
             type: "standard" as const,
-            title: ov?.title || s.title,
-            content: ov?.conclusion || s.title,
-            query: ov?.title || s.title,
+            title: realTitle,
+            content: ov?.conclusion || ov?.basis || s.title,
+            query: realTitle,
             score: 200,
             priority: 2,
           };
