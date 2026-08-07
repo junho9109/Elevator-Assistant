@@ -3112,8 +3112,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 );
               })() : selectedSearchResult.type === "standard" ? (() => {
                 // STD_ITEMS 또는 stdOverrides에서 데이터 찾기
-                const stdFromItems = STD_ITEMS.find(x => x.title === selectedSearchResult.title) || null;
-                const stdFromDB = stdOverrides?.find((x: any) => x.title === selectedSearchResult.title) || null;
+                const _st = selectedSearchResult.title;
+                const _sq = selectedSearchResult.query;
+                const stdFromItems = STD_ITEMS.find(x => x.title === _st || x.title === _sq) || null;
+                const stdFromDB = stdOverrides?.find((x: any) =>
+                  x.title === _st || x.title === _sq ||
+                  (x.override_title && (x.override_title === _st || x.override_title === _sq))
+                ) || null;
                 const std = stdFromItems
                   ? {
                       ...stdFromItems,
