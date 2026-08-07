@@ -96,6 +96,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI 답변 피드백 API
+  app.post("/api/ai-feedback", async (req, res) => {
+    try {
+      const { question, answer, rating } = req.body;
+      if (!question || !answer || ![1, -1].includes(rating)) {
+        return res.status(400).json({ error: "잘못된 요청" });
+      }
+      const { pool } = await import("./db");
+
+      // 1) 피드백 로그 저장
+      await pool.query(
+        `INSERT INTO ai_feedback (question, answer, rating) VALUES ($1, $2, $3)`,
+        [question, answer, rating]
+      );
+
+      // 2) answer_pool 업데이트 (question 기준 upsert)
+      const existing = await pool.query(
+        `SELECT id, thumbs_up, thumbs_down FROM ai_answer_pool WHERE question = $1 AND answer = $2`,
+        [question, answer]
+      );
+
+      let thumbsUp = 0, thumbsDown = 0, poolId;
+      if (existing.rows.length > 0) {
+        thumbsUp = existing.rows[0].thumbs_up + (rating === 1 ? 1 : 0);
+        thumbsDown = existing.rows[0].thumbs_down + (rating === -1 ? 1 : 0);
+        poolId = existing.rows[0].id;
+        await pool.query(
+          `UPDATE ai_answer_pool SET thumbs_up = $1, thumbs_down = $2, updated_at = NOW() WHERE id = $3`,
+          [thumbsUp, thumbsDown, poolId]
+        );
+      } else {
+        thumbsUp = rating === 1 ? 1 : 0;
+        thumbsDown = rating === -1 ? 1 : 0;
+        const inserted = await pool.query(
+          `INSERT INTO ai_answer_pool (question, answer, thumbs_up, thumbs_down) VALUES ($1, $2, $3, $4) RETURNING id`,
+          [question, answer, thumbsUp, thumbsDown]
+        );
+        poolId = inserted.rows[0].id;
+      }
+
+      // 3) 상태 자동 분류: 👍3+ → approved, 👎3+ → excluded
+      let newStatus = 'pending';
+      if (thumbsUp >= 3) newStatus = 'approved';
+      if (thumbsDown >= 3) newStatus = 'excluded';
+      await pool.query(`UPDATE ai_answer_pool SET status = $1 WHERE id = $2`, [newStatus, poolId]);
+
+      // 4) 👎 3+ 도달 시 관리자에게 FCM 알림
+      if (thumbsDown === 3) {
+        try {
+          if (firebaseAdmin) {
+            const tokenRows = await pool.query(`SELECT token FROM push_tokens`);
+            const tokens = tokenRows.rows.map((r: any) => r.token).filter(Boolean);
+            await Promise.allSettled(
+              tokens.map((token: string) =>
+                firebaseAdmin.messaging().send({
+                  token,
+                  notification: {
+                    title: "⚠️ AI 답변 부정 피드백 누적",
+                    body: `질문: ${question.slice(0, 50)}`,
+                  },
+                  android: { priority: "high" },
+                })
+              )
+            );
+          }
+        } catch (e) {}
+      }
+
+      res.json({ ok: true, thumbsUp, thumbsDown, status: newStatus });
+    } catch (e) {
+      res.status(500).json({ error: "피드백 저장 실패" });
+    }
+  });
+
   // std_item_overrides 전체 조회 — 클라이언트 STD_ITEMS 병합용
   app.get("/api/std-item-overrides", async (req, res) => {
     try {

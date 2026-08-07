@@ -884,6 +884,55 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 }
 
 // ==================== 메인 ====================
+// ── AI 답변 피드백 버튼 ───────────────────────────────────────
+function FeedbackButtons({ question, answer }: { question: string; answer: string }) {
+  const [rated, setRated] = React.useState<1 | -1 | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const submitFeedback = async (rating: 1 | -1) => {
+    if (rated || loading) return;
+    setLoading(true);
+    try {
+      await fetch("/api/ai-feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question, answer, rating }),
+      });
+      setRated(rating);
+    } catch (e) {}
+    setLoading(false);
+  };
+
+  if (rated) {
+    return (
+      <span className="text-[10px] text-muted-foreground px-1">
+        {rated === 1 ? "👍 피드백 감사합니다" : "👎 피드백 감사합니다"}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 px-1">
+      <button
+        onClick={() => submitFeedback(1)}
+        disabled={loading}
+        className="text-[13px] px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
+        title="좋아요"
+      >
+        👍
+      </button>
+      <button
+        onClick={() => submitFeedback(-1)}
+        disabled={loading}
+        className="text-[13px] px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
+        title="싫어요"
+      >
+        👎
+      </button>
+    </div>
+  );
+}
+
 // ── 안전 포인트 상세 모달 ─────────────────────────────────────
 function SafetyPointModal({ pt, onClose }: { pt: any; onClose: () => void }) {
   const isNew = pt.point_type === 'new';
@@ -2500,7 +2549,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   {msg.calcCard === "COUNTER_WEIGHT" && (
                     <CounterWeightCalcCard />
                   )}
-                  <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
+                    {msg.role === "assistant" && msg.content && i > 0 && messages[i-1]?.role === "user" && (
+                      <FeedbackButtons question={messages[i-1].content} answer={msg.content} />
+                    )}
+                  </div>
                   {msg.searchResults && msg.searchResults.length > 0 && !msg.isElevatorQuery && (() => {
                     const TYPE_LABEL: Record<string, string> = {
                       inspection: "검사기준", standard: "기술자료",
@@ -3254,8 +3308,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                         <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{fullText.slice(0, 400)}{fullText.length > 400 ? "..." : ""}</p>
                       </div>
                     )}
-                    <div className="pt-1 border-t border-border">
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-border">
                       <p className="text-[10px] font-medium text-amber-600">[검사기준] {itemId}</p>
+                      <button
+                        className="text-xs bg-primary text-primary-foreground rounded-xl px-3 py-2 hover:bg-primary/90"
+                        onClick={() => {
+                          setSelectedSearchResult(null);
+                          sessionStorage.setItem("pendingInspectionDetail", itemId);
+                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
+                        }}
+                      >
+                        검사기준에서 보기 →
+                      </button>
                     </div>
                   </>
                 );
