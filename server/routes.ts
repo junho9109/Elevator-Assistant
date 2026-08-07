@@ -109,8 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json([]);
     }
   });
-
-  // std_item_overrides 전체 조회
+  app.get("/api/standards/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const standard = await storage.getStandard(id);
