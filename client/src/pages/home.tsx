@@ -19,7 +19,7 @@ import INSPECTION_CONTENT from "@/data/inspection-content.json";
 import ReactMarkdown from "react-markdown";
 // STD_DATA JSON 제거 — DB(std_item_overrides) 전용으로 이전 완료
 type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
-const STD_ITEMS: StdItem[] = []; // DB 전용 — JSON 폴백 제거
+const STD_ITEMS: StdItem[] = []; // DB에서 동적 로드 (useEffect에서 채움)
 
 // STD_ITEMS JSON category → hotspot label 매핑 테이블
 // hotspot이 추가/삭제되어도 이 테이블만 업데이트하면 자동 반영
@@ -1099,6 +1099,26 @@ function CounterWeightCalcCard() {
 }
 
 export default function Home({ defaultTab = "chat", role = "user", onLogout }: { defaultTab?: "chat" | "map"; role?: string; onLogout?: () => void }) {
+  // 표준화 데이터 DB 로드
+  useEffect(() => {
+    if (STD_ITEMS.length > 0) return;
+    fetch("/api/standards")
+      .then(r => r.json())
+      .then((rows: any[]) => {
+        rows.forEach((r: any) => {
+          STD_ITEMS.push({
+            title: r.title || "",
+            ref: "",
+            basis: r.body || "",
+            conclusion: "",
+            source: r.inspectionYear ? `${r.inspectionYear}년 제${r.inspectionRound}차 표준화` : (r.inspection_year ? `${r.inspection_year}년 제${r.inspection_round}차 표준화` : ""),
+            typeTag: "",
+            category: "",
+          });
+        });
+      })
+      .catch(() => {});
+  }, []);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: standards = [] } = useStandards();
