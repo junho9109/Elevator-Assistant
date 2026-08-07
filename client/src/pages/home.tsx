@@ -401,7 +401,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
   if (dbItems.length >= 83) {
     // DB SEED 완료 — DB만 사용
     dbItems.forEach((ov: any) => {
-      const title = ov.overrideTitle || ov.title;
+      const title = ov.override_title || ov.overrideTitle || ov.title;
       const conclusion = ov.conclusion || "";
       const basis = ov.basis || "";
       const ref = ov.ref || "";
@@ -430,7 +430,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
     // DB 전용 신규 항목
     const stdTitles = new Set(STD_ITEMS.map(s => s.title));
     dbItems.filter((ov: any) => !stdTitles.has(ov.title)).forEach((ov: any) => {
-      const title = ov.overrideTitle || ov.title;
+      const title = ov.override_title || ov.overrideTitle || ov.title;
       const conclusion = ov.conclusion || "";
       const basis = ov.basis || "";
       const ref = ov.ref || "";
