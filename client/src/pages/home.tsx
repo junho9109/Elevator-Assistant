@@ -297,8 +297,11 @@ function scoreMatch(
 
   // ⑥ 의도별 보너스
   if (intent === 'timing') {
-    // 날짜/건축허가 패턴이 있으면 +30
-    if (/\d{4}년|건축허가|이후|부터적용|\d{4}\.\d{1,2}/.test(normText)) score += 30;
+    // 날짜/건축허가 패턴이 있으면 가산점 강화 — 명확한 날짜(YY.M.D 등) 포함 시 특히 크게
+    if (/\d{2,4}[.\-]\d{1,2}[.\-]\d{1,2}/.test(normText)) score += 80; // 구체적 날짜(예: 19.3.28)
+    else if (/\d{4}년|건축허가|이후|부터적용|\d{4}\.\d{1,2}/.test(normText)) score += 40;
+    // "불가/폐지/금지" 등 확정적 단어와 날짜가 함께 있으면 추가 가산
+    if (/설치\s*불가|사용\s*불가|금지|폐지/.test(normText) && /\d{2,4}[.\-]\d{1,2}/.test(normText)) score += 50;
   } else if (intent === 'criteria') {
     // 수치 패턴 있으면 +20
     if (/\d+m|\d+mm|\d+%|이상|이하|미만|초과/.test(normText)) score += 20;
@@ -408,7 +411,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
       addResult({
         type: "standard",
         title: ov.title,
-        content: conclusion ? conclusion.slice(0, 100) + (conclusion.length > 100 ? "..." : "") : basis.slice(0, 100),
+        content: conclusion ? conclusion.slice(0, 300) + (conclusion.length > 300 ? "..." : "") : basis.slice(0, 300),
         query: ov.title
       }, title, `${ref} ${basis} ${conclusion}`);
     });
@@ -423,7 +426,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
       addResult({
         type: "standard",
         title: s.title,
-        content: conclusion ? conclusion.slice(0, 100) + (conclusion.length > 100 ? "..." : "") : basis.slice(0, 100),
+        content: conclusion ? conclusion.slice(0, 300) + (conclusion.length > 300 ? "..." : "") : basis.slice(0, 300),
         query: s.title
       }, title, `${ref} ${basis} ${conclusion}`);
     });
@@ -437,7 +440,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
       addResult({
         type: "standard",
         title: ov.title,
-        content: conclusion ? conclusion.slice(0, 100) + (conclusion.length > 100 ? "..." : "") : basis.slice(0, 100),
+        content: conclusion ? conclusion.slice(0, 300) + (conclusion.length > 300 ? "..." : "") : basis.slice(0, 300),
         query: ov.title
       }, title, `${ref} ${basis} ${conclusion}`);
     });
@@ -451,7 +454,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
         addResult({
           type: "standard",
           title: ov.title,
-          content: ov.conclusion ? ov.conclusion.slice(0, 100) : (ov.basis || "").slice(0, 100),
+          content: ov.conclusion ? ov.conclusion.slice(0, 300) : (ov.basis || "").slice(0, 300),
           query: ov.title
         }, ov.overrideTitle || ov.title, `${ov.ref || ""} ${ov.basis || ""} ${ov.conclusion || ""}`);
       }
@@ -1669,7 +1672,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         const candidates = contextResults.slice(0, 15).map((r, i) => ({
           id: String(i),
           title: r.title,
-          content: r.content.slice(0, 150),
+          content: r.content.slice(0, 400), // 150→400자 확대 — 본문 뒷부분의 핵심 정보(날짜/결론) 누락 방지
           type: r.type,
         }));
         const rrRes = await fetch("/api/rerank", {
@@ -1720,20 +1723,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         ...contextResults.filter(r => r.type === "standard"),
         ...crossRefItems.filter(cr => !contextResults.find(r => r.title === cr.title)),
       ];
-      const techCtx = techResults.slice(0, 1).map(r => {
+      const techCtx = techResults.slice(0, 3).map(r => {
         const std = STD_ITEMS.find(s => s.title === r.title);
         const ov = stdOverrides?.find((o: any) => o.title === r.title);
         const title = ov?.overrideTitle || std?.title || ov?.title || r.title;
         // DB 오버라이드 우선 — 최신 수정값 반영
         const ref   = ov?.ref   || std?.ref   || "";
-        const basis = (ov?.basis || std?.basis || "").slice(0, 250);
+        const basis = (ov?.basis || std?.basis || "").slice(0, 300);
         const conclusionRaw = ov?.conclusion || std?.conclusion || "";
         return {
           priority: "기술자료(표준화)",
           title,
           ref,
           basis,
-          conclusion: conclusionRaw.length > 10 ? conclusionRaw.slice(0, 400) : "",
+          conclusion: conclusionRaw.length > 10 ? conclusionRaw.slice(0, 600) : "",
           source: ov?.source || std?.source || "",
         };
       }).filter(c => c.basis || c.conclusion);
