@@ -229,19 +229,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // std_item_overrides 전체 조회 — 클라이언트 STD_ITEMS 병합용
-  app.get("/api/std-item-overrides", async (req, res) => {
-    try {
-      const { pool } = await import("./db");
-      const rows = await pool.query(
-        `SELECT title, ref, basis, conclusion, source, type_tag, category, override_title, manually_edited
-         FROM std_item_overrides ORDER BY id`
-      );
-      res.json(rows.rows);
-    } catch (e) {
-      res.status(500).json([]);
-    }
-  });
   app.get("/api/standards/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

@@ -1246,14 +1246,14 @@ function CounterWeightCalcCard() {
 }
 
 export default function Home({ defaultTab = "chat", role = "user", onLogout }: { defaultTab?: "chat" | "map"; role?: string; onLogout?: () => void }) {
-  // 표준화 데이터 DB 로드 (standards + std_item_overrides 병합)
+  // 표준화 데이터 DB 로드 (standards + std-overrides(camelCase, 정식 API) 병합)
   useEffect(() => {
     if (STD_ITEMS.length > 0) return;
     Promise.all([
       fetch("/api/standards").then(r => r.json()),
-      fetch("/api/std-item-overrides").then(r => r.json()).catch(() => []),
+      fetch("/api/std-overrides").then(r => r.json()).catch(() => []),
     ]).then(([rows, overrides]) => {
-      // std_item_overrides를 Map으로 변환 (title 기준 우선 적용)
+      // std-overrides를 Map으로 변환 (title 기준 우선 적용)
       const overrideMap: Record<string, any> = {};
       (overrides || []).forEach((o: any) => {
         if (o.title) overrideMap[o.title] = o;
@@ -1262,28 +1262,28 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       rows.forEach((r: any) => {
         const ov = overrideMap[r.title];
         STD_ITEMS.push({
-          title: r.title || "",
+          title: ov?.overrideTitle || r.title || "",
           ref: ov?.ref || "",
           basis: ov?.basis || r.body || "",
           conclusion: ov?.conclusion || "",
-          source: r.inspection_year ? `${r.inspection_year}년 제${r.inspection_round}차 표준화` : "",
-          typeTag: ov?.type_tag || "",
+          source: ov?.source || (r.inspection_year ? `${r.inspection_year}년 제${r.inspection_round}차 표준화` : ""),
+          typeTag: ov?.typeTag || "",
           category: ov?.category || "",
         });
         // override에만 있는 추가 항목 제거 (standards에 없는 것)
         delete overrideMap[r.title];
       });
 
-      // std_item_overrides에만 있는 항목 추가
+      // std-overrides에만 있는 항목 추가
       Object.values(overrideMap).forEach((o: any) => {
         if (o.title) {
           STD_ITEMS.push({
-            title: o.title || "",
+            title: o.overrideTitle || o.title || "",
             ref: o.ref || "",
             basis: o.basis || "",
             conclusion: o.conclusion || "",
             source: o.source || "",
-            typeTag: o.type_tag || "",
+            typeTag: o.typeTag || "",
             category: o.category || "",
           });
         }
@@ -3263,32 +3263,26 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   </>
                 );
               })() : selectedSearchResult.type === "standard" ? (() => {
-                // STD_ITEMS 또는 stdOverrides에서 데이터 찾기
+                // STD_ITEMS 또는 stdOverrides(DB, camelCase)에서 데이터 찾기 — title/query 둘 다로 매칭
                 const _st = selectedSearchResult.title;
                 const _sq = selectedSearchResult.query;
                 const stdFromItems = STD_ITEMS.find(x => x.title === _st || x.title === _sq) || null;
                 const stdFromDB = stdOverrides?.find((x: any) =>
                   x.title === _st || x.title === _sq ||
-                  (x.override_title && (x.override_title === _st || x.override_title === _sq))
+                  (x.overrideTitle && (x.overrideTitle === _st || x.overrideTitle === _sq))
                 ) || null;
-                const std = stdFromItems
+                const std = stdFromDB
                   ? {
-                      ...stdFromItems,
-                      ref: stdFromDB?.ref || stdFromItems.ref || "",
-                      basis: stdFromDB?.basis || stdFromItems.basis || "",
-                      conclusion: stdFromDB?.conclusion || stdFromItems.conclusion || "",
-                      source: stdFromDB?.source || stdFromItems.source || "",
+                      title: stdFromDB.overrideTitle || stdFromDB.title,
+                      ref: stdFromDB.ref || stdFromItems?.ref || "",
+                      basis: stdFromDB.basis || stdFromItems?.basis || "",
+                      conclusion: stdFromDB.conclusion || stdFromItems?.conclusion || "",
+                      source: stdFromDB.source || stdFromItems?.source || "",
+                      typeTag: stdFromDB.typeTag || stdFromItems?.typeTag || "",
+                      category: stdFromDB.category || stdFromItems?.category || "",
                     }
-                  : stdFromDB
-                  ? {
-                      title: stdFromDB.title,
-                      ref: stdFromDB.ref || "",
-                      basis: stdFromDB.basis || "",
-                      conclusion: stdFromDB.conclusion || "",
-                      source: stdFromDB.source || "",
-                      typeTag: stdFromDB.type_tag || "",
-                      category: stdFromDB.category || "",
-                    }
+                  : stdFromItems
+                  ? stdFromItems
                   : null;
                 return (
                   <>
