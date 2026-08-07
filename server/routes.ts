@@ -99,16 +99,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI 답변 피드백 API
   app.post("/api/ai-feedback", async (req, res) => {
     try {
-      const { question, answer, rating } = req.body;
+      const { question, answer, rating, sections, reasons, comment } = req.body;
       if (!question || !answer || ![1, -1].includes(rating)) {
         return res.status(400).json({ error: "잘못된 요청" });
       }
       const { pool } = await import("./db");
 
-      // 1) 피드백 로그 저장
+      // 1) 피드백 로그 저장 (섹션/이유/기타의견 포함)
       await pool.query(
-        `INSERT INTO ai_feedback (question, answer, rating) VALUES ($1, $2, $3)`,
-        [question, answer, rating]
+        `INSERT INTO ai_feedback (question, answer, rating, sections, reasons, comment) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [question, answer, rating, sections || [], reasons || [], comment || null]
       );
 
       // 2) answer_pool 업데이트 (question 기준 upsert)

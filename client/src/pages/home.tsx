@@ -885,20 +885,108 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 
 // ==================== 메인 ====================
 // ── AI 답변 피드백 버튼 ───────────────────────────────────────
+const FEEDBACK_SECTIONS = ["판정 기준", "관련 조문", "검사 시 유의사항", "계산 과정", "전체 답변"];
+const FEEDBACK_REASONS_POS = ["조문 근거가 정확함", "판정 기준이 명확함", "실무에 바로 도움됨", "종전/현행 차이 설명이 명확함", "계산 과정이 이해하기 쉬움", "간결하고 핵심만 담음"];
+const FEEDBACK_REASONS_NEG = ["조문 근거가 틀리거나 부정확함", "판정 기준이 잘못됨", "불필요한 내용이 많음", "설명이 이해하기 어려움", "질문과 관련 없는 답변"];
+
+function FeedbackModal({ rating, onSubmit, onSkip, onClose }: { rating: 1 | -1; onSubmit: (sections: string[], reasons: string[], comment: string) => void; onSkip: () => void; onClose: () => void }) {
+  const [sections, setSections] = React.useState<string[]>([]);
+  const [reasons, setReasons] = React.useState<string[]>([]);
+  const [comment, setComment] = React.useState("");
+  const reasonList = rating === 1 ? FEEDBACK_REASONS_POS : FEEDBACK_REASONS_NEG;
+  const isNeg = rating === -1;
+
+  const toggle = (arr: string[], setArr: (v: string[]) => void, val: string) => {
+    setArr(arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val]);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 99999, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ background: "var(--card, white)", borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", padding: 18 }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-lg">{rating === 1 ? "👍" : "👎"}</span>
+          <span className="text-[13px] font-bold text-foreground">{rating === 1 ? "어떤 점이 좋았나요?" : "어떤 점이 아쉬웠나요?"}</span>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-[11px] font-bold text-foreground mb-2">1. 어느 부분이 {rating === 1 ? "좋았나요" : "아쉬웠나요"}? <span className="font-normal text-muted-foreground">(복수 선택)</span></p>
+          <div className="flex flex-wrap gap-1.5">
+            {FEEDBACK_SECTIONS.map(s => (
+              <button
+                key={s}
+                onClick={() => toggle(sections, setSections, s)}
+                className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
+                  sections.includes(s)
+                    ? isNeg ? "bg-red-50 border-red-300 text-red-700 font-semibold" : "bg-blue-50 border-blue-300 text-blue-700 font-semibold"
+                    : "border-border text-muted-foreground"
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-[11px] font-bold text-foreground mb-2">2. 어떤 점이 {rating === 1 ? "좋았나요" : "아쉬웠나요"}? <span className="font-normal text-muted-foreground">(복수 선택)</span></p>
+          <div className="flex flex-wrap gap-1.5">
+            {reasonList.map(r => (
+              <button
+                key={r}
+                onClick={() => toggle(reasons, setReasons, r)}
+                className={`text-[11px] px-3 py-1.5 rounded-full border transition-colors ${
+                  reasons.includes(r)
+                    ? isNeg ? "bg-red-50 border-red-300 text-red-700 font-semibold" : "bg-blue-50 border-blue-300 text-blue-700 font-semibold"
+                    : "border-border text-muted-foreground"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-[11px] font-bold text-foreground mb-2">기타 의견 <span className="font-normal text-muted-foreground">(선택)</span></p>
+          <textarea
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            rows={2}
+            placeholder={isNeg ? "어떤 점이 틀렸는지 구체적으로 적어주시면 큰 도움이 됩니다" : "추가로 남기고 싶은 의견이 있다면 적어주세요"}
+            className="w-full border border-border rounded-xl px-3 py-2 text-[11px] bg-background outline-none resize-none"
+          />
+        </div>
+
+        <button
+          onClick={() => onSubmit(sections, reasons, comment)}
+          className={`w-full text-white rounded-xl py-2.5 text-[12px] font-semibold mb-2 ${isNeg ? "bg-red-700" : "bg-[#1e3a5f]"}`}
+        >
+          제출
+        </button>
+        <button onClick={onSkip} className="w-full text-muted-foreground text-[11px] py-2">
+          건너뛰고 {rating === 1 ? "좋아요" : "싫어요"}만 남기기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function FeedbackButtons({ question, answer }: { question: string; answer: string }) {
   const [rated, setRated] = React.useState<1 | -1 | null>(null);
+  const [modalRating, setModalRating] = React.useState<1 | -1 | null>(null);
   const [loading, setLoading] = React.useState(false);
 
-  const submitFeedback = async (rating: 1 | -1) => {
+  const submitFeedback = async (rating: 1 | -1, sections: string[] = [], reasons: string[] = [], comment: string = "") => {
     if (rated || loading) return;
     setLoading(true);
     try {
       await fetch("/api/ai-feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, answer, rating }),
+        body: JSON.stringify({ question, answer, rating, sections, reasons, comment }),
       });
       setRated(rating);
+      setModalRating(null);
     } catch (e) {}
     setLoading(false);
   };
@@ -912,24 +1000,34 @@ function FeedbackButtons({ question, answer }: { question: string; answer: strin
   }
 
   return (
-    <div className="flex items-center gap-1.5 px-1">
-      <button
-        onClick={() => submitFeedback(1)}
-        disabled={loading}
-        className="text-[13px] px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
-        title="좋아요"
-      >
-        👍
-      </button>
-      <button
-        onClick={() => submitFeedback(-1)}
-        disabled={loading}
-        className="text-[13px] px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
-        title="싫어요"
-      >
-        👎
-      </button>
-    </div>
+    <>
+      <div className="flex items-center gap-1.5 px-1">
+        <button
+          onClick={() => setModalRating(1)}
+          disabled={loading}
+          className="text-[13px] px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
+          title="좋아요"
+        >
+          👍
+        </button>
+        <button
+          onClick={() => setModalRating(-1)}
+          disabled={loading}
+          className="text-[13px] px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
+          title="싫어요"
+        >
+          👎
+        </button>
+      </div>
+      {modalRating && (
+        <FeedbackModal
+          rating={modalRating}
+          onSubmit={(sections, reasons, comment) => submitFeedback(modalRating, sections, reasons, comment)}
+          onSkip={() => submitFeedback(modalRating)}
+          onClose={() => setModalRating(null)}
+        />
+      )}
+    </>
   );
 }
 
