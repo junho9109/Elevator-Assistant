@@ -3254,18 +3254,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                         <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{fullText.slice(0, 400)}{fullText.length > 400 ? "..." : ""}</p>
                       </div>
                     )}
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-border">
+                    <div className="pt-1 border-t border-border">
                       <p className="text-[10px] font-medium text-amber-600">[검사기준] {itemId}</p>
-                      <button
-                        className="text-xs bg-primary text-primary-foreground rounded-xl px-3 py-2 hover:bg-primary/90"
-                        onClick={() => {
-                          setSelectedSearchResult(null);
-                          sessionStorage.setItem("pendingInspectionDetail", itemId);
-                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 3 } }));
-                        }}
-                      >
-                        검사기준에서 보기 →
-                      </button>
                     </div>
                   </>
                 );
