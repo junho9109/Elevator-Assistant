@@ -993,31 +993,39 @@ function FeedbackButtons({ question, answer }: { question: string; answer: strin
 
   if (rated) {
     return (
-      <span className="text-[10px] text-muted-foreground px-1">
-        {rated === 1 ? "👍 피드백 감사합니다" : "👎 피드백 감사합니다"}
-      </span>
+      <div className="rounded-2xl px-3.5 py-2.5 mt-1" style={{ background: "linear-gradient(135deg,#fafbff,#f5f7ff)", border: "1px solid #e0e7ff" }}>
+        <p className="text-[11px] font-semibold text-indigo-700">
+          {rated === 1 ? "👍 피드백 감사합니다! 답변 개선에 활용할게요" : "👎 피드백 감사합니다. 더 나은 답변을 위해 노력할게요"}
+        </p>
+      </div>
     );
   }
 
   return (
     <>
-      <div className="flex items-center gap-1.5 px-1">
-        <button
-          onClick={() => setModalRating(1)}
-          disabled={loading}
-          className="text-[13px] px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
-          title="좋아요"
-        >
-          👍
-        </button>
-        <button
-          onClick={() => setModalRating(-1)}
-          disabled={loading}
-          className="text-[13px] px-1.5 py-0.5 rounded hover:bg-muted disabled:opacity-50"
-          title="싫어요"
-        >
-          👎
-        </button>
+      <div className="rounded-2xl px-3.5 py-2.5 mt-1" style={{ background: "linear-gradient(135deg,#fafbff,#f5f7ff)", border: "1px solid #e0e7ff" }}>
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-sm">✨</span>
+          <p className="text-[11px] font-semibold text-indigo-700">답변이 도움이 되었나요? AI 답변 품질 개선에 활용됩니다</p>
+        </div>
+        <div className="flex gap-2.5">
+          <button
+            onClick={() => setModalRating(1)}
+            disabled={loading}
+            className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-bold text-white rounded-xl py-2.5 disabled:opacity-50"
+            style={{ background: "#3b82f6" }}
+          >
+            👍 좋아요
+          </button>
+          <button
+            onClick={() => setModalRating(-1)}
+            disabled={loading}
+            className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-bold text-white rounded-xl py-2.5 disabled:opacity-50"
+            style={{ background: "#6b7280" }}
+          >
+            👎 아쉬워요
+          </button>
+        </div>
       </div>
       {modalRating && (
         <FeedbackModal
@@ -2661,12 +2669,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   {msg.calcCard === "COUNTER_WEIGHT" && (
                     <CounterWeightCalcCard />
                   )}
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
-                    {msg.role === "assistant" && msg.content && i > 0 && messages[i-1]?.role === "user" && (
+                  <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
+                  {msg.role === "assistant" && msg.content && i > 0 && messages[i-1]?.role === "user" && (
+                    <div className="w-full">
                       <FeedbackButtons question={messages[i-1].content} answer={msg.content} />
-                    )}
-                  </div>
+                    </div>
+                  )}
                   {msg.searchResults && msg.searchResults.length > 0 && !msg.isElevatorQuery && (() => {
                     const TYPE_LABEL: Record<string, string> = {
                       inspection: "검사기준", standard: "기술자료",
