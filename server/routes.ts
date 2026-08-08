@@ -1064,6 +1064,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 연도별 기준 브라우징 — 개정 이력 테이블에 존재하는 연도 목록
+  // (effective_date / expiry_date에서 연도만 추출해 선택 버튼을 구성하는 데 사용)
+  app.get("/api/inspection-revisions-years", async (req, res) => {
+    try {
+      const { pool: pgPool } = await import("./db");
+      const result = await pgPool.query(
+        `SELECT DISTINCT LEFT(d, 4) AS yr FROM (
+           SELECT effective_date AS d FROM inspection_item_revisions WHERE effective_date IS NOT NULL
+           UNION ALL
+           SELECT expiry_date AS d FROM inspection_item_revisions WHERE expiry_date IS NOT NULL
+         ) t
+         WHERE d ~ '^[0-9]{4}-'
+         ORDER BY yr`
+      );
+      const years = result.rows.map((r: any) => r.yr).filter(Boolean);
+      res.json(years);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch revision years" });
+    }
+  });
+
+  // 전체 연도 통합 검색 — 특정 연도에 한정하지 않고 모든 tier(현행/종전/추가)의
+  // description을 대상으로 키워드를 검색해, 항목별 · 연도별 매칭 결과를 반환한다.
+  app.get("/api/inspection-revisions-search", async (req, res) => {
+    try {
+      const q = (req.query.q as string || "").trim();
+      if (!q) return res.json([]);
+      const { pool: pgPool } = await import("./db");
+      const result = await pgPool.query(
+        `SELECT item_id, introduction_type, effective_date, expiry_date, description
+         FROM inspection_item_revisions
+         WHERE introduction_type IN ('current', 'old', 'additional')
+           AND description ILIKE $1
+         ORDER BY item_id, effective_date ASC NULLS FIRST
+         LIMIT 300`,
+        [`%${q}%`]
+      );
+      res.json(result.rows.map((r: any) => ({
+        itemId: r.item_id,
+        introductionType: r.introduction_type,
+        effectiveDate: r.effective_date,
+        expiryDate: r.expiry_date,
+        description: r.description,
+      })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to search revisions" });
+    }
+  });
+
 
 
   // 통계 요약 API - 서버에서 공공데이터 가공 후 제공

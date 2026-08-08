@@ -133,11 +133,40 @@ function TreeNode({ sec, depth, activeKey, onSelect }: {
   );
 }
 
-function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
-  id: string; yearStd: string; onClose: () => void;
+type RevisionRow = {
+  itemId: string; introductionType: string | null;
+  effectiveDate: string | null; expiryDate: string | null; description: string | null;
+};
+
+// 특정 연도(year)에 유효했던 tier(current/old)를 찾는다.
+// year === "current"면 상시 미래까지 유효한 현행 tier가 매칭되도록 큰 값(9999)을 기준으로 판정한다.
+function resolveTierForYear(rows: RevisionRow[], year: string) {
+  const yearNum = year === "current" ? 9999 : parseInt(year, 10);
+  const candidates = rows.filter(r => r.introductionType === "current" || r.introductionType === "old");
+  for (const r of candidates) {
+    const effYear = r.effectiveDate ? parseInt(r.effectiveDate.slice(0, 4), 10) : -Infinity;
+    const expYear = r.expiryDate ? parseInt(r.expiryDate.slice(0, 4), 10) : Infinity;
+    if (effYear <= yearNum && expYear >= yearNum) return r;
+  }
+  const earliestYear = candidates.reduce((min, r) => {
+    const y = r.effectiveDate ? parseInt(r.effectiveDate.slice(0, 4), 10) : Infinity;
+    return y < min ? y : min;
+  }, Infinity);
+  return { notFound: true, notIntroducedYet: earliestYear !== Infinity && yearNum < earliestYear } as const;
+}
+
+function Detail({ id, yearStd, selectedYear, onClose, isAdminMode, override, onEdit }: {
+  id: string; yearStd: string; selectedYear: string; onClose: () => void;
   isAdminMode: boolean; override?: any; onEdit: () => void;
 }) {
   const e = dataMap[id];
+  const { data: revRows } = useQuery<RevisionRow[]>({
+    queryKey: ["/api/inspection-revisions", id],
+    queryFn: () => fetch(`/api/inspection-revisions/${encodeURIComponent(id)}`).then(r => r.json()),
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+
   if (!e) return (
     <div className="flex flex-col flex-1 min-h-0 items-center justify-center gap-3 p-6 text-center">
       <FileCheck size={32} className="opacity-20" />
@@ -146,20 +175,57 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
       <button onClick={onClose} className="text-xs text-primary underline">닫기</button>
     </div>
   );
-  const displayText = override?.text || e.text || "";
+
+  const isCurrent = selectedYear === "current";
+  const ownRows = (revRows || []).filter(r => r.itemId === id);
+
+  let displayText = "";
+  let displaySource = "";
+  let badge: { label: string; tone: "current" | "old" } | null = null;
+  let notIntroducedYet = false;
+  let noYearMatch = false;
+  let noHistoryData = false;
+
+  if (isCurrent) {
+    displayText = override?.text || e.text || "";
+    displaySource = override?.source || e.source || `별표22 엘리베이터 안전기준 ${yearStd}`;
+  } else if (ownRows.length === 0) {
+    noHistoryData = true;
+    displayText = e.text || "";
+    displaySource = e.source || `별표22 엘리베이터 안전기준 ${yearStd}`;
+  } else {
+    const tier = resolveTierForYear(ownRows, selectedYear);
+    if ("notFound" in tier) {
+      notIntroducedYet = tier.notIntroducedYet;
+      noYearMatch = !tier.notIntroducedYet;
+    } else {
+      displayText = tier.description || "";
+      badge = tier.introductionType === "current"
+        ? { label: `현행 · ${tier.effectiveDate || ""} 시행`, tone: "current" }
+        : { label: `종전 · ${tier.effectiveDate || "~"} ~ ${tier.expiryDate || ""}`, tone: "old" };
+      displaySource = `별표22 엘리베이터 안전기준 · ${selectedYear}년 기준`;
+    }
+  }
+
   const firstLine = (e.title || displayText.split("\n")[0] || id).trim();
   const body = displayText.includes("\n") ? displayText.split("\n").slice(1).join("\n").trim() : displayText;
-  const displaySource = override?.source || e.source || `별표22 엘리베이터 안전기준 ${yearStd}`;
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-start gap-2 px-4 py-3 border-b border-border shrink-0">
         <div className="flex-1 min-w-0">
           <span className="font-mono text-[10px] text-muted-foreground">[{id}]</span>
-          {override && <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>}
+          {isCurrent && override && <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>}
+          {badge && (
+            <span className={`ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+              badge.tone === "current"
+                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                : "bg-muted text-muted-foreground border border-border"
+            }`}>{badge.label}</span>
+          )}
           <p className="text-sm font-medium mt-0.5 leading-snug">{firstLine}</p>
         </div>
-        {isAdminMode && (
+        {isAdminMode && isCurrent && (
           <button onClick={onEdit} className="w-8 h-8 flex items-center justify-center rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 transition-colors shrink-0">
             <Pencil size={13} className="text-amber-600" />
           </button>
@@ -169,14 +235,40 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">조문 내용</p>
-          <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>
-        </div>
-        <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {displaySource}</p>
+        {notIntroducedYet ? (
+          <div className="bg-muted/40 border border-border rounded-xl p-4 text-center">
+            <p className="text-xs text-muted-foreground leading-relaxed">이 항목은 {selectedYear}년 기준에는 아직 도입되지 않았습니다.</p>
+          </div>
+        ) : noYearMatch ? (
+          <div className="bg-muted/40 border border-border rounded-xl p-4 text-center">
+            <p className="text-xs text-muted-foreground leading-relaxed">{selectedYear}년 기준에 해당하는 조문을 찾을 수 없습니다.</p>
+          </div>
+        ) : (
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">조문 내용{noHistoryData ? " · 연도별 이력 데이터 없음" : ""}</p>
+            <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>
+            {noHistoryData && !isCurrent && (
+              <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">이 조문은 연도별 이력이 입력되지 않아 현재 기준 내용을 표시합니다.</p>
+            )}
+          </div>
+        )}
+        {!notIntroducedYet && !noYearMatch && (
+          <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {displaySource}</p>
+        )}
       </div>
     </div>
   );
+}
+
+type SearchHit = { badge: string; snippet: string; year: string };
+type SearchGroup = { itemId: string; title: string; hits: SearchHit[] };
+
+function makeSnippet(text: string, q: string, pad = 28): string {
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return text.slice(0, pad * 2) + (text.length > pad * 2 ? "…" : "");
+  const start = Math.max(0, idx - pad);
+  const end = Math.min(text.length, idx + q.length + pad);
+  return (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
 }
 
 export default function InspectionStandardsPage() {
@@ -186,7 +278,9 @@ export default function InspectionStandardsPage() {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<string[]>([]);
+  const [searchGroups, setSearchGroups] = useState<SearchGroup[]>([]);
   const [showSearch, setShowSearch] = useState(false);
+  const [selectedYear, setSelectedYear] = useState<string>("current");
   const CURRENT_STD = "KC2050-51:2022";  // 현행 기준
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -229,16 +323,53 @@ export default function InspectionStandardsPage() {
     return () => window.removeEventListener("navigatePage", h);
   }, []);
 
-  // 검색
+  // 연도 목록 (개정 이력 테이블에 존재하는 연도만 버튼으로 노출)
+  const { data: revisionYears } = useQuery<string[]>({
+    queryKey: ["/api/inspection-revisions-years"],
+    queryFn: () => fetch("/api/inspection-revisions-years").then(r => r.json()),
+    staleTime: 5 * 60_000,
+  });
+  const yearOptions = useMemo(
+    () => [...new Set(revisionYears || [])].sort((a, b) => Number(a) - Number(b)),
+    [revisionYears]
+  );
+
+  // 검색 — 모든 연도(tier)를 대상으로 DB 검색 + 이력 데이터가 없는 항목은 현행 텍스트로 보완
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
-    const kw = query.toLowerCase();
-    setResults(
-      Object.entries(dataMap)
-        .filter(([, v]) => (v.text || "").toLowerCase().includes(kw))
-        .map(([k]) => k)
-        .slice(0, 40)
-    );
+    const q = query.trim();
+    if (!q) { setResults([]); setSearchGroups([]); return; }
+    const timer = setTimeout(() => {
+      fetch(`/api/inspection-revisions-search?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then((rows: { itemId: string; introductionType: string; effectiveDate: string | null; expiryDate: string | null; description: string }[]) => {
+          const grouped: Record<string, SearchGroup> = {};
+          const hasCurrentInDb = new Set<string>();
+          for (const r of rows) {
+            if (r.introductionType === "current") hasCurrentInDb.add(r.itemId);
+            const g = grouped[r.itemId] || { itemId: r.itemId, title: dataMap[r.itemId]?.title || dataMap[r.itemId]?.text?.split("\n")[0] || r.itemId, hits: [] };
+            g.hits.push({
+              badge: r.introductionType === "current" ? "현행" : `${r.effectiveDate || "~"} ~ ${r.expiryDate || ""}`,
+              snippet: makeSnippet(r.description || "", q),
+              year: r.introductionType === "current" ? "current" : (r.effectiveDate || "").slice(0, 4),
+            });
+            grouped[r.itemId] = g;
+          }
+          const kw = q.toLowerCase();
+          Object.entries(dataMap)
+            .filter(([k, v]) => (v.text || "").toLowerCase().includes(kw) && !hasCurrentInDb.has(k))
+            .slice(0, 30)
+            .forEach(([k, v]) => {
+              const g = grouped[k] || { itemId: k, title: v.title || v.text?.split("\n")[0] || k, hits: [] };
+              g.hits.push({ badge: "현행", snippet: makeSnippet(v.text || "", q), year: "current" });
+              grouped[k] = g;
+            });
+          const groups = Object.values(grouped).sort((a, b) => a.itemId.localeCompare(b.itemId, undefined, { numeric: true }));
+          setSearchGroups(groups);
+          setResults(groups.map(g => g.itemId));
+        })
+        .catch(() => { setSearchGroups([]); setResults([]); });
+    }, 250);
+    return () => clearTimeout(timer);
   }, [query]);
 
   const handleClose = () => {
@@ -247,6 +378,7 @@ export default function InspectionStandardsPage() {
     setShowSearch(false);
     setQuery("");
     setResults([]);
+    setSearchGroups([]);
   };
 
 
@@ -262,7 +394,9 @@ export default function InspectionStandardsPage() {
               </div>
               <div>
                 <h1 className="text-lg font-bold tracking-tight">검사기준</h1>
-                <p className="text-xs text-muted-foreground">{totalCount}개 조문</p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedYear === "current" ? "현행" : `${selectedYear}년 기준`} · {totalCount}개 조문
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -281,7 +415,7 @@ export default function InspectionStandardsPage() {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => { setShowSearch(s => !s); setQuery(""); setResults([]); }}
+                onClick={() => { setShowSearch(s => !s); setQuery(""); setResults([]); setSearchGroups([]); }}
                 className="shrink-0 shadow-sm hover:shadow-md transition-all"
                 title={showSearch ? "검색 닫기" : "검색"}
               >
@@ -296,7 +430,7 @@ export default function InspectionStandardsPage() {
           <span className="text-xs text-muted-foreground shrink-0">문서</span>
           <select
             value={selectedDoc}
-            onChange={e => { setSelectedDoc(e.target.value as DocId); setActiveKey(null); setQuery(""); setResults([]); }}
+            onChange={e => { setSelectedDoc(e.target.value as DocId); setActiveKey(null); setQuery(""); setResults([]); setSearchGroups([]); }}
             className="flex-1 text-xs bg-card border border-border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             {DOCUMENTS.map(d => (
@@ -305,13 +439,43 @@ export default function InspectionStandardsPage() {
           </select>
         </div>
 
+        {/* 기준 연도 선택 */}
+        {selectedDoc === "byulpyo22" && (
+          <div className="px-4 pb-2">
+            <p className="text-[10px] text-muted-foreground mb-1.5">기준 연도 (해당 연도에 시행 중이던 내용만 표시)</p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {yearOptions.map(y => (
+                <button
+                  key={y}
+                  disabled={showSearch && !!query.trim()}
+                  onClick={() => setSelectedYear(y)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${
+                    selectedYear === y ? "border-primary bg-primary/10 text-primary font-medium" : "border-border text-muted-foreground hover:bg-secondary"
+                  }`}
+                >
+                  {y}
+                </button>
+              ))}
+              <button
+                disabled={showSearch && !!query.trim()}
+                onClick={() => setSelectedYear("current")}
+                className={`text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-40 ${
+                  selectedYear === "current" ? "border-primary bg-primary/10 text-primary font-medium" : "border-border text-muted-foreground hover:bg-secondary"
+                }`}
+              >
+                현행
+              </button>
+            </div>
+          </div>
+        )}
+
         {showSearch && (
           <div className="px-3 pb-2 border-t border-border pt-2">
             <input
               autoFocus
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="조문 내용 검색…"
+              placeholder="조문 내용 검색… (모든 연도 대상)"
               className="w-full text-xs bg-card border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
             />
           </div>
@@ -324,11 +488,32 @@ export default function InspectionStandardsPage() {
         <div className={selectedDoc === "byulpyo22" ? "contents" : "hidden"}>
         {/* 좌측: 트리 또는 검색결과 */}
         <div className={`${activeKey ? "hidden md:flex md:w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
-          {showSearch && results.length > 0 ? (
-            <div className="p-2">
-              <p className="text-xs text-muted-foreground px-2 py-1.5 font-medium">{results.length}건 검색됨</p>
-              {results.map(k => (
-                <ItemBtn key={k} id={k} isActive={activeKey === k} onClick={() => { setActiveKey(k); setShowSearch(false); setQuery(""); }} />
+          {showSearch && searchGroups.length > 0 ? (
+            <div className="p-2 space-y-2">
+              <p className="text-xs text-muted-foreground px-2 py-1.5 font-medium">
+                "{query.trim()}" 검색 결과 · {searchGroups.reduce((n, g) => n + g.hits.length, 0)}건 ({searchGroups.length}개 조문, 전체 연도)
+              </p>
+              {searchGroups.map(g => (
+                <div key={g.itemId} className="border border-border rounded-xl px-3 py-2.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="font-mono text-[10px] text-primary font-medium">{g.itemId}</span>
+                    <span className="text-xs text-muted-foreground flex-1 truncate">{g.title}</span>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {g.hits.map((h, i) => (
+                      <button
+                        key={i}
+                        onClick={() => { setActiveKey(g.itemId); setSelectedYear(h.year); setShowSearch(false); setQuery(""); setSearchGroups([]); }}
+                        className="flex items-start gap-2 text-left hover:bg-secondary rounded-lg px-1 py-1 transition-colors"
+                      >
+                        <span className={`text-[9px] shrink-0 rounded-full px-1.5 py-0.5 mt-0.5 ${
+                          h.year === "current" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground border border-border"
+                        }`}>{h.badge}</span>
+                        <span className="text-[11px] text-muted-foreground leading-relaxed">{h.snippet}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           ) : showSearch && query.trim() && results.length === 0 ? (
@@ -349,6 +534,7 @@ export default function InspectionStandardsPage() {
             <Detail
               id={activeKey}
               yearStd={CURRENT_STD}
+              selectedYear={selectedYear}
               onClose={handleClose}
               isAdminMode={isAdminMode}
               override={getOverride(activeKey)}
