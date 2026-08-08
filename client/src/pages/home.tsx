@@ -1430,7 +1430,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: `안녕하세요! 승강기 안전검사 AI 어시스턴트입니다.\n\n검사기준, 판정 방법, 표준화 내용 등 궁금한 것을 자유롭게 물어보세요.\n\n예시) "비상통화장치가 작동 안 할 때 판정은?", "균형추 칸막이 설치 기준", "스커트디플렉터 소급적용"`,
+      content: `안녕하세요! 승강기 안전검사 AI 어시스턴트입니다.\n\n검사기준, 판정 방법, 표준화 내용 등 궁금한 것을 자유롭게 물어보세요.\n\n예시)\n"0032-876 승강기 정보 조회해줘"\n"피트 정지장치 검사기준에 대해 알려줘"\n"접이식 난간대 표준화에 대해 알려줘"\n"균형추 최대 여유거리 구해줘"`,
       time: formatTime()
     }
   ]);
