@@ -1,7 +1,8 @@
--- 별표22 배치검토(3차) 반영: 오탈자/개정조문 수정
--- 종전기준(2022.3.2 이외 날짜) 항목은 DB에서 삭제하지 않음 (검사가이드/판정 페이지가 같은 테이블의
--- permitEffectiveDate·standardDates를 이력 조회용으로 사용 중 - client/src/pages/judgment.tsx baseItemMap 참조).
--- 별표22(2022) 페이지에서만 안 보이게 하는 건 client/src/data/별표22_유효항목.json 화이트리스트로 처리함.
+-- 별표22 배치검토(3차+4차) 반영: 오탈자/개정조문 수정
+-- 종전기준 항목(31개)과 7.1.2(2017.1.28 종전기준)는 DB에서 삭제하지 않음 (검사가이드/판정
+-- 페이지(judgment.tsx)가 같은 테이블의 permitEffectiveDate/standardDates를 이력 조회용으로
+-- 사용 중일 수 있어 보존. 별표22(2022) 화면에서만 안 보이게 하는 건 client/src/data/별표22_유효항목.json
+-- 화이트리스트로 처리함. 18.2는 검사가이드에서 전혀 참조되지 않음을 확인하여 DB에서도 삭제.
 
 -- 1) 텍스트 수정
 UPDATE inspection_base_items SET text = '1 적용 범위
@@ -36,7 +37,13 @@ UPDATE inspection_base_items SET text = '6.2.1 승강로, 기계실·기계류 �
 UPDATE inspection_base_items SET text = '6.4 표시', section_title = '6.4 표시', updated_at = now() WHERE item_id = '6.4';
 UPDATE inspection_base_items SET text = '15.2.6 안전 관련 프로그램 적용 가능한 전자시스템(PESSRAL)
 부속서 Ⅰ의 표Ⅰ.1 은 각 전기안전장치의 최소 안전 무결성 기준을 제시한다.15.2.6에 따라 설계된 프로그램 적용 가능한 전자시스템을 포함하는 안전 회로는 15.2.3.3의 요구사항을 포함한다. PESSRAL은 별표 2의 4.8에 기술된 것과 같이 관련 안전 무결성 등급(SIL)에 대한 설계 기준을 준수해야 한다. 안전하지 않은 프로그램 수정 방지를 위해 EPROM사용, 접근 코드 등을 사용하여 안전관련 데이터 및 PESSRAL에 대한 권한이 없는 접근을 방지하는 조치가 제공되어야 한다. PESSRAL과 안전과 관련 없는 시스템이 동일한 인쇄회로기판(PCB)를 공유하는 경우, 14.3.2의 요구사항이 두 시스템의 분리에 적용된다. PESSRAL과 안전과 관련 없는 시스템이 동일한 하드웨어를 공유하는 경우, PESSRAL의 규정을 만족해야 한다. 내장 시스템 또는 외부 도구에 의해 PESSRAL의 고장 상태를 식별할 수 있어야 한다. 외부 도구가 특별한 도구인 경우, 설치 현장에서 이용 가능해야 한다.PESSRAL은 별표 2에 따라 안전성이 입증되어야 한다.', section_title = '15.2.6 안전 관련 프로그램 적용 가능한 전자시스템(PESSRAL)', updated_at = now() WHERE item_id = '15.2.6';
+UPDATE inspection_base_items SET text = '6.5 승강로', section_title = '6.5 승강로', updated_at = now() WHERE item_id = '6.5';
+UPDATE inspection_base_items SET text = '7.1 일반사항', section_title = '7.1 일반사항', updated_at = now() WHERE item_id = '7.1';
+UPDATE inspection_base_items SET text = '7.5.2 방화 등급
+7.5.2.1 「건축법」 등 관계 법령에 따라 승강장문에 방화 등급이 요구되는 경우, 관련 규정에 적합한 승강장문이 설치되어야 한다.
+비고 국토교통부 고시 또는 승강기안전부품 안전기준 별표 10을 참조한다.', section_title = '7.5.2 방화 등급', updated_at = now() WHERE item_id = '7.5.2';
+UPDATE inspection_base_items SET text = '7.7.1 승강장 조명
+승강장문 근처의 승강장에 있는 자연조명 또는 인공조명은 카 조명이 꺼지더라도 이용자가 엘리베이터에 탑승하기 위해 승강장문이 열릴 때 미리 앞을 볼 수 있도록 바닥에서 50 ㏓ 이상이어야 한다. 다만, 자동차용 엘리베이터의 승강장에 있는 조명은 바닥에서 150 ㏓ 이상이어야 한다. <2025년 3월 2일 이후 건축허가분부터 적용>', section_title = '7.7.1 승강장 조명', updated_at = now() WHERE item_id = '7.7.1';
 
--- 2) 18.2 삭제 (연혁집 서문/표16이 뒤섞인 손상 항목. 검사가이드(INSPECTION_DATA_MR)는 섹션 1~2만 사용하고
--- "18.2"를 참조하는 곳이 코드 전체에 없음을 확인 - 삭제해도 다른 화면에 영향 없음)
+-- 2) 18.2 삭제 (연혁집 서문/표16이 뒤섞인 손상 항목, 검사가이드 어디서도 참조 안 함 확인됨)
 DELETE FROM inspection_base_items WHERE item_id = '18.2';
