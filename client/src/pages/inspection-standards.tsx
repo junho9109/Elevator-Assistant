@@ -3,12 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
+import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
 
 type Entry = { text?: string; title?: string; source?: string; };
 
 // ── 현행(별표22) 데이터 — DB(inspection_base_items)가 단일 진실 소스 ──────
 // 정적 JSON을 빌드에 번들링하지 않고, 화면 진입 시 API로 조회한다.
 // 관리자 수정도 이 DB 행을 직접 UPDATE하므로 별도 override 레이어가 없다.
+//
+// DB에는 별표22 조문 외에도(고장배제 표 등 다른 문서에서 잘못 인덱싱된 행 포함)
+// 976개 정식 조문번호와 겹치지 않는 잡음 행(예: 엉뚱한 내용의 "1.1")이 섞여있을 수 있어,
+// 정식 조문번호 목록(별표22_유효항목.json)에 있는 것만 화면에 표시한다.
+const VALID_IDS = new Set(VALID_BYULPYO22_IDS as string[]);
+
 function stripIdPrefix(itemId: string, raw: string): string {
   const t = (raw || "").trim();
   if (t.startsWith(itemId + " ")) return t.slice(itemId.length + 1);
@@ -20,6 +27,7 @@ function baseItemsToMap(rows: any[]): Record<string, Entry> {
   const map: Record<string, Entry> = {};
   (rows || []).forEach((row: any) => {
     if (row.isActive === false || row.isActive === "false") return;
+    if (!VALID_IDS.has(row.itemId)) return;
     const rawText = (row.text && row.text.trim()) ? row.text : (row.sectionTitle || row.itemId);
     const body = stripIdPrefix(row.itemId, rawText);
     map[row.itemId] = {
