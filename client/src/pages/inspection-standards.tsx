@@ -2,11 +2,34 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import BYULPYO22 from "@/data/별표22_parsed.json";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 
 type Entry = { text?: string; title?: string; source?: string; };
-const dataMap = BYULPYO22 as unknown as Record<string, Entry>;
+
+// ── 현행(별표22) 데이터 — DB(inspection_base_items)가 단일 진실 소스 ──────
+// 정적 JSON을 빌드에 번들링하지 않고, 화면 진입 시 API로 조회한다.
+// 관리자 수정도 이 DB 행을 직접 UPDATE하므로 별도 override 레이어가 없다.
+function stripIdPrefix(itemId: string, raw: string): string {
+  const t = (raw || "").trim();
+  if (t.startsWith(itemId + " ")) return t.slice(itemId.length + 1);
+  if (t === itemId) return "";
+  return t;
+}
+
+function baseItemsToMap(rows: any[]): Record<string, Entry> {
+  const map: Record<string, Entry> = {};
+  (rows || []).forEach((row: any) => {
+    if (row.isActive === false || row.isActive === "false") return;
+    const rawText = (row.text && row.text.trim()) ? row.text : (row.sectionTitle || row.itemId);
+    const body = stripIdPrefix(row.itemId, rawText);
+    map[row.itemId] = {
+      text: body ? `${row.itemId} ${body}` : row.itemId,
+      title: body.split("\n")[0] || row.itemId,
+      source: "별표22 엘리베이터 안전기준 KC2050-51:2022",
+    };
+  });
+  return map;
+}
 
 // ── 연도별(세대별) 개정 문서 자동 로드 ──────────────────────────────────
 // client/src/data/generations/ 폴더에 {연도}-{고시번호}.json 형식의 파일을 넣으면
@@ -153,12 +176,12 @@ function TreeNode({ sec, map, depth, activeKey, onSelect }: {
   );
 }
 
-// ── 현행(byulpyo22) 상세 — 관리자 수정 기능 포함 ──────────────────────
-function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
-  id: string; yearStd: string; onClose: () => void;
-  isAdminMode: boolean; override?: any; onEdit: () => void;
+// ── 현행(byulpyo22) 상세 — 관리자 수정 기능 포함 (DB 직접 수정) ────────
+function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
+  id: string; map: Record<string, Entry>; yearStd: string; onClose: () => void;
+  isAdminMode: boolean; onEdit: () => void;
 }) {
-  const e = dataMap[id];
+  const e = map[id];
 
   if (!e) return (
     <div className="flex flex-col flex-1 min-h-0 items-center justify-center gap-3 p-6 text-center">
@@ -169,8 +192,8 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
     </div>
   );
 
-  const displayText = override?.text || e.text || "";
-  const displaySource = override?.source || e.source || `별표22 엘리베이터 안전기준 ${yearStd}`;
+  const displayText = e.text || "";
+  const displaySource = e.source || `별표22 엘리베이터 안전기준 ${yearStd}`;
   const firstLine = (e.title || displayText.split("\n")[0] || id).trim();
   const body = displayText.includes("\n") ? displayText.split("\n").slice(1).join("\n").trim() : displayText;
 
@@ -179,7 +202,6 @@ function Detail({ id, yearStd, onClose, isAdminMode, override, onEdit }: {
       <div className="flex items-start gap-2 px-4 py-3 border-b border-border shrink-0">
         <div className="flex-1 min-w-0">
           <span className="font-mono text-[10px] text-muted-foreground">[{id}]</span>
-          {override && <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>}
           <p className="text-sm font-medium mt-0.5 leading-snug">{firstLine}</p>
         </div>
         {isAdminMode && (
@@ -253,9 +275,6 @@ function makeSnippet(text: string, q: string, pad = 28): string {
 }
 
 export default function InspectionStandardsPage() {
-  const tree = useMemo(() => buildTreeFromMap(dataMap), []);
-  const totalCount = Object.keys(dataMap).length;
-
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
@@ -263,28 +282,27 @@ export default function InspectionStandardsPage() {
   const CURRENT_STD = "KC2050-51:2022";  // 현행 기준
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  const [editSource, setEditSource] = useState("");
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
   const [pwInput, setPwInput] = useState("");
   const [showPw, setShowPw] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: inspOverrides } = useQuery<any[]>({
-    queryKey: ["/api/insp-std-overrides"],
-    queryFn: () => fetch("/api/insp-std-overrides").then(r => r.json()),
+  // 현행(별표22) 조문 — DB에서 직접 조회, 별도 override 없이 이 값이 곧 화면에 뜨는 값
+  const { data: baseItemsRaw } = useQuery<any[]>({
+    queryKey: ["/api/inspection-base-items"],
+    queryFn: () => fetch("/api/inspection-base-items").then(r => r.json()),
     staleTime: 0,
   });
+  const dataMap = useMemo(() => baseItemsToMap(baseItemsRaw || []), [baseItemsRaw]);
 
-  const getOverride = (id: string) => inspOverrides?.find((o: any) => o.itemKey === id);
-
-  const handleSaveOverride = async () => {
+  const handleSaveEdit = async () => {
     if (!editKey) return;
-    await fetch(`/api/insp-std-overrides/${encodeURIComponent(editKey)}`, {
+    await fetch(`/api/inspection-base-items/${encodeURIComponent(editKey)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: editText, source: editSource }),
+      body: JSON.stringify({ text: editText }),
     });
-    queryClient.invalidateQueries({ queryKey: ["/api/insp-std-overrides"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/inspection-base-items"] });
     setEditKey(null);
   };
 
@@ -336,7 +354,7 @@ export default function InspectionStandardsPage() {
       });
     });
     setSearchHits(hits.slice(0, 200));
-  }, [query]);
+  }, [query, dataMap]);
 
   const handleClose = () => {
     setActiveKey(null);
@@ -469,15 +487,13 @@ export default function InspectionStandardsPage() {
             ) : (
               <Detail
                 id={activeKey}
+                map={dataMap}
                 yearStd={CURRENT_STD}
                 onClose={handleClose}
                 isAdminMode={isAdminMode}
-                override={getOverride(activeKey)}
                 onEdit={() => {
-                  const ov = getOverride(activeKey);
                   const e = dataMap[activeKey];
-                  setEditText(ov?.text || e?.text || "");
-                  setEditSource(ov?.source || e?.source || "");
+                  setEditText(e?.text || "");
                   setEditKey(activeKey);
                 }}
               />
@@ -531,16 +547,12 @@ export default function InspectionStandardsPage() {
             <button onClick={() => setEditKey(null)} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">조문 내용</label>
+            <label className="text-xs text-muted-foreground">조문 내용 (맨 앞에 조문번호를 그대로 유지해주세요, 예: "6.1.1.1 ...")</label>
             <textarea className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary resize-none min-h-[140px]" value={editText} onChange={e => setEditText(e.target.value)} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">출처</label>
-            <input className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={editSource} onChange={e => setEditSource(e.target.value)} />
           </div>
           <div className="flex gap-2">
             <button onClick={() => setEditKey(null)} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
-            <button onClick={handleSaveOverride} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">DB 저장</button>
+            <button onClick={handleSaveEdit} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">DB 저장</button>
           </div>
         </div>
       </div>

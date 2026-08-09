@@ -629,6 +629,39 @@ export class DatabaseStorage implements IStorage {
     return { inserted, updated };
   }
 
+  // 관리자 화면에서 조문 하나를 직접 수정 — 별도 override 테이블 없이 원본 행을 갱신한다.
+  async updateInspectionBaseItem(itemId: string, data: { text?: string; sectionTitle?: string }): Promise<any> {
+    const result = await db.update(inspectionBaseItems)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(inspectionBaseItems.itemId, itemId))
+      .returning();
+    return result[0];
+  }
+
+  // itemId가 아직 DB에 없는 경우(정적 JSON에만 있던 항목) 새 행으로 추가한다.
+  async upsertInspectionBaseItemText(itemId: string, data: {
+    text: string; sectionId: string; sectionTitle?: string; parentSectionId?: string | null; sortOrder?: number;
+  }): Promise<any> {
+    const existing = await db.select().from(inspectionBaseItems).where(eq(inspectionBaseItems.itemId, itemId)).limit(1);
+    if (existing[0]) {
+      const result = await db.update(inspectionBaseItems)
+        .set({ text: data.text, sectionTitle: data.sectionTitle, updatedAt: new Date() })
+        .where(eq(inspectionBaseItems.itemId, itemId))
+        .returning();
+      return result[0];
+    }
+    const result = await db.insert(inspectionBaseItems).values({
+      itemId,
+      sectionId: data.sectionId,
+      sectionTitle: data.sectionTitle || null,
+      parentSectionId: data.parentSectionId || null,
+      text: data.text,
+      sortOrder: data.sortOrder ?? 0,
+      isActive: 'true',
+    }).returning();
+    return result[0];
+  }
+
   async deleteAllItemRevisions(itemId: string): Promise<void> {
     await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.itemId, itemId));
   }

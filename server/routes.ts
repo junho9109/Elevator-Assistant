@@ -1644,6 +1644,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 관리자 화면에서 조문을 직접 수정 — DB 행 자체를 갱신 (별도 override 테이블 사용 안 함)
+  app.put("/api/inspection-base-items/:itemId", async (req, res) => {
+    try {
+      const { text, sectionTitle } = req.body as { text?: string; sectionTitle?: string };
+      const updated = await storage.updateInspectionBaseItem(req.params.itemId, { text, sectionTitle });
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update inspection base item" });
+    }
+  });
+
   // ==================== AI 챗봇 ====================
   app.post("/api/chat", async (req, res) => {
     try {
