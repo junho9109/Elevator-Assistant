@@ -80,6 +80,30 @@ interface Section {
   items: string[];
 }
 
+// prefix 바로 아래 한 단계(dot 하나 더)만 딸린 키들을 찾아 재귀적으로 자식 트리를 만든다.
+// 예: prefix="6.5.6" → "6.5.6.1", "6.5.6.2"... 를 자식으로, 그 안에서 다시 "6.5.6.1.1" 등을 손자로 재귀 처리
+// → 몇 단계든(6.5.6.1.1 처럼 4단계 이상) 항상 부모 밑에 접히는 구조로 표시된다.
+function buildChildren(prefix: string, keys: string[], map: Record<string, Entry>): Section[] {
+  const directKeys = keys.filter(k => {
+    if (!k.startsWith(prefix + ".")) return false;
+    const rest = k.slice(prefix.length + 1);
+    return rest.length > 0 && !rest.includes(".");
+  });
+  directKeys.sort((a, b) => {
+    const av = a.split(".").pop()!;
+    const bv = b.split(".").pop()!;
+    const an = Number(av), bn = Number(bv);
+    if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
+    return av.localeCompare(bv, undefined, { numeric: true });
+  });
+  return directKeys.map(k => ({
+    id: k,
+    title: map[k]?.title || map[k]?.text?.split("\n")[0] || k,
+    children: buildChildren(k, keys, map),
+    items: [],
+  }));
+}
+
 // 임의의 맵(현행 dataMap이든 특정 연도의 items든)에서 트리를 생성한다.
 function buildTreeFromMap(map: Record<string, Entry>): Section[] {
   const keys = Object.keys(map);
@@ -91,38 +115,7 @@ function buildTreeFromMap(map: Record<string, Entry>): Section[] {
   return chapterKeys.map(ch => {
     const entry = map[ch];
     const chTitle = entry?.title || entry?.text?.split("\n")[0] || ch;
-
-    const sectionKeys = keys
-      .filter(k => new RegExp(`^${ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.\\d+$`).test(k))
-      .sort((a, b) => Number(a.split(".")[1]) - Number(b.split(".")[1]));
-
-    const sections: Section[] = sectionKeys.map(sec => {
-      const subKeys = keys
-        .filter(k => new RegExp(`^${sec.replace(".", "\\.")}\\.[^.]+$`).test(k))
-        .sort((a, b) => Number(a.split(".").pop()) - Number(b.split(".").pop()!));
-
-      const subSections: Section[] = subKeys.map(sub => ({
-        id: sub,
-        title: map[sub]?.title || map[sub]?.text?.split("\n")[0] || sub,
-        children: [],
-        items: keys.filter(k => k.startsWith(sub + ".")),
-      }));
-
-      const directItems = keys.filter(k =>
-        k.startsWith(sec + ".") &&
-        !subKeys.some(sub => k.startsWith(sub + ".")) &&
-        !subKeys.includes(k)
-      );
-
-      return {
-        id: sec,
-        title: map[sec]?.title || map[sec]?.text?.split("\n")[0] || sec,
-        children: subSections,
-        items: directItems,
-      };
-    });
-
-    return { id: ch, title: chTitle, children: sections, items: [] };
+    return { id: ch, title: chTitle, children: buildChildren(ch, keys, map), items: [] };
   });
 }
 
@@ -210,7 +203,7 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
       <div className="flex items-start gap-2 px-4 py-3 border-b border-border shrink-0">
         <div className="flex-1 min-w-0">
           <span className="font-mono text-[10px] text-muted-foreground">[{id}]</span>
-          <p className="text-sm font-medium mt-0.5 leading-snug">{firstLine}</p>
+          <p className="text-sm font-medium mt-0.5 leading-snug line-clamp-2 min-h-[2.375rem]">{firstLine}</p>
         </div>
         {isAdminMode && (
           <button onClick={onEdit} className="w-8 h-8 flex items-center justify-center rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 transition-colors shrink-0">
@@ -255,7 +248,7 @@ function GenerationDetail({ id, gen, onClose }: { id: string; gen: GenerationDoc
         <div className="flex-1 min-w-0">
           <span className="font-mono text-[10px] text-muted-foreground">[{id}]</span>
           <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">종전 · {gen.meta.effectiveDate}</span>
-          <p className="text-sm font-medium mt-0.5 leading-snug">{firstLine}</p>
+          <p className="text-sm font-medium mt-0.5 leading-snug line-clamp-2 min-h-[2.375rem]">{firstLine}</p>
         </div>
         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors shrink-0">
           <X size={14} />
