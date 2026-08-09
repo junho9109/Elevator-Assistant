@@ -1462,6 +1462,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [stdComments, setStdComments] = useState<Record<string, any[]>>({});
   const [stdCommentInput, setStdCommentInput] = useState<Record<string, string>>({});
   const [stdDeleteConfirm, setStdDeleteConfirm] = useState<number | null>(null);;
+  const [stdItemDeleteConfirm, setStdItemDeleteConfirm] = useState<{ key: string; displayTitle: string } | null>(null);
   const cardOffsetsRef = useRef<Record<number, {cx: number, cy: number}>>({});
   const [cardOffsetsLoaded, setCardOffsetsLoaded] = useState(false);
   const pinDragPosRef = useRef<{id: number, x: number, y: number} | null>(null);
@@ -2508,6 +2509,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     } catch { toast({ title: "삭제 실패", variant: "destructive" }); }
   };
 
+  const handleDeleteStdItem = async () => {
+    if (!stdItemDeleteConfirm) return;
+    try {
+      const res = await fetch(`/api/std-overrides/${encodeURIComponent(stdItemDeleteConfirm.key)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+      toast({ title: "삭제되었습니다." });
+      setStdItemDeleteConfirm(null);
+      setStdSelected(null);
+      refetchStdOverrides();
+    } catch {
+      toast({ title: "삭제 실패", variant: "destructive" });
+    }
+  };
+
   // ==================== 렌더링 ====================
   return (
     <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",backgroundColor:"var(--background)"}}>
@@ -2851,6 +2866,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         </div>
       )}
 
+      {/* 표준화 항목 삭제 확인 */}
+      {stdItemDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setStdItemDeleteConfirm(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-semibold mb-2">표준화 삭제</h2>
+            <p className="text-sm text-muted-foreground mb-6">"{stdItemDeleteConfirm.displayTitle}"을 삭제하시겠습니까?</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setStdItemDeleteConfirm(null)}>취소</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteStdItem}>삭제</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 추가/수정 모달 */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddModal(false)}>
@@ -3070,6 +3099,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                                 <Pencil className="h-3 w-3 text-orange-600" />
                               </button>
                             )}
+                            {isAdminMode && (
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setStdItemDeleteConfirm({ key: (item as any)._key || item.title, displayTitle: (item as any).displayTitle || item.title });
+                                }}
+                                className="w-6 h-6 rounded-md flex items-center justify-center bg-red-50 hover:bg-red-100 border border-red-200"
+                                title="삭제"
+                              >
+                                <Trash2 className="h-3 w-3 text-red-600" />
+                              </button>
+                            )}
                             <span className="text-muted-foreground text-xs">{stdSelected === item ? "▲" : "▽"}</span>
                           </div>
                         </div>
@@ -3107,7 +3148,16 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                             setStdDeleteConfirm={setStdDeleteConfirm}
                           />
                           {isAdminMode && (
-                            <div className="pt-1.5 border-t border-border/50 flex items-center justify-end">
+                            <div className="pt-1.5 border-t border-border/50 flex items-center justify-end gap-3">
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setStdItemDeleteConfirm({ key: (item as any)._key || item.title, displayTitle: (item as any).displayTitle || item.title });
+                                }}
+                                className="text-[10px] text-red-600 underline shrink-0"
+                              >
+                                🗑️ 삭제
+                              </button>
                               <button
                                 onClick={e => {
                                   e.stopPropagation();
@@ -3182,6 +3232,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setDeleteHotspotConfirm(null)}>취소</Button>
               <Button variant="destructive" className="flex-1" onClick={handleDeleteHotspot}>삭제</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 표준화 항목 삭제 확인 */}
+      {stdItemDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setStdItemDeleteConfirm(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-semibold mb-2">표준화 삭제</h2>
+            <p className="text-sm text-muted-foreground mb-6">"{stdItemDeleteConfirm.displayTitle}"을 삭제하시겠습니까?</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setStdItemDeleteConfirm(null)}>취소</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteStdItem}>삭제</Button>
             </div>
           </div>
         </div>

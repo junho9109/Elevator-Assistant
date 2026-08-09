@@ -800,6 +800,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/std-overrides/:title", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
+      const deleted = await db.delete(stdItemOverrides).where(eq(stdItemOverrides.title, title)).returning();
+      if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
+      res.status(204).send();
+    } catch (e) {
+      console.error("[DELETE /api/std-overrides 오류]", e);
+      res.status(500).json({ error: "Failed to delete std override", detail: String(e) });
+    }
+  });
+
   // ── 검사기준 오버라이드 API ──
   app.get("/api/insp-std-overrides", async (req, res) => {
     try {
