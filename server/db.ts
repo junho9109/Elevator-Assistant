@@ -10,9 +10,17 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('neon.tech') 
+  ssl: process.env.DATABASE_URL?.includes('neon.tech')
     ? { rejectUnauthorized: false }
     : false,
+});
+
+// Neon pooler(-pooler 엔드포인트)를 거치면 ALTER ROLE ... SET search_path 기본값이
+// 세션에 반영되지 않는 경우가 있어, 커넥션마다 명시적으로 search_path를 지정한다.
+pool.on('connect', (client) => {
+  client.query('SET search_path TO public').catch((err) => {
+    console.error('search_path 설정 실패:', err);
+  });
 });
 
 export const db = drizzle(pool, { schema });
