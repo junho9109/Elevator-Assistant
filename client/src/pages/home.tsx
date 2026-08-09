@@ -369,7 +369,7 @@ function SearchCatAccordion({ cat, onSelect }: { cat: CatGroup; onSelect: (r: Se
 }
 
 // 키워드로 표준화+검사기준 검색
-function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]): SearchResult[] {
+function searchAllData(keyword: string, standards: any[], stdOverrides?: any[], liveInspectionContent?: Record<string, { text?: string; effectiveDate?: string; revisions?: any[] }>): SearchResult[] {
   const kw = keyword.toLowerCase().trim();
   if (!kw || kw.length < 2) return [];
 
@@ -473,8 +473,11 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[]):
     });
   }
 
-  // 검사기준 검색 (inspection-content.json)
-  const contentEntries = Object.entries(INSPECTION_CONTENT as unknown as Record<string, {text?: string; effectiveDate?: string; revisions?: any[]}>);
+  // 검사기준 검색 — 라이브 DB 데이터(inspection_base_items)가 있으면 그걸 우선 사용, 없으면 정적 파일로 폴백
+  const contentSource = (liveInspectionContent && Object.keys(liveInspectionContent).length > 0)
+    ? liveInspectionContent
+    : (INSPECTION_CONTENT as unknown as Record<string, {text?: string; effectiveDate?: string; revisions?: any[]}>);
+  const contentEntries = Object.entries(contentSource);
   contentEntries.forEach(([id, val]) => {
     const text = val.text || "";
     if (text.length < 10) return;
@@ -1583,11 +1586,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     } catch {}
 
     // ⑦ 멀티 쿼리 검색 — 각 검색어로 검색 후 교집합 우선
-    let results = searchAllData(text, standards, stdOverrides);
+    let results = searchAllData(text, standards, stdOverrides, INSPECTION_CONTENT);
     if (searchQueries.length > 1) {
       const multiResults: Map<string, { result: SearchResult; hitCount: number; maxScore: number }> = new Map();
       for (const q of searchQueries) {
-        const r = searchAllData(q, standards, stdOverrides);
+        const r = searchAllData(q, standards, stdOverrides, INSPECTION_CONTENT);
         r.forEach(item => {
           const key = `${item.type}:${item.title.slice(0, 30)}`;
           const existing = multiResults.get(key);
