@@ -374,7 +374,7 @@ export default function InspectionStandardsPage() {
 
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="absolute inset-0 flex flex-col bg-background overflow-hidden">
       {/* 헤더 */}
       <div className="shrink-0 bg-card border-b border-border">
         <div className="p-3 bg-muted/30 border-b border-border">
