@@ -282,6 +282,7 @@ export default function InspectionStandardsPage() {
   const [showSearch, setShowSearch] = useState(false);
   const CURRENT_STD = "KC2050-51:2022";  // 현행 기준
   const [editKey, setEditKey] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
   const [editText, setEditText] = useState("");
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
@@ -299,9 +300,12 @@ export default function InspectionStandardsPage() {
 
   const handleSaveEdit = async () => {
     if (!editKey) return;
+    const title = editTitle.trim();
+    const body = editText.trim();
+    const combinedText = body ? `${editKey} ${title}\n${body}` : `${editKey} ${title}`;
     await fetch(`/api/inspection-base-items/${encodeURIComponent(editKey)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: editText }),
+      body: JSON.stringify({ text: combinedText, sectionTitle: title }),
     });
     queryClient.invalidateQueries({ queryKey: ["/api/inspection-base-items"] });
     setEditKey(null);
@@ -494,7 +498,11 @@ export default function InspectionStandardsPage() {
                 isAdminMode={isAdminMode}
                 onEdit={() => {
                   const e = dataMap[activeKey];
-                  setEditText(e?.text || "");
+                  const fullText = e?.text || "";
+                  const stripped = fullText.startsWith(activeKey + " ") ? fullText.slice(activeKey.length + 1) : fullText;
+                  const lines = stripped.split("\n");
+                  setEditTitle(lines[0] || "");
+                  setEditText(lines.slice(1).join("\n"));
                   setEditKey(activeKey);
                 }}
               />
@@ -548,7 +556,16 @@ export default function InspectionStandardsPage() {
             <button onClick={() => setEditKey(null)} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">조문 내용 (맨 앞에 조문번호를 그대로 유지해주세요, 예: "6.1.1.1 ...")</label>
+            <label className="text-xs text-muted-foreground">제목 (조문번호 [{editKey}] 뒤에 붙는 제목/첫 문장)</label>
+            <input
+              className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary"
+              value={editTitle}
+              onChange={e => setEditTitle(e.target.value)}
+              placeholder="예: 기계실·기계류 공간 및 풀리실"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">본문 (제목만 있는 조문은 비워두세요)</label>
             <textarea className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary resize-none min-h-[140px]" value={editText} onChange={e => setEditText(e.target.value)} />
           </div>
           <div className="flex gap-2">
