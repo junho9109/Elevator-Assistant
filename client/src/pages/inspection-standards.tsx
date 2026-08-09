@@ -130,7 +130,7 @@ function ItemBtn({ id, map, isActive, onClick }: { id: string; map: Record<strin
       }`}
     >
       <span className="font-mono text-[10px] text-muted-foreground shrink-0 min-w-[36px]">{id}</span>
-      <span className="text-xs leading-relaxed">{label.length > 60 ? label.slice(0, 60) + "…" : label}</span>
+      <span className="text-xs leading-relaxed truncate flex-1 min-w-0">{label.length > 60 ? label.slice(0, 60) + "…" : label}</span>
     </button>
   );
 }
@@ -161,7 +161,7 @@ function TreeNode({ sec, map, depth, activeKey, onSelect }: {
           ? (open ? <ChevronDown size={12} className="shrink-0 text-muted-foreground" /> : <ChevronRight size={12} className="shrink-0 text-muted-foreground" />)
           : <span className="w-3" />}
         <span className="font-mono text-[10px] text-muted-foreground shrink-0">{sec.id}</span>
-        <span className="truncate text-xs leading-relaxed">{sec.title}</span>
+        <span className="truncate text-xs leading-relaxed flex-1 min-w-0">{sec.title}</span>
       </button>
       {open && (
         <div className="border-l border-border ml-4">
