@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown } from "lucide-react";
+import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -458,11 +458,19 @@ type ElevatorSubType = "전기식(MR)" | "전기식(MRL)" | "유압식" | "경�
 type EscalatorSubType = "에스컬레이터" | "무빙워크";
 type WheelchairLiftSubType = "수직형" | "경사형";
 
+// 세부 종류 노출 목록 — 전기식(MRL)·유압식·경사형은 준비되는 대로 아래 배열에 다시 추가할 것
+// (내부 값 "전기식(MR)"은 데이터 태그("엘리베이터-전기식(MR)")와의 호환을 위해 그대로 유지,
+//  화면 표시 라벨만 SUBTYPE_LABELS에서 "전기식"으로 바꿔서 보여줌)
 const EQUIPMENT_SUBTYPES: Record<EquipmentType, string[]> = {
-  "엘리베이터": ["전기식(MR)", "전기식(MRL)", "유압식", "경사형"],
+  "엘리베이터": ["전기식(MR)"],
   "에스컬레이터": ["에스컬레이터", "무빙워크"],
   "덤웨이터": [],
   "휠체어리프트": ["수직형", "경사형"]
+};
+
+// 세부 종류 표시용 라벨 (내부 값은 EQUIPMENT_SUBTYPES/데이터 태그와 동일하게 유지)
+const SUBTYPE_LABELS: Record<string, string> = {
+  "전기식(MR)": "전기식",
 };
 
 export default function JudgmentPage() {
@@ -474,6 +482,20 @@ export default function JudgmentPage() {
   const [permitDate, setPermitDate] = useState("");
   const [completionDate, setCompletionDate] = useState("");
   const [installType, setInstallType] = useState<"" | "전면교체" | "수시교체">("");
+  // [수시교체 부품별 기준일] 조문(항목) 단위로 "교체된 부품"을 표시 — 표시된 항목만 검사기준 적용일,
+  // 나머지 항목은 건축허가일을 기준으로 판정한다. 전면교체·미선택 시에는 사용하지 않음.
+  const [replacedItemIds, setReplacedItemIds] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem("judgmentReplacedItemIds");
+    if (!saved) return new Set();
+    try { return new Set(JSON.parse(saved)); } catch { return new Set(); }
+  });
+  const toggleReplacedItem = (itemId: string) => {
+    setReplacedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
+      return next;
+    });
+  };
   const [standardDate] = useState("2017-01-28");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
   // [v5] results: 다중 선택 지원 (ResultType[] 배열로)
@@ -1137,6 +1159,10 @@ export default function JudgmentPage() {
     localStorage.setItem("judgmentResults", JSON.stringify(results));
   }, [results]);
 
+  useEffect(() => {
+    localStorage.setItem("judgmentReplacedItemIds", JSON.stringify(Array.from(replacedItemIds)));
+  }, [replacedItemIds]);
+
   const handleAdminModeClick = () => {
     if (isAdminMode) {
       setIsAdminMode(false);
@@ -1398,6 +1424,24 @@ export default function JudgmentPage() {
     return null;
   }, [inspectionDate, permitDate]);
 
+  // ═══════════════════════════════════════════════════════════════════
+  // [수시교체 부품별 기준일] 조문(항목) 단위 기준일 분기
+  // ═══════════════════════════════════════════════════════════════════
+  // 수시교체는 건축물이나 교체하지 않은 주요부품은 건축허가일이 기준이고,
+  // 실제로 교체된 부품(조문)만 검사기준 적용일이 기준이 된다.
+  //   - installType !== "수시교체" : 전 항목 공통 referenceDate 사용 (기존 로직)
+  //   - installType === "수시교체" : 교체 표시(replacedItemIds)된 항목 → 검사기준 적용일
+  //                                   표시 안 된 항목            → 건축허가일
+  const getReferenceDateForItem = useCallback((itemId: string): Date | null => {
+    if (installType === "수시교체") {
+      if (replacedItemIds.has(itemId)) {
+        return inspectionDate ? new Date(inspectionDate) : referenceDate;
+      }
+      return permitDate ? new Date(permitDate) : referenceDate;
+    }
+    return referenceDate;
+  }, [installType, replacedItemIds, inspectionDate, permitDate, referenceDate]);
+
   // 기준일 체계 안내 텍스트
   const referenceDateInfo = useMemo(() => {
     if (!referenceDate && !completionDate) return null;
@@ -1459,30 +1503,31 @@ export default function JudgmentPage() {
   // P ≤ T < L        : "previous" (옛 기준 시기, 종전 가능 안내)
   // T ≥ L            : "applicable" (현행 시기, 직접 평가)
   const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => {
-    if (!referenceDate) return "applicable";
-    
+    const itemReferenceDate = getReferenceDateForItem(item.id);
+    if (!itemReferenceDate) return "applicable";
+
     const edit = customEdits[item.id];
-    
+
     // [v3] retroactive 항목: 시점 무관 항상 검사 대상
     const enforcementType = (edit as any)?.enforcementType;
     if (enforcementType === 'retroactive') {
       return "applicable";
     }
-    
+
     // expiryDate: 만료된 항목
     if (item.expiryDate) {
       const expiryDate = new Date(item.expiryDate);
-      if (referenceDate > expiryDate) return "not-applicable";
+      if (itemReferenceDate > expiryDate) return "not-applicable";
     }
-    
+
     // [v4] P (가장 오래된 날짜) 비교
     if (!item.effectiveDate) return "applicable";
     const P = new Date(item.effectiveDate);
-    
-    if (referenceDate < P) {
+
+    if (itemReferenceDate < P) {
       return "not-applicable";  // 조문 도입 전
     }
-    
+
     // [v4] 최근 개정일 L 계산 (standard_dates 중 가장 최근)
     const standardDates: string[] = (edit as any)?.standardDates || [];
     let L = P;  // 기본값 (개정 이력 없으면 P = L)
@@ -1490,12 +1535,12 @@ export default function JudgmentPage() {
       const d = new Date(dateStr);
       if (d > L) L = d;
     }
-    
+
     // P ≤ T < L: 옛 기준 시기 (종전 가능)
-    if (referenceDate < L) {
+    if (itemReferenceDate < L) {
       return "previous";
     }
-    
+
     // [v6] DB 연혁집 종전 데이터 기반 판정
     const refMatches = (item.text || "").match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
     const directRef = /^(?:6|7|8|9|1[0-7])\./.test(item.id) ? [item.id] : [];
@@ -1505,7 +1550,7 @@ export default function JudgmentPage() {
       if (!range) continue;
       const minDate = new Date(range.minDate);
       const maxExpiry = range.maxExpiry ? new Date(range.maxExpiry) : new Date("2022-03-01");
-      if (referenceDate >= minDate && referenceDate <= maxExpiry) {
+      if (itemReferenceDate >= minDate && itemReferenceDate <= maxExpiry) {
         return "previous";
       }
     }
@@ -1735,6 +1780,19 @@ export default function JudgmentPage() {
               <span className="ml-1 text-xs font-medium text-orange-500">(댓글 {itemCommentCounts[item.id]})</span>
             )}
           </div>
+          {installType === "수시교체" && (
+            <button
+              onClick={() => toggleReplacedItem(item.id)}
+              className={cn(
+                "p-1 rounded transition-colors shrink-0",
+                replacedItemIds.has(item.id) ? "bg-primary/15" : "hover:bg-accent"
+              )}
+              title={replacedItemIds.has(item.id) ? "교체된 부품으로 표시됨 (검사기준 적용일 기준) — 클릭 시 해제" : "이 항목이 교체된 부품이면 클릭하여 표시 (검사기준 적용일 기준)"}
+              data-testid={`replaced-toggle-${item.id}`}
+            >
+              <Wrench className={cn("w-3.5 h-3.5", replacedItemIds.has(item.id) ? "text-primary" : "text-muted-foreground")} />
+            </button>
+          )}
           <button
             onClick={() => handleOpenDetail(item)}
             className="p-1 hover:bg-accent rounded transition-colors shrink-0"
@@ -1924,7 +1982,7 @@ export default function JudgmentPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {EQUIPMENT_SUBTYPES[equipmentType].map((type) => (
-                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                      <SelectItem key={type} value={type}>{SUBTYPE_LABELS[type] || type}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1993,9 +2051,11 @@ export default function JudgmentPage() {
                 {inspectionDate && <p className="text-foreground">검사기준 적용일: <strong>{inspectionDate}</strong></p>}
                 {installType && <p className="text-primary font-medium">교체 구분: {installType}</p>}
                 <p className="text-xs text-blue-500 mt-1">
-                  {permitDate && inspectionDate && permitDate !== inspectionDate
-                    ? `${permitDate > inspectionDate ? permitDate : inspectionDate} 기준으로 판정됩니다.`
-                    : "입력된 날짜 기준으로 검사항목 적용 여부가 판정됩니다."}
+                  {installType === "수시교체"
+                    ? "아래 항목 목록에서 🔧 아이콘으로 실제 교체된 부품(조문)을 표시하세요. 표시한 항목은 검사기준 적용일, 표시하지 않은 항목은 건축허가일을 기준으로 판정됩니다."
+                    : permitDate && inspectionDate && permitDate !== inspectionDate
+                      ? `${permitDate > inspectionDate ? permitDate : inspectionDate} 기준으로 판정됩니다.`
+                      : "입력된 날짜 기준으로 검사항목 적용 여부가 판정됩니다."}
                 </p>
               </div>
               <div className="border border-border rounded-xl overflow-hidden text-xs">
@@ -2364,7 +2424,13 @@ export default function JudgmentPage() {
                             <div key={refId}>
                               <div className="flex items-center gap-2 mb-1.5">
                                 <span className="text-[10px] font-bold text-gray-900 dark:text-amber-300">[별표22] {refId}</span>
-                                {referenceDate && <span className="text-[9px] text-amber-600 dark:text-amber-400">({permitDate || inspectionDate} 기준)</span>}
+                                {referenceDate && (
+                                  <span className="text-[9px] text-amber-600 dark:text-amber-400">
+                                    ({installType === "수시교체" && detailItem
+                                      ? (replacedItemIds.has(detailItem.id) ? inspectionDate : permitDate)
+                                      : (permitDate || inspectionDate)} 기준)
+                                  </span>
+                                )}
                               </div>
                               <div className="space-y-1.5">
                                 {mainVersions.map((v: any, i: number) => renderVersionRow(v, i, mainVersions))}
@@ -2390,7 +2456,7 @@ export default function JudgmentPage() {
                     itemId={detailItem.id}
                     customEdits={customEdits}
                     baseItemMap={baseItemMap}
-                    referenceDate={referenceDate}
+                    referenceDate={detailItem ? getReferenceDateForItem(detailItem.id) : referenceDate}
                     detailRevSel={detailRevSel}
                     setDetailRevSel={setDetailRevSel}
                     detailPermitSel={detailPermitSel}
