@@ -2674,6 +2674,67 @@ ${answerRules}${contextText}${memoSection}`,
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });
 
+  // ==================== 검사기준(별표22) 조문 이미지 ====================
+  app.get("/api/inspection-photos/:itemId", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      const itemId = decodeURIComponent(req.params.itemId);
+      const photos = await db.select({
+        id: inspectionItemPhotos.id,
+        displayOrder: inspectionItemPhotos.displayOrder,
+        mimeType: inspectionItemPhotos.mimeType,
+        createdAt: inspectionItemPhotos.createdAt,
+      }).from(inspectionItemPhotos).where(eq(inspectionItemPhotos.itemId, itemId)).orderBy(asc(inspectionItemPhotos.displayOrder));
+      res.json(photos);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.get("/api/inspection-photos/:itemId/:id/image", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [photo] = await db.select().from(inspectionItemPhotos).where(eq(inspectionItemPhotos.id, parseInt(req.params.id)));
+      if (!photo) return res.status(404).json({ error: "Not found" });
+      const b64 = photo.imageData.replace(/^data:image\/\w+;base64,/, '');
+      res.setHeader('Content-Type', photo.mimeType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(Buffer.from(b64, 'base64'));
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/inspection-photos/:itemId", upload.single('image'), async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq, count } = await import("drizzle-orm");
+      const itemId = decodeURIComponent(req.params.itemId);
+      const [{ value: cnt }] = await db.select({ value: count() }).from(inspectionItemPhotos).where(eq(inspectionItemPhotos.itemId, itemId));
+      if (Number(cnt) >= 10) return res.status(400).json({ error: "최대 10장" });
+      if (!req.file) return res.status(400).json({ error: "No image" });
+      const base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const [photo] = await db.insert(inspectionItemPhotos).values({
+        itemId,
+        imageData: base64Data,
+        mimeType: req.file.mimetype,
+        displayOrder: Number(cnt),
+      }).returning({ id: inspectionItemPhotos.id, displayOrder: inspectionItemPhotos.displayOrder, mimeType: inspectionItemPhotos.mimeType, createdAt: inspectionItemPhotos.createdAt });
+      res.status(201).json(photo);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.delete("/api/inspection-photos/:id", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(inspectionItemPhotos).where(eq(inspectionItemPhotos.id, parseInt(req.params.id)));
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
   // ── 종전 기준 일괄 seed (서버 내부용) ──
   app.post("/api/inspection-revisions/bulk-seed", async (req, res) => {
     try {

@@ -427,6 +427,16 @@ export const stdItemPhotos = pgTable("std_item_photos", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ── 검사기준(별표22) 조문 이미지 — 본문에 여러 장 첨부 ──
+export const inspectionItemPhotos = pgTable("inspection_item_photos", {
+  id: serial("id").primaryKey(),
+  itemId: varchar("item_id", { length: 50 }).notNull(),
+  imageData: text("image_data").notNull(),
+  mimeType: varchar("mime_type", { length: 50 }).default("image/jpeg"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // AI 사용량 로그
 export const aiUsage = pgTable("ai_usage", {
   id: serial("id").primaryKey(),

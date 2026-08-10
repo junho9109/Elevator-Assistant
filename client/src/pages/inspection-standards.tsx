@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
@@ -192,11 +192,38 @@ function TreeNode({ sec, map, depth, activeKey, onSelect }: {
 }
 
 // ── 현행(byulpyo22) 상세 — 관리자 수정 기능 포함 (DB 직접 수정) ────────
+type InspPhoto = { id: number; displayOrder: number; mimeType: string; createdAt: string };
+
 function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
   id: string; map: Record<string, Entry>; yearStd: string; onClose: () => void;
   isAdminMode: boolean; onEdit: () => void;
 }) {
   const e = map[id];
+  const photoQc = useQueryClient();
+
+  const { data: photos = [] } = useQuery<InspPhoto[]>({
+    queryKey: ["/api/inspection-photos", id],
+    queryFn: async () => { const r = await fetch(`/api/inspection-photos/${encodeURIComponent(id)}`); return r.json(); },
+  });
+
+  const uploadPhoto = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append("image", file);
+      const r = await fetch(`/api/inspection-photos/${encodeURIComponent(id)}`, { method: "POST", body: fd });
+      if (!r.ok) throw new Error("업로드 실패");
+      return r.json();
+    },
+    onSuccess: () => photoQc.invalidateQueries({ queryKey: ["/api/inspection-photos", id] }),
+  });
+  const deletePhoto = useMutation({
+    mutationFn: async (photoId: number) => { await fetch(`/api/inspection-photos/${photoId}`, { method: "DELETE" }); },
+    onSuccess: () => photoQc.invalidateQueries({ queryKey: ["/api/inspection-photos", id] }),
+  });
+  const handlePhotoSelect = (fl: FileList | null) => {
+    if (!fl) return;
+    Array.from(fl).slice(0, Math.max(0, 10 - photos.length)).forEach(f => uploadPhoto.mutate(f));
+  };
 
   if (!e) return (
     <div className="flex flex-col flex-1 min-h-0 items-center justify-center gap-3 p-6 text-center">
@@ -234,6 +261,36 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
           <p className="text-xs font-medium text-muted-foreground mb-2">조문 내용</p>
           <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>
         </div>
+        {(photos.length > 0 || isAdminMode) && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium text-muted-foreground">사진{photos.length > 0 ? ` (${photos.length}장)` : ""}</p>
+              {isAdminMode && photos.length < 10 && (
+                <label className="text-[11px] text-primary cursor-pointer">
+                  + 추가
+                  <input
+                    type="file" accept="image/*" multiple className="hidden"
+                    onChange={ev => { handlePhotoSelect(ev.target.files); ev.target.value = ""; }}
+                  />
+                </label>
+              )}
+            </div>
+            {photos.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">등록된 사진이 없습니다.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {photos.map(p => (
+                  <div key={p.id} className="relative">
+                    <img src={`/api/inspection-photos/${encodeURIComponent(id)}/${p.id}/image`} alt="" className="w-full h-20 object-cover rounded-lg border border-border" />
+                    {isAdminMode && (
+                      <button onClick={() => deletePhoto.mutate(p.id)} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {displaySource}</p>
       </div>
     </div>
