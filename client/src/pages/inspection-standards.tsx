@@ -156,19 +156,27 @@ function TreeNode({ sec, map, depth, activeKey, onSelect }: {
 
   return (
     <div>
-      <button
-        onClick={() => { if (hasChildren) { setOpen(o => !o); } else { onSelect(sec.id); } }}
-        className={`w-full flex items-center gap-2 py-2.5 pr-3 text-left text-xs leading-relaxed transition-colors hover:bg-secondary ${
+      <div
+        onClick={() => onSelect(sec.id)}
+        className={`w-full flex items-center gap-2 py-2.5 pr-3 text-left text-xs leading-relaxed transition-colors hover:bg-secondary cursor-pointer ${
           isActive || hasDescendant ? "text-primary font-medium" : "text-foreground"
         }`}
         style={{ paddingLeft: pl }}
       >
         {hasChildren
-          ? (open ? <ChevronDown size={12} className="shrink-0 text-muted-foreground" /> : <ChevronRight size={12} className="shrink-0 text-muted-foreground" />)
+          ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+              className="shrink-0 p-0.5 -m-0.5"
+              aria-label={open ? "하위 항목 접기" : "하위 항목 펼치기"}
+            >
+              {open ? <ChevronDown size={12} className="text-muted-foreground" /> : <ChevronRight size={12} className="text-muted-foreground" />}
+            </button>
+          )
           : <span className="w-3" />}
         <span className="font-mono text-[10px] text-muted-foreground shrink-0">{sec.id}</span>
         <span className="truncate text-xs leading-relaxed flex-1 min-w-0">{sec.title}</span>
-      </button>
+      </div>
       {open && (
         <div className="border-l border-border ml-4">
           {sec.children.map(c => <TreeNode key={c.id} sec={c} map={map} depth={depth + 1} activeKey={activeKey} onSelect={onSelect} />)}
