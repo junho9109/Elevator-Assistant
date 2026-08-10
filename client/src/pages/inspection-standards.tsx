@@ -98,10 +98,16 @@ function buildChildren(prefix: string, keys: string[], map: Record<string, Entry
   });
   return directKeys.map(k => ({
     id: k,
-    title: map[k]?.title || map[k]?.text?.split("\n")[0] || k,
+    title: shortLabel(map[k]?.title || map[k]?.text?.split("\n")[0] || k),
     children: buildChildren(k, keys, map),
     items: [],
   }));
+}
+
+// 좌측 목록 전용 — 조문번호 뒤에 붙는 제목/첫 문장은 20자까지만 표시
+function shortLabel(s: string): string {
+  const t = (s || "").trim();
+  return t.length > 20 ? t.slice(0, 20) + "…" : t;
 }
 
 // 임의의 맵(현행 dataMap이든 특정 연도의 items든)에서 트리를 생성한다.
@@ -114,7 +120,7 @@ function buildTreeFromMap(map: Record<string, Entry>): Section[] {
 
   return chapterKeys.map(ch => {
     const entry = map[ch];
-    const chTitle = entry?.title || entry?.text?.split("\n")[0] || ch;
+    const chTitle = shortLabel(entry?.title || entry?.text?.split("\n")[0] || ch);
     return { id: ch, title: chTitle, children: buildChildren(ch, keys, map), items: [] };
   });
 }
@@ -130,7 +136,7 @@ function ItemBtn({ id, map, isActive, onClick }: { id: string; map: Record<strin
       }`}
     >
       <span className="font-mono text-[10px] text-muted-foreground shrink-0 min-w-[36px]">{id}</span>
-      <span className="text-xs leading-relaxed truncate flex-1 min-w-0">{label.length > 60 ? label.slice(0, 60) + "…" : label}</span>
+      <span className="text-xs leading-relaxed truncate flex-1 min-w-0">{shortLabel(label)}</span>
     </button>
   );
 }
@@ -282,7 +288,6 @@ export default function InspectionStandardsPage() {
   const [showSearch, setShowSearch] = useState(false);
   const CURRENT_STD = "KC2050-51:2022";  // 현행 기준
   const [editKey, setEditKey] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
   const [editText, setEditText] = useState("");
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
@@ -300,9 +305,9 @@ export default function InspectionStandardsPage() {
 
   const handleSaveEdit = async () => {
     if (!editKey) return;
-    const title = editTitle.trim();
     const body = editText.trim();
-    const combinedText = body ? `${editKey} ${title}\n${body}` : `${editKey} ${title}`;
+    const combinedText = `${editKey} ${body}`;
+    const title = body.split("\n")[0] || editKey;
     await fetch(`/api/inspection-base-items/${encodeURIComponent(editKey)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: combinedText, sectionTitle: title }),
@@ -500,9 +505,7 @@ export default function InspectionStandardsPage() {
                   const e = dataMap[activeKey];
                   const fullText = e?.text || "";
                   const stripped = fullText.startsWith(activeKey + " ") ? fullText.slice(activeKey.length + 1) : fullText;
-                  const lines = stripped.split("\n");
-                  setEditTitle(lines[0] || "");
-                  setEditText(lines.slice(1).join("\n"));
+                  setEditText(stripped);
                   setEditKey(activeKey);
                 }}
               />
@@ -556,17 +559,8 @@ export default function InspectionStandardsPage() {
             <button onClick={() => setEditKey(null)} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">제목 (조문번호 [{editKey}] 뒤에 붙는 제목/첫 문장)</label>
-            <input
-              className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary"
-              value={editTitle}
-              onChange={e => setEditTitle(e.target.value)}
-              placeholder="예: 기계실·기계류 공간 및 풀리실"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">본문 (제목만 있는 조문은 비워두세요)</label>
-            <textarea className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary resize-none min-h-[140px]" value={editText} onChange={e => setEditText(e.target.value)} />
+            <label className="text-xs text-muted-foreground">본문 (첫 줄이 좌측 목록에 조문번호 [{editKey}] 뒤 제목으로 표시됩니다 · 20자까지만 노출)</label>
+            <textarea className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary resize-none min-h-[180px]" value={editText} onChange={e => setEditText(e.target.value)} placeholder="예: 기계실·기계류 공간 및 풀리실" />
           </div>
           <div className="flex gap-2">
             <button onClick={() => setEditKey(null)} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
