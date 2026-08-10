@@ -87,16 +87,28 @@ const RISK_WORK_CATEGORIES: Record<RiskMethod, string[]> = {
 const DISCOVERY_PATHS = ["순회점검", "현장업무", "아차사고", "청취조사", "기타"];
 const DEFAULT_BRANCH = "서울강서지사";
 
-export default function SafetyPage() {
+const CHECKLIST_LEVEL_INFO: Record<string, string> = {
+  "상": "매우 높음 · 사고 발생 시 사망 또는 90일 이상의 휴업 예상 (허용 불가능)",
+  "중": "보통 · 사고 발생 시 3일 이상 90일 미만의 휴업 예상",
+  "하": "매우 낮음 · 3일 미만의 휴업 또는 작업 수행에 영향을 미치지 않는 부상·질병 예상 (허용 가능)",
+};
+const SEVERITY_INFO: Record<number, string> = {
+  4: "최대 · 사고 발생 시 사망 또는 90일 이상의 휴업",
+  3: "대 · 사고 발생 시 3일 이상 90일 미만의 휴업",
+  2: "중 · 3일 미만의 휴업 또는 작업 수행에 영향을 미치지 않는 부상·질병",
+  1: "소 · 치료가 필요 없거나 인적 손실이 없음 (아차사고 수준)",
+};
+
+export default function SafetyPage({ org = "", name = "", role = "user" }: { org?: string; name?: string; role?: string }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"ppe"|"guide"|"nearmiss"|"risk">("ppe");
-  const [empId, setEmpId] = useState("");
-  const [empName, setEmpName] = useState("");
-  const [branchName, setBranchName] = useState(DEFAULT_BRANCH);
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [loginError, setLoginError] = useState("");
-  const isAdmin = empId === "910919" && empName === "노준호";
+  // 앱 로그인(소속/이름)을 그대로 재사용 — 별도 로그인 불필요
+  const empId = name;
+  const empName = name;
+  const branchName = org || DEFAULT_BRANCH;
+  const ready = !!(org && name);
+  const isAdmin = role === "admin";
   const [showAddPPE, setShowAddPPE] = useState(false);
   const [riskMethod, setRiskMethod] = useState<RiskMethod>("checklist");
   const [showAddRisk, setShowAddRisk] = useState(false);
@@ -115,24 +127,22 @@ export default function SafetyPage() {
   const { data: ppeList = [] } = useQuery<PpeItem[]>({
     queryKey: ["/api/ppe", empId, empName],
     queryFn: async () => {
-      if (!loggedIn) return [];
-      const r = await fetch(`/api/ppe?employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}`);
+      const r = await fetch(`/api/ppe?employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}&admin=${isAdmin}`);
       return r.json();
     },
-    enabled: loggedIn,
+    enabled: ready,
   });
   const { data: nearMisses = [] } = useQuery<NearMiss[]>({ queryKey: ["/api/near-misses"], queryFn: async () => { const r = await fetch("/api/near-misses"); return r.json(); } });
 
-  const { data: riskBranches = [DEFAULT_BRANCH] } = useQuery<string[]>({ queryKey: ["/api/risk-branches"], queryFn: async () => { const r = await fetch("/api/risk-branches"); return r.json(); } });
   const { data: riskItems = [] } = useQuery<RiskHazardItem[]>({
     queryKey: ["/api/risk-hazard-items", branchName],
     queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?branchId=${encodeURIComponent(branchName)}`); return r.json(); },
-    enabled: loggedIn && !!branchName,
+    enabled: ready,
   });
   const { data: riskAssessmentsData = [] } = useQuery<RiskAssessment[]>({
     queryKey: ["/api/risk-assessments", branchName],
     queryFn: async () => { const r = await fetch(`/api/risk-assessments?branchId=${encodeURIComponent(branchName)}`); return r.json(); },
-    enabled: loggedIn && !!branchName,
+    enabled: ready,
   });
 
   const createPpe = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/ppe", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({...data, employeeId: empId, employeeName: empName}) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"보호구가 등록되었습니다."}); setShowAddPPE(false); } });
@@ -148,7 +158,7 @@ export default function SafetyPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] }); qc.invalidateQueries({ queryKey: ["/api/risk-branches"] }); toast({ title: "유해위험요인이 등록되었습니다." }); setShowAddRisk(false); },
   });
   const deleteRiskItem = useMutation({
-    mutationFn: async (id: number) => { await fetch(`/api/risk-hazard-items/${id}?employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}`, { method: "DELETE" }); },
+    mutationFn: async (id: number) => { await fetch(`/api/risk-hazard-items/${id}?employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}&admin=${isAdmin}`, { method: "DELETE" }); },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] }); qc.invalidateQueries({ queryKey: ["/api/risk-assessments"] }); toast({ title: "삭제되었습니다." }); setRiskDeleteConfirm(null); },
   });
   const saveAssessment = useMutation({
@@ -287,70 +297,18 @@ export default function SafetyPage() {
           ))}
         </div>
 
-        {(activeTab==="ppe"||activeTab==="risk") && !loggedIn && (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
-              <div className="w-full max-w-sm space-y-3">
-                <h2 className="text-center font-semibold text-base mb-4">사번/이름/지사 확인</h2>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">사번</label>
-                  <input
-                    type="text"
-                    placeholder="사번 입력"
-                    value={empId}
-                    onChange={e => setEmpId(e.target.value)}
-                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">이름</label>
-                  <input
-                    type="text"
-                    placeholder="이름 입력"
-                    value={empName}
-                    onChange={e => setEmpName(e.target.value)}
-                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">지사</label>
-                  <input
-                    type="text"
-                    list="branch-list"
-                    placeholder="예: 서울강서지사"
-                    value={branchName}
-                    onChange={e => setBranchName(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") {
-                        if (!empId || !empName || !branchName) { setLoginError("사번, 이름, 지사를 모두 입력하세요."); return; }
-                        setLoginError(""); setLoggedIn(true);
-                      }
-                    }}
-                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                  <datalist id="branch-list">
-                    {riskBranches.map(b => <option key={b} value={b} />)}
-                  </datalist>
-                  <p className="text-[11px] text-muted-foreground mt-1">목록에 없는 지사명을 입력하면 새 지사로 시작됩니다.</p>
-                </div>
-                {loginError && <p className="text-xs text-red-500">{loginError}</p>}
-                <button
-                  onClick={() => {
-                    if (!empId || !empName || !branchName) { setLoginError("사번, 이름, 지사를 모두 입력하세요."); return; }
-                    setLoginError(""); setLoggedIn(true);
-                  }}
-                  className="w-full bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-medium"
-                >확인</button>
-              </div>
+        {(activeTab==="ppe"||activeTab==="risk") && !ready && (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-2 text-center">
+              <Shield className="h-10 w-10 text-muted-foreground opacity-40 mb-2"/>
+              <p className="text-sm text-muted-foreground">소속·이름 정보를 불러오지 못했습니다.</p>
+              <p className="text-xs text-muted-foreground">앱을 로그아웃 후 다시 로그인해 주세요.</p>
             </div>
         )}
 
-        {activeTab==="ppe" && loggedIn && (
+        {activeTab==="ppe" && ready && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-gray-500">{isAdmin ? "전체 보호구 목록" : `${empName}님의 보호구`}</p>
-                <button onClick={() => { setLoggedIn(false); setEmpId(""); setEmpName(""); localStorage.removeItem("safety_emp_id"); localStorage.removeItem("safety_emp_name"); }} className="text-xs text-muted-foreground hover:text-foreground">로그아웃</button>
-              </div>
+              <p className="text-sm text-gray-500">{isAdmin ? "전체 보호구 목록" : `${empName}님의 보호구`}</p>
               <Button size="sm" onClick={()=>setShowAddPPE(true)}><Plus className="h-4 w-4 mr-1"/>등록</Button>
             </div>
             {ppeList.length===0 && <div className="text-center py-12 text-gray-400"><Shield className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>등록된 보호구가 없습니다.</p></div>}
@@ -450,11 +408,10 @@ export default function SafetyPage() {
           </div>
         )}
 
-        {activeTab==="risk" && loggedIn && (
+        {activeTab==="risk" && ready && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <p className="text-sm text-gray-500">{branchName} · {empName}님</p>
-              <button onClick={() => { setLoggedIn(false); setEmpId(""); setEmpName(""); }} className="text-xs text-muted-foreground hover:text-foreground">다시 확인</button>
             </div>
             <div className="flex gap-2">
               <button onClick={()=>setRiskMethod("checklist")} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-medium border ${riskMethod==="checklist"?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>사무 · 체크리스트법</button>
@@ -519,6 +476,7 @@ export default function SafetyPage() {
                               <button key={lv} onClick={()=>setItemAssessForm(item.id,{level:lv})} className={`flex-1 text-sm py-2 rounded-lg border ${f.level===lv?(lv==="상"?"bg-red-500 text-white border-red-500":lv==="중"?"bg-orange-500 text-white border-orange-500":"bg-green-600 text-white border-green-600"):"bg-card border-border"}`}>{lv}</button>
                             ))}
                           </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">{CHECKLIST_LEVEL_INFO[f.level]}</p>
                           <textarea placeholder="감소대책 (선택)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
                         </>
                       ) : (
@@ -534,6 +492,7 @@ export default function SafetyPage() {
                               <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
                             ))}
                           </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed">{SEVERITY_INFO[f.severity]}</p>
                           {liveAgg && (
                             <div className="flex items-baseline gap-2 text-xs">
                               <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>

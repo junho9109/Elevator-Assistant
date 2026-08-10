@@ -22,7 +22,6 @@ function Router() {
       <Route path="/judgment" component={JudgmentPage} />
       <Route path="/precision" component={PrecisionInspectionPage} />
       <Route path="/memo" component={MemoPage} />
-      <Route path="/safety" component={SafetyPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -57,6 +56,8 @@ function InAppNotificationToast() {
 function App() {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string>("user");
+  const [userOrg, setUserOrg] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
@@ -64,7 +65,7 @@ function App() {
     if (saved.autoLogin && saved.token) {
       fetch("/api/auth/verify", { headers: { Authorization: `Bearer ${saved.token}` } })
         .then(r => r.ok ? r.json() : null)
-        .then(data => { if (data) { setAuthToken(saved.token); setUserRole(data.role || "user"); } })
+        .then(data => { if (data) { setAuthToken(saved.token); setUserRole(data.role || "user"); setUserOrg(saved.org || data.org || ""); setUserName(data.name || saved.name || ""); } })
         .catch(() => {})
         .finally(() => setIsChecking(false));
     } else {
@@ -74,9 +75,11 @@ function App() {
 
   const handleLogout = () => {
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
-    localStorage.setItem("loginInfo", JSON.stringify({ org: saved.org, pw: saved.pw }));
+    localStorage.setItem("loginInfo", JSON.stringify({ org: saved.org, name: saved.name, pw: saved.pw }));
     setAuthToken(null);
     setUserRole("user");
+    setUserOrg("");
+    setUserName("");
   };
 
   if (isChecking) return null;
@@ -84,7 +87,7 @@ function App() {
   if (!authToken) {
     return (
       <QueryClientProvider client={queryClient}>
-        <LoginPage onLogin={(token, org, role) => { setAuthToken(token); setUserRole(role); }} />
+        <LoginPage onLogin={(token, org, role, name) => { setAuthToken(token); setUserRole(role); setUserOrg(org); setUserName(name); }} />
       </QueryClientProvider>
     );
   }
@@ -102,7 +105,7 @@ function App() {
             <InspectionStandardsPage key="inspection-standards" />,
             <PrecisionInspectionPage key="precision" />,
             <MemoPage key="memo" />,
-            <SafetyPage key="safety" />,
+            <SafetyPage key="safety" org={userOrg} name={userName} role={userRole} />,
             <ChatPage key="chat" />,
           ]}
           pageNames={[

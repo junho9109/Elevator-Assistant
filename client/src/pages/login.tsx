@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 
 interface LoginPageProps {
-  onLogin: (token: string, org: string, role: string) => void;
+  onLogin: (token: string, org: string, role: string, name: string) => void;
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
   const [orgs, setOrgs] = useState<string[]>([]);
   const [org, setOrg] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [savePw, setSavePw] = useState(true);
@@ -21,35 +22,37 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     // 저장된 정보 복원
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
     if (saved.org) setOrg(saved.org);
+    if (saved.name) setName(saved.name);
     if (saved.pw) setPassword(saved.pw);
     if (saved.autoLogin && saved.token) {
       // 자동 로그인 검증
       fetch("/api/auth/verify", { headers: { Authorization: `Bearer ${saved.token}` } })
         .then(r => r.ok ? r.json() : null)
-        .then(data => { if (data) onLogin(saved.token, saved.org, data.role); })
+        .then(data => { if (data) onLogin(saved.token, saved.org, data.role, data.name || saved.name); })
         .catch(() => {});
     }
   }, []);
 
   const handleLogin = async () => {
-    if (!org || !password) { setError("소속과 비밀번호를 입력하세요."); return; }
+    if (!org || !name || !password) { setError("소속, 이름, 비밀번호를 모두 입력하세요."); return; }
     setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ org, password }),
+        body: JSON.stringify({ org, name, password }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "로그인 실패"); setLoading(false); return; }
       localStorage.setItem("loginInfo", JSON.stringify({
         org,
+        name,
         pw: savePw ? password : "",
         token: autoLogin ? data.token : "",
         autoLogin,
       }));
-      onLogin(data.token, org, data.role);
+      onLogin(data.token, org, data.role, data.name || name);
     } catch {
       setError("서버 연결 오류");
     }
@@ -78,6 +81,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               <option value="">소속을 선택하세요</option>
               {orgs.map(o => <option key={o} value={o}>{o}</option>)}
             </select>
+          </div>
+
+          {/* 이름 */}
+          <div className="mb-4">
+            <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">이름</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => { setName(e.target.value); setError(""); }}
+              placeholder="이름을 입력하세요"
+              className="w-full border border-border rounded-xl px-3.5 py-2.5 text-sm bg-background outline-none focus:border-[#1e3a5f]"
+            />
           </div>
 
           {/* 비밀번호 */}

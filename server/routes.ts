@@ -886,8 +886,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 // PPE routes
   app.get("/api/ppe", async (req, res) => {
     try {
-      const { employeeId, employeeName } = req.query as { employeeId?: string; employeeName?: string };
-      const isAdmin = employeeId === "910919" && employeeName === "노준호";
+      const { employeeId, employeeName, admin } = req.query as { employeeId?: string; employeeName?: string; admin?: string };
+      const isAdmin = admin === "true" || (employeeId === "910919" && employeeName === "노준호");
       const items = await storage.getAllPpeItems();
       if (isAdmin) {
         res.json(items);
@@ -1000,8 +1000,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { riskHazardItems, riskAssessments } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
       const id = parseInt(req.params.id);
-      const { employeeId, employeeName } = req.query as { employeeId?: string; employeeName?: string };
-      const isAdmin = employeeId === "910919" && employeeName === "노준호";
+      const { employeeId, employeeName, admin } = req.query as { employeeId?: string; employeeName?: string; admin?: string };
+      const isAdmin = admin === "true" || (employeeId === "910919" && employeeName === "노준호");
       const [item] = await db.select().from(riskHazardItems).where(eq(riskHazardItems.id, id));
       if (!item) return res.status(404).json({ error: "Not found" });
       if (!isAdmin && item.registeredById !== employeeId) {
@@ -1427,8 +1427,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { org, password } = req.body;
-      if (!org || !password) return res.status(400).json({ error: "소속과 비밀번호를 입력하세요." });
+      const { org, name, password } = req.body;
+      if (!org || !name || !password) return res.status(400).json({ error: "소속, 이름, 비밀번호를 모두 입력하세요." });
       const { pool } = await import("./db");
       const rows = await pool.query("SELECT * FROM organizations WHERE name = $1", [org]);
       if (rows.rows.length === 0) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
@@ -1439,8 +1439,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isUser && !isAdmin) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
       const role = isAdmin ? "admin" : "user";
       const jwt = await import("jsonwebtoken");
-      const token = jwt.default.sign({ orgId: org_row.id, org, role }, process.env.JWT_SECRET || "elevator-secret-key", { expiresIn: "30d" });
-      res.json({ token, org, role });
+      const token = jwt.default.sign({ orgId: org_row.id, org, role, name }, process.env.JWT_SECRET || "elevator-secret-key", { expiresIn: "30d" });
+      res.json({ token, org, role, name });
     } catch (e) {
       res.status(500).json({ error: "서버 오류" });
     }
@@ -1616,8 +1616,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { org, password } = req.body;
-      if (!org || !password) return res.status(400).json({ error: "소속과 비밀번호를 입력하세요." });
+      const { org, name, password } = req.body;
+      if (!org || !name || !password) return res.status(400).json({ error: "소속, 이름, 비밀번호를 모두 입력하세요." });
       const { pool } = await import("./db");
       const rows = await pool.query("SELECT * FROM organizations WHERE name = $1", [org]);
       if (rows.rows.length === 0) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
@@ -1628,8 +1628,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!isUser && !isAdmin) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
       const role = isAdmin ? "admin" : "user";
       const jwt = await import("jsonwebtoken");
-      const token = jwt.default.sign({ orgId: org_row.id, org, role }, process.env.JWT_SECRET || "elevator-secret-key", { expiresIn: "30d" });
-      res.json({ token, org, role });
+      const token = jwt.default.sign({ orgId: org_row.id, org, role, name }, process.env.JWT_SECRET || "elevator-secret-key", { expiresIn: "30d" });
+      res.json({ token, org, role, name });
     } catch (e) {
       res.status(500).json({ error: "서버 오류" });
     }
