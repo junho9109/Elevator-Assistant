@@ -75,13 +75,14 @@ const SECTION1: Record<"current" | "amended", any> = {
     requiredDocs: [
       { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
     ],
+    docsFootnote: "※ 현행 규정으로 이미 3년 연장을 받은 경우, 개정 시행 후 연장조건 서류(설치 이행계획서·안내 경고문 부착 증명자료)를 추가로 제출하지 않아도 됩니다.",
     basis: "검사운영실-5944(2021.12.15.) · 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2",
     processSteps: [
       "① 관리주체: 서면동의서 제출 (입주자 등 3분의 2 이상 동의)",
       "② 검사기관: 네 번째 정밀안전검사 시 조건부 합격(2개월) 부여 후 최종판정",
     ],
-    note: "고시 발령 후 3개월이 지나면 개정 규정이 의무 적용됩니다. 현행 규정으로 이미 3년 연장을 받은 경우, 개정 시행 후 3종 서류(설치 이행계획서·안내 경고문 부착 증명자료)를 추가로 제출하지 않아도 됩니다.",
-    warning: "고시 발령 후 3개월 이후에는 설치계약 미계약 시 검사일 판정이 조건부→불합격으로 변경됨을 관리주체에게 반드시 안내해야 합니다.",
+    note: "고시 발령 후 3개월 이후에는 설치계약 미계약 시 검사일 판정이 조건부 합격 → 불합격으로 변경됨을 관리주체에게 반드시 안내해야 합니다.",
+    warning: null,
   },
   amended: {
     versionLabel: "개정",
@@ -304,6 +305,9 @@ function ResultBlock({ result }: { result: any }) {
             ))}
           </div>
         )}
+        {result.docsFootnote && (
+          <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{result.docsFootnote}</p>
+        )}
       </div>
 
       {/* 2. 업무처리 절차 */}
@@ -421,6 +425,7 @@ export default function PrecisionInspectionPage() {
         basis: versionData.basis,
         applicablePeriod: versionData.applicablePeriod,
         requiredDocs: versionData.requiredDocs,
+        docsFootnote: versionData.docsFootnote || null,
         processSteps: versionData.processSteps,
         note: versionData.note,
         warning: versionData.warning || null,
