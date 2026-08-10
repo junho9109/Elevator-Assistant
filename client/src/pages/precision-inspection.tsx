@@ -1,18 +1,13 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Calendar, FileText, ClipboardList, AlertTriangle, CheckCircle2, Info, ListChecks, LayoutGrid, ArrowLeft, Building2, Building } from "lucide-react";
+import { Calendar, FileText, ClipboardList, AlertTriangle, CheckCircle2, Info, ListChecks, LayoutGrid, ArrowLeft, Building2, Building, Settings, Lock, Pencil, X } from "lucide-react";
 
 // ── 날짜 계산 유틸 ──
 function addMonths(date: Date, months: number): Date {
   const d = new Date(date);
   d.setMonth(d.getMonth() + months);
-  return d;
-}
-function addDays(date: Date, days: number): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + days);
   return d;
 }
 function formatDate(date: Date): string {
@@ -21,146 +16,217 @@ function formatDate(date: Date): string {
 function monthsDiff(from: Date, to: Date): number {
   return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
 }
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
 
-// ── 규칙 데이터 ──
-// 2026년 개정고시 "정밀안전검사 관련 승강기 부품 보완 이행기간 연장" 반영
-// (기존 apartment_3year / staged_phase1 / staged_phase2는 폐지되어 parts_extension_3year로 통합됨)
-const RULES: Record<string, any> = {
-  parts_extension_3year: {
-    label: "부품보완 이행기간 연장 (세 번째 → 네 번째 정밀안전검사)",
-    inspectionType: "세 번째 정밀안전검사",
-    judgment: "조건부합격 → 3년 연장 (네 번째 정밀안전검사 시 재판정)",
-    extensionMonths: 36,
-    basis: "「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3",
-    requiredDocs: [
-      { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의 — 공동주택·집합건축물·그 외 건축물 공통 적용" },
-      { title: "승강기 안전부품 설치 이행계획서", detail: "이행완료 예정일(설치검사 후 24년 경과 네 번째 정밀안전검사일까지)과 이행계획 상세내용 기재, 대표자 서명 또는 직인 필수" },
-      { title: "승강기 내·외부 안내 경고문 부착 증명자료", detail: "미설치 안전장치 사용 시 주의사항을 안내하는 경고문을 승강기 내·외부에 부착 후 증빙자료 제출" },
-    ],
-    adminProcess: [
-      "① 관리주체: 서면동의서(2/3↑) + 설치 이행계획서 + 안내 경고문 부착 증명자료 제출",
-      "② 검사기관: 동의율 및 서류 검토",
-      "③ 검사기관: 조건부합격 처리 + 세 번째 정밀안전검사일 기준 네 번째 정밀안전검사까지 3년 연장 부여",
-      "④ 관리주체: 검사판정 변경(조건부→불합격 등) 발생 시 안내 수령",
-    ],
-    note: "고시 발령 후 3개월까지는 서면동의서만 제출해도 유효하며, 3개월 이후에는 3종 서류 모두 의무 제출입니다. 기존 단계적 이행(1단계·2단계) 방식은 고시 시행일로 종료되어 이 항목으로 대체되었습니다.",
-    warning: null,
-    // 네 번째 정밀안전검사 시 설치계약 상태별 판정 분기
-    fourthInspectionJudgments: {
-      contracted: {
-        label: "설치계약 완료 (착수 전)",
-        judgment: "조건부합격 (2개월 부여)",
-        extensionMonths: 2,
-        requiredDocs: [
-          { title: "설치계약서", detail: "부품(장치) 설치 공사 계약 완료를 증빙하는 계약서 제출" },
-        ],
-        note: "2개월 이내 설치 미완료 시 불합격으로 판정될 수 있습니다.",
-        warning: null,
-      },
-      in_progress: {
-        label: "설치공사 착수 중 (미완료)",
-        judgment: "조건부합격 (2개월 + 추가 2개월, 총 4개월)",
-        extensionMonths: 4,
-        requiredDocs: [
-          { title: "설치계약서", detail: "부품(장치) 설치 공사 계약 완료를 증빙하는 계약서 제출" },
-          { title: "공사 진행 확인자료", detail: "착수 중임을 증빙하는 자료 (공정률, 현장사진 등)" },
-        ],
-        note: "최초 2개월 조건부합격 후, 착수 중임이 확인되면 추가 2개월(총 4개월)이 부여됩니다.",
-        warning: null,
-      },
-      not_contracted: {
-        label: "설치계약 미체결",
-        judgment: "불합격",
-        extensionMonths: null,
-        requiredDocs: [],
-        note: null,
-        warning: "설치계약이 체결되지 않은 경우 검사일 기준 즉시 불합격 처리됩니다. 관리주체에게 반드시 안내해야 합니다.",
-      },
-    },
-  },
-  construction_delay: {
-    label: "공사 지연 (부품 설치 공사 중·예정)",
-    inspectionType: "세 번째 정밀안전검사",
-    judgment: "조건부합격 → 2개월 + 추가 2개월 (총 4개월)",
+const ADMIN_PASSWORD = "910919";
+const NOTICE_DATE_KEY = "precisionInspectionNoticeDate";
+
+// ══════════════════════════════════════════════════════════════
+// 규정 데이터 — 2026년 개정고시 "정밀안전검사 관련 승강기 부품 보완
+// 이행기간 연장" 전면 반영 (근거: 「승강기 설치검사 및 안전검사에
+// 관한 운영규정」 제11조의2·제11조의3, 검사운영실-5944)
+// ══════════════════════════════════════════════════════════════
+
+// 네 번째 정밀안전검사 시 설치계약 상태별 판정 — 공동주택 계열과
+// 일반건축물 계열(단계적 이행) 모두 동일하게 적용됨
+const FOURTH_INSPECTION_JUDGMENTS: Record<string, any> = {
+  contracted: {
+    label: "설치계약 완료 (착수 전)",
+    judgment: "조건부 합격 (2개월 부여)",
     extensionMonths: 2,
-    initialMonths: 2,
-    basis: "검사규정 제13조제3항제1호",
     requiredDocs: [
-      { title: "보완연장신청서", detail: "연장기간 2개월 기재" },
-      { title: "부품설치 관련 공사계약서", detail: "계약 완료 후 신청 가능" },
+      { title: "설치계약서", detail: "부품(장치) 설치 공사 계약 완료를 증빙하는 계약서 제출" },
     ],
-    adminProcess: [
-      "① 최초 검사: 조건부합격 2개월 부여",
-      "② 관리주체: 이행기간 내 연장 신청 (공사계약서 첨부)",
-      "③ 검사기관: 서류 검토 후 추가 2개월 연장 (총 4개월)",
-    ],
-    note: "4개월 내 설치 완료 가능한 경우에 한정. 4개월 내 완료가 어려우면 부품보완 이행기간 연장(서면동의서 등 3종 제출) 항목으로 처리",
+    note: "2개월 이내 설치를 완료하지 못하면 불합격으로 판정될 수 있습니다.",
     warning: null,
   },
-  safety_evaluation: {
-    label: "안전성평가 미완료",
-    inspectionType: "안전검사",
-    judgment: "조건부합격 → 2개월 + 추가 2개월 (총 4개월)",
-    extensionMonths: 2,
-    initialMonths: 2,
-    basis: "검사규정 제13조제3항제1호",
+  in_progress: {
+    label: "설치공사 착수 중 (미완료)",
+    judgment: "조건부 합격 (2개월 + 추가 2개월, 총 4개월)",
+    extensionMonths: 4,
     requiredDocs: [
-      { title: "보완연장신청서", detail: "연장기간 2개월 기재" },
-      { title: "안전성평가 신청서 (접수증)", detail: "연구개발실 게시판 접수이력 확인 필수" },
+      { title: "설치계약서", detail: "부품(장치) 설치 공사 계약 완료를 증빙하는 계약서 제출" },
+      { title: "공사 진행 확인자료", detail: "착수 중임을 증빙하는 자료 (공정률, 현장사진 등)" },
     ],
-    adminProcess: [
-      "① 최초 검사: 조건부합격 2개월 부여",
-      "② 관리주체: 안전성평가 신청 후 이행기간 연장 신청",
-      "③ 검사기관: 연구개발실 게시판에서 접수이력 확인",
-      "④ 검사기관: 확인 후 추가 2개월 연장 (총 4개월)",
-    ],
-    note: "안전성평가 접수 확인 후에만 연장 가능",
+    note: "최초 2개월 조건부 합격 후, 착수 중임이 확인되면 추가 2개월(총 4개월)이 부여됩니다.",
     warning: null,
   },
-  disaster: {
-    label: "재난 발생 (작업자 출입 차단)",
-    inspectionType: "안전검사",
-    judgment: "조건부합격 → 차기안전검사 판정",
+  not_contracted: {
+    label: "설치계약 미체결",
+    judgment: "불합격",
     extensionMonths: null,
-    basis: "검사규정 제13조제3항제2호",
-    requiredDocs: [
-      { title: "보완연장신청서", detail: "차기안전검사 시까지 기재" },
-      { title: "자체개선계획서", detail: "안전관리자 일상점검 결과 기록·관리 계획" },
-      { title: "재난 근거 공문서", detail: "격리시설 지정서, 건물 폐쇄 명령서 등" },
-    ],
-    adminProcess: [
-      "① 최초 검사: 조건부합격 2개월 부여",
-      "② 관리주체: 재난 근거서류 + 자체개선계획서 제출",
-      "③ 검사기관: 서류 검토 후 차기안전검사 판정으로 연장",
-      "④ 검사기관: 전산 입력 유지 (이행완료 전까지)",
-      "⑤ 검사기관: 재난 해소 시 즉시 부적합사항 조치 시정권고",
-      "⑥ 주기별 최종 확인 — 6개월: 1년내 매 안전검사 / 1년: 차기 안전검사 / 2년: 1년내 확인검사",
-    ],
-    note: "출입 가능하면 연장 불가. 확인검사 불필요, 차기 안전검사에서 조건부사항 확인",
-    warning: "재난 해소 후 즉시 부적합사항 조치 필수",
-  },
-  major_repair: {
-    label: "대수선 없이 이행 불가 (적용제외)",
-    inspectionType: "정밀안전검사",
-    judgment: "적용제외 처리 (조건부합격 아님)",
-    extensionMonths: null,
-    basis: "검사규정 부칙 제2조제4항",
-    applicableTarget: "소형 포지티브 엘리베이터, 사업장 특례 화물용 엘리베이터 등 승강로 협소 현장",
-    requiredDocs: [
-      { title: "유지관리계약서", detail: "월 2회 이상 점검 계약 필수" },
-      { title: "자체개선계획서", detail: "자체점검 추가실시, 일상점검 기록·관리 계획" },
-      { title: "대수선 관련 증빙서류", detail: "2개 이상 제조·수입업체의 검토의견서 필수" },
-    ],
-    adminProcess: [
-      "① 관리주체: 적용제외 서류 일체 제출",
-      "② 검사기관: 서류 검토 및 검토의견서 작성",
-      "③ 검사기관: 해당 부품에 한하여 설치 제외 후 검사 판정",
-      "④ 검사기관: 분기별 행정안전부 보고 (적용제외 승강기 목록)",
-    ],
-    note: "이후 안전검사 시 자체개선계획 이행여부 확인 불요. 단, 자체점검 추가실시 및 일상점검 수행 지속 권고",
-    warning: null,
+    requiredDocs: [],
+    note: null,
+    warning: "설치계약이 체결되지 않은 경우 검사일 기준 즉시 불합격 처리됩니다. 관리주체에게 반드시 안내해야 합니다.",
   },
 };
+
+// 1. 공동주택 · 집합건축물 적용현장
+const SECTION1: Record<"current" | "amended", any> = {
+  current: {
+    versionLabel: "현행",
+    applicablePeriod: "고시 발령 후 3개월 이전까지 유효",
+    requiredDocs: [
+      { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
+    ],
+    basis: "검사운영실-5944(2021.12.15.) · 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2",
+    adminProcess: [
+      "① 관리주체: 서면동의서(2/3 이상 동의) 제출",
+      "② 검사기관: 동의율 확인 및 서류 검토",
+      "③ 검사기관: 조건부 합격 처리 및 3년 유예 부여",
+      "④ 네 번째 정밀안전검사 시: 조건부 합격(2개월) 부여 후 최종판정",
+    ],
+    note: "고시 발령 후 3개월이 지나면 개정 규정이 의무 적용됩니다. 현행 규정으로 이미 3년 연장을 받은 경우, 개정 시행 후 3종 서류(설치 이행계획서·안내 경고문 부착 증명자료)를 추가로 제출하지 않아도 됩니다.",
+    warning: "고시 발령 후 3개월 이후에는 설치계약 미계약 시 검사일 판정이 조건부→불합격으로 변경됨을 관리주체에게 반드시 안내해야 합니다.",
+  },
+  amended: {
+    versionLabel: "개정",
+    applicablePeriod: "고시 발령 후 3개월 이후 의무 적용",
+    requiredDocs: [
+      { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
+      { title: "설치 이행계획서", detail: "이행완료 예정일과 이행계획 상세내용 기재, 대표자 서명 또는 직인 필수" },
+      { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
+    ],
+    basis: "「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)",
+    note: "검사판정 변경 내용(조건부→불합격 등)이 발생하면 관리주체에게 반드시 안내해야 합니다.",
+  },
+};
+
+// 2. 단계적 이행기간(1단계·2단계) 적용현장 — 일반건축물
+const SECTION2: Record<"current" | "amended", any> = {
+  current: {
+    versionLabel: "현행",
+    applicablePeriod: "고시 발령 전",
+    requiredDocs: [
+      { title: "단계별 이행계획서 등", detail: "1단계(1년 6개월) → 2단계(1년) 순차 연장" },
+    ],
+    basis: "검사운영실-5944(2021.12.15.)",
+    adminProcess: [
+      "① 관리주체: 단계별 이행계획서 등 제출",
+      "② 검사기관: 1단계(1년 6개월) 부여 후 미조치 시 2단계(1년) 추가 연장",
+      "③ 대체 정밀안전검사 시: 미설치 상태면 이행계획의 남은 기간 기준으로 조건부 합격 처리",
+    ],
+    note: "1, 2단계의 2차례 처리절차는 개정 후 세 번째 정밀안전검사 시 처리하여 네 번째 정밀안전검사로 한 번에 연장하는 방식으로 간소화되었습니다. 고시 시행 전 2단계 연장을 받은 현장은 대체 정밀안전검사 실시 후 네 번째 정밀안전검사도 실시해야 합니다. (2단계 연장 시행 전 현장은 서류 전부 제출 시 대체 정밀안전검사를 정기검사로 진행 가능) 고시 시행 전 현장의 개정 결과처리는 도래하는 검사(확인검사 포함) 결과처리 시 적용됩니다.",
+    warning: null,
+  },
+  amended: {
+    versionLabel: "개정",
+    applicablePeriod: "고시 발령 후 즉시",
+    requiredDocs: [
+      { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
+      { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
+      { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
+    ],
+    basis: "「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)",
+    note: "1, 2단계의 2차례 처리절차를 1차례로 간소화 — 세 번째 정밀안전검사 시 처리하여 네 번째 정밀안전검사로 연장합니다. 고시 시행 전 2단계 연장을 받은 현장은 대체 정밀안전검사 실시 후 네 번째 정밀안전검사도 실시해야 합니다.",
+  },
+};
+
+// 2-개정 세부상황(단계적 이행기간 진행 중인 현장의 현재 단계)
+const SECTION2_DETAIL_SITUATIONS = [
+  {
+    value: "stage1_before_regular",
+    icon: "①",
+    title: "1단계 적용 중 — 세 번째 정밀검사 후, 정기검사 전",
+    sub: "정기검사 시 처리",
+    judgment: "정기검사 시, 공동주택·집합건축물과 동일한 처리절차로 업무처리",
+    inspectionType: "정기검사",
+    requiredDocs: [
+      { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
+      { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
+      { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
+    ],
+    adminProcess: [
+      "① 관리주체: 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
+      "② 검사기관: 정기검사 시 공동주택·집합건축물 적용현장과 동일한 절차로 처리",
+    ],
+  },
+  {
+    value: "stage1_conditional",
+    icon: "②",
+    title: "1단계 적용 중 — 정기검사 후 조건부 진행 중",
+    sub: "조건부 기간 내 처리",
+    judgment: "조건부 기간 내 서류 제출 시 조건부 합격",
+    inspectionType: "조건부 기간 내",
+    requiredDocs: [
+      { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
+      { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
+      { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
+    ],
+    adminProcess: [
+      "① 관리주체: 조건부 기간 내 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
+      "② 검사기관: 서류 확인 후 조건부 합격 처리",
+    ],
+  },
+  {
+    value: "stage2_before_alt",
+    icon: "③",
+    title: "2단계 적용 중 — 대체 정밀안전검사 실시 전",
+    sub: "대체 정밀안전검사 실시 후 처리",
+    judgment: "대체 정밀안전검사 실시 후 서류 제출 시 합격 (네 번째 정밀안전검사도 실시)",
+    inspectionType: "대체 정밀안전검사",
+    requiredDocs: [
+      { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
+      { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
+      { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
+    ],
+    adminProcess: [
+      "① 검사기관: 안내문 생성 및 발송 완료 (접수완료 포함)",
+      "② 검사기관: 대체 정밀안전검사 실시",
+      "③ 관리주체: 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
+      "④ 검사기관: 서류 확인 후 합격 처리",
+      "⑤ 네 번째 정밀안전검사도 실시해야 함",
+    ],
+  },
+  {
+    value: "stage2_conditional",
+    icon: "④",
+    title: "2단계 적용 중 — 대체 정밀안전검사 실시 후 조건부 진행 중",
+    sub: "조건부 기간 내 처리",
+    judgment: "조건부 기간 내 서류 제출 시 조건부 합격 (네 번째 정밀안전검사도 실시)",
+    inspectionType: "조건부 기간 내",
+    requiredDocs: [
+      { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
+      { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
+      { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
+    ],
+    adminProcess: [
+      "① 관리주체: 조건부 기간 내 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
+      "② 검사기관: 서류 확인 후 조건부 합격 처리",
+      "③ 네 번째 정밀안전검사도 실시해야 함",
+    ],
+  },
+  {
+    value: "fourth_inspection",
+    icon: "④",
+    title: "네 번째 정밀안전검사 판정",
+    sub: "설치계약 상태에 따라 판정",
+    judgment: "__FOURTH__", // computeResult에서 계약상태 분기로 대체
+  },
+];
+
+function buildFourthResult(status: string, base: Date, basis: string) {
+  const branch = FOURTH_INSPECTION_JUDGMENTS[status];
+  return {
+    inspectionType: "네 번째 정밀안전검사",
+    judgment: branch.judgment,
+    basis,
+    requiredDocs: branch.requiredDocs,
+    adminProcess: [
+      "① 검사기관: 네 번째 정밀안전검사 실시",
+      `② 관리주체: 설치계약 상태 확인 — ${branch.label}`,
+      `③ 검사기관: ${branch.judgment}`,
+    ],
+    note: branch.note,
+    warning: branch.warning,
+    dates: branch.extensionMonths ? { deadline: addMonths(base, branch.extensionMonths) } : null,
+    base,
+    initialMonths: 0,
+  };
+}
 
 // ── DatePicker ──
 function DatePicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -208,124 +274,216 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
 export default function PrecisionInspectionPage() {
   const [mode, setMode] = useState<"guide" | "card">("guide");
   const [cardStep, setCardStep] = useState(0);
-  const [buildingType, setBuildingType] = useState("");
+  const [buildingType, setBuildingType] = useState<"" | "apartment" | "general">("");
+  const [version, setVersion] = useState<"" | "current" | "amended">("");
   const [inspectionCount, setInspectionCount] = useState("");
+  const [section2Situation, setSection2Situation] = useState("");
   const [contractStatus, setContractStatus] = useState("");
-  const [situation, setSituation] = useState("");
   const [inspectionDate, setInspectionDate] = useState("");
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
 
+  // 관리자 모드 + 고시 발령일
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [showAdminPw, setShowAdminPw] = useState(false);
+  const [pwInput, setPwInput] = useState("");
+  const [showNoticeEditor, setShowNoticeEditor] = useState(false);
+  const [noticeDateOverride, setNoticeDateOverride] = useState<string | null>(() => {
+    try { return localStorage.getItem(NOTICE_DATE_KEY); } catch { return null; }
+  });
+  const [noticeDateDraft, setNoticeDateDraft] = useState("");
+  const noticeDate = noticeDateOverride || todayStr();
+  const monthsSinceNotice = monthsDiff(new Date(noticeDate), new Date());
+  const recommendedVersion: "current" | "amended" = monthsSinceNotice >= 3 ? "amended" : "current";
+
+  const saveNoticeDate = (v: string) => {
+    try { localStorage.setItem(NOTICE_DATE_KEY, v); } catch {}
+    setNoticeDateOverride(v);
+    setShowNoticeEditor(false);
+  };
+  const resetNoticeDate = () => {
+    try { localStorage.removeItem(NOTICE_DATE_KEY); } catch {}
+    setNoticeDateOverride(null);
+    setShowNoticeEditor(false);
+  };
+
   const resetAll = () => {
-    setBuildingType(""); setInspectionCount(""); setContractStatus("");
-    setSituation(""); setInspectionDate(""); setResult(null); setError("");
+    setBuildingType(""); setVersion(""); setInspectionCount(""); setSection2Situation("");
+    setContractStatus(""); setInspectionDate(""); setResult(null); setError("");
     setCardStep(0);
   };
 
-  const needsInspectionCount = situation === "parts_extension_3year";
-  const needsContractStatus = needsInspectionCount && inspectionCount === "fourth";
+  const isSection1 = buildingType === "apartment";
+  const isSection2 = buildingType === "general";
+  const needsInspectionCount = isSection1 && version === "amended";
+  const needsSection2Situation = isSection2 && version === "amended";
+  const needsContractStatus =
+    (needsInspectionCount && inspectionCount === "fourth") ||
+    (needsSection2Situation && section2Situation === "fourth_inspection");
+  const readyForDate =
+    buildingType && version &&
+    (!needsInspectionCount || inspectionCount) &&
+    (!needsSection2Situation || section2Situation) &&
+    (!needsContractStatus || contractStatus);
 
-  const SITUATIONS_COMMON = [
-    { value: "parts_extension_3year", icon: "📝", title: "부품보완 이행기간 연장", sub: "서면동의서·이행계획서·경고문 → 3년 연장" },
-  ];
-  const SITUATIONS_GENERAL_EXTRA = [
-    { value: "construction_delay", icon: "🔧", title: "공사 지연", sub: "부품 설치 공사 중·예정" },
-    { value: "safety_evaluation", icon: "📋", title: "안전성평가 미완료", sub: "접수했으나 완료 안 됨" },
-    { value: "disaster", icon: "⚠️", title: "재난 발생", sub: "작업자 출입 차단" },
-    { value: "major_repair", icon: "🚧", title: "대수선 없이 이행 불가", sub: "적용제외 처리" },
-  ];
-  const situationOptions = isApartmentType(buildingType) ? SITUATIONS_COMMON : [...SITUATIONS_COMMON, ...SITUATIONS_GENERAL_EXTRA];
-
-  const cardSelectBuildingType = (v: string) => {
-    setBuildingType(v); setSituation(""); setInspectionCount(""); setContractStatus(""); setResult(null); setError("");
+  // ── 카드 모드 네비게이션 ──
+  const cardSelectBuildingType = (v: "apartment" | "general") => {
+    setBuildingType(v); setVersion(""); setInspectionCount(""); setSection2Situation(""); setContractStatus("");
+    setResult(null); setError("");
     setCardStep(1);
   };
-  const cardSelectSituation = (v: string) => {
-    setSituation(v); setInspectionCount(""); setContractStatus(""); setResult(null); setError("");
-    setCardStep(v === "parts_extension_3year" ? 2 : 3);
+  const cardSelectVersion = (v: "current" | "amended") => {
+    setVersion(v); setInspectionCount(""); setSection2Situation(""); setContractStatus("");
+    setResult(null); setError("");
+    const needsMore = (isSection1 && v === "amended") || (isSection2 && v === "amended");
+    setCardStep(needsMore ? 2 : 3);
   };
   const cardSelectInspectionCount = (v: string) => {
-    setInspectionCount(v); setContractStatus("");
+    setInspectionCount(v); setContractStatus(""); setResult(null); setError("");
     if (v !== "fourth") setCardStep(3);
+  };
+  const cardSelectSection2Situation = (v: string) => {
+    setSection2Situation(v); setContractStatus(""); setResult(null); setError("");
+    if (v !== "fourth_inspection") setCardStep(3);
+  };
+  const cardSelectContractStatus = (v: string) => {
+    setContractStatus(v); setResult(null); setError("");
+    setCardStep(3);
   };
   const cardGoBack = () => {
     if (cardStep === 0) return;
-    if (cardStep === 1) { setSituation(""); setCardStep(0); return; }
-    if (cardStep === 2) { setInspectionCount(""); setContractStatus(""); setCardStep(1); return; }
+    if (cardStep === 1) { setVersion(""); setCardStep(0); return; }
+    if (cardStep === 2) { setInspectionCount(""); setSection2Situation(""); setContractStatus(""); setCardStep(1); return; }
     if (cardStep === 3) {
-      if (needsInspectionCount) { setCardStep(2); }
-      else { setSituation(""); setCardStep(1); }
+      if (needsInspectionCount || needsSection2Situation) { setCardStep(2); }
+      else { setVersion(""); setCardStep(1); }
       return;
     }
   };
 
-  const calcDeadline = (rule: any, baseDate: Date) => {
-    if (!rule.extensionMonths) return null;
-    const deadline = addMonths(baseDate, rule.extensionMonths + (rule.initialMonths || 0));
-    return { deadline };
+  // ── 결과 계산 ──
+  const computeResult = (): any => {
+    if (!buildingType || !version || !inspectionDate) {
+      return { error: "건축물 유형, 현행/개정 구분, 검사일자를 모두 입력해주세요." };
+    }
+    const base = new Date(inspectionDate);
+    const sectionData = isSection1 ? SECTION1 : SECTION2;
+    const versionData = sectionData[version];
+
+    if (version === "current") {
+      return {
+        inspectionType: isSection1 ? "네 번째 정밀안전검사" : "2단계 연장 이후 대체 정밀안전검사",
+        judgment: isSection1 ? "조건부 합격(2개월) 후 최종판정" : "미설치 시 조건부 합격 (이행계획의 남은 기간 기준 조건부 일자 부여)",
+        basis: versionData.basis,
+        requiredDocs: versionData.requiredDocs,
+        adminProcess: versionData.adminProcess,
+        note: versionData.note,
+        warning: versionData.warning || null,
+        dates: { deadline: addMonths(base, 2) },
+        base,
+        initialMonths: 0,
+      };
+    }
+
+    // 개정
+    if (isSection1) {
+      if (!inspectionCount) return { error: "검사 회차(세 번째 · 네 번째)를 선택해주세요." };
+      if (inspectionCount === "fourth") {
+        if (!contractStatus) return { error: "네 번째 정밀안전검사의 설치계약 상태를 선택해주세요." };
+        return buildFourthResult(contractStatus, base, versionData.basis);
+      }
+      return {
+        inspectionType: "세 번째 정밀안전검사",
+        judgment: "조건부 합격 → 3년 연장 (네 번째 정밀안전검사 시 재판정)",
+        basis: versionData.basis,
+        requiredDocs: versionData.requiredDocs,
+        adminProcess: [
+          "① 관리주체: 서면동의서(2/3 이상) + 설치 이행계획서 + 안내 경고문 부착 증명자료 제출",
+          "② 검사기관: 동의율 및 서류 검토",
+          "③ 검사기관: 조건부 합격 처리 + 세 번째 정밀안전검사일 기준 네 번째 정밀안전검사까지 3년 연장 부여",
+        ],
+        note: versionData.note,
+        warning: null,
+        dates: { deadline: addMonths(base, 36) },
+        base,
+        initialMonths: 0,
+      };
+    } else {
+      if (!section2Situation) return { error: "현재 진행 상황을 선택해주세요." };
+      if (section2Situation === "fourth_inspection") {
+        if (!contractStatus) return { error: "네 번째 정밀안전검사의 설치계약 상태를 선택해주세요." };
+        return buildFourthResult(contractStatus, base, versionData.basis);
+      }
+      const sit = SECTION2_DETAIL_SITUATIONS.find(s => s.value === section2Situation);
+      if (!sit) return { error: "현재 진행 상황을 다시 선택해주세요." };
+      return {
+        inspectionType: sit.inspectionType,
+        judgment: sit.judgment,
+        basis: versionData.basis,
+        requiredDocs: sit.requiredDocs,
+        adminProcess: sit.adminProcess,
+        note: versionData.note,
+        warning: null,
+        dates: null,
+        base,
+        initialMonths: 0,
+      };
+    }
   };
 
   const handleCalculate = () => {
-    setError("");
-    setResult(null);
-    if (!buildingType || !situation || !inspectionDate) {
-      setError("건축물 유형, 연장 사유, 검사일자를 모두 입력해주세요.");
-      return;
-    }
-    const rule = RULES[situation];
-    if (!rule) { setError("해당 사유의 규정을 찾을 수 없습니다."); return; }
-
-    if (needsInspectionCount && !inspectionCount) {
-      setError("검사 회차(세 번째 · 네 번째)를 선택해주세요.");
-      return;
-    }
-    if (needsContractStatus && !contractStatus) {
-      setError("네 번째 정밀안전검사의 설치계약 상태를 선택해주세요.");
-      return;
-    }
-
-    const base = new Date(inspectionDate);
-
-    // 네 번째 정밀안전검사 — 설치계약 상태별 분기 판정
-    if (needsContractStatus) {
-      const branch = rule.fourthInspectionJudgments[contractStatus];
-      const dates = branch.extensionMonths ? { deadline: addMonths(base, branch.extensionMonths) } : null;
-      setResult({
-        inspectionType: "네 번째 정밀안전검사",
-        judgment: branch.judgment,
-        basis: rule.basis,
-        requiredDocs: branch.requiredDocs,
-        adminProcess: [
-          "① 검사기관: 네 번째 정밀안전검사 실시",
-          `② 관리주체: 설치계약 상태 확인 — ${branch.label}`,
-          `③ 검사기관: ${branch.judgment}`,
-        ],
-        note: branch.note,
-        warning: branch.warning,
-        dates,
-        base,
-        initialMonths: 0,
-      });
-      return;
-    }
-
-    const dates = calcDeadline(rule, base);
-    setResult({ ...rule, dates, base });
+    setError(""); setResult(null);
+    const r = computeResult();
+    if (r.error) { setError(r.error); return; }
+    setResult(r);
   };
+
+  const versionOptions: { value: "current" | "amended"; label: string; sub: string }[] = isSection1
+    ? [
+        { value: "current", label: "현행", sub: SECTION1.current.applicablePeriod },
+        { value: "amended", label: "개정", sub: SECTION1.amended.applicablePeriod },
+      ]
+    : [
+        { value: "current", label: "현행", sub: SECTION2.current.applicablePeriod },
+        { value: "amended", label: "개정", sub: SECTION2.amended.applicablePeriod },
+      ];
 
   return (
     <div className="min-h-screen bg-background">
       {/* 헤더 */}
       <div className="bg-card border-b border-border overflow-hidden sticky top-0 z-10">
         <div className="p-3 bg-muted/30">
-          <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
-              정
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm shrink-0">
+                정
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg font-bold tracking-tight">정밀안전검사</h1>
+                <p className="text-xs text-muted-foreground truncate">부품보완 이행기간 연장 · 필요서류 · 행정처리 안내</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight">정밀안전검사</h1>
-              <p className="text-xs text-muted-foreground">조건부합격 이행기간 연장 · 필요서류 · 행정처리 안내</p>
-            </div>
+            <Button
+              variant={isAdminMode ? "default" : "outline"}
+              size="icon"
+              onClick={() => { if (isAdminMode) setIsAdminMode(false); else setShowAdminPw(true); }}
+              className={`shrink-0 ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
+              title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-[11px] text-muted-foreground">고시 발령일</span>
+            <span className="text-[11px] font-semibold text-foreground bg-muted rounded-full px-2 py-0.5">{noticeDate}{!noticeDateOverride && " (오늘 날짜 예시)"}</span>
+            {isAdminMode && (
+              <button
+                onClick={() => { setNoticeDateDraft(noticeDate); setShowNoticeEditor(true); }}
+                className="text-[11px] text-primary flex items-center gap-0.5"
+              >
+                <Pencil className="h-3 w-3" />수정
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -353,9 +511,9 @@ export default function PrecisionInspectionPage() {
         {/* 공통사항 배너 */}
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 space-y-1">
           <p className="text-xs font-semibold text-blue-500 flex items-center gap-1"><Info className="h-3.5 w-3.5"/>공통사항</p>
-          <p className="text-xs text-foreground">• 검사 시 연장 서류 모두 제출 시 → 최초 2개월 없이 바로 조건부기간 부여 가능</p>
-          <p className="text-xs text-foreground">• 승강기민원24 보완연장신청 메뉴 신청 시 → 신청서 추가 불필요</p>
-          <p className="text-xs text-muted-foreground">근거: 검사규정 제13조제3항 · 제11조의2·제11조의3 (2026년 개정고시)</p>
+          <p className="text-xs text-foreground">• 조건부 항목 중 7대(엘리베이터) · 5대(에스컬레이터) 안전장치 보완내용이 조건부항목에 있는 현장에만 해당됩니다.</p>
+          <p className="text-xs text-foreground">• 기존 단계적 이행기간 부여(1단계·2단계 업무)는 고시 시행일로 종료되며, 모든 현장의 부품보완 이행기간은 세 번째 이후 네 번째 정밀안전검사까지(3년 연장)로 적용됩니다.</p>
+          <p className="text-xs text-muted-foreground">근거: 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)</p>
         </div>
 
         {/* Step 1: 건축물 유형 */}
@@ -364,35 +522,34 @@ export default function PrecisionInspectionPage() {
             <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
             <span className="text-sm font-semibold">건축물 유형</span>
           </div>
-          <Select value={buildingType} onValueChange={v => { setBuildingType(v); setSituation(""); setInspectionCount(""); setContractStatus(""); setResult(null); setError(""); }}>
+          <Select value={buildingType} onValueChange={v => { setBuildingType(v as any); setVersion(""); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); setResult(null); setError(""); }}>
             <SelectTrigger className="text-sm"><SelectValue placeholder="유형을 선택하세요" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="apartment">공동주택 (아파트 등)</SelectItem>
-              <SelectItem value="collective">집합건축물 (오피스텔 등)</SelectItem>
-              <SelectItem value="general">일반건축물 (그 외 건축물)</SelectItem>
+              <SelectItem value="apartment">공동주택 · 집합건축물</SelectItem>
+              <SelectItem value="general">일반건축물 (단계적 이행기간 적용현장)</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {/* Step 2: 연장 사유 */}
+        {/* Step 2: 현행/개정 */}
         {buildingType && (
           <div className="bg-card border border-border rounded-xl p-4 space-y-2">
             <div className="flex items-center gap-2 mb-1">
               <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
-              <span className="text-sm font-semibold">연장 사유</span>
+              <span className="text-sm font-semibold">현행 · 개정 구분</span>
             </div>
-            <Select value={situation} onValueChange={v => { setSituation(v); setInspectionCount(""); setContractStatus(""); setResult(null); setError(""); }}>
-              <SelectTrigger className="text-sm"><SelectValue placeholder="해당 사유를 선택하세요" /></SelectTrigger>
+            <Select value={version} onValueChange={v => { setVersion(v as any); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); setResult(null); setError(""); }}>
+              <SelectTrigger className="text-sm"><SelectValue placeholder="적용 규정을 선택하세요" /></SelectTrigger>
               <SelectContent>
-                {situationOptions.map(s => (
-                  <SelectItem key={s.value} value={s.value}>{s.title} — {s.sub}</SelectItem>
+                {versionOptions.map(o => (
+                  <SelectItem key={o.value} value={o.value}>{o.label} — {o.sub}{o.value === recommendedVersion ? " (추천)" : ""}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
         )}
 
-        {/* Step 3: 검사 회차 (부품보완 이행기간 연장 항목일 때만) */}
+        {/* Step 3: 검사 회차 (공동주택 · 개정) */}
         {needsInspectionCount && (
           <div className="bg-card border border-border rounded-xl p-4 space-y-2">
             <div className="flex items-center gap-2 mb-1">
@@ -406,24 +563,52 @@ export default function PrecisionInspectionPage() {
                 <SelectItem value="fourth">네 번째 정밀안전검사</SelectItem>
               </SelectContent>
             </Select>
-            {needsContractStatus && (
-              <Select value={contractStatus} onValueChange={v => { setContractStatus(v); setResult(null); setError(""); }}>
-                <SelectTrigger className="text-sm mt-2"><SelectValue placeholder="설치계약 상태 선택" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="contracted">설치계약 완료 (착수 전)</SelectItem>
-                  <SelectItem value="in_progress">설치공사 착수 중 (미완료)</SelectItem>
-                  <SelectItem value="not_contracted">설치계약 미체결</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
           </div>
         )}
 
-        {/* Step 4: 검사일자 */}
-        {situation && (!needsInspectionCount || inspectionCount) && (!needsContractStatus || contractStatus) && (
+        {/* Step 3: 현재 진행 상황 (일반건축물 · 개정) */}
+        {needsSection2Situation && (
+          <div className="bg-card border border-border rounded-xl p-4 space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
+              <span className="text-sm font-semibold">현재 진행 상황</span>
+            </div>
+            <Select value={section2Situation} onValueChange={v => { setSection2Situation(v); setContractStatus(""); setResult(null); setError(""); }}>
+              <SelectTrigger className="text-sm"><SelectValue placeholder="진행 상황 선택" /></SelectTrigger>
+              <SelectContent>
+                {SECTION2_DETAIL_SITUATIONS.map(s => (
+                  <SelectItem key={s.value} value={s.value}>{s.icon} {s.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Step 4: 설치계약 상태 (네 번째 정밀안전검사) */}
+        {needsContractStatus && (
+          <div className="bg-card border border-border rounded-xl p-4 space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
+              <span className="text-sm font-semibold">설치계약 상태</span>
+            </div>
+            <Select value={contractStatus} onValueChange={v => { setContractStatus(v); setResult(null); setError(""); }}>
+              <SelectTrigger className="text-sm"><SelectValue placeholder="설치계약 상태 선택" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="contracted">설치계약 완료 (착수 전)</SelectItem>
+                <SelectItem value="in_progress">설치공사 착수 중 (미완료)</SelectItem>
+                <SelectItem value="not_contracted">설치계약 미체결</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {/* Step: 검사일자 */}
+        {readyForDate && (
           <div className="bg-card border border-border rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
-              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">{needsInspectionCount ? 4 : 3}</span>
+              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">
+                {[true, true, needsInspectionCount || needsSection2Situation, needsContractStatus].filter(Boolean).length + 1}
+              </span>
               <span className="text-sm font-semibold">검사일자 입력</span>
             </div>
             <DatePicker label="정밀안전검사 실시일" value={inspectionDate} onChange={setInspectionDate} />
@@ -431,7 +616,7 @@ export default function PrecisionInspectionPage() {
         )}
 
         {/* 계산 버튼 */}
-        {situation && inspectionDate && (!needsInspectionCount || inspectionCount) && (!needsContractStatus || contractStatus) && (
+        {readyForDate && inspectionDate && (
           <Button className="w-full font-semibold" onClick={handleCalculate}>
             이행기간 및 필요서류 확인
           </Button>
@@ -488,35 +673,39 @@ export default function PrecisionInspectionPage() {
               <Building className="h-6 w-6 text-muted-foreground flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-semibold">일반건축물</p>
-                <p className="text-xs text-muted-foreground mt-0.5">그 외 모든 건축물</p>
+                <p className="text-xs text-muted-foreground mt-0.5">단계적 이행기간(1단계·2단계) 적용현장</p>
               </div>
               {buildingType === "general" && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
             </button>
           </div>
         )}
 
-        {/* 1단계: 현장 상황(연장 사유) 카드 */}
+        {/* 1단계: 현행/개정 카드 */}
         {cardStep === 1 && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground px-1">현장 상황을 눌러 선택하세요</p>
-            {situationOptions.map(s => (
+            <p className="text-xs text-muted-foreground px-1">적용 규정을 눌러 선택하세요</p>
+            {versionOptions.map(o => (
               <button
-                key={s.value}
-                onClick={() => cardSelectSituation(s.value)}
-                className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${situation === s.value ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+                key={o.value}
+                onClick={() => cardSelectVersion(o.value)}
+                className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${version === o.value ? "border-primary bg-primary/5" : "border-border bg-card"}`}
               >
-                <span className="text-xl flex-shrink-0">{s.icon}</span>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold">{s.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{s.sub}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold">{o.label}</p>
+                    {o.value === recommendedVersion && (
+                      <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full font-medium">추천</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{o.sub}</p>
                 </div>
-                {situation === s.value && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+                {version === o.value && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
               </button>
             ))}
           </div>
         )}
 
-        {/* 2단계: 검사 회차 (+ 설치계약 상태) 카드 */}
+        {/* 2단계: 검사 회차 (공동주택 · 개정) + 설치계약 상태 */}
         {cardStep === 2 && needsInspectionCount && (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground px-1">검사 회차를 눌러 선택하세요</p>
@@ -545,13 +734,57 @@ export default function PrecisionInspectionPage() {
               <div className="pt-2 space-y-2">
                 <p className="text-xs text-muted-foreground px-1">설치계약 상태를 눌러 선택하세요</p>
                 {[
-                  { v: "contracted", l: "설치계약 완료 (착수 전)", sub: "조건부합격 · 2개월 부여" },
-                  { v: "in_progress", l: "설치공사 착수 중 (미완료)", sub: "조건부합격 · 총 4개월 부여" },
+                  { v: "contracted", l: "설치계약 완료 (착수 전)", sub: "조건부 합격 · 2개월 부여" },
+                  { v: "in_progress", l: "설치공사 착수 중 (미완료)", sub: "조건부 합격 · 총 4개월 부여" },
                   { v: "not_contracted", l: "설치계약 미체결", sub: "불합격" },
                 ].map(c => (
                   <button
                     key={c.v}
-                    onClick={() => { setContractStatus(c.v); setResult(null); setError(""); setCardStep(3); }}
+                    onClick={() => cardSelectContractStatus(c.v)}
+                    className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${contractStatus === c.v ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+                  >
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold">{c.l}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{c.sub}</p>
+                    </div>
+                    {contractStatus === c.v && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 2단계: 현재 진행 상황 (일반건축물 · 개정) + 설치계약 상태 */}
+        {cardStep === 2 && needsSection2Situation && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground px-1">현재 진행 상황을 눌러 선택하세요</p>
+            {SECTION2_DETAIL_SITUATIONS.map(s => (
+              <button
+                key={s.value}
+                onClick={() => cardSelectSection2Situation(s.value)}
+                className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${section2Situation === s.value ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+              >
+                <span className="text-lg font-bold text-primary flex-shrink-0 w-5 text-center">{s.icon}</span>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold">{s.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{s.sub}</p>
+                </div>
+                {section2Situation === s.value && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+              </button>
+            ))}
+
+            {section2Situation === "fourth_inspection" && (
+              <div className="pt-2 space-y-2">
+                <p className="text-xs text-muted-foreground px-1">설치계약 상태를 눌러 선택하세요</p>
+                {[
+                  { v: "contracted", l: "설치계약 완료 (착수 전)", sub: "조건부 합격 · 2개월 부여" },
+                  { v: "in_progress", l: "설치공사 착수 중 (미완료)", sub: "조건부 합격 · 총 4개월 부여" },
+                  { v: "not_contracted", l: "설치계약 미체결", sub: "불합격" },
+                ].map(c => (
+                  <button
+                    key={c.v}
+                    onClick={() => cardSelectContractStatus(c.v)}
                     className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${contractStatus === c.v ? "border-primary bg-primary/5" : "border-border bg-card"}`}
                   >
                     <div className="flex-1">
@@ -614,11 +847,6 @@ export default function PrecisionInspectionPage() {
                   ))}
                 </div>
               )}
-              {result.applicableTarget && (
-                <div className="mt-2 bg-blue-500/10 rounded-lg p-2">
-                  <p className="text-xs text-blue-500">적용 대상: {result.applicableTarget}</p>
-                </div>
-              )}
             </div>
 
             {/* 2. 이행기간 + 행정절차 */}
@@ -627,12 +855,11 @@ export default function PrecisionInspectionPage() {
                 <ClipboardList className="h-4 w-4 text-primary" />
                 <span className="text-sm font-semibold">이행기간 및 행정 처리 절차</span>
               </div>
-              {/* 날짜 계산 */}
               {result.dates && (
                 <div className="bg-muted/30 rounded-lg p-3 mb-3 space-y-1.5">
                   <p className="text-xs text-muted-foreground">📅 검사일: <span className="font-semibold text-foreground">{formatDate(result.base)}</span></p>
                   {result.initialMonths > 0 && (
-                    <p className="text-xs text-muted-foreground">⏱ 최초 조건부합격 만료: <span className="font-semibold text-foreground">{formatDate(addMonths(result.base, result.initialMonths))}</span> (+{result.initialMonths}개월)</p>
+                    <p className="text-xs text-muted-foreground">⏱ 최초 조건부 합격 만료: <span className="font-semibold text-foreground">{formatDate(addMonths(result.base, result.initialMonths))}</span> (+{result.initialMonths}개월)</p>
                   )}
                   <div className="border-t border-border pt-1.5">
                     <p className="text-xs text-muted-foreground">🏁 최종 이행 마감일</p>
@@ -647,9 +874,8 @@ export default function PrecisionInspectionPage() {
                   <p className="text-xs text-amber-500 mt-1">이행기간은 상황에 따라 결정됩니다 (아래 절차 참고)</p>
                 </div>
               )}
-              {/* 행정절차 */}
               <div className="space-y-1.5">
-                {result.adminProcess.map((step: string, i: number) => (
+                {(result.adminProcess || []).map((step: string, i: number) => (
                   <p key={i} className="text-xs leading-relaxed text-foreground pl-1">{step}</p>
                 ))}
               </div>
@@ -690,15 +916,61 @@ export default function PrecisionInspectionPage() {
 
             {/* 출처 */}
             <p className="text-xs text-muted-foreground text-center pb-4">
-              출처: 한국승강기안전공단 검사총괄실 · 검사규정 제13조제3항, 제11조의2·제11조의3 (2026년 개정고시)
+              출처: 한국승강기안전공단 검사총괄실 · 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)
             </p>
           </div>
         )}
       </div>
+
+      {/* 관리자 비밀번호 모달 */}
+      {showAdminPw && createPortal(
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { setShowAdminPw(false); setPwInput(""); }}>
+          <div className="bg-card rounded-2xl p-6 w-full max-w-xs flex flex-col gap-4 text-center" onClick={ev => ev.stopPropagation()}>
+            <Lock size={28} className="mx-auto text-amber-500" />
+            <h3 className="text-sm font-medium">관리자 권한 확인</h3>
+            <p className="text-xs text-muted-foreground">관리자 비밀번호를 입력하세요</p>
+            <input
+              type="password" value={pwInput} onChange={e => setPwInput(e.target.value)} autoFocus
+              onKeyDown={e => { if (e.key === "Enter") {
+                if (pwInput === ADMIN_PASSWORD) { setIsAdminMode(true); setShowAdminPw(false); setPwInput(""); }
+                else { alert("비밀번호가 틀렸습니다."); setPwInput(""); }
+              }}}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-secondary text-center tracking-widest"
+              placeholder="••••••"
+            />
+            <div className="flex gap-2">
+              <button onClick={() => { setShowAdminPw(false); setPwInput(""); }} className="flex-1 py-2 text-sm border border-border rounded-xl hover:bg-secondary">취소</button>
+              <button onClick={() => {
+                if (pwInput === ADMIN_PASSWORD) { setIsAdminMode(true); setShowAdminPw(false); setPwInput(""); }
+                else { alert("비밀번호가 틀렸습니다."); setPwInput(""); }
+              }} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">확인</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* 고시 발령일 수정 모달 (관리자) */}
+      {showNoticeEditor && createPortal(
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowNoticeEditor(false)}>
+          <div className="bg-card rounded-2xl p-6 w-full max-w-xs flex flex-col gap-4" onClick={ev => ev.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium">고시 발령일 수정</h3>
+              <button onClick={() => setShowNoticeEditor(false)}><X className="h-4 w-4 text-muted-foreground" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground">이 날짜를 기준으로 3개월이 지나면 개정 규정이 자동으로 "추천" 표시됩니다.</p>
+            <input
+              type="date" value={noticeDateDraft} onChange={e => setNoticeDateDraft(e.target.value)}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-secondary"
+            />
+            <div className="flex gap-2">
+              <button onClick={resetNoticeDate} className="flex-1 py-2 text-xs border border-border rounded-xl hover:bg-secondary">오늘 날짜로 초기화</button>
+              <button onClick={() => noticeDateDraft && saveNoticeDate(noticeDateDraft)} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">저장</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
-}
-
-function isApartmentType(buildingType: string) {
-  return buildingType === "apartment" || buildingType === "collective";
 }
