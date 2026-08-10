@@ -1945,7 +1945,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let articleCards: any[] = [];
       // articleCards는 최종 답변 확정 후 채워짐 (아래 참고)
       try {
-        const refMatches = userQuestion.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g);
+        const refMatches = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g);
         if (refMatches && refMatches.length > 0) {
           const uniqueRefs = [...new Set(refMatches)].slice(0, 5) as string[];
           const { pool: pgPool } = await import("./db");
@@ -1988,6 +1988,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (e) {
         // 조문 DB 조회 실패 시 무시
+      }
+
+      // ── 조문 연혁 키워드 검색 (조문번호를 언급하지 않는 질문도 커버) ──
+      // 예: "장애인용 점형블럭" 처럼 조문번호 없이 주제로만 물어봐도
+      // inspection_item_revisions.description에서 키워드로 찾아 컨텍스트에 포함시킨다.
+      try {
+        const STOPWORDS = new Set([
+          "관련", "대해", "대한", "알려줘", "무엇", "뭐", "어떻게", "해야", "하는지",
+          "확인", "경우", "있는지", "해줘", "그리고", "되나요", "되는지", "인가요",
+          "입니다", "궁금해요", "궁금합니다", "엘리베이터", "승강기", "기준", "조문", "규정", "조항",
+        ]);
+        const tokens = (userQuestion.match(/[가-힣A-Za-z0-9]+/g) || [])
+          .filter((t: string) => t.length >= 2 && !STOPWORDS.has(t));
+        const uniqueTokens = [...new Set(tokens)].slice(0, 6) as string[];
+        if (uniqueTokens.length > 0) {
+          const { pool: kwPool } = await import("./db");
+          const existingIds = new Set(articleCards.map((a: any) => a.itemId));
+          const likeConds = uniqueTokens.map((_, i) => `description ILIKE $${i + 1}`).join(" OR ");
+          const matchCountExpr = uniqueTokens.map((_, i) => `(CASE WHEN description ILIKE $${i + 1} THEN 1 ELSE 0 END)`).join(" + ");
+          const likeParams = uniqueTokens.map(t => `%${t}%`);
+          const kwRows = await kwPool.query(
+            `SELECT item_id, introduction_type, effective_date, expiry_date, description,
+                    (${matchCountExpr}) AS match_count
+             FROM inspection_item_revisions
+             WHERE (${likeConds})
+               AND introduction_type IN ('current', 'old')
+               AND description IS NOT NULL AND TRIM(description) != ''
+             ORDER BY match_count DESC, effective_date DESC NULLS FIRST
+             LIMIT 8`,
+            likeParams
+          );
+          const newRows = (kwRows.rows as any[]).filter(r => !existingIds.has(r.item_id));
+          if (newRows.length > 0) {
+            const revText = newRows.map((r: any) => {
+              const dateInfo = r.introduction_type === 'current'
+                ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
+                : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
+              return `[${r.item_id}] ${dateInfo}\n${r.description}`;
+            }).join("\n\n");
+            sections.push("[키워드 매칭 조문 연혁]\n" + revText);
+
+            const kwGrouped: Record<string, any[]> = {};
+            for (const r of newRows) {
+              if (!kwGrouped[r.item_id]) kwGrouped[r.item_id] = [];
+              kwGrouped[r.item_id].push({
+                type: r.introduction_type === 'current' ? 'current' : 'old',
+                effectiveDate: r.effective_date,
+                expiryDate: r.expiry_date,
+                description: r.description,
+              });
+            }
+            articleCards.push(...Object.entries(kwGrouped).map(([itemId, versions]) => ({ itemId, versions })));
+          }
+        }
+      } catch (e) {
+        // 키워드 조문 연혁 검색 실패 시 무시
       }
 
       const contextText = (sections.length > 0 || elevatorInfoSection || goodAnswerRefSection)
@@ -2269,8 +2325,8 @@ ${answerRules}${contextText}${memoSection}`,
 
       // AI 답변에서 조문번호 추출 → articleCards 보완
       try {
-        const answerRefs = reply.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
-        const questionRefs = userQuestion.match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
+        const answerRefs = reply.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g) || [];
+        const questionRefs = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g) || [];
         const allRefs = [...new Set([...answerRefs, ...questionRefs])].slice(0, 5) as string[];
         const existingIds = new Set(articleCards.map((a: any) => a.itemId));
         const newRefs = allRefs.filter(r => !existingIds.has(r));
