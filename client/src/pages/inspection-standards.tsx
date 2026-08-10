@@ -526,11 +526,15 @@ export default function InspectionStandardsPage() {
                 <p className="text-xs text-muted-foreground px-2 py-1.5 font-medium">
                   "{query.trim()}" 검색 결과 · {searchHits.length}건 (현행 + 전체 연도)
                 </p>
-                {searchHits.map((h, i) => (
+                {searchHits.map((h, i) => {
+                  const isActiveHit = activeKey === h.itemId && selectedDoc === h.docId;
+                  return (
                   <button
                     key={`${h.docId}-${h.itemId}-${i}`}
-                    onClick={() => { setSelectedDoc(h.docId); setActiveKey(h.itemId); setShowSearch(false); setQuery(""); setSearchHits([]); }}
-                    className="w-full text-left border border-border rounded-xl px-3 py-2.5 hover:bg-secondary transition-colors"
+                    onClick={() => { setSelectedDoc(h.docId); setActiveKey(h.itemId); }}
+                    className={`w-full text-left border rounded-xl px-3 py-2.5 transition-colors ${
+                      isActiveHit ? "border-primary bg-primary/10" : "border-border hover:bg-secondary"
+                    }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-[9px] shrink-0 rounded-full px-1.5 py-0.5 ${
@@ -541,7 +545,8 @@ export default function InspectionStandardsPage() {
                     </div>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">{h.snippet}</p>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center flex-1 text-muted-foreground py-12">
