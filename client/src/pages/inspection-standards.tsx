@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -280,9 +281,9 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
             {photos.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">등록된 사진이 없습니다.</p>
             ) : (
-              <div className="grid grid-cols-3 gap-2">
+              <div className="flex flex-wrap gap-2">
                 {photos.map((p, i) => (
-                  <div key={p.id} className="relative aspect-square cursor-pointer" onClick={() => setPhotoViewer({ open: true, idx: i })}>
+                  <div key={p.id} className="relative w-24 h-24 shrink-0 cursor-pointer" onClick={() => setPhotoViewer({ open: true, idx: i })}>
                     <img src={photoUrl(p.id)} alt="" className="w-full h-full object-cover rounded-lg border border-border" />
                     {isAdminMode && (
                       <button onClick={ev => { ev.stopPropagation(); deletePhoto.mutate(p.id); }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
@@ -294,8 +295,8 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
           </div>
         )}
 
-        {/* 사진 전체화면 뷰어 */}
-        {photoViewer.open && photos.length > 0 && (
+        {/* 사진 전체화면 뷰어 — body에 직접 렌더링 (SwipeNavigator의 pinch-zoom transform 컨테이너를 벗어나야 태블릿에서 fixed 위치가 정상 동작함) */}
+        {photoViewer.open && photos.length > 0 && createPortal(
           <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setPhotoViewer({ open: false, idx: 0 })}>
             <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={ev => ev.stopPropagation()}>
               <span className="text-white text-xs">{photoViewer.idx + 1} / {photos.length}</span>
@@ -329,7 +330,8 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
                 ))}
               </div>
             )}
-          </div>
+          </div>,
+          document.body
         )}
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {displaySource}</p>
       </div>
@@ -474,11 +476,9 @@ export default function InspectionStandardsPage() {
   }, [query, dataMap]);
 
   const handleClose = () => {
+    // 검색 중이었다면 검색 상태(검색창·검색 결과)는 유지 — 태블릿처럼 상세보기가 좌측 패널을
+    // 가리는 화면 폭에서도 닫기 후 검색 결과 목록으로 그대로 돌아올 수 있도록 함
     setActiveKey(null);
-    // 검색 상태 초기화 — 원래 화면(트리)으로 복귀
-    setShowSearch(false);
-    setQuery("");
-    setSearchHits([]);
   };
 
 
