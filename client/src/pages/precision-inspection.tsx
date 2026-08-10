@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, FileText, ClipboardList, AlertTriangle, CheckCircle2, Info, ListChecks, LayoutGrid, ArrowLeft, Building2, Building, Settings, Lock, Pencil, X } from "lucide-react";
+import { Calendar, FileText, ClipboardList, AlertTriangle, CheckCircle2, Info, ListChecks, LayoutGrid, Building2, Building, Settings, Lock, Pencil, X, RotateCcw } from "lucide-react";
 
 // ── 날짜 계산 유틸 ──
 function addMonths(date: Date, months: number): Date {
@@ -28,6 +28,9 @@ const NOTICE_DATE_KEY = "precisionInspectionNoticeDate";
 // 규정 데이터 — 2026년 개정고시 "정밀안전검사 관련 승강기 부품 보완
 // 이행기간 연장" 전면 반영 (근거: 「승강기 설치검사 및 안전검사에
 // 관한 운영규정」 제11조의2·제11조의3, 검사운영실-5944)
+//
+// ※ 필요서류 · 업무처리 절차 세부 문구는 원본 고시 문서 확인 후
+//   보완이 필요할 수 있습니다.
 // ══════════════════════════════════════════════════════════════
 
 // 네 번째 정밀안전검사 시 설치계약 상태별 판정 — 공동주택 계열과
@@ -73,11 +76,9 @@ const SECTION1: Record<"current" | "amended", any> = {
       { title: "서면동의서", detail: "입주자 등(구분소유자) 3분의 2 이상 동의" },
     ],
     basis: "검사운영실-5944(2021.12.15.) · 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2",
-    adminProcess: [
-      "① 관리주체: 서면동의서(2/3 이상 동의) 제출",
-      "② 검사기관: 동의율 확인 및 서류 검토",
-      "③ 검사기관: 조건부 합격 처리 및 3년 유예 부여",
-      "④ 네 번째 정밀안전검사 시: 조건부 합격(2개월) 부여 후 최종판정",
+    processSteps: [
+      "① 관리주체: 서면동의서 제출 (입주자 등 3분의 2 이상 동의)",
+      "② 검사기관: 네 번째 정밀안전검사 시 조건부 합격(2개월) 부여 후 최종판정",
     ],
     note: "고시 발령 후 3개월이 지나면 개정 규정이 의무 적용됩니다. 현행 규정으로 이미 3년 연장을 받은 경우, 개정 시행 후 3종 서류(설치 이행계획서·안내 경고문 부착 증명자료)를 추가로 제출하지 않아도 됩니다.",
     warning: "고시 발령 후 3개월 이후에는 설치계약 미계약 시 검사일 판정이 조건부→불합격으로 변경됨을 관리주체에게 반드시 안내해야 합니다.",
@@ -104,7 +105,7 @@ const SECTION2: Record<"current" | "amended", any> = {
       { title: "단계별 이행계획서 등", detail: "1단계(1년 6개월) → 2단계(1년) 순차 연장" },
     ],
     basis: "검사운영실-5944(2021.12.15.)",
-    adminProcess: [
+    processSteps: [
       "① 관리주체: 단계별 이행계획서 등 제출",
       "② 검사기관: 1단계(1년 6개월) 부여 후 미조치 시 2단계(1년) 추가 연장",
       "③ 대체 정밀안전검사 시: 미설치 상태면 이행계획의 남은 기간 기준으로 조건부 합격 처리",
@@ -139,7 +140,7 @@ const SECTION2_DETAIL_SITUATIONS = [
       { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
       { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
     ],
-    adminProcess: [
+    processSteps: [
       "① 관리주체: 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
       "② 검사기관: 정기검사 시 공동주택·집합건축물 적용현장과 동일한 절차로 처리",
     ],
@@ -156,7 +157,7 @@ const SECTION2_DETAIL_SITUATIONS = [
       { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
       { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
     ],
-    adminProcess: [
+    processSteps: [
       "① 관리주체: 조건부 기간 내 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
       "② 검사기관: 서류 확인 후 조건부 합격 처리",
     ],
@@ -173,7 +174,7 @@ const SECTION2_DETAIL_SITUATIONS = [
       { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
       { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
     ],
-    adminProcess: [
+    processSteps: [
       "① 검사기관: 안내문 생성 및 발송 완료 (접수완료 포함)",
       "② 검사기관: 대체 정밀안전검사 실시",
       "③ 관리주체: 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
@@ -193,7 +194,7 @@ const SECTION2_DETAIL_SITUATIONS = [
       { title: "설치 이행계획서", detail: "종전 계획서와 별도로 신규 계획서를 제출받아야 함" },
       { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
     ],
-    adminProcess: [
+    processSteps: [
       "① 관리주체: 조건부 기간 내 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
       "② 검사기관: 서류 확인 후 조건부 합격 처리",
       "③ 네 번째 정밀안전검사도 실시해야 함",
@@ -204,27 +205,27 @@ const SECTION2_DETAIL_SITUATIONS = [
     icon: "④",
     title: "네 번째 정밀안전검사 판정",
     sub: "설치계약 상태에 따라 판정",
-    judgment: "__FOURTH__", // computeResult에서 계약상태 분기로 대체
   },
 ];
 
-function buildFourthResult(status: string, base: Date, basis: string) {
+function buildFourthResult(status: string, base: Date | null, basis: string, applicablePeriod?: string) {
   const branch = FOURTH_INSPECTION_JUDGMENTS[status];
+  const contextNote = "설치검사에 합격한 날부터 24년이 지나 실시하는 네 번째 정밀안전검사 시 부여되는 이행기간입니다.";
   return {
     inspectionType: "네 번째 정밀안전검사",
     judgment: branch.judgment,
     basis,
+    applicablePeriod,
     requiredDocs: branch.requiredDocs,
-    adminProcess: [
+    processSteps: [
       "① 검사기관: 네 번째 정밀안전검사 실시",
       `② 관리주체: 설치계약 상태 확인 — ${branch.label}`,
       `③ 검사기관: ${branch.judgment}`,
     ],
-    note: branch.note,
+    note: branch.note ? `${contextNote} ${branch.note}` : contextNote,
     warning: branch.warning,
-    dates: branch.extensionMonths ? { deadline: addMonths(base, branch.extensionMonths) } : null,
+    dates: (base && branch.extensionMonths) ? { deadline: addMonths(base, branch.extensionMonths) } : null,
     base,
-    initialMonths: 0,
   };
 }
 
@@ -247,7 +248,7 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
       <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
       <div className="flex items-center gap-2 border border-border rounded-xl px-3 py-2.5 cursor-pointer hover:border-primary bg-card" onClick={() => setShow(!show)}>
         <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-        <span className={`text-sm ${value ? "text-foreground font-medium" : "text-muted-foreground"}`}>{value ? value.replace(/-/g, ". ") : "검사일자 선택"}</span>
+        <span className={`text-sm ${value ? "text-foreground font-medium" : "text-muted-foreground"}`}>{value ? value.replace(/-/g, ". ") : "날짜 선택"}</span>
       </div>
       {show && (
         <div className="absolute z-50 mt-1 bg-card border border-border rounded-xl shadow-xl p-4 w-72 left-0">
@@ -270,18 +271,113 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
+// ── 결과 블록 (공통) ──
+function ResultBlock({ result }: { result: any }) {
+  return (
+    <div className="space-y-3">
+      {/* 0. 적용시점 */}
+      {result.applicablePeriod && (
+        <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-2.5 flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">적용시점</span>
+          <span className="text-xs font-semibold text-foreground">{result.applicablePeriod}</span>
+        </div>
+      )}
+
+      {/* 1. 필요서류 */}
+      <div className="bg-card border border-border rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <FileText className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">필요 서류</span>
+        </div>
+        {result.requiredDocs.length === 0 ? (
+          <p className="text-xs text-muted-foreground">해당 없음</p>
+        ) : (
+          <div className="space-y-2">
+            {result.requiredDocs.map((doc: any, i: number) => (
+              <div key={i} className="flex items-start gap-2 bg-muted/30 rounded-lg p-2.5">
+                <span className="text-primary text-xs font-bold flex-shrink-0 mt-0.5">{i+1}</span>
+                <div>
+                  <p className="text-xs font-semibold text-foreground">{doc.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{doc.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 2. 업무처리 절차 */}
+      <div className="bg-card border border-border rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <ClipboardList className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">업무처리 절차</span>
+        </div>
+        {result.base && result.dates && (
+          <div className="bg-muted/30 rounded-lg p-3 mb-3 space-y-1.5">
+            <p className="text-xs text-muted-foreground">📅 기준일: <span className="font-semibold text-foreground">{formatDate(result.base)}</span></p>
+            <div className="border-t border-border pt-1.5">
+              <p className="text-xs text-muted-foreground">🏁 이행(만료) 기한</p>
+              <p className="text-base font-bold text-primary">{formatDate(result.dates.deadline)}</p>
+              <p className="text-xs text-muted-foreground">기준일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후</p>
+            </div>
+          </div>
+        )}
+        <div className="space-y-1.5">
+          {(result.processSteps || []).map((step: string, i: number) => (
+            <p key={i} className="text-xs leading-relaxed text-foreground pl-1">{step}</p>
+          ))}
+        </div>
+      </div>
+
+      {/* 3. 주의사항 */}
+      {result.note && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+            <span className="text-xs font-semibold text-amber-500">주의사항</span>
+          </div>
+          <p className="text-xs text-foreground">{result.note}</p>
+        </div>
+      )}
+      {result.warning && (
+        <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+            <span className="text-xs font-semibold text-destructive">경고</span>
+          </div>
+          <p className="text-xs text-foreground">{result.warning}</p>
+        </div>
+      )}
+
+      {/* 4. 판정 결과 요약 */}
+      <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <CheckCircle2 className="h-4 w-4 text-primary" />
+          <span className="text-sm font-bold text-primary">판정 결과 요약</span>
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-xs text-muted-foreground">적용 검사: <span className="text-foreground font-medium">{result.inspectionType}</span></p>
+          <p className="text-xs text-muted-foreground">판정 유형: <span className="text-foreground font-medium">{result.judgment}</span></p>
+          <p className="text-xs text-muted-foreground">근거 법령: <span className="text-foreground font-medium">{result.basis}</span></p>
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground text-center pb-4">
+        출처: 한국승강기안전공단 검사총괄실 · 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)
+      </p>
+    </div>
+  );
+}
+
 // ── 메인 ──
 export default function PrecisionInspectionPage() {
   const [mode, setMode] = useState<"guide" | "card">("guide");
-  const [cardStep, setCardStep] = useState(0);
   const [buildingType, setBuildingType] = useState<"" | "apartment" | "general">("");
   const [version, setVersion] = useState<"" | "current" | "amended">("");
   const [inspectionCount, setInspectionCount] = useState("");
   const [section2Situation, setSection2Situation] = useState("");
   const [contractStatus, setContractStatus] = useState("");
-  const [inspectionDate, setInspectionDate] = useState("");
-  const [result, setResult] = useState<any>(null);
-  const [error, setError] = useState("");
+  const [cardDate, setCardDate] = useState(""); // 현장진단 모드 전용: 세 번째 정밀안전검사 실시일
 
   // 관리자 모드 + 고시 발령일
   const [isAdminMode, setIsAdminMode] = useState(false);
@@ -293,8 +389,6 @@ export default function PrecisionInspectionPage() {
   });
   const [noticeDateDraft, setNoticeDateDraft] = useState("");
   const noticeDate = noticeDateOverride || todayStr();
-  const monthsSinceNotice = monthsDiff(new Date(noticeDate), new Date());
-  const recommendedVersion: "current" | "amended" = monthsSinceNotice >= 3 ? "amended" : "current";
 
   const saveNoticeDate = (v: string) => {
     try { localStorage.setItem(NOTICE_DATE_KEY, v); } catch {}
@@ -309,8 +403,7 @@ export default function PrecisionInspectionPage() {
 
   const resetAll = () => {
     setBuildingType(""); setVersion(""); setInspectionCount(""); setSection2Situation("");
-    setContractStatus(""); setInspectionDate(""); setResult(null); setError("");
-    setCardStep(0);
+    setContractStatus(""); setCardDate("");
   };
 
   const isSection1 = buildingType === "apartment";
@@ -320,53 +413,17 @@ export default function PrecisionInspectionPage() {
   const needsContractStatus =
     (needsInspectionCount && inspectionCount === "fourth") ||
     (needsSection2Situation && section2Situation === "fourth_inspection");
-  const readyForDate =
-    buildingType && version &&
-    (!needsInspectionCount || inspectionCount) &&
-    (!needsSection2Situation || section2Situation) &&
-    (!needsContractStatus || contractStatus);
 
-  // ── 카드 모드 네비게이션 ──
-  const cardSelectBuildingType = (v: "apartment" | "general") => {
-    setBuildingType(v); setVersion(""); setInspectionCount(""); setSection2Situation(""); setContractStatus("");
-    setResult(null); setError("");
-    setCardStep(1);
-  };
-  const cardSelectVersion = (v: "current" | "amended") => {
-    setVersion(v); setInspectionCount(""); setSection2Situation(""); setContractStatus("");
-    setResult(null); setError("");
-    const needsMore = (isSection1 && v === "amended") || (isSection2 && v === "amended");
-    setCardStep(needsMore ? 2 : 3);
-  };
-  const cardSelectInspectionCount = (v: string) => {
-    setInspectionCount(v); setContractStatus(""); setResult(null); setError("");
-    if (v !== "fourth") setCardStep(3);
-  };
-  const cardSelectSection2Situation = (v: string) => {
-    setSection2Situation(v); setContractStatus(""); setResult(null); setError("");
-    if (v !== "fourth_inspection") setCardStep(3);
-  };
-  const cardSelectContractStatus = (v: string) => {
-    setContractStatus(v); setResult(null); setError("");
-    setCardStep(3);
-  };
-  const cardGoBack = () => {
-    if (cardStep === 0) return;
-    if (cardStep === 1) { setVersion(""); setCardStep(0); return; }
-    if (cardStep === 2) { setInspectionCount(""); setSection2Situation(""); setContractStatus(""); setCardStep(1); return; }
-    if (cardStep === 3) {
-      if (needsInspectionCount || needsSection2Situation) { setCardStep(2); }
-      else { setVersion(""); setCardStep(1); }
-      return;
-    }
-  };
+  const selectionsReady =
+    !!buildingType && !!version &&
+    (!needsInspectionCount || !!inspectionCount) &&
+    (!needsSection2Situation || !!section2Situation) &&
+    (!needsContractStatus || !!contractStatus);
 
-  // ── 결과 계산 ──
-  const computeResult = (): any => {
-    if (!buildingType || !version || !inspectionDate) {
-      return { error: "건축물 유형, 현행/개정 구분, 검사일자를 모두 입력해주세요." };
-    }
-    const base = new Date(inspectionDate);
+  // ── 결과 계산 (dateStr === null이면 날짜 없이 안내용 결과) ──
+  const getResult = (dateStr: string | null): any => {
+    if (!buildingType || !version) return { error: "건축물 유형과 현행/개정 구분을 선택해주세요." };
+    const base = dateStr ? new Date(dateStr) : null;
     const sectionData = isSection1 ? SECTION1 : SECTION2;
     const versionData = sectionData[version];
 
@@ -375,13 +432,13 @@ export default function PrecisionInspectionPage() {
         inspectionType: isSection1 ? "네 번째 정밀안전검사" : "2단계 연장 이후 대체 정밀안전검사",
         judgment: isSection1 ? "조건부 합격(2개월) 후 최종판정" : "미설치 시 조건부 합격 (이행계획의 남은 기간 기준 조건부 일자 부여)",
         basis: versionData.basis,
+        applicablePeriod: versionData.applicablePeriod,
         requiredDocs: versionData.requiredDocs,
-        adminProcess: versionData.adminProcess,
+        processSteps: versionData.processSteps,
         note: versionData.note,
         warning: versionData.warning || null,
-        dates: { deadline: addMonths(base, 2) },
+        dates: base ? { deadline: addMonths(base, 2) } : null,
         base,
-        initialMonths: 0,
       };
     }
 
@@ -390,29 +447,29 @@ export default function PrecisionInspectionPage() {
       if (!inspectionCount) return { error: "검사 회차(세 번째 · 네 번째)를 선택해주세요." };
       if (inspectionCount === "fourth") {
         if (!contractStatus) return { error: "네 번째 정밀안전검사의 설치계약 상태를 선택해주세요." };
-        return buildFourthResult(contractStatus, base, versionData.basis);
+        return buildFourthResult(contractStatus, base, versionData.basis, versionData.applicablePeriod);
       }
       return {
         inspectionType: "세 번째 정밀안전검사",
         judgment: "조건부 합격 → 3년 연장 (네 번째 정밀안전검사 시 재판정)",
         basis: versionData.basis,
+        applicablePeriod: versionData.applicablePeriod,
         requiredDocs: versionData.requiredDocs,
-        adminProcess: [
+        processSteps: [
           "① 관리주체: 서면동의서(2/3 이상) + 설치 이행계획서 + 안내 경고문 부착 증명자료 제출",
           "② 검사기관: 동의율 및 서류 검토",
           "③ 검사기관: 조건부 합격 처리 + 세 번째 정밀안전검사일 기준 네 번째 정밀안전검사까지 3년 연장 부여",
         ],
         note: versionData.note,
         warning: null,
-        dates: { deadline: addMonths(base, 36) },
+        dates: base ? { deadline: addMonths(base, 36) } : null,
         base,
-        initialMonths: 0,
       };
     } else {
       if (!section2Situation) return { error: "현재 진행 상황을 선택해주세요." };
       if (section2Situation === "fourth_inspection") {
         if (!contractStatus) return { error: "네 번째 정밀안전검사의 설치계약 상태를 선택해주세요." };
-        return buildFourthResult(contractStatus, base, versionData.basis);
+        return buildFourthResult(contractStatus, base, versionData.basis, versionData.applicablePeriod);
       }
       const sit = SECTION2_DETAIL_SITUATIONS.find(s => s.value === section2Situation);
       if (!sit) return { error: "현재 진행 상황을 다시 선택해주세요." };
@@ -420,23 +477,19 @@ export default function PrecisionInspectionPage() {
         inspectionType: sit.inspectionType,
         judgment: sit.judgment,
         basis: versionData.basis,
+        applicablePeriod: versionData.applicablePeriod,
         requiredDocs: sit.requiredDocs,
-        adminProcess: sit.adminProcess,
+        processSteps: sit.processSteps,
         note: versionData.note,
         warning: null,
         dates: null,
         base,
-        initialMonths: 0,
       };
     }
   };
 
-  const handleCalculate = () => {
-    setError(""); setResult(null);
-    const r = computeResult();
-    if (r.error) { setError(r.error); return; }
-    setResult(r);
-  };
+  const guideResult = selectionsReady ? getResult(null) : null;
+  const cardResult = (selectionsReady && cardDate) ? getResult(cardDate) : null;
 
   const versionOptions: { value: "current" | "amended"; label: string; sub: string }[] = isSection1
     ? [
@@ -460,7 +513,7 @@ export default function PrecisionInspectionPage() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-lg font-bold tracking-tight">정밀안전검사</h1>
-                <p className="text-xs text-muted-foreground truncate">부품보완 이행기간 연장 · 필요서류 · 행정처리 안내</p>
+                <p className="text-xs text-muted-foreground truncate">부품보완 이행기간 연장 · 필요서류 · 업무처리 안내</p>
               </div>
             </div>
             <Button
@@ -491,23 +544,26 @@ export default function PrecisionInspectionPage() {
       <div className="p-4 space-y-4 max-w-lg mx-auto">
 
         {/* 모드 전환 탭 */}
-        <div className="flex gap-1.5 bg-muted rounded-xl p-1">
-          <button
-            onClick={() => { setMode("guide"); resetAll(); }}
-            className={`flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors ${mode === "guide" ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground"}`}
-          >
-            <ListChecks className="h-3.5 w-3.5" />단계별 안내
-          </button>
-          <button
-            onClick={() => { setMode("card"); resetAll(); }}
-            className={`flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors ${mode === "card" ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground"}`}
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />현장 진단
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1.5 bg-muted rounded-xl p-1 flex-1">
+            <button
+              onClick={() => { setMode("guide"); resetAll(); }}
+              className={`flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors ${mode === "guide" ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground"}`}
+            >
+              <ListChecks className="h-3.5 w-3.5" />단계별 안내
+            </button>
+            <button
+              onClick={() => { setMode("card"); resetAll(); }}
+              className={`flex-1 py-2 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-colors ${mode === "card" ? "bg-card font-semibold text-foreground shadow-sm" : "text-muted-foreground"}`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />현장 진단
+            </button>
+          </div>
+          <button onClick={resetAll} className="w-9 h-9 rounded-xl border border-border bg-card flex items-center justify-center flex-shrink-0" title="처음부터 다시">
+            <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </div>
 
-        {mode === "guide" && (
-        <>
         {/* 공통사항 배너 */}
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 space-y-1">
           <p className="text-xs font-semibold text-blue-500 flex items-center gap-1"><Info className="h-3.5 w-3.5"/>공통사항</p>
@@ -516,13 +572,15 @@ export default function PrecisionInspectionPage() {
           <p className="text-xs text-muted-foreground">근거: 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)</p>
         </div>
 
+        {mode === "guide" && (
+        <>
         {/* Step 1: 건축물 유형 */}
         <div className="bg-card border border-border rounded-xl p-4 space-y-2">
           <div className="flex items-center gap-2 mb-1">
             <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
             <span className="text-sm font-semibold">건축물 유형</span>
           </div>
-          <Select value={buildingType} onValueChange={v => { setBuildingType(v as any); setVersion(""); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); setResult(null); setError(""); }}>
+          <Select value={buildingType} onValueChange={v => { setBuildingType(v as any); setVersion(""); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); }}>
             <SelectTrigger className="text-sm"><SelectValue placeholder="유형을 선택하세요" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="apartment">공동주택 · 집합건축물</SelectItem>
@@ -538,11 +596,11 @@ export default function PrecisionInspectionPage() {
               <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
               <span className="text-sm font-semibold">현행 · 개정 구분</span>
             </div>
-            <Select value={version} onValueChange={v => { setVersion(v as any); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); setResult(null); setError(""); }}>
+            <Select value={version} onValueChange={v => { setVersion(v as any); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); }}>
               <SelectTrigger className="text-sm"><SelectValue placeholder="적용 규정을 선택하세요" /></SelectTrigger>
               <SelectContent>
                 {versionOptions.map(o => (
-                  <SelectItem key={o.value} value={o.value}>{o.label} — {o.sub}{o.value === recommendedVersion ? " (추천)" : ""}</SelectItem>
+                  <SelectItem key={o.value} value={o.value}>{o.label} — {o.sub}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -556,7 +614,7 @@ export default function PrecisionInspectionPage() {
               <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
               <span className="text-sm font-semibold">검사 회차</span>
             </div>
-            <Select value={inspectionCount} onValueChange={v => { setInspectionCount(v); setContractStatus(""); setResult(null); setError(""); }}>
+            <Select value={inspectionCount} onValueChange={v => { setInspectionCount(v); setContractStatus(""); }}>
               <SelectTrigger className="text-sm"><SelectValue placeholder="검사 회차 선택" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="third">세 번째 정밀안전검사</SelectItem>
@@ -573,7 +631,7 @@ export default function PrecisionInspectionPage() {
               <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
               <span className="text-sm font-semibold">현재 진행 상황</span>
             </div>
-            <Select value={section2Situation} onValueChange={v => { setSection2Situation(v); setContractStatus(""); setResult(null); setError(""); }}>
+            <Select value={section2Situation} onValueChange={v => { setSection2Situation(v); setContractStatus(""); }}>
               <SelectTrigger className="text-sm"><SelectValue placeholder="진행 상황 선택" /></SelectTrigger>
               <SelectContent>
                 {SECTION2_DETAIL_SITUATIONS.map(s => (
@@ -591,7 +649,7 @@ export default function PrecisionInspectionPage() {
               <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
               <span className="text-sm font-semibold">설치계약 상태</span>
             </div>
-            <Select value={contractStatus} onValueChange={v => { setContractStatus(v); setResult(null); setError(""); }}>
+            <Select value={contractStatus} onValueChange={v => setContractStatus(v)}>
               <SelectTrigger className="text-sm"><SelectValue placeholder="설치계약 상태 선택" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="contracted">설치계약 완료 (착수 전)</SelectItem>
@@ -602,61 +660,30 @@ export default function PrecisionInspectionPage() {
           </div>
         )}
 
-        {/* Step: 검사일자 */}
-        {readyForDate && (
-          <div className="bg-card border border-border rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">
-                {[true, true, needsInspectionCount || needsSection2Situation, needsContractStatus].filter(Boolean).length + 1}
-              </span>
-              <span className="text-sm font-semibold">검사일자 입력</span>
-            </div>
-            <DatePicker label="정밀안전검사 실시일" value={inspectionDate} onChange={setInspectionDate} />
-          </div>
-        )}
-
-        {/* 계산 버튼 */}
-        {readyForDate && inspectionDate && (
-          <Button className="w-full font-semibold" onClick={handleCalculate}>
-            이행기간 및 필요서류 확인
-          </Button>
-        )}
-
-        {/* 에러 */}
-        {error && (
-          <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3 flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-destructive whitespace-pre-line">{error}</p>
-          </div>
-        )}
+        {guideResult && !guideResult.error && <ResultBlock result={guideResult} />}
         </>
         )}
 
         {mode === "card" && (
         <>
-        {/* 카드 진행 표시 + 뒤로가기 */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={cardGoBack}
-            disabled={cardStep === 0}
-            className="w-8 h-8 rounded-lg border border-border bg-card flex items-center justify-center flex-shrink-0 disabled:opacity-30"
-          >
-            <ArrowLeft className="h-4 w-4 text-muted-foreground" />
-          </button>
-          <div className="flex items-center gap-1.5 flex-1">
-            {[0, 1, 2, 3].map(i => (
-              <div key={i} className={`h-1 rounded-full flex-1 ${i <= cardStep ? "bg-primary" : "bg-muted"}`} />
-            ))}
+        {/* 0. 세 번째 정밀안전검사 실시일 */}
+        <div className="bg-card border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">1</span>
+            <span className="text-sm font-semibold">세 번째 정밀안전검사 실시일</span>
           </div>
-          <span className="text-[11px] text-muted-foreground flex-shrink-0">{cardStep + 1} / 4</span>
+          <DatePicker label="검사일자" value={cardDate} onChange={setCardDate} />
         </div>
 
-        {/* 0단계: 건축물 유형 카드 */}
-        {cardStep === 0 && (
+        {/* 1. 건축물 유형 카드 */}
+        {cardDate && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground px-1">건축물 유형을 눌러 선택하세요</p>
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">2</span>
+              <p className="text-xs text-muted-foreground">건축물 유형을 눌러 선택하세요</p>
+            </div>
             <button
-              onClick={() => cardSelectBuildingType("apartment")}
+              onClick={() => { setBuildingType("apartment"); setVersion(""); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); }}
               className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${buildingType === "apartment" ? "border-primary bg-primary/5" : "border-border bg-card"}`}
             >
               <Building2 className="h-6 w-6 text-primary flex-shrink-0" />
@@ -667,7 +694,7 @@ export default function PrecisionInspectionPage() {
               {buildingType === "apartment" && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
             </button>
             <button
-              onClick={() => cardSelectBuildingType("general")}
+              onClick={() => { setBuildingType("general"); setVersion(""); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); }}
               className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${buildingType === "general" ? "border-primary bg-primary/5" : "border-border bg-card"}`}
             >
               <Building className="h-6 w-6 text-muted-foreground flex-shrink-0" />
@@ -680,23 +707,21 @@ export default function PrecisionInspectionPage() {
           </div>
         )}
 
-        {/* 1단계: 현행/개정 카드 */}
-        {cardStep === 1 && (
+        {/* 2. 현행/개정 카드 */}
+        {cardDate && buildingType && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground px-1">적용 규정을 눌러 선택하세요</p>
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">3</span>
+              <p className="text-xs text-muted-foreground">적용 규정을 눌러 선택하세요</p>
+            </div>
             {versionOptions.map(o => (
               <button
                 key={o.value}
-                onClick={() => cardSelectVersion(o.value)}
+                onClick={() => { setVersion(o.value); setInspectionCount(""); setSection2Situation(""); setContractStatus(""); }}
                 className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${version === o.value ? "border-primary bg-primary/5" : "border-border bg-card"}`}
               >
                 <div className="flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-semibold">{o.label}</p>
-                    {o.value === recommendedVersion && (
-                      <span className="text-[10px] bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full font-medium">추천</span>
-                    )}
-                  </div>
+                  <p className="text-sm font-semibold">{o.label}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{o.sub}</p>
                 </div>
                 {version === o.value && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
@@ -705,12 +730,15 @@ export default function PrecisionInspectionPage() {
           </div>
         )}
 
-        {/* 2단계: 검사 회차 (공동주택 · 개정) + 설치계약 상태 */}
-        {cardStep === 2 && needsInspectionCount && (
+        {/* 3. 검사 회차 (공동주택 · 개정) */}
+        {cardDate && needsInspectionCount && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground px-1">검사 회차를 눌러 선택하세요</p>
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
+              <p className="text-xs text-muted-foreground">검사 회차를 눌러 선택하세요</p>
+            </div>
             <button
-              onClick={() => cardSelectInspectionCount("third")}
+              onClick={() => { setInspectionCount("third"); setContractStatus(""); }}
               className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${inspectionCount === "third" ? "border-primary bg-primary/5" : "border-border bg-card"}`}
             >
               <div className="flex-1">
@@ -720,7 +748,7 @@ export default function PrecisionInspectionPage() {
               {inspectionCount === "third" && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
             </button>
             <button
-              onClick={() => cardSelectInspectionCount("fourth")}
+              onClick={() => { setInspectionCount("fourth"); setContractStatus(""); }}
               className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${inspectionCount === "fourth" ? "border-primary bg-primary/5" : "border-border bg-card"}`}
             >
               <div className="flex-1">
@@ -729,40 +757,20 @@ export default function PrecisionInspectionPage() {
               </div>
               {inspectionCount === "fourth" && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
             </button>
-
-            {inspectionCount === "fourth" && (
-              <div className="pt-2 space-y-2">
-                <p className="text-xs text-muted-foreground px-1">설치계약 상태를 눌러 선택하세요</p>
-                {[
-                  { v: "contracted", l: "설치계약 완료 (착수 전)", sub: "조건부 합격 · 2개월 부여" },
-                  { v: "in_progress", l: "설치공사 착수 중 (미완료)", sub: "조건부 합격 · 총 4개월 부여" },
-                  { v: "not_contracted", l: "설치계약 미체결", sub: "불합격" },
-                ].map(c => (
-                  <button
-                    key={c.v}
-                    onClick={() => cardSelectContractStatus(c.v)}
-                    className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${contractStatus === c.v ? "border-primary bg-primary/5" : "border-border bg-card"}`}
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold">{c.l}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{c.sub}</p>
-                    </div>
-                    {contractStatus === c.v && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
-        {/* 2단계: 현재 진행 상황 (일반건축물 · 개정) + 설치계약 상태 */}
-        {cardStep === 2 && needsSection2Situation && (
+        {/* 3. 현재 진행 상황 (일반건축물 · 개정) */}
+        {cardDate && needsSection2Situation && (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground px-1">현재 진행 상황을 눌러 선택하세요</p>
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">4</span>
+              <p className="text-xs text-muted-foreground">현재 진행 상황을 눌러 선택하세요</p>
+            </div>
             {SECTION2_DETAIL_SITUATIONS.map(s => (
               <button
                 key={s.value}
-                onClick={() => cardSelectSection2Situation(s.value)}
+                onClick={() => { setSection2Situation(s.value); setContractStatus(""); }}
                 className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${section2Situation === s.value ? "border-primary bg-primary/5" : "border-border bg-card"}`}
               >
                 <span className="text-lg font-bold text-primary flex-shrink-0 w-5 text-center">{s.icon}</span>
@@ -773,152 +781,38 @@ export default function PrecisionInspectionPage() {
                 {section2Situation === s.value && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
               </button>
             ))}
-
-            {section2Situation === "fourth_inspection" && (
-              <div className="pt-2 space-y-2">
-                <p className="text-xs text-muted-foreground px-1">설치계약 상태를 눌러 선택하세요</p>
-                {[
-                  { v: "contracted", l: "설치계약 완료 (착수 전)", sub: "조건부 합격 · 2개월 부여" },
-                  { v: "in_progress", l: "설치공사 착수 중 (미완료)", sub: "조건부 합격 · 총 4개월 부여" },
-                  { v: "not_contracted", l: "설치계약 미체결", sub: "불합격" },
-                ].map(c => (
-                  <button
-                    key={c.v}
-                    onClick={() => cardSelectContractStatus(c.v)}
-                    className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${contractStatus === c.v ? "border-primary bg-primary/5" : "border-border bg-card"}`}
-                  >
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold">{c.l}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{c.sub}</p>
-                    </div>
-                    {contractStatus === c.v && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         )}
 
-        {/* 3단계: 검사일자 + 계산 */}
-        {cardStep === 3 && (
-          <div className="space-y-3">
-            <div className="bg-card border border-border rounded-xl p-4">
-              <p className="text-xs font-semibold mb-3">정밀안전검사 실시일</p>
-              <DatePicker label="검사일자" value={inspectionDate} onChange={setInspectionDate} />
+        {/* 4. 설치계약 상태 */}
+        {cardDate && needsContractStatus && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 px-1">
+              <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold flex-shrink-0">5</span>
+              <p className="text-xs text-muted-foreground">설치계약 상태를 눌러 선택하세요</p>
             </div>
-            {inspectionDate && (
-              <Button className="w-full font-semibold" onClick={handleCalculate}>
-                이행기간 및 필요서류 확인
-              </Button>
-            )}
-            {error && (
-              <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3 flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-destructive whitespace-pre-line">{error}</p>
-              </div>
-            )}
+            {[
+              { v: "contracted", l: "설치계약 완료 (착수 전)", sub: "조건부 합격 · 2개월 부여" },
+              { v: "in_progress", l: "설치공사 착수 중 (미완료)", sub: "조건부 합격 · 총 4개월 부여" },
+              { v: "not_contracted", l: "설치계약 미체결", sub: "불합격" },
+            ].map(c => (
+              <button
+                key={c.v}
+                onClick={() => setContractStatus(c.v)}
+                className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-colors ${contractStatus === c.v ? "border-primary bg-primary/5" : "border-border bg-card"}`}
+              >
+                <div className="flex-1">
+                  <p className="text-sm font-semibold">{c.l}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{c.sub}</p>
+                </div>
+                {contractStatus === c.v && <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />}
+              </button>
+            ))}
           </div>
         )}
+
+        {cardResult && !cardResult.error && <ResultBlock result={cardResult} />}
         </>
-        )}
-
-        {/* 결과 */}
-        {result && (
-          <div className="space-y-3">
-
-            {/* 1. 필요서류 */}
-            <div className="bg-card border border-border rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <FileText className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">필요 서류</span>
-              </div>
-              {result.requiredDocs.length === 0 ? (
-                <p className="text-xs text-muted-foreground">해당 없음</p>
-              ) : (
-                <div className="space-y-2">
-                  {result.requiredDocs.map((doc: any, i: number) => (
-                    <div key={i} className="flex items-start gap-2 bg-muted/30 rounded-lg p-2.5">
-                      <span className="text-primary text-xs font-bold flex-shrink-0 mt-0.5">{i+1}</span>
-                      <div>
-                        <p className="text-xs font-semibold text-foreground">{doc.title}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{doc.detail}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 2. 이행기간 + 행정절차 */}
-            <div className="bg-card border border-border rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <ClipboardList className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">이행기간 및 행정 처리 절차</span>
-              </div>
-              {result.dates && (
-                <div className="bg-muted/30 rounded-lg p-3 mb-3 space-y-1.5">
-                  <p className="text-xs text-muted-foreground">📅 검사일: <span className="font-semibold text-foreground">{formatDate(result.base)}</span></p>
-                  {result.initialMonths > 0 && (
-                    <p className="text-xs text-muted-foreground">⏱ 최초 조건부 합격 만료: <span className="font-semibold text-foreground">{formatDate(addMonths(result.base, result.initialMonths))}</span> (+{result.initialMonths}개월)</p>
-                  )}
-                  <div className="border-t border-border pt-1.5">
-                    <p className="text-xs text-muted-foreground">🏁 최종 이행 마감일</p>
-                    <p className="text-base font-bold text-primary">{formatDate(result.dates.deadline)}</p>
-                    <p className="text-xs text-muted-foreground">검사일로부터 {monthsDiff(result.base, result.dates.deadline)}개월 후</p>
-                  </div>
-                </div>
-              )}
-              {!result.dates && (
-                <div className="bg-amber-500/10 rounded-lg p-3 mb-3">
-                  <p className="text-xs text-amber-500 font-medium">📅 검사일: {formatDate(result.base)}</p>
-                  <p className="text-xs text-amber-500 mt-1">이행기간은 상황에 따라 결정됩니다 (아래 절차 참고)</p>
-                </div>
-              )}
-              <div className="space-y-1.5">
-                {(result.adminProcess || []).map((step: string, i: number) => (
-                  <p key={i} className="text-xs leading-relaxed text-foreground pl-1">{step}</p>
-                ))}
-              </div>
-            </div>
-
-            {/* 3. 주의사항 */}
-            {result.note && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-                  <span className="text-xs font-semibold text-amber-500">주의사항</span>
-                </div>
-                <p className="text-xs text-foreground">{result.note}</p>
-              </div>
-            )}
-            {result.warning && (
-              <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-3">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                  <span className="text-xs font-semibold text-destructive">경고</span>
-                </div>
-                <p className="text-xs text-foreground">{result.warning}</p>
-              </div>
-            )}
-
-            {/* 4. 판정 결과 (맨 아래) */}
-            <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <CheckCircle2 className="h-4 w-4 text-primary" />
-                <span className="text-sm font-bold text-primary">판정 결과 요약</span>
-              </div>
-              <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground">적용 검사: <span className="text-foreground font-medium">{result.inspectionType}</span></p>
-                <p className="text-xs text-muted-foreground">판정 유형: <span className="text-foreground font-medium">{result.judgment}</span></p>
-                <p className="text-xs text-muted-foreground">근거 법령: <span className="text-foreground font-medium">{result.basis}</span></p>
-              </div>
-            </div>
-
-            {/* 출처 */}
-            <p className="text-xs text-muted-foreground text-center pb-4">
-              출처: 한국승강기안전공단 검사총괄실 · 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)
-            </p>
-          </div>
         )}
       </div>
 
@@ -958,7 +852,7 @@ export default function PrecisionInspectionPage() {
               <h3 className="text-sm font-medium">고시 발령일 수정</h3>
               <button onClick={() => setShowNoticeEditor(false)}><X className="h-4 w-4 text-muted-foreground" /></button>
             </div>
-            <p className="text-xs text-muted-foreground">이 날짜를 기준으로 3개월이 지나면 개정 규정이 자동으로 "추천" 표시됩니다.</p>
+            <p className="text-xs text-muted-foreground">현장진단(승강기번호 조회) 기능에서 검사이력 기준일로 사용될 고시 발령일입니다.</p>
             <input
               type="date" value={noticeDateDraft} onChange={e => setNoticeDateDraft(e.target.value)}
               className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-secondary"
