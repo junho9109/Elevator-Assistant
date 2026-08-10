@@ -224,6 +224,8 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
     if (!fl) return;
     Array.from(fl).slice(0, Math.max(0, 10 - photos.length)).forEach(f => uploadPhoto.mutate(f));
   };
+  const [photoViewer, setPhotoViewer] = useState<{ open: boolean; idx: number }>({ open: false, idx: 0 });
+  const photoUrl = (photoId: number) => `/api/inspection-photos/${encodeURIComponent(id)}/${photoId}/image`;
 
   if (!e) return (
     <div className="flex flex-col flex-1 min-h-0 items-center justify-center gap-3 p-6 text-center">
@@ -279,12 +281,50 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
               <p className="text-[11px] text-muted-foreground">등록된 사진이 없습니다.</p>
             ) : (
               <div className="grid grid-cols-3 gap-2">
-                {photos.map(p => (
-                  <div key={p.id} className="relative">
-                    <img src={`/api/inspection-photos/${encodeURIComponent(id)}/${p.id}/image`} alt="" className="w-full h-20 object-cover rounded-lg border border-border" />
+                {photos.map((p, i) => (
+                  <div key={p.id} className="relative aspect-square cursor-pointer" onClick={() => setPhotoViewer({ open: true, idx: i })}>
+                    <img src={photoUrl(p.id)} alt="" className="w-full h-full object-cover rounded-lg border border-border" />
                     {isAdminMode && (
-                      <button onClick={() => deletePhoto.mutate(p.id)} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
+                      <button onClick={ev => { ev.stopPropagation(); deletePhoto.mutate(p.id); }} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
                     )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 사진 전체화면 뷰어 */}
+        {photoViewer.open && photos.length > 0 && (
+          <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setPhotoViewer({ open: false, idx: 0 })}>
+            <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={ev => ev.stopPropagation()}>
+              <span className="text-white text-xs">{photoViewer.idx + 1} / {photos.length}</span>
+              <div className="flex items-center gap-3">
+                {isAdminMode && (
+                  <button
+                    className="text-red-400 text-xs px-2.5 py-1 border border-red-400/40 rounded-lg"
+                    onClick={() => {
+                      const target = photos[photoViewer.idx];
+                      deletePhoto.mutate(target.id);
+                      setPhotoViewer(v => ({ open: photos.length > 1, idx: Math.max(0, v.idx - 1) }));
+                    }}
+                  >삭제</button>
+                )}
+                <button onClick={() => setPhotoViewer({ open: false, idx: 0 })} className="text-white/70 text-lg">✕</button>
+              </div>
+            </div>
+            <div className="flex-1 flex items-center justify-center px-4" onClick={ev => ev.stopPropagation()}>
+              <img src={photoUrl(photos[photoViewer.idx].id)} alt="" className="max-w-full max-h-full object-contain rounded-xl" />
+            </div>
+            {photos.length > 1 && (
+              <div className="flex gap-2 px-4 py-3 overflow-x-auto shrink-0" onClick={ev => ev.stopPropagation()}>
+                {photos.map((p, i) => (
+                  <div
+                    key={p.id}
+                    className={`w-10 h-10 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 ${i === photoViewer.idx ? "border-white" : "border-transparent"}`}
+                    onClick={() => setPhotoViewer(v => ({ ...v, idx: i }))}
+                  >
+                    <img src={photoUrl(p.id)} alt="" className="w-full h-full object-cover" loading="lazy" />
                   </div>
                 ))}
               </div>
