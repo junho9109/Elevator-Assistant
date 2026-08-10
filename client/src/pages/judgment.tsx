@@ -1958,8 +1958,18 @@ export default function JudgmentPage() {
             </div>
           </div>
 
-          {/* 건축허가일과 검사기준적용일이 다를 때 교체 유형 선택 */}
-          {permitDate && inspectionDate && permitDate !== inspectionDate && (
+          {/* 건축허가일자보다 검사기준 적용일이 빠른 경우 — 성립할 수 없는 조합이므로 안내문만 표시 */}
+          {permitDate && inspectionDate && inspectionDate < permitDate && (
+            <div className="mb-2 p-2.5 bg-red-500/10 rounded-lg border border-red-500/30 text-xs space-y-1">
+              <p className="text-red-600 dark:text-red-400 font-semibold">⚠ 날짜를 다시 확인해주세요</p>
+              <p className="text-red-600 dark:text-red-400 leading-relaxed">
+                검사기준 적용일은 건축허가일자와 같거나 이후 날짜만 가능합니다. 검사기준 적용일이 건축허가일자보다 빠를 수 없습니다.
+              </p>
+            </div>
+          )}
+
+          {/* 건축허가일과 검사기준적용일이 다를 때 교체 유형 선택 (검사기준 적용일이 건축허가일 이후인 경우에만) */}
+          {permitDate && inspectionDate && permitDate !== inspectionDate && inspectionDate > permitDate && (
             <div className="mb-2 space-y-1">
               <Label className="text-xs font-semibold">교체 구분</Label>
               <Select value={installType} onValueChange={(v) => setInstallType(v as "전면교체" | "수시교체")}>
