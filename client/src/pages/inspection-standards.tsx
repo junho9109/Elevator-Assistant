@@ -202,7 +202,8 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
   const displayText = e.text || "";
   const displaySource = e.source || `별표22 엘리베이터 안전기준 ${yearStd}`;
   const firstLine = (e.title || displayText.split("\n")[0] || id).trim();
-  const body = displayText.includes("\n") ? displayText.split("\n").slice(1).join("\n").trim() : displayText;
+  // 본문에는 제목(첫 줄)도 그대로 포함 — 조문번호 접두사만 제외
+  const body = (displayText.startsWith(id + " ") ? displayText.slice(id.length + 1) : displayText).trim();
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -246,7 +247,8 @@ function GenerationDetail({ id, gen, onClose }: { id: string; gen: GenerationDoc
 
   const displayText = e.text || "";
   const firstLine = (e.title || displayText.split("\n")[0] || id).trim();
-  const body = displayText.includes("\n") ? displayText.split("\n").slice(1).join("\n").trim() : displayText;
+  // 본문에는 제목(첫 줄)도 그대로 포함 — 조문번호 접두사만 제외
+  const body = (displayText.startsWith(id + " ") ? displayText.slice(id.length + 1) : displayText).trim();
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
