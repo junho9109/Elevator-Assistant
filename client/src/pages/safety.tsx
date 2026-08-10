@@ -1,13 +1,26 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Calendar, ChevronDown, ChevronUp, Shield, AlertTriangle } from "lucide-react";
+import { Plus, X, Calendar, ChevronDown, ChevronUp, Shield, AlertTriangle, ClipboardCheck, Trash2 } from "lucide-react";
 
 type PpeItem = { id: number; name: string; issuedDate: string | null; expiryDate: string | null; standard: string | null; howToWear: string | null; createdAt: string; };
 type NearMiss = { id: number; date: string; disasterType: string; workType: string; description: string; imageUrls: string[] | null; createdAt: string; };
+type RiskMethod = "checklist" | "freq_severity";
+type RiskHazardItem = {
+  id: number; method: RiskMethod; workCategory: string; subWork: string | null; content: string;
+  discoveryPath: string | null; fieldInfo: string | null; imageUrls: string[] | null; branchId: string;
+  registeredById: string; registeredByName: string; createdAt: string;
+};
+type RiskAssessment = {
+  id: number; hazardItemId: number; branchId: string; employeeId: string; employeeName: string;
+  level: string | null; hadAccidentExperience: boolean | null; severity: number | null;
+  currentSafetyMeasure: string | null; reductionPlan: string | null;
+  implementStatus: string | null; implementDate: string | null; implementOwner: string | null; actionResult: string | null;
+  createdAt: string; updatedAt: string;
+};
 
 function getDaysUntilExpiry(expiryDate: string | null): number {
   if (!expiryDate) return 999;
@@ -67,16 +80,30 @@ const PPE_DEFAULTS = [
 const DISASTER_TYPES = ["떨어짐","끼임","부딪힘","감전","넘어짐","맞음","화재/폭발","절단/베임","기타"];
 const WORK_TYPES = ["점검","설치","보수","청소","운반","기타"];
 
+const RISK_WORK_CATEGORIES: Record<RiskMethod, string[]> = {
+  checklist: ["사무", "출장", "비상상황(화재, 재난 등)"],
+  freq_severity: ["엘리베이터", "에스컬레이터", "소형화물용 엘리베이터", "수직형 휠체어리프트", "경사형 휠체어리프트", "기타"],
+};
+const DISCOVERY_PATHS = ["순회점검", "현장업무", "아차사고", "청취조사", "기타"];
+const DEFAULT_BRANCH = "서울강서지사";
+
 export default function SafetyPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"ppe"|"guide"|"nearmiss">("ppe");
+  const [activeTab, setActiveTab] = useState<"ppe"|"guide"|"nearmiss"|"risk">("ppe");
   const [empId, setEmpId] = useState("");
   const [empName, setEmpName] = useState("");
+  const [branchName, setBranchName] = useState(DEFAULT_BRANCH);
   const [loggedIn, setLoggedIn] = useState(false);
   const [loginError, setLoginError] = useState("");
   const isAdmin = empId === "910919" && empName === "노준호";
   const [showAddPPE, setShowAddPPE] = useState(false);
+  const [riskMethod, setRiskMethod] = useState<RiskMethod>("checklist");
+  const [showAddRisk, setShowAddRisk] = useState(false);
+  const [expandedRisk, setExpandedRisk] = useState<number|null>(null);
+  const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
+  const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
+  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   const [selectedDef, setSelectedDef] = useState(PPE_DEFAULTS[0]);
   const [ppeForm, setPpeForm] = useState({ name: PPE_DEFAULTS[0].name, issuedDate: "", expiryDate: "", standard: PPE_DEFAULTS[0].standard, howToWear: PPE_DEFAULTS[0].howToWear });
   const [expandedPPE, setExpandedPPE] = useState<number|null>(null);
@@ -96,16 +123,115 @@ export default function SafetyPage() {
   });
   const { data: nearMisses = [] } = useQuery<NearMiss[]>({ queryKey: ["/api/near-misses"], queryFn: async () => { const r = await fetch("/api/near-misses"); return r.json(); } });
 
+  const { data: riskBranches = [DEFAULT_BRANCH] } = useQuery<string[]>({ queryKey: ["/api/risk-branches"], queryFn: async () => { const r = await fetch("/api/risk-branches"); return r.json(); } });
+  const { data: riskItems = [] } = useQuery<RiskHazardItem[]>({
+    queryKey: ["/api/risk-hazard-items", branchName],
+    queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?branchId=${encodeURIComponent(branchName)}`); return r.json(); },
+    enabled: loggedIn && !!branchName,
+  });
+  const { data: riskAssessmentsData = [] } = useQuery<RiskAssessment[]>({
+    queryKey: ["/api/risk-assessments", branchName],
+    queryFn: async () => { const r = await fetch(`/api/risk-assessments?branchId=${encodeURIComponent(branchName)}`); return r.json(); },
+    enabled: loggedIn && !!branchName,
+  });
+
   const createPpe = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/ppe", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({...data, employeeId: empId, employeeName: empName}) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"보호구가 등록되었습니다."}); setShowAddPPE(false); } });
   const deletePpe = useMutation({ mutationFn: async (id: number) => { await fetch(`/api/ppe/${id}`, {method:"DELETE"}); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"삭제되었습니다."}); } });
   const createNM = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/near-misses", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(data) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/near-misses"]}); toast({title:"아차사고가 등록되었습니다."}); setShowAddNM(false); } });
   const deleteNM = useMutation({ mutationFn: async (id: number) => { await fetch(`/api/near-misses/${id}`, {method:"DELETE"}); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/near-misses"]}); toast({title:"삭제되었습니다."}); } });
+
+  const createRiskItem = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await fetch("/api/risk-hazard-items", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] }); qc.invalidateQueries({ queryKey: ["/api/risk-branches"] }); toast({ title: "유해위험요인이 등록되었습니다." }); setShowAddRisk(false); },
+  });
+  const deleteRiskItem = useMutation({
+    mutationFn: async (id: number) => { await fetch(`/api/risk-hazard-items/${id}?employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}`, { method: "DELETE" }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] }); qc.invalidateQueries({ queryKey: ["/api/risk-assessments"] }); toast({ title: "삭제되었습니다." }); setRiskDeleteConfirm(null); },
+  });
+  const saveAssessment = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await fetch("/api/risk-assessments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-assessments"] }); toast({ title: "평가가 저장되었습니다." }); },
+  });
 
   const handleNMImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files||[]);
     if(nmForm.images.length+files.length>5){toast({title:"최대 5장",variant:"destructive"});return;}
     files.forEach(f=>{const r=new FileReader();r.onload=ev=>setNmForm(p=>({...p,images:[...p.images,ev.target?.result as string]}));r.readAsDataURL(f);});
   };
+
+  const handleRiskImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (riskForm.images.length + files.length > 5) { toast({ title: "최대 5장", variant: "destructive" }); return; }
+    files.forEach(f => { const r = new FileReader(); r.onload = ev => setRiskForm(p => ({ ...p, images: [...p.images, ev.target?.result as string] })); r.readAsDataURL(f); });
+  };
+
+  const riskItemsForMethod = useMemo(() => riskItems.filter(i => i.method === riskMethod), [riskItems, riskMethod]);
+
+  const assessmentsByItem = useMemo(() => {
+    const map = new Map<number, RiskAssessment[]>();
+    for (const a of riskAssessmentsData) {
+      if (!map.has(a.hazardItemId)) map.set(a.hazardItemId, []);
+      map.get(a.hazardItemId)!.push(a);
+    }
+    return map;
+  }, [riskAssessmentsData]);
+
+  const myAssessment = (itemId: number) => assessmentsByItem.get(itemId)?.find(a => a.employeeId === empId);
+
+  function computeAggregate(itemId: number, method: RiskMethod) {
+    const list = assessmentsByItem.get(itemId) || [];
+    if (list.length === 0) return null;
+    if (method === "checklist") {
+      const counts: Record<string, number> = {};
+      list.forEach(a => { if (a.level) counts[a.level] = (counts[a.level] || 0) + 1; });
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      return top ? { level: top[0] } : null;
+    }
+    const withExp = list.filter(a => a.hadAccidentExperience !== null);
+    const withSev = list.filter(a => a.severity != null);
+    if (withExp.length === 0 && withSev.length === 0) return null;
+    const experienced = withExp.filter(a => a.hadAccidentExperience).length;
+    const possibility = withExp.length > 0 ? Math.round((experienced / withExp.length) * 5 * 10) / 10 : 0;
+    const avgSeverity = withSev.length > 0 ? Math.round((withSev.reduce((s, a) => s + (a.severity || 0), 0) / withSev.length) * 10) / 10 : 0;
+    const risk = Math.round(possibility * avgSeverity * 10) / 10;
+    return { possibility, avgSeverity, risk, participants: list.length };
+  }
+
+  const sortedRiskItems = useMemo(() => {
+    return [...riskItemsForMethod].sort((a, b) => {
+      const aMine = myAssessment(a.id) ? 1 : 0;
+      const bMine = myAssessment(b.id) ? 1 : 0;
+      if (aMine !== bMine) return aMine - bMine; // 미평가(0) 먼저
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [riskItemsForMethod, assessmentsByItem, empId]);
+
+  function getAssessForm(itemId: number) {
+    return assessForm[itemId] || { level: "중", hadAccidentExperience: false, severity: 2, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
+  }
+  function setItemAssessForm(itemId: number, patch: Partial<ReturnType<typeof getAssessForm>>) {
+    setAssessForm(p => ({ ...p, [itemId]: { ...getAssessForm(itemId), ...p[itemId], ...patch } }));
+  }
+  function submitAssessment(item: RiskHazardItem) {
+    const f = getAssessForm(item.id);
+    const payload: any = { hazardItemId: item.id, branchId: branchName, employeeId: empId, employeeName: empName, implementStatus: f.implementStatus, implementDate: f.implementDate || null, implementOwner: f.implementOwner || null };
+    if (item.method === "checklist") {
+      payload.level = f.level;
+      payload.reductionPlan = f.reductionPlan || null;
+    } else {
+      payload.hadAccidentExperience = f.hadAccidentExperience;
+      payload.severity = f.severity;
+      payload.currentSafetyMeasure = f.currentSafetyMeasure || null;
+      payload.reductionPlan = f.reductionPlan || null;
+    }
+    saveAssessment.mutate(payload);
+  }
 
   const guides = [
     { id:"cpr", title:"심폐소생술 (CPR)", icon:"❤️", video:"https://www.youtube.com/embed/2ZIdOeTZRMk", content:`【심폐소생술 전 확인사항】
@@ -156,16 +282,15 @@ export default function SafetyPage() {
       <div className="w-full">
         <h1 className="text-lg font-bold tracking-tight mb-6 flex items-center gap-2"><Shield className="h-6 w-6 text-blue-600"/>안전보건</h1>
         <div className="flex gap-2 mb-6 bg-card rounded-xl p-1 shadow-sm border border-border">
-          {[{key:"ppe",label:"🦺 보호구"},{key:"guide",label:"🩺 응급처치"},{key:"nearmiss",label:"⚠️ 아차사고"}].map(tab=>(
+          {[{key:"ppe",label:"🦺 보호구"},{key:"guide",label:"🩺 응급처치"},{key:"nearmiss",label:"⚠️ 아차사고"},{key:"risk",label:"📋 위험성평가"}].map(tab=>(
             <button key={tab.key} onClick={()=>setActiveTab(tab.key as any)} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${activeTab===tab.key?"bg-primary text-primary-foreground":"text-muted-foreground hover:bg-muted"}`}>{tab.label}</button>
           ))}
         </div>
 
-        {activeTab==="ppe" && (
-          !loggedIn ? (
+        {(activeTab==="ppe"||activeTab==="risk") && !loggedIn && (
             <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4">
               <div className="w-full max-w-sm space-y-3">
-                <h2 className="text-center font-semibold text-base mb-4">보호구 조회</h2>
+                <h2 className="text-center font-semibold text-base mb-4">사번/이름/지사 확인</h2>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">사번</label>
                   <input
@@ -183,26 +308,43 @@ export default function SafetyPage() {
                     placeholder="이름 입력"
                     value={empName}
                     onChange={e => setEmpName(e.target.value)}
+                    className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">지사</label>
+                  <input
+                    type="text"
+                    list="branch-list"
+                    placeholder="예: 서울강서지사"
+                    value={branchName}
+                    onChange={e => setBranchName(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === "Enter") {
-                        if (!empId || !empName) { setLoginError("사번과 이름을 입력하세요."); return; }
+                        if (!empId || !empName || !branchName) { setLoginError("사번, 이름, 지사를 모두 입력하세요."); return; }
                         setLoginError(""); setLoggedIn(true);
                       }
                     }}
                     className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-background outline-none focus:ring-2 focus:ring-primary/50"
                   />
+                  <datalist id="branch-list">
+                    {riskBranches.map(b => <option key={b} value={b} />)}
+                  </datalist>
+                  <p className="text-[11px] text-muted-foreground mt-1">목록에 없는 지사명을 입력하면 새 지사로 시작됩니다.</p>
                 </div>
                 {loginError && <p className="text-xs text-red-500">{loginError}</p>}
                 <button
                   onClick={() => {
-                    if (!empId || !empName) { setLoginError("사번과 이름을 입력하세요."); return; }
+                    if (!empId || !empName || !branchName) { setLoginError("사번, 이름, 지사를 모두 입력하세요."); return; }
                     setLoginError(""); setLoggedIn(true);
                   }}
                   className="w-full bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-medium"
-                >조회</button>
+                >확인</button>
               </div>
             </div>
-          ) :
+        )}
+
+        {activeTab==="ppe" && loggedIn && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center justify-between">
@@ -307,6 +449,111 @@ export default function SafetyPage() {
             ))}
           </div>
         )}
+
+        {activeTab==="risk" && loggedIn && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <p className="text-sm text-gray-500">{branchName} · {empName}님</p>
+              <button onClick={() => { setLoggedIn(false); setEmpId(""); setEmpName(""); }} className="text-xs text-muted-foreground hover:text-foreground">다시 확인</button>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={()=>setRiskMethod("checklist")} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-medium border ${riskMethod==="checklist"?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>사무 · 체크리스트법</button>
+              <button onClick={()=>setRiskMethod("freq_severity")} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-medium border ${riskMethod==="freq_severity"?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>승강기검사 · 빈도강도법</button>
+            </div>
+            <div className="flex justify-between items-center">
+              <p className="text-sm text-gray-500">유해위험요인 {riskItemsForMethod.length}건 · 미평가 {riskItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
+              <Button size="sm" onClick={()=>{ setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setShowAddRisk(true); }}><Plus className="h-4 w-4 mr-1"/>유해위험요인 등록</Button>
+            </div>
+            {sortedRiskItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>등록된 유해위험요인이 없습니다.</p></div>}
+            {sortedRiskItems.map(item=>{
+              const mine = myAssessment(item.id);
+              const agg = computeAggregate(item.id, item.method);
+              const f = getAssessForm(item.id);
+              const liveAgg = item.method === "freq_severity"
+                ? (() => {
+                    const list = assessmentsByItem.get(item.id) || [];
+                    const others = list.filter(a => a.employeeId !== empId);
+                    const expCount = others.filter(a=>a.hadAccidentExperience).length + (f.hadAccidentExperience?1:0);
+                    const totalCount = others.length + 1;
+                    const possibility = Math.round((expCount/totalCount)*5*10)/10;
+                    const sevList = [...others.filter(a=>a.severity!=null).map(a=>a.severity as number), f.severity];
+                    const avgSeverity = Math.round((sevList.reduce((s,v)=>s+v,0)/sevList.length)*10)/10;
+                    return { possibility, avgSeverity, risk: Math.round(possibility*avgSeverity*10)/10 };
+                  })()
+                : null;
+              return (
+                <div key={item.id} className={`bg-card rounded-xl shadow-sm border overflow-hidden ${mine?"border-border":"border-orange-400"}`}>
+                  <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedRisk(expandedRisk===item.id?null:item.id)}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
+                        {mine ? (
+                          <span className="text-xs px-2 py-0.5 rounded-md bg-green-100 text-green-700">
+                            평가완료{item.method==="checklist" ? (mine.level?` · ${mine.level}`:"") : (agg?` · 위험성 ${agg.risk}`:"")}
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded-md bg-orange-100 text-orange-700">미평가</span>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium truncate">{item.content}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">등록: {item.registeredByName} · {new Date(item.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(isAdmin || item.registeredById===empId) && (
+                        <button onClick={e=>{e.stopPropagation();setRiskDeleteConfirm(item.id);}} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="h-4 w-4"/></button>
+                      )}
+                      {expandedRisk===item.id?<ChevronUp className="h-4 w-4 text-gray-400"/>:<ChevronDown className="h-4 w-4 text-gray-400"/>}
+                    </div>
+                  </div>
+                  {expandedRisk===item.id && (
+                    <div className="px-4 pb-4 border-t border-border pt-3 bg-muted/30 space-y-3">
+                      {item.fieldInfo && <p className="text-xs text-muted-foreground">현장정보: {item.fieldInfo}</p>}
+                      {item.imageUrls && item.imageUrls.length>0 && <div className="grid grid-cols-3 gap-2">{item.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>}
+
+                      <p className="text-xs font-medium text-muted-foreground pt-1">내 평가 입력 ({empName})</p>
+
+                      {item.method === "checklist" ? (
+                        <>
+                          <div className="flex gap-2">
+                            {["상","중","하"].map(lv=>(
+                              <button key={lv} onClick={()=>setItemAssessForm(item.id,{level:lv})} className={`flex-1 text-sm py-2 rounded-lg border ${f.level===lv?(lv==="상"?"bg-red-500 text-white border-red-500":lv==="중"?"bg-orange-500 text-white border-orange-500":"bg-green-600 text-white border-green-600"):"bg-card border-border"}`}>{lv}</button>
+                            ))}
+                          </div>
+                          <textarea placeholder="감소대책 (선택)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요?</p>
+                          <div className="flex gap-2">
+                            <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
+                            <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:false})} className={`flex-1 text-sm py-2 rounded-lg border ${!f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+                          </div>
+                          <p className="text-xs text-muted-foreground">중대성 (1 소 ~ 4 최대)</p>
+                          <div className="flex gap-2">
+                            {[1,2,3,4].map(s=>(
+                              <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
+                            ))}
+                          </div>
+                          {liveAgg && (
+                            <div className="flex items-baseline gap-2 text-xs">
+                              <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
+                              <span className={`font-semibold ${liveAgg.risk>=9?"text-red-600":"text-green-700"}`}>{liveAgg.risk}</span>
+                            </div>
+                          )}
+                          <textarea placeholder="현재 안전보건조치" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
+                          {liveAgg && liveAgg.risk>=9 && (
+                            <textarea placeholder="감소대책 (위험성 9 이상 → 작성 필요)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+                          )}
+                        </>
+                      )}
+                      <Button className="w-full" size="sm" onClick={()=>submitAssessment(item)} disabled={saveAssessment.isPending}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {showAddPPE&&(
@@ -351,6 +598,65 @@ export default function SafetyPage() {
                 <Button variant="outline" className="flex-1" onClick={()=>setShowAddNM(false)}>취소</Button>
                 <Button className="flex-1" onClick={()=>createNM.mutate({...nmForm,imageUrls:nmForm.images.length>0?nmForm.images:null})} disabled={createNM.isPending}>{createNM.isPending?"저장 중...":"저장"}</Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddRisk&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowAddRisk(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-border" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">유해위험요인 등록</h2><button onClick={()=>setShowAddRisk(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-muted-foreground -mt-2">{riskMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}에 등록됩니다.</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">업무 구분</label>
+                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={riskForm.workCategory} onChange={e=>setRiskForm(p=>({...p,workCategory:e.target.value}))}>
+                  {RISK_WORK_CATEGORIES[riskMethod].map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">세부 업무 (선택)</label><Input value={riskForm.subWork} onChange={e=>setRiskForm(p=>({...p,subWork:e.target.value}))} placeholder="예: 현장 이동, 카 내 검사 등"/></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">유해위험요인 *</label><textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[90px] resize-y focus:outline-none focus:ring-2 focus:ring-primary/50" placeholder="어떤 위험이 있는지 구체적으로 기술해주세요" value={riskForm.content} onChange={e=>setRiskForm(p=>({...p,content:e.target.value}))}/></div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">발굴 경로</label>
+                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={riskForm.discoveryPath} onChange={e=>setRiskForm(p=>({...p,discoveryPath:e.target.value}))}>
+                  {DISCOVERY_PATHS.map(d=><option key={d}>{d}</option>)}
+                </select>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">현장 추가정보 (선택)</label><Input value={riskForm.fieldInfo} onChange={e=>setRiskForm(p=>({...p,fieldInfo:e.target.value}))} placeholder="예: 승강기 고유번호, 관리번호 등"/></div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">사진 첨부 (최대 5장)</label>
+                <input type="file" accept="image/*" multiple className="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700" onChange={handleRiskImage}/>
+                {riskForm.images.length>0&&<div className="grid grid-cols-3 gap-2 mt-3">{riskForm.images.map((img,i)=><div key={i} className="relative"><img src={img} alt="" className="w-full h-20 object-cover rounded-lg border"/><button className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs" onClick={()=>setRiskForm(p=>({...p,images:p.images.filter((_,idx)=>idx!==i)}))}>×</button></div>)}</div>}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1" onClick={()=>setShowAddRisk(false)}>취소</Button>
+                <Button className="flex-1" disabled={!riskForm.content.trim()||createRiskItem.isPending} onClick={()=>createRiskItem.mutate({
+                  method: riskMethod,
+                  workCategory: riskForm.workCategory,
+                  subWork: riskForm.subWork || null,
+                  content: riskForm.content,
+                  discoveryPath: riskForm.discoveryPath,
+                  fieldInfo: riskForm.fieldInfo || null,
+                  imageUrls: riskForm.images.length>0 ? riskForm.images : null,
+                  branchId: branchName,
+                  registeredById: empId,
+                  registeredByName: empName,
+                })}>{createRiskItem.isPending?"저장 중...":"저장"}</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {riskDeleteConfirm!==null&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setRiskDeleteConfirm(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
+            <p className="text-sm font-medium mb-1">유해위험요인을 삭제할까요?</p>
+            <p className="text-xs text-muted-foreground mb-4">이 항목에 대한 모든 평가 기록도 함께 삭제됩니다.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={()=>setRiskDeleteConfirm(null)}>취소</Button>
+              <Button variant="destructive" className="flex-1" onClick={()=>deleteRiskItem.mutate(riskDeleteConfirm)} disabled={deleteRiskItem.isPending}>{deleteRiskItem.isPending?"삭제 중...":"삭제"}</Button>
             </div>
           </div>
         </div>

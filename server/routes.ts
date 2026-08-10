@@ -951,6 +951,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── 위험성평가: 지사 목록 (등록된 항목/평가에서 사용된 지사명 취합) ──
+  app.get("/api/risk-branches", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems } = await import("@shared/schema");
+      const { sql: sqlOp } = await import("drizzle-orm");
+      const rows = await db.selectDistinct({ branchId: riskHazardItems.branchId }).from(riskHazardItems);
+      const names = rows.map(r => r.branchId).filter(Boolean);
+      if (!names.includes("서울강서지사")) names.unshift("서울강서지사");
+      res.json(names);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk branches");
+    }
+  });
+
+  // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
+  app.get("/api/risk-hazard-items", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const branchId = req.query.branchId as string | undefined;
+      const rows = branchId
+        ? await db.select().from(riskHazardItems).where(eq(riskHazardItems.branchId, branchId)).orderBy(desc(riskHazardItems.createdAt))
+        : await db.select().from(riskHazardItems).orderBy(desc(riskHazardItems.createdAt));
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk hazard items");
+    }
+  });
+
+  app.post("/api/risk-hazard-items", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems, insertRiskHazardItemSchema } = await import("@shared/schema");
+      const validated = insertRiskHazardItemSchema.parse(req.body);
+      const [row] = await db.insert(riskHazardItems).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid risk hazard item data", detail: String(error) });
+    }
+  });
+
+  app.delete("/api/risk-hazard-items/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems, riskAssessments } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { employeeId, employeeName } = req.query as { employeeId?: string; employeeName?: string };
+      const isAdmin = employeeId === "910919" && employeeName === "노준호";
+      const [item] = await db.select().from(riskHazardItems).where(eq(riskHazardItems.id, id));
+      if (!item) return res.status(404).json({ error: "Not found" });
+      if (!isAdmin && item.registeredById !== employeeId) {
+        return res.status(403).json({ error: "본인이 등록한 항목만 삭제할 수 있습니다." });
+      }
+      await db.delete(riskAssessments).where(eq(riskAssessments.hazardItemId, id));
+      await db.delete(riskHazardItems).where(eq(riskHazardItems.id, id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete risk hazard item", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 개인별 평가입력 (사번 기준 upsert) ──
+  app.get("/api/risk-assessments", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAssessments } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const branchId = req.query.branchId as string | undefined;
+      const rows = branchId
+        ? await db.select().from(riskAssessments).where(eq(riskAssessments.branchId, branchId))
+        : await db.select().from(riskAssessments);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk assessments");
+    }
+  });
+
+  app.post("/api/risk-assessments", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAssessments, insertRiskAssessmentSchema } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const validated = insertRiskAssessmentSchema.parse(req.body);
+      const [existing] = await db.select().from(riskAssessments).where(
+        and(
+          eq(riskAssessments.hazardItemId, validated.hazardItemId),
+          eq(riskAssessments.employeeId, validated.employeeId)
+        )
+      );
+      if (existing) {
+        const [row] = await db.update(riskAssessments)
+          .set({ ...validated, updatedAt: new Date() })
+          .where(eq(riskAssessments.id, existing.id))
+          .returning();
+        return res.json(row);
+      }
+      const [row] = await db.insert(riskAssessments).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid risk assessment data", detail: String(error) });
+    }
+  });
+
   // Judgment results routes
   app.get("/api/judgment-results/:sessionId", async (req, res) => {
     try {

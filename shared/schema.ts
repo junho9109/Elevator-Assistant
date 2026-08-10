@@ -438,3 +438,59 @@ export const aiUsage = pgTable("ai_usage", {
 });
 export type AiUsage = typeof aiUsage.$inferSelect;
 
+// ── 위험성평가: 유해위험요인 (모든 이용자가 등록) ──
+export const riskHazardItems = pgTable("risk_hazard_items", {
+  id: serial("id").primaryKey(),
+  method: varchar("method", { length: 20 }).notNull(), // 'checklist' | 'freq_severity'
+  workCategory: text("work_category").notNull(),        // 업무구분 (사무 / 엘리베이터 / 에스컬레이터 등)
+  subWork: text("sub_work"),                             // 세부 업무
+  content: text("content").notNull(),                    // 유해위험요인 내용
+  discoveryPath: text("discovery_path"),                  // 발굴 경로 (순회점검/현장업무/아차사고/청취조사/기타)
+  fieldInfo: text("field_info"),                          // 현장 추가정보
+  imageUrls: text("image_urls").array(),
+  branchId: varchar("branch_id", { length: 50 }).notNull(), // 지사
+  registeredById: varchar("registered_by_id", { length: 20 }).notNull(),
+  registeredByName: varchar("registered_by_name", { length: 50 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertRiskHazardItemSchema = createInsertSchema(riskHazardItems).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  imageUrls: z.array(z.string()).nullable().optional(),
+});
+export type InsertRiskHazardItem = z.infer<typeof insertRiskHazardItemSchema>;
+export type RiskHazardItem = typeof riskHazardItems.$inferSelect;
+
+// ── 위험성평가: 개인별 평가입력 ──
+export const riskAssessments = pgTable("risk_assessments", {
+  id: serial("id").primaryKey(),
+  hazardItemId: integer("hazard_item_id").notNull(),
+  branchId: varchar("branch_id", { length: 50 }).notNull(),
+  employeeId: varchar("employee_id", { length: 20 }).notNull(),
+  employeeName: varchar("employee_name", { length: 50 }).notNull(),
+  // 체크리스트법(사무)
+  level: varchar("level", { length: 10 }),               // '상' | '중' | '하'
+  // 빈도강도법(승강기검사)
+  hadAccidentExperience: boolean("had_accident_experience"), // 최근 1년 내 사고(아차사고 포함) 경험 여부
+  severity: integer("severity"),                          // 중대성 1~4
+  // 공통
+  currentSafetyMeasure: text("current_safety_measure"),
+  reductionPlan: text("reduction_plan"),
+  implementStatus: varchar("implement_status", { length: 10 }), // '완료' | '미완료'
+  implementDate: varchar("implement_date", { length: 10 }),
+  implementOwner: varchar("implement_owner", { length: 50 }),
+  actionResult: text("action_result"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertRiskAssessmentSchema = createInsertSchema(riskAssessments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertRiskAssessment = z.infer<typeof insertRiskAssessmentSchema>;
+export type RiskAssessment = typeof riskAssessments.$inferSelect;
+
