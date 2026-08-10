@@ -122,7 +122,7 @@ const SECTION2: Record<"current" | "amended", any> = {
       { title: "안내 경고문 부착 증명자료", detail: "승강기 내·외부에 부착한 안내 경고문 증빙자료 제출" },
     ],
     basis: "「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)",
-    note: "1, 2단계의 2차례 처리절차를 1차례로 간소화 — 세 번째 정밀안전검사 시 처리하여 네 번째 정밀안전검사로 연장합니다. 고시 시행 전 2단계 연장을 받은 현장은 대체 정밀안전검사 실시 후 네 번째 정밀안전검사도 실시해야 합니다.",
+    note: "1, 2단계의 2차례 처리절차를 1차례로 간소화(세 번째 정밀안전검사 시 연장조건 서류 제출 시 합격 처리하여 네 번째 정밀안전검사로 연장합니다.) 고시 시행 전 2단계 연장을 받은 현장은 대체 정밀안전검사 실시 후 네 번째 정밀안전검사도 실시해야 합니다.",
   },
 };
 
@@ -159,7 +159,7 @@ const SECTION2_DETAIL_SITUATIONS = [
     ],
     processSteps: [
       "① 관리주체: 조건부 기간 내 서면동의서 + 설치 이행계획서(신규) + 안내 경고문 부착 증명자료 제출",
-      "② 검사기관: 서류 확인 후 조건부 합격 처리",
+      "② 검사기관: 서류 확인 후 조건 후 합격 처리",
     ],
   },
   {
@@ -329,12 +329,12 @@ function ResultBlock({ result }: { result: any }) {
         </div>
       </div>
 
-      {/* 3. 주의사항 */}
+      {/* 3. 비고 */}
       {result.note && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
           <div className="flex items-center gap-1.5 mb-1">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-            <span className="text-xs font-semibold text-amber-500">주의사항</span>
+            <span className="text-xs font-semibold text-amber-500">비고</span>
           </div>
           <p className="text-xs text-foreground">{result.note}</p>
         </div>
@@ -348,19 +348,6 @@ function ResultBlock({ result }: { result: any }) {
           <p className="text-xs text-foreground">{result.warning}</p>
         </div>
       )}
-
-      {/* 4. 판정 결과 요약 */}
-      <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <CheckCircle2 className="h-4 w-4 text-primary" />
-          <span className="text-sm font-bold text-primary">판정 결과 요약</span>
-        </div>
-        <div className="space-y-1.5">
-          <p className="text-xs text-muted-foreground">적용 검사: <span className="text-foreground font-medium">{result.inspectionType}</span></p>
-          <p className="text-xs text-muted-foreground">판정 유형: <span className="text-foreground font-medium">{result.judgment}</span></p>
-          <p className="text-xs text-muted-foreground">근거 법령: <span className="text-foreground font-medium">{result.basis}</span></p>
-        </div>
-      </div>
 
       <p className="text-xs text-muted-foreground text-center pb-4">
         출처: 한국승강기안전공단 검사총괄실 · 「승강기 설치검사 및 안전검사에 관한 운영규정」 제11조의2·제11조의3 (2026년 개정고시)
