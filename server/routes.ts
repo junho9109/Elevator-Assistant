@@ -229,6 +229,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 관리자 모드: 이용자들이 남긴 좋아요/아쉬워요 피드백 전체를 CSV로 다운로드
+  app.get("/api/ai-feedback/export", async (req, res) => {
+    try {
+      const { pool } = await import("./db");
+      const rows = await pool.query(
+        `SELECT id, question, answer, rating, sections, reasons, comment, created_at
+         FROM ai_feedback ORDER BY created_at DESC`
+      );
+
+      const escapeCsv = (v: any) => {
+        if (v === null || v === undefined) return "";
+        const s = Array.isArray(v) ? v.join("; ") : String(v);
+        return `"${s.replace(/"/g, '""')}"`;
+      };
+
+      const header = ["id", "일시", "평가", "질문", "답변", "선택항목", "이유", "기타의견"];
+      const lines = [header.map(escapeCsv).join(",")];
+      for (const r of rows.rows) {
+        lines.push([
+          r.id,
+          r.created_at ? new Date(r.created_at).toISOString().slice(0, 19).replace("T", " ") : "",
+          r.rating === 1 ? "좋아요" : r.rating === -1 ? "아쉬워요" : r.rating,
+          r.question,
+          r.answer,
+          r.sections,
+          r.reasons,
+          r.comment,
+        ].map(escapeCsv).join(","));
+      }
+      const csv = "﻿" + lines.join("\r\n"); // BOM: 엑셀 한글 깨짐 방지
+
+      const filename = `ai_feedback_${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csv);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "피드백 내보내기 실패" });
+    }
+  });
+
   app.get("/api/standards/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);

@@ -2649,6 +2649,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   )}
                 </div>
               </div>
+              <a
+                href="/api/ai-feedback/export"
+                download
+                className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                이용자 좋아요/아쉬워요 피드백 CSV 다운로드
+              </a>
             </div>
           ) : (
             <div className="px-4 py-6 text-center text-xs text-muted-foreground">데이터를 불러올 수 없습니다</div>
