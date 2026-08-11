@@ -1755,6 +1755,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 관리자 화면에서 새 조문을 직접 추가 (별표22_유효항목.json 배포 없이도 즉시 화면에 노출됨)
+  app.post("/api/inspection-base-items", async (req, res) => {
+    try {
+      const { itemId, text, sectionTitle, parentSectionId, afterItemId } = req.body as {
+        itemId?: string; text?: string; sectionTitle?: string; parentSectionId?: string; afterItemId?: string;
+      };
+      if (!itemId || !itemId.trim() || !text || !text.trim()) {
+        return res.status(400).json({ error: "조문 번호와 내용을 모두 입력해주세요." });
+      }
+      const created = await storage.createInspectionBaseItem({
+        itemId: itemId.trim(),
+        text: text.trim(),
+        sectionTitle,
+        parentSectionId,
+        afterItemId,
+      });
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || "Failed to create inspection base item" });
+    }
+  });
+
   app.get("/api/inspection-base-items/:itemId", async (req, res) => {
     try {
       const item = await storage.getInspectionBaseItem(req.params.itemId);

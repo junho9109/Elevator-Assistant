@@ -629,6 +629,49 @@ export class DatabaseStorage implements IStorage {
     return { inserted, updated };
   }
 
+  // 관리자 화면에서 새 조문을 직접 추가 — VALID_BYULPYO22_IDS(정적 JSON) 배포 없이도
+  // isAdminAdded='true'로 표시해 클라이언트 필터를 통과하게 한다.
+  async createInspectionBaseItem(data: {
+    itemId: string; text: string; sectionTitle?: string; parentSectionId?: string | null; afterItemId?: string;
+  }): Promise<any> {
+    const existing = await db.select().from(inspectionBaseItems).where(eq(inspectionBaseItems.itemId, data.itemId)).limit(1);
+    if (existing[0]) {
+      throw new Error(`이미 존재하는 조문번호입니다: ${data.itemId}`);
+    }
+
+    // sortOrder 계산: afterItemId가 있으면 그 다음 항목과의 중간값, 없으면 맨 뒤에 추가
+    let sortOrder: number;
+    if (data.afterItemId) {
+      const afterRows = await db.select().from(inspectionBaseItems).where(eq(inspectionBaseItems.itemId, data.afterItemId)).limit(1);
+      if (!afterRows[0]) {
+        throw new Error(`"다음에 추가" 기준 조문을 찾을 수 없습니다: ${data.afterItemId}`);
+      }
+      const afterOrder = afterRows[0].sortOrder ?? 0;
+      const nextRows = await db.select().from(inspectionBaseItems)
+        .where(sql`${inspectionBaseItems.sortOrder} > ${afterOrder}`)
+        .orderBy(inspectionBaseItems.sortOrder)
+        .limit(1);
+      const nextOrder = nextRows[0]?.sortOrder ?? (afterOrder + 2);
+      sortOrder = Math.floor((afterOrder + nextOrder) / 2);
+      if (sortOrder <= afterOrder) sortOrder = afterOrder + 1;
+    } else {
+      const maxRows = await db.select({ max: sql<number>`max(${inspectionBaseItems.sortOrder})` }).from(inspectionBaseItems);
+      sortOrder = (maxRows[0]?.max ?? 0) + 10;
+    }
+
+    const result = await db.insert(inspectionBaseItems).values({
+      itemId: data.itemId,
+      sectionId: data.itemId,
+      sectionTitle: data.sectionTitle || null,
+      parentSectionId: data.parentSectionId || null,
+      text: data.text,
+      sortOrder,
+      isActive: 'true',
+      isAdminAdded: 'true',
+    }).returning();
+    return result[0];
+  }
+
   // 관리자 화면에서 조문 하나를 직접 수정 — 별도 override 테이블 없이 원본 행을 갱신한다.
   async updateInspectionBaseItem(itemId: string, data: { text?: string; sectionTitle?: string }): Promise<any> {
     const result = await db.update(inspectionBaseItems)

@@ -382,6 +382,7 @@ export const inspectionBaseItems = pgTable("inspection_base_items", {
   standardDates: text("standard_dates"),                          // 검사기준 적용일 목록 (JSON)
   equipmentTypes: varchar("equipment_types", { length: 200 }),    // 적용 승강기 종류 (JSON)
   isActive: varchar("is_active", { length: 5 }).default("true"),  // 활성 여부
+  isAdminAdded: varchar("is_admin_added", { length: 5 }).default("false"),  // 관리자 모드에서 새로 추가한 조문 여부
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

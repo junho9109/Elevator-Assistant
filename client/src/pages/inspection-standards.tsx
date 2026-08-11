@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
@@ -28,7 +28,8 @@ function baseItemsToMap(rows: any[]): Record<string, Entry> {
   const map: Record<string, Entry> = {};
   (rows || []).forEach((row: any) => {
     if (row.isActive === false || row.isActive === "false") return;
-    if (!VALID_IDS.has(row.itemId)) return;
+    const isAdminAdded = row.isAdminAdded === true || row.isAdminAdded === "true";
+    if (!VALID_IDS.has(row.itemId) && !isAdminAdded) return;
     const rawText = (row.text && row.text.trim()) ? row.text : (row.sectionTitle || row.itemId);
     const body = stripIdPrefix(row.itemId, rawText);
     map[row.itemId] = {
@@ -399,6 +400,11 @@ export default function InspectionStandardsPage() {
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [newItemId, setNewItemId] = useState("");
+  const [newItemAfter, setNewItemAfter] = useState("");
+  const [newItemText, setNewItemText] = useState("");
+  const [addItemError, setAddItemError] = useState("");
   const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
   const [pwInput, setPwInput] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -423,6 +429,33 @@ export default function InspectionStandardsPage() {
     });
     queryClient.invalidateQueries({ queryKey: ["/api/inspection-base-items"] });
     setEditKey(null);
+  };
+
+  const handleAddItem = async () => {
+    setAddItemError("");
+    const itemId = newItemId.trim();
+    const body = newItemText.trim();
+    if (!itemId) { setAddItemError("조문 번호를 입력해주세요."); return; }
+    if (!body) { setAddItemError("조문 내용을 입력해주세요."); return; }
+    const combinedText = `${itemId} ${body}`;
+    const title = body.split("\n")[0] || itemId;
+    const res = await fetch("/api/inspection-base-items", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        itemId, text: combinedText, sectionTitle: title,
+        parentSectionId: itemId.includes(".") ? itemId.slice(0, itemId.lastIndexOf(".")) : null,
+        afterItemId: newItemAfter.trim() || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setAddItemError(err.error || "추가에 실패했습니다.");
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/inspection-base-items"] });
+    setShowAddItem(false);
+    setNewItemId(""); setNewItemAfter(""); setNewItemText(""); setAddItemError("");
+    setActiveKey(itemId);
   };
 
   // AI 검색 연동
@@ -502,6 +535,17 @@ export default function InspectionStandardsPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {isAdminMode && selectedDoc === "byulpyo22" && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => { setShowAddItem(true); setNewItemId(""); setNewItemAfter(activeKey || ""); setNewItemText(""); setAddItemError(""); }}
+                  className="shrink-0 shadow-sm hover:shadow-md transition-all border-amber-400 bg-amber-50 dark:bg-amber-900/20"
+                  title="조문 추가"
+                >
+                  <Plus className="h-4 w-4 text-amber-600" />
+                </Button>
+              )}
               <Button
                 variant={isAdminMode ? "default" : "outline"}
                 size="icon"
@@ -677,6 +721,36 @@ export default function InspectionStandardsPage() {
           <div className="flex gap-2">
             <button onClick={() => setEditKey(null)} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
             <button onClick={handleSaveEdit} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">DB 저장</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* 검사기준 조문 추가 모달 */}
+    {showAddItem && (
+      <div className="fixed inset-0 z-50 bg-black/40 flex items-end">
+        <div className="bg-card w-full rounded-t-2xl p-5 flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
+          <div className="flex items-center gap-2">
+            <Plus size={15} className="text-amber-500" />
+            <span className="text-sm font-medium flex-1">검사기준 조문 추가</span>
+            <button onClick={() => setShowAddItem(false)} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">조문 번호 (예: 16.3.3)</label>
+            <input className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={newItemId} onChange={e => setNewItemId(e.target.value)} placeholder="16.3.3" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">이 조문 번호 다음에 추가 (선택 — 비우면 맨 뒤에 추가)</label>
+            <input className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={newItemAfter} onChange={e => setNewItemAfter(e.target.value)} placeholder="16.3.2" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">조문 내용 (첫 줄이 좌측 목록에 조문번호 뒤 제목으로 표시됩니다)</label>
+            <textarea className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary resize-none min-h-[180px]" value={newItemText} onChange={e => setNewItemText(e.target.value)} placeholder="조문 내용을 입력하세요" />
+          </div>
+          {addItemError && <p className="text-xs text-destructive">{addItemError}</p>}
+          <div className="flex gap-2">
+            <button onClick={() => setShowAddItem(false)} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
+            <button onClick={handleAddItem} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">DB에 추가</button>
           </div>
         </div>
       </div>
