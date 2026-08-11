@@ -405,6 +405,7 @@ export default function InspectionStandardsPage() {
   const [newItemAfter, setNewItemAfter] = useState("");
   const [newItemText, setNewItemText] = useState("");
   const [addItemError, setAddItemError] = useState("");
+  const [addItemConflict, setAddItemConflict] = useState<{ itemId: string; text: string } | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
   const [pwInput, setPwInput] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -432,7 +433,7 @@ export default function InspectionStandardsPage() {
   };
 
   const handleAddItem = async () => {
-    setAddItemError("");
+    setAddItemError(""); setAddItemConflict(null);
     const itemId = newItemId.trim();
     const body = newItemText.trim();
     if (!itemId) { setAddItemError("조문 번호를 입력해주세요."); return; }
@@ -450,11 +451,39 @@ export default function InspectionStandardsPage() {
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       setAddItemError(err.error || "추가에 실패했습니다.");
+      // 409(이미 DB에 있는 itemId) — 화면엔 안 보이던 기존 내용을 함께 보여줘서
+      // "덮어쓰고 등록"(화면 노출)할지 판단할 수 있게 한다.
+      if (res.status === 409 && err.existing) {
+        setAddItemConflict({ itemId: err.existing.itemId, text: err.existing.text || "" });
+      }
       return;
     }
     queryClient.invalidateQueries({ queryKey: ["/api/inspection-base-items"] });
     setShowAddItem(false);
-    setNewItemId(""); setNewItemAfter(""); setNewItemText(""); setAddItemError("");
+    setNewItemId(""); setNewItemAfter(""); setNewItemText(""); setAddItemError(""); setAddItemConflict(null);
+    setActiveKey(itemId);
+  };
+
+  // 이미 DB에 있던(화면엔 숨겨져 있던) 행을 지금 입력한 내용으로 덮어쓰고 화면에 노출시킨다.
+  const handleAdoptExisting = async () => {
+    if (!addItemConflict) return;
+    const itemId = addItemConflict.itemId;
+    const body = newItemText.trim();
+    if (!body) { setAddItemError("조문 내용을 입력해주세요."); return; }
+    const combinedText = `${itemId} ${body}`;
+    const title = body.split("\n")[0] || itemId;
+    const res = await fetch(`/api/inspection-base-items/${encodeURIComponent(itemId)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: combinedText, sectionTitle: title, adopt: true }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setAddItemError(err.error || "덮어쓰기에 실패했습니다.");
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/inspection-base-items"] });
+    setShowAddItem(false);
+    setNewItemId(""); setNewItemAfter(""); setNewItemText(""); setAddItemError(""); setAddItemConflict(null);
     setActiveKey(itemId);
   };
 
@@ -539,7 +568,7 @@ export default function InspectionStandardsPage() {
                 <Button
                   variant="outline"
                   size="icon"
-                  onClick={() => { setShowAddItem(true); setNewItemId(""); setNewItemAfter(activeKey || ""); setNewItemText(""); setAddItemError(""); }}
+                  onClick={() => { setShowAddItem(true); setNewItemId(""); setNewItemAfter(activeKey || ""); setNewItemText(""); setAddItemError(""); setAddItemConflict(null); }}
                   className="shrink-0 shadow-sm hover:shadow-md transition-all border-amber-400 bg-amber-50 dark:bg-amber-900/20"
                   title="조문 추가"
                 >
@@ -733,11 +762,11 @@ export default function InspectionStandardsPage() {
           <div className="flex items-center gap-2">
             <Plus size={15} className="text-amber-500" />
             <span className="text-sm font-medium flex-1">검사기준 조문 추가</span>
-            <button onClick={() => setShowAddItem(false)} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
+            <button onClick={() => { setShowAddItem(false); setAddItemConflict(null); }} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground">조문 번호 (예: 16.3.3)</label>
-            <input className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={newItemId} onChange={e => setNewItemId(e.target.value)} placeholder="16.3.3" />
+            <input className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={newItemId} onChange={e => { setNewItemId(e.target.value); setAddItemConflict(null); setAddItemError(""); }} placeholder="16.3.3" />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground">이 조문 번호 다음에 추가 (선택 — 비우면 맨 뒤에 추가)</label>
@@ -748,8 +777,22 @@ export default function InspectionStandardsPage() {
             <textarea className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary resize-none min-h-[180px]" value={newItemText} onChange={e => setNewItemText(e.target.value)} placeholder="조문 내용을 입력하세요" />
           </div>
           {addItemError && <p className="text-xs text-destructive">{addItemError}</p>}
+          {addItemConflict && (
+            <div className="p-3 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 space-y-2">
+              <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
+                DB에 이미 [{addItemConflict.itemId}] 행이 있습니다 (화면엔 숨겨져 있었을 수 있습니다). 기존 내용:
+              </p>
+              <p className="text-xs text-muted-foreground whitespace-pre-wrap bg-card border border-border rounded-lg p-2 max-h-32 overflow-y-auto">
+                {addItemConflict.text || "(내용 없음)"}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                위 "조문 내용" 칸에 입력한 내용으로 이 행을 덮어쓰고 화면에 노출시키려면 아래 버튼을 누르세요.
+              </p>
+              <button onClick={handleAdoptExisting} className="w-full py-2 text-xs font-medium bg-amber-500 text-white rounded-lg">이 내용으로 덮어쓰고 등록</button>
+            </div>
+          )}
           <div className="flex gap-2">
-            <button onClick={() => setShowAddItem(false)} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
+            <button onClick={() => { setShowAddItem(false); setAddItemConflict(null); }} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
             <button onClick={handleAddItem} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">DB에 추가</button>
           </div>
         </div>

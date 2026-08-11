@@ -673,7 +673,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // 관리자 화면에서 조문 하나를 직접 수정 — 별도 override 테이블 없이 원본 행을 갱신한다.
-  async updateInspectionBaseItem(itemId: string, data: { text?: string; sectionTitle?: string }): Promise<any> {
+  async updateInspectionBaseItem(itemId: string, data: { text?: string; sectionTitle?: string; isAdminAdded?: string; isActive?: string }): Promise<any> {
     const result = await db.update(inspectionBaseItems)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(inspectionBaseItems.itemId, itemId))

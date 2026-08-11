@@ -1764,8 +1764,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!itemId || !itemId.trim() || !text || !text.trim()) {
         return res.status(400).json({ error: "조문 번호와 내용을 모두 입력해주세요." });
       }
+      const trimmedId = itemId.trim();
+      // 이미 DB에 같은 itemId 행이 있는 경우 — 화면에는 안 보이던(별표22_유효항목.json 미등재,
+      // 다른 문서에서 잘못 인덱싱된) 잡음 행일 수 있다. 그냥 실패시키지 않고 기존 내용을 함께
+      // 돌려줘서, 관리자가 그 내용을 보고 "덮어쓰기(이 번호로 등록)"할지 판단할 수 있게 한다.
+      const existing = await storage.getInspectionBaseItem(trimmedId);
+      if (existing) {
+        return res.status(409).json({
+          error: `이미 존재하는 조문번호입니다: ${trimmedId} (화면에는 숨겨져 있던 항목일 수 있습니다)`,
+          existing: {
+            itemId: existing.itemId,
+            text: existing.text,
+            isAdminAdded: existing.isAdminAdded,
+            isActive: existing.isActive,
+          },
+        });
+      }
       const created = await storage.createInspectionBaseItem({
-        itemId: itemId.trim(),
+        itemId: trimmedId,
         text: text.trim(),
         sectionTitle,
         parentSectionId,
@@ -1788,10 +1804,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 관리자 화면에서 조문을 직접 수정 — DB 행 자체를 갱신 (별도 override 테이블 사용 안 함)
+  // adopt: true — 화면에 안 보이던(별표22_유효항목.json 미등재) 기존 행을 "덮어쓰기"로 등록할 때,
+  //               isAdminAdded/isActive를 true로 같이 세팅해서 즉시 화면에 노출시킨다.
   app.put("/api/inspection-base-items/:itemId", async (req, res) => {
     try {
-      const { text, sectionTitle } = req.body as { text?: string; sectionTitle?: string };
-      const updated = await storage.updateInspectionBaseItem(req.params.itemId, { text, sectionTitle });
+      const { text, sectionTitle, adopt } = req.body as { text?: string; sectionTitle?: string; adopt?: boolean };
+      const updated = await storage.updateInspectionBaseItem(req.params.itemId, {
+        text, sectionTitle,
+        ...(adopt ? { isAdminAdded: "true", isActive: "true" } : {}),
+      });
       if (!updated) return res.status(404).json({ error: "Not found" });
       res.json(updated);
     } catch (error) {
