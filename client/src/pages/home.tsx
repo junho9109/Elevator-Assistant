@@ -1045,13 +1045,14 @@ function FeedbackButtons({ question, answer }: { question: string; answer: strin
           </button>
         </div>
       </div>
-      {modalRating && (
+      {modalRating && createPortal(
         <FeedbackModal
           rating={modalRating}
           onSubmit={(sections, reasons, comment) => submitFeedback(modalRating, sections, reasons, comment)}
           onSkip={() => submitFeedback(modalRating)}
           onClose={() => setModalRating(null)}
-        />
+        />,
+        document.body
       )}
     </>
   );
@@ -1158,7 +1159,7 @@ function ElevatorInfoCard({ elevatorData, safetyPoints }: { elevatorData: any; s
               : <span className="text-[9px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full border border-amber-200">{installDate.slice(0,4)}년 설치 기준</span>
             }
           </div>
-          {selectedPt && <SafetyPointModal pt={selectedPt} onClose={() => setSelectedPt(null)} />}
+          {selectedPt && createPortal(<SafetyPointModal pt={selectedPt} onClose={() => setSelectedPt(null)} />, document.body)}
           {safetyPoints.map((pt: any, i: number) => (
             <div key={i} className="rounded-xl border border-border overflow-hidden mb-2 cursor-pointer" onClick={() => setSelectedPt(pt)}>
               <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
