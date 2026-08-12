@@ -1929,11 +1929,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           .slice(0, 3);
       }
 
+      // CALCULATE 유형이라도 전용 카드(calcCard)가 없는 경우엔 텍스트 답변을 그대로 보여준다.
+      // (전용 카드가 있는 경우만 카드가 안내를 대신하므로 본문 텍스트를 비운다)
+      const hasCalcCard = data.type === "CALCULATE" && !!data.calcCard;
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: data.type === "CALCULATE" ? "" : data.reply,
+        content: hasCalcCard ? "" : data.reply,
         time: formatTime(),
-        searchResults: data.type === "CALCULATE" ? undefined : (displayCards.length > 0 ? displayCards : undefined),
+        searchResults: hasCalcCard ? undefined : (displayCards.length > 0 ? displayCards : undefined),
         calcCard: data.type === "CALCULATE" ? data.calcCard : undefined,
         elevatorData: data.elevatorData || null,
         safetyPoints: data.safetyPoints || [],
