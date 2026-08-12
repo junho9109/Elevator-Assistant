@@ -2565,12 +2565,16 @@ ${answerRules}${contextText}${memoSection}`,
 
   // ==================== 업데이트 내역 ====================
   // 깃허브 최신 커밋을 가져와 AI로 이용자용 문구로 정리 후 캐싱. 새 커밋만 정리하므로
-  // 반복 호출해도 이미 처리된 커밋은 다시 AI를 부르지 않는다(비용 절감).
-  app.get("/api/changelog", async (req, res) => {
+  // 반복 실행해도 이미 처리된 커밋은 다시 AI를 부르지 않는다(비용 절감).
+  // 무거운 작업(깃허브 조회 + AI 호출)은 아래 refreshChangelogCache()가 백그라운드에서
+  // 주기적으로 미리 처리해두고, GET /api/changelog는 캐시 테이블만 읽어 즉시 응답한다.
+  let changelogRefreshing = false;
+  const refreshChangelogCache = async () => {
+    if (changelogRefreshing) return;
+    changelogRefreshing = true;
     try {
       const { db: clDb } = await import("./db");
       const { changelogCache } = await import("@shared/schema");
-      const { desc: clDesc, isNotNull } = await import("drizzle-orm");
 
       const GITHUB_REPO = process.env.GITHUB_REPO || "junho9109/Elevator-Assistant";
       const ghHeaders: Record<string, string> = {
@@ -2585,45 +2589,56 @@ ${answerRules}${contextText}${memoSection}`,
         const ghRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/commits?sha=main&per_page=30`, { headers: ghHeaders });
         if (ghRes.ok) commits = await ghRes.json();
       } catch {}
+      if (commits.length === 0) return;
 
       // 2) 아직 캐시에 없는 커밋만 골라 AI로 문구 정리 후 저장
-      if (commits.length > 0) {
-        const existing = await clDb.select({ sha: changelogCache.sha }).from(changelogCache);
-        const existingShas = new Set(existing.map(r => r.sha));
-        const newCommits = commits.filter((c: any) => c.sha && !existingShas.has(c.sha));
+      const existing = await clDb.select({ sha: changelogCache.sha }).from(changelogCache);
+      const existingShas = new Set(existing.map(r => r.sha));
+      const newCommits = commits.filter((c: any) => c.sha && !existingShas.has(c.sha));
+      if (newCommits.length === 0 || !process.env.ANTHROPIC_API_KEY) return;
 
-        if (newCommits.length > 0 && process.env.ANTHROPIC_API_KEY) {
-          const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-          for (const c of newCommits) {
-            const rawMsg = (c.commit?.message || "").split("\n")[0];
-            let displayText: string | null = null;
-            try {
-              const resp = await anthropic.messages.create({
-                model: "claude-haiku-4-5-20251001",
-                max_tokens: 150,
-                messages: [{
-                  role: "user",
-                  content: `다음은 승강기 정밀안전검사·검사기준 안내 앱의 git 커밋 메시지입니다.\n"${rawMsg}"\n\n이 앱을 쓰는 일반 이용자가 이해할 수 있는 자연스러운 한국어 한 문장으로 바꿔 주세요. "~했어요" 톤, 40자 내외, 개발 용어(디버그, 리팩터링, 컴포넌트 등) 사용 금지.\n다만 이용자가 화면이나 기능에서 전혀 체감할 수 없는 내부적인 변경(오타·문서·SQL 마이그레이션·빌드 설정·코드 정리 등)이라면 다른 말 없이 정확히 SKIP 이라고만 답하세요.`,
-                }],
-              });
-              const block = resp.content[0];
-              const text = block && block.type === "text" ? block.text.trim() : "";
-              if (text && !/^SKIP$/i.test(text) && !text.includes("SKIP")) displayText = text;
-            } catch {}
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      for (const c of newCommits) {
+        const rawMsg = (c.commit?.message || "").split("\n")[0];
+        let displayText: string | null = null;
+        try {
+          const resp = await anthropic.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 150,
+            messages: [{
+              role: "user",
+              content: `다음은 승강기 정밀안전검사·검사기준 안내 앱의 git 커밋 메시지입니다.\n"${rawMsg}"\n\n이 앱을 쓰는 일반 이용자가 이해할 수 있는 자연스러운 한국어 한 문장으로 바꿔 주세요. "~했어요" 톤, 40자 내외, 개발 용어(디버그, 리팩터링, 컴포넌트 등) 사용 금지.\n다만 이용자가 화면이나 기능에서 전혀 체감할 수 없는 내부적인 변경(오타·문서·SQL 마이그레이션·빌드 설정·코드 정리 등)이라면 다른 말 없이 정확히 SKIP 이라고만 답하세요.`,
+            }],
+          });
+          const block = resp.content[0];
+          const text = block && block.type === "text" ? block.text.trim() : "";
+          if (text && !/^SKIP$/i.test(text) && !text.includes("SKIP")) displayText = text;
+        } catch {}
 
-            try {
-              await clDb.insert(changelogCache).values({
-                sha: c.sha,
-                commitDate: new Date(c.commit?.author?.date || c.commit?.committer?.date || Date.now()),
-                rawMessage: rawMsg,
-                displayText,
-              }).onConflictDoNothing();
-            } catch {}
-          }
-        }
+        try {
+          await clDb.insert(changelogCache).values({
+            sha: c.sha,
+            commitDate: new Date(c.commit?.author?.date || c.commit?.committer?.date || Date.now()),
+            rawMessage: rawMsg,
+            displayText,
+          }).onConflictDoNothing();
+        } catch {}
       }
+    } catch {} finally {
+      changelogRefreshing = false;
+    }
+  };
 
-      // 3) 이용자에게 보여줄(=SKIP 아닌) 내역만 최신순으로 반환
+  // 서버 시작 시 1회, 이후 10분마다 백그라운드로 최신 커밋을 미리 정리해둔다.
+  refreshChangelogCache();
+  setInterval(refreshChangelogCache, 10 * 60 * 1000);
+
+  app.get("/api/changelog", async (req, res) => {
+    try {
+      const { db: clDb } = await import("./db");
+      const { changelogCache } = await import("@shared/schema");
+      const { desc: clDesc, isNotNull } = await import("drizzle-orm");
+
       const visible = await clDb.select().from(changelogCache)
         .where(isNotNull(changelogCache.displayText))
         .orderBy(clDesc(changelogCache.commitDate))
