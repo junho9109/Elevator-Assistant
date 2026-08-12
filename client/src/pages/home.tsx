@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -316,7 +316,7 @@ function scoreMatch(
 }
 
 
-type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; };
+type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; elapsedMs?: number; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
@@ -903,7 +903,7 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 
 // ==================== 메인 ====================
 // ── AI 답변 피드백 버튼 ───────────────────────────────────────
-const FEEDBACK_SECTIONS = ["판정 기준", "관련 조문", "검사 시 유의사항", "계산 과정", "전체 답변"];
+const FEEDBACK_SECTIONS = ["판정 기준", "관련 조문", "관련 표준화", "검사 시 유의사항", "계산 과정", "전체 답변"];
 const FEEDBACK_REASONS_POS = ["조문 근거가 정확함", "판정 기준이 명확함", "실무에 바로 도움됨", "종전/현행 차이 설명이 명확함", "계산 과정이 이해하기 쉬움", "간결하고 핵심만 담음"];
 const FEEDBACK_REASONS_NEG = ["조문 근거가 틀리거나 부정확함", "판정 기준이 잘못됨", "불필요한 내용이 많음", "설명이 이해하기 어려움", "질문과 관련 없는 답변"];
 
@@ -1431,6 +1431,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     setUsageLoading(false);
   };
 
+  // AI 검색 답변 모드 (빠른 답변 / 정밀 답변) — 기본값 빠른 답변, 선택값은 기기에 저장
+  const [chatMode, setChatMode] = useState<"fast" | "precise">(() => {
+    try {
+      const saved = localStorage.getItem("aiChatMode");
+      return saved === "precise" ? "precise" : "fast";
+    } catch { return "fast"; }
+  });
+  const selectChatMode = (m: "fast" | "precise") => {
+    setChatMode(m);
+    try { localStorage.setItem("aiChatMode", m); } catch {}
+  };
+
   // 업데이트 내역
   const [showChangelog, setShowChangelog] = useState(false);
   const [changelog, setChangelog] = useState<any[] | null>(null);
@@ -1829,7 +1841,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       const resp = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: historyMsgs, context }),
+        body: JSON.stringify({ messages: historyMsgs, context, mode: chatMode }),
       });
 
       if (!resp.ok) throw new Error("서버 오류");
@@ -1926,6 +1938,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         elevatorData: data.elevatorData || null,
         safetyPoints: data.safetyPoints || [],
         isElevatorQuery: data.isElevatorQuery || false,
+        mode: data.mode,
+        elapsedMs: data.elapsedMs,
       }]);
     } catch (err: any) {
       console.error("Chat fetch error:", err);
@@ -1941,7 +1955,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       }]);
     }
     setIsTyping(false);
-  }, [accidentStats, standards, messages]);
+  }, [accidentStats, standards, messages, chatMode]);
 
   // 리더라인 설정 (카드 오프셋 저장값 우선, 없으면 자동 계산)
   const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {
@@ -2776,7 +2790,15 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   {msg.calcCard === "COUNTER_WEIGHT" && (
                     <CounterWeightCalcCard />
                   )}
-                  <span className="text-xs text-muted-foreground px-1 mt-1">{msg.time}</span>
+                  <div className="flex items-center gap-1.5 px-1 mt-1">
+                    <span className="text-xs text-muted-foreground">{msg.time}</span>
+                    {msg.role === "assistant" && msg.mode && (
+                      <span className="text-[10px] text-muted-foreground">
+                        · {msg.mode === "precise" ? "정밀 답변" : "빠른 답변"}
+                        {typeof msg.elapsedMs === "number" && ` · ${(msg.elapsedMs / 1000).toFixed(1)}초`}
+                      </span>
+                    )}
+                  </div>
                   {msg.role === "assistant" && msg.content && i > 0 && messages[i-1]?.role === "user" && (
                     <div className="w-full">
                       <FeedbackButtons question={messages[i-1].content} answer={msg.content} />
@@ -2869,6 +2891,34 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
 
           {/* 입력창 */}
           <div className="px-4 py-3 border-t border-border bg-card shrink-0">
+            <div className="flex gap-1.5 mb-2">
+              <button
+                onClick={() => selectChatMode("fast")}
+                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg border transition-colors ${
+                  chatMode === "fast"
+                    ? "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700"
+                    : "border-border"
+                }`}
+              >
+                <span className={`flex items-center gap-1 text-xs font-medium ${chatMode === "fast" ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}`}>
+                  <Zap className="h-3 w-3" />빠른 답변
+                </span>
+                <span className={`text-[10px] ${chatMode === "fast" ? "text-blue-500 dark:text-blue-400" : "text-muted-foreground"}`}>평소처럼 빠르게</span>
+              </button>
+              <button
+                onClick={() => selectChatMode("precise")}
+                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg border transition-colors ${
+                  chatMode === "precise"
+                    ? "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700"
+                    : "border-border"
+                }`}
+              >
+                <span className={`flex items-center gap-1 text-xs font-medium ${chatMode === "precise" ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}`}>
+                  <Lightbulb className="h-3 w-3" />정밀 답변
+                </span>
+                <span className={`text-[10px] ${chatMode === "precise" ? "text-blue-500 dark:text-blue-400" : "text-muted-foreground"}`}>더 꼼꼼하게, 조금 느려요</span>
+              </button>
+            </div>
             <div className="flex gap-2">
               <input
                 ref={chatInputRef}

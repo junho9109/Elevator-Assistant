@@ -1863,8 +1863,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== AI 챗봇 ====================
   app.post("/api/chat", async (req, res) => {
     try {
-      const { messages, context } = req.body as {
+      const { messages, context, mode } = req.body as {
         messages: { role: "user" | "assistant"; content: string }[];
+        mode?: "fast" | "precise";
         context?: {
           inspCtx?: { priority: string; title: string; ref: string; content: string }[];
           techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string }[];
@@ -2217,10 +2218,25 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
       // ════════════════════════════════════════════════════════════
       // 3-Agent 파이프라인 (LOOKUP / JUDGMENT)
       // 규칙1: 어플 내 등록된 데이터만 검색한다 (외부 인터넷 검색 없음)
-      // 규칙2: 에이전트1(Sonnet,초안) → 에이전트2(Haiku,독립 재검증)
-      //        → 불일치 시에만 에이전트3(Sonnet,중재)
+      // 규칙2: 에이전트1 초안 → 에이전트2 독립 재검증 (병렬 실행)
+      //        → 불일치 시에만 에이전트3 중재
       // 규칙3: 에이전트 간 대화는 노출하지 않고 최종 결론만 반환한다
+      // 규칙4: mode="fast"(기본) / "precise" 에 따라 모델·씽킹 여부가 달라진다
       // ════════════════════════════════════════════════════════════
+
+      const chatMode: "fast" | "precise" = mode === "precise" ? "precise" : "fast";
+      const pipelineStart = Date.now();
+      const MODEL = chatMode === "precise"
+        ? { agent1: "claude-opus-4-8", agent2: "claude-opus-4-8", compare: "claude-sonnet-4-6", agent3: "claude-opus-4-8", thinking: true }
+        : { agent1: "claude-sonnet-4-6", agent2: "claude-haiku-4-5-20251001", compare: "claude-haiku-4-5-20251001", agent3: "claude-sonnet-4-6", thinking: false };
+      // thinking 사용 시 사고 토큰도 max_tokens에 포함되므로 여유를 둔다
+      const agentMaxTokens = MODEL.thinking ? 3000 : 1200;
+      const thinkingParam = MODEL.thinking ? { thinking: { type: "adaptive" as const } } : {};
+      // thinking 블록이 섞여 나올 수 있으므로 text 블록을 안전하게 찾아 추출
+      const getText = (resp: any): string => {
+        const block = (resp.content || []).find((b: any) => b.type === "text");
+        return block ? String(block.text).trim() : "";
+      };
 
       const answerRules = `## 자료 정확도 원칙 (최우선)
 아래 순서대로 자료를 찾아라. 상위 자료에서 답을 찾으면 하위 자료는 무시한다.
@@ -2273,27 +2289,24 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
 📌 근거: [검사기준] 조문 | [판정지침] 항목 | [기술자료] 표준화명
 메모는 1~3순위 자료 없을 때만 표시`;
 
-      // ── 에이전트1 (Opus) — 초안 ──────────────────────────────────
-      const agent1 = await anthropic.messages.create({
-        model: "claude-opus-4-8",
-        max_tokens: 1200,
-        system: `당신은 승강기 안전검사 현장 전문가(에이전트1)다. 제공된 어플 내부 자료만 근거로 답한다.
+      // ── 에이전트1 — 초안, 에이전트2 — 독립 재검증 (서로 의존하지 않으므로 병렬 실행) ──
+      const [agent1, agent2] = await Promise.all([
+        anthropic.messages.create({
+          model: MODEL.agent1,
+          max_tokens: agentMaxTokens,
+          ...thinkingParam,
+          system: `당신은 승강기 안전검사 현장 전문가(에이전트1)다. 제공된 어플 내부 자료만 근거로 답한다.
 
 먼저 첫 줄에 "[핵심결론] 한 줄 요약"을 쓰고, 빈 줄 하나 띄운 뒤 아래 형식의 최종 답변을 작성해라.
 
 ${answerRules}${contextText}${memoSection}`,
-        messages: messages,
-      });
-      const agent1Text = agent1.content[0].type === "text" ? agent1.content[0].text.trim() : "";
-      const agent1Match = agent1Text.match(/^\[핵심결론\]\s*(.+)$/m);
-      const agent1Summary = agent1Match ? agent1Match[1].trim() : "";
-      const agent1Answer = agent1Text.replace(/^\[핵심결론\].*\n+/, "").trim();
-
-      // ── 에이전트2 (Sonnet) — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
-      const agent2 = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 400,
-        system: `승강기 안전검사 전문 분석가(에이전트2)다. 제공된 자료만으로 이 질문의 결론을 처음부터 독립적으로 도출해라. 다른 사람의 답은 본 적이 없다.
+          messages: messages,
+        } as any),
+        // ── 에이전트2 — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
+        anthropic.messages.create({
+          model: MODEL.agent2,
+          max_tokens: 400,
+          system: `승강기 안전검사 전문 분석가(에이전트2)다. 제공된 자료만으로 이 질문의 결론을 처음부터 독립적으로 도출해라. 다른 사람의 답은 본 적이 없다.
 
 자료 신뢰도 순서: [검사기준] > [판정지침] > [기술자료] > [현장메모]
 검사기준/판정지침에서 답을 찾으면 메모는 무시한다.
@@ -2306,17 +2319,23 @@ ${answerRules}${contextText}${memoSection}`,
   "사용자료": "검사기준|판정지침|기술자료|메모"
 }
 다른 텍스트 없이 JSON만.${contextText}${memoSection}`,
-        messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
-      });
+          messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
+        }),
+      ]);
+      const agent1Text = getText(agent1);
+      const agent1Match = agent1Text.match(/^\[핵심결론\]\s*(.+)$/m);
+      const agent1Summary = agent1Match ? agent1Match[1].trim() : "";
+      const agent1Answer = agent1Text.replace(/^\[핵심결론\].*\n+/, "").trim();
+
       let agent2Data: any = {};
       try {
-        const raw2 = agent2.content[0].type === "text" ? agent2.content[0].text.trim() : "{}";
+        const raw2 = getText(agent2) || "{}";
         agent2Data = JSON.parse(raw2.replace(/```json|```/g, "").trim());
       } catch {}
 
-      // ── 일치 여부 판정 (Haiku, 경량 비교) ───────────────────────────
+      // ── 일치 여부 판정 (경량 비교) ───────────────────────────
       const compare = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
+        model: MODEL.compare,
         max_tokens: 200,
         system: `두 결론이 실질적으로 같은 판정/수치를 말하는지 비교해라. 표현이 달라도 같은 판정이면 일치로 본다.
 아래 JSON만 반환해라.
@@ -2329,18 +2348,19 @@ ${answerRules}${contextText}${memoSection}`,
       });
       let compareData: any = { 일치여부: true, 불일치_사유: null };
       try {
-        const raw3 = compare.content[0].type === "text" ? compare.content[0].text.trim() : "{}";
+        const raw3 = getText(compare) || "{}";
         compareData = JSON.parse(raw3.replace(/```json|```/g, "").trim());
       } catch {}
 
       let reply = agent1Answer;
       let agent3: any = null;
 
-      // ── 에이전트3 (Sonnet) — 불일치 시에만 중재 ─────────────────────
+      // ── 에이전트3 — 불일치 시에만 중재 ─────────────────────
       if (compareData.일치여부 === false) {
         agent3 = await anthropic.messages.create({
-          model: "claude-opus-4-8",
-          max_tokens: 1200,
+          model: MODEL.agent3,
+          max_tokens: agentMaxTokens,
+          ...thinkingParam,
           system: `당신은 승강기 안전검사 수석 전문가(에이전트3, 중재자)다.
 두 결론이 불일치했다. 제공된 어플 내부 자료를 다시 확인해 최종 판정을 확정하고, 아래 형식으로 최종 답변만 작성해라(중재 과정은 쓰지 마라).
 
@@ -2350,28 +2370,32 @@ ${answerRules}${contextText}${memoSection}`,
 
 ${answerRules}${contextText}${memoSection}`,
           messages: messages,
-        });
-        reply = agent3.content[0].type === "text" ? agent3.content[0].text.trim() : agent1Answer;
+        } as any);
+        reply = getText(agent3) || agent1Answer;
       }
 
       // AI 사용량 DB 저장 (모든 사용자 누적 — 껐다 켜도 DB에 영구 보존)
+      // 모드(fast/precise)에 따라 실제 호출 모델이 달라지므로, 각 응답의 model 필드로
+      // 정확한 단가를 찾아 계산한다 (고정된 haiku/sonnet/opus 자리 가정 금지).
       try {
         const { db: uDb } = await import("./db");
         const { aiUsage } = await import("@shared/schema");
-        // Opus: $15/$75, Sonnet: $3/$15, Haiku: $0.25/$1.25 per 1M
-        const haikuIn   = compare.usage?.input_tokens  || 0;
-        const haikuOut  = compare.usage?.output_tokens || 0;
-        const sonnetIn  = agent2.usage?.input_tokens   || 0;
-        const sonnetOut = agent2.usage?.output_tokens  || 0;
-        const opusIn    = (agent1.usage?.input_tokens  || 0) + (agent3?.usage?.input_tokens  || 0);
-        const opusOut   = (agent1.usage?.output_tokens || 0) + (agent3?.usage?.output_tokens || 0);
-        const inputTok  = haikuIn + sonnetIn + opusIn;
-        const outputTok = haikuOut + sonnetOut + opusOut;
-        const cost = (
-          (haikuIn * 0.25 + haikuOut * 1.25 +
-           sonnetIn * 3 + sonnetOut * 15 +
-           opusIn * 15 + opusOut * 75) / 1_000_000
-        ).toFixed(6);
+        // 1M 토큰당 가격(달러)
+        const PRICE: Record<string, { in: number; out: number }> = {
+          "claude-opus-4-8": { in: 15, out: 75 },
+          "claude-sonnet-4-6": { in: 3, out: 15 },
+          "claude-haiku-4-5-20251001": { in: 0.25, out: 1.25 },
+        };
+        const calls = [agent1, agent2, compare, agent3].filter(Boolean) as any[];
+        let inputTok = 0, outputTok = 0, cost = 0;
+        for (const c of calls) {
+          const price = PRICE[c.model] || PRICE["claude-sonnet-4-6"];
+          const inTok = c.usage?.input_tokens || 0;
+          const outTok = c.usage?.output_tokens || 0;
+          inputTok += inTok;
+          outputTok += outTok;
+          cost += (inTok * price.in + outTok * price.out) / 1_000_000;
+        }
         const question = Array.isArray(messages) && messages.length > 0
           ? String(messages[messages.length - 1]?.content || "").slice(0, 200)
           : "";
@@ -2379,7 +2403,7 @@ ${answerRules}${contextText}${memoSection}`,
           question,
           inputTokens: inputTok,
           outputTokens: outputTok,
-          costUsd: cost,
+          costUsd: cost.toFixed(6),
         });
       } catch (e) {
         console.error("[usage 저장 오류]", e);
@@ -2446,7 +2470,14 @@ ${answerRules}${contextText}${memoSection}`,
       const safetyPoints = (req as any).safetyPoints || [];
       const elevatorData = (req as any).elevatorData || null;
       const isElevatorQuery = (req as any).isElevatorQuery || false;
-      res.json({ reply: isElevatorQuery ? "" : reply, usedSources: isElevatorQuery ? [] : usedSources, articleCards: isElevatorQuery ? [] : articleCards, safetyPoints, elevatorData, isElevatorQuery });
+      res.json({
+        reply: isElevatorQuery ? "" : reply,
+        usedSources: isElevatorQuery ? [] : usedSources,
+        articleCards: isElevatorQuery ? [] : articleCards,
+        safetyPoints, elevatorData, isElevatorQuery,
+        mode: chatMode,
+        elapsedMs: Date.now() - pipelineStart,
+      });
 
 
     } catch (error: any) {
