@@ -1431,6 +1431,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     setUsageLoading(false);
   };
 
+  // 업데이트 내역
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [changelog, setChangelog] = useState<any[] | null>(null);
+  const [changelogLoading, setChangelogLoading] = useState(false);
+
+  const fetchChangelog = async () => {
+    setChangelogLoading(true);
+    try {
+      const r = await fetch("/api/changelog");
+      if (r.ok) setChangelog(await r.json());
+    } catch {}
+    setChangelogLoading(false);
+  };
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
@@ -2555,6 +2569,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 </button>
               )}
               <button
+                onClick={() => { setShowChangelog(s => !s); if (!showChangelog) fetchChangelog(); }}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+                업데이트 내역
+              </button>
+              <button
                 onClick={() => { if (onLogout) onLogout(); }}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted"
               >
@@ -2564,6 +2585,44 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           )}
         </div>
       </div>
+
+      {/* 업데이트 내역 */}
+      {showChangelog && (
+        <div className="border-b border-border bg-card shrink-0 overflow-y-auto" style={{maxHeight: "70vh"}}>
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-blue-50 dark:bg-blue-900/20">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">업데이트 내역</span>
+            <button onClick={() => setShowChangelog(false)} className="w-6 h-6 flex items-center justify-center rounded border border-blue-200 dark:border-blue-700"><X className="h-3 w-3" /></button>
+          </div>
+          {changelogLoading ? (
+            <div className="flex items-center justify-center py-8 text-xs text-muted-foreground">불러오는 중…</div>
+          ) : changelog && changelog.length > 0 ? (
+            <div className="p-3 flex flex-col gap-4">
+              {Object.entries(
+                changelog.reduce((acc: Record<string, any[]>, item: any) => {
+                  const key = new Date(item.commitDate).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
+                  (acc[key] = acc[key] || []).push(item);
+                  return acc;
+                }, {})
+              ).map(([date, items]: [string, any[]]) => (
+                <div key={date}>
+                  <p className="text-[11px] text-muted-foreground mb-1.5">{date}</p>
+                  <div className="flex flex-col gap-2">
+                    {items.map((item: any) => (
+                      <div key={item.id} className="flex gap-2 items-start">
+                        <span className="text-blue-500 mt-0.5">·</span>
+                        <p className="text-[13px] leading-relaxed flex-1">{item.displayText}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="px-4 py-6 text-center text-xs text-muted-foreground">아직 업데이트 내역이 없습니다</div>
+          )}
+        </div>
+      )}
 
       {/* AI 사용량 대시보드 */}
       {showUsage && (

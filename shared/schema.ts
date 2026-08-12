@@ -449,6 +449,17 @@ export const aiUsage = pgTable("ai_usage", {
 });
 export type AiUsage = typeof aiUsage.$inferSelect;
 
+// 업데이트 내역: 깃허브 커밋을 이용자용 문구로 정리해 캐싱 (AI 호출 비용 절감 목적)
+export const changelogCache = pgTable("changelog_cache", {
+  id: serial("id").primaryKey(),
+  sha: varchar("sha", { length: 40 }).notNull().unique(),
+  commitDate: timestamp("commit_date").notNull(),
+  rawMessage: text("raw_message").notNull(),
+  displayText: text("display_text"),  // null이면 이용자에게 보이지 않는(내부용) 커밋으로 판단됨
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type ChangelogCache = typeof changelogCache.$inferSelect;
+
 // ── 위험성평가: 유해위험요인 (모든 이용자가 등록) ──
 export const riskHazardItems = pgTable("risk_hazard_items", {
   id: serial("id").primaryKey(),
