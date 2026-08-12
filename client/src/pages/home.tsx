@@ -15,7 +15,6 @@ import {
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
-import INSPECTION_CONTENT from "@/data/inspection-content.json";
 import ReactMarkdown from "react-markdown";
 // STD_DATA JSON 제거 — DB(std_item_overrides) 전용으로 이전 완료
 type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
@@ -473,11 +472,8 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[], 
     });
   }
 
-  // 검사기준 검색 — 라이브 DB 데이터(inspection_base_items)가 있으면 그걸 우선 사용, 없으면 정적 파일로 폴백
-  const contentSource = (liveInspectionContent && Object.keys(liveInspectionContent).length > 0)
-    ? liveInspectionContent
-    : (INSPECTION_CONTENT as unknown as Record<string, {text?: string; effectiveDate?: string; revisions?: any[]}>);
-  const contentEntries = Object.entries(contentSource);
+  // 검사기준 검색 — DB(inspection_base_items) 데이터만 사용 (정적 파일 폴백 없음)
+  const contentEntries = Object.entries(liveInspectionContent || {});
   contentEntries.forEach(([id, val]) => {
     const text = val.text || "";
     if (text.length < 10) return;
@@ -1329,24 +1325,41 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       localStorage.setItem("hotspots_cache_ts", String(Date.now()));
     }
   }, [hotspots]);
-  // 검사기준 DB 로드 (inspection-content.json 대체)
+  // 검사기준 DB 로드 (inspection-content.json 대체 — 정적 파일 사용 안 함)
   const { data: inspectionBaseItems } = useQuery({
     queryKey: ["/api/inspection-base-items"],
     queryFn: () => fetch("/api/inspection-base-items").then(r => r.json()),
     staleTime: 1000 * 60 * 10,
   });
-  const INSPECTION_CONTENT = Object.fromEntries(
-    (inspectionBaseItems || []).map((item: any) => [
-      item.itemId,
-      {
-        text: item.text || "",
-        effectiveDate: item.effectiveDate,
-        revisions: item.standardDates
-          ? (() => { try { return JSON.parse(item.standardDates); } catch { return []; } })()
-          : []
-      }
-    ])
-  );
+  // 관리자 수정본(inspection_item_edits) — 있으면 base_items보다 우선 (judgment.tsx와 동일한 DB 우선 원칙)
+  const { data: inspectionItemEdits } = useQuery({
+    queryKey: ["/api/inspection-edits"],
+    queryFn: () => fetch("/api/inspection-edits").then(r => r.json()),
+    staleTime: 1000 * 60 * 10,
+  });
+  const INSPECTION_CONTENT = useMemo(() => {
+    const editMap: Record<string, any> = Object.fromEntries(
+      (inspectionItemEdits || []).map((e: any) => [e.itemId, e])
+    );
+    return Object.fromEntries(
+      (inspectionBaseItems || []).map((item: any) => {
+        const edit = editMap[item.itemId];
+        const standardDatesRaw = edit?.standardDates || item.standardDates;
+        return [
+          item.itemId,
+          {
+            text: edit?.text || item.text || "",
+            effectiveDate: edit?.effectiveDate || item.effectiveDate,
+            customWarning: edit?.customWarning,
+            standardNote: edit?.standardNote,
+            revisions: standardDatesRaw
+              ? (() => { try { return JSON.parse(standardDatesRaw); } catch { return []; } })()
+              : []
+          }
+        ];
+      })
+    );
+  }, [inspectionBaseItems, inspectionItemEdits]);
 
   const { data: stdOverrides, refetch: refetchStdOverrides } = useQuery<any[]>({
     queryKey: ["/api/std-overrides"],

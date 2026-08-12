@@ -1,6 +1,10 @@
-// inspection-content.json 생성 스크립트
-// 실행: node build-content.mjs
-// db-export.json + inspection-data-mr.ts → inspection-content.json
+// [DEPRECATED — 더 이상 실행하지 마세요]
+// inspection-content.json은 AI검색이 더 이상 쓰지 않습니다 (DB inspection_base_items/
+// inspection_item_edits를 실시간으로 조회하는 방식으로 변경됨, home.tsx 참고).
+// 이 스크립트를 다시 실행해서 inspection-content.json을 재생성하면 DB와 어긋나는
+// 오래된 스냅샷이 되살아나므로 사용하지 마세요.
+//
+// (이하 원본 — inspection-content.json 생성 스크립트, db-export.json + inspection-data-mr.ts → inspection-content.json)
 import fs from "fs";
 
 const db = JSON.parse(fs.readFileSync("db-export.json", "utf8"));
