@@ -2263,7 +2263,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       // 앵커점 또는 카드 영역 클릭 감지
       const hitAnchor = Math.hypot(px - x, py - y) < 40;
       const hitCard = px >= cardX && px <= cardX + cardW && py >= cardY && py <= cardY + cardH;
-      if ((hitAnchor || hitCard) && !isAdminMode) setActiveButtonId(hotspot.id);
+      if ((hitAnchor || hitCard) && !isAdminMode) {
+        setActiveButtonId(hotspot.id);
+        // 구조도 핀 클릭 시에도 하단 탭 버튼과 동일하게 표준화 목록을 해당 분류로 필터링
+        setStdCategory(hotspot.label);
+        setStdSelected(null);
+      }
     });
   };
 
