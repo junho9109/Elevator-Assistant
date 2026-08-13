@@ -534,7 +534,6 @@ export default function JudgmentPage() {
   const [detailRevisionOpen, setDetailRevisionOpen] = useState(true);
   const [detailMediaOpen, setDetailMediaOpen] = useState(true);
   const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({});
-  const [detailPermitSel, setDetailPermitSel] = useState<Record<string, "before"|"after">>({});
 
   const [customItems, setCustomItems] = useState<(InspectionItem & { sectionId?: string })[]>([]);
   const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
@@ -2459,8 +2458,6 @@ export default function JudgmentPage() {
                     referenceDate={detailItem ? getReferenceDateForItem(detailItem.id) : referenceDate}
                     detailRevSel={detailRevSel}
                     setDetailRevSel={setDetailRevSel}
-                    detailPermitSel={detailPermitSel}
-                    setDetailPermitSel={setDetailPermitSel}
                     isAdminMode={isAdminMode}
                   />
                   {false && (() => { return ( // placeholder to preserve JSX structure
@@ -2629,15 +2626,13 @@ export default function JudgmentPage() {
 }
 
 // ── 개정 날짜 섹션 컴포넌트 (esbuild JSX 파서 이슈 회피를 위해 분리) ──
-function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, detailRevSel, setDetailRevSel, detailPermitSel, setDetailPermitSel, isAdminMode }: {
+function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, detailRevSel, setDetailRevSel, isAdminMode }: {
   itemId: string;
   customEdits: Record<string, any>;
   baseItemMap: Record<string, any>;
   referenceDate: Date | null;
   detailRevSel: Record<string, "before"|"after">;
   setDetailRevSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
-  detailPermitSel: Record<string, "before"|"after">;
-  setDetailPermitSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
   isAdminMode: boolean;
 }) {
   const itemEdit = customEdits[itemId];
@@ -2660,12 +2655,9 @@ function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, 
       return { date: d, memo, label: `개정 ${i+1}` };
     });
 
-  const permitDate: string = (itemEdit as any)?.permitEffectiveDate || dbItem?.permitEffectiveDate || '';
   const enforce: string = (itemEdit as any)?.enforcementType || (dbItem as any)?.enforcementType || '';
 
-  if (!permitDate && datesWithMemo.length === 0) return null;
-
-  const permitSel = detailPermitSel[itemId] ?? 'after';
+  if (datesWithMemo.length === 0) return null;
 
   const fmt = (date: string) => {
     if (!date) return '시행일 미입력';
@@ -2687,32 +2679,6 @@ function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, 
 
   return (
     <div className="border border-border rounded-xl p-4 bg-muted/20 space-y-3">
-      {/* 건축허가일 이전/이후 토글 */}
-      {permitDate && (
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <p className="text-xs font-medium text-muted-foreground flex-1">🏗 건축허가일 적용</p>
-            {isAdminMode && (
-              <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
-                <button
-                  onClick={() => setDetailPermitSel(prev => ({ ...prev, [itemId]: 'before' }))}
-                  className={`text-[10px] px-2 py-1 transition-colors ${permitSel === 'before' ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-                >이전</button>
-                <button
-                  onClick={() => setDetailPermitSel(prev => ({ ...prev, [itemId]: 'after' }))}
-                  className={`text-[10px] px-2 py-1 transition-colors ${permitSel === 'after' ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-                >이후</button>
-              </div>
-            )}
-          </div>
-          <p className={`text-xs rounded-lg px-3 py-2 font-medium ${permitSel === 'after' ? 'text-amber-700 bg-amber-50 dark:bg-amber-950/30' : 'text-gray-600 bg-gray-50 dark:bg-gray-800/30'}`}>
-            {permitSel === 'after'
-              ? `${fmt(permitDate)} 이후 건축허가분부터 적용`
-              : `${fmt(permitDate)} 이전 건축허가분에는 이 기준이 적용되지 않음`}
-          </p>
-        </div>
-      )}
-
       {/* 개정 목록 이전/이후 토글 */}
       {sorted.length > 0 && (
         <div>
