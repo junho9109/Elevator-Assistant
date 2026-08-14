@@ -20,12 +20,12 @@ UPDATE custom_inspection_items SET text = REPLACE(text, '㎧', 'm/s') WHERE text
 
 -- std_item_overrides (표준화 항목)
 UPDATE std_item_overrides SET title = REPLACE(title, '㎧', 'm/s') WHERE title LIKE '%㎧%';
-UPDATE std_item_overrides SET "overrideTitle" = REPLACE("overrideTitle", '㎧', 'm/s') WHERE "overrideTitle" LIKE '%㎧%';
+UPDATE std_item_overrides SET override_title = REPLACE(override_title, '㎧', 'm/s') WHERE override_title LIKE '%㎧%';
 UPDATE std_item_overrides SET basis = REPLACE(basis, '㎧', 'm/s') WHERE basis LIKE '%㎧%';
 UPDATE std_item_overrides SET conclusion = REPLACE(conclusion, '㎧', 'm/s') WHERE conclusion LIKE '%㎧%';
 UPDATE std_item_overrides SET source = REPLACE(source, '㎧', 'm/s') WHERE source LIKE '%㎧%';
 UPDATE std_item_overrides SET ref = REPLACE(ref, '㎧', 'm/s') WHERE ref LIKE '%㎧%';
-UPDATE std_item_overrides SET "typeTag" = REPLACE("typeTag", '㎧', 'm/s') WHERE "typeTag" LIKE '%㎧%';
+UPDATE std_item_overrides SET type_tag = REPLACE(type_tag, '㎧', 'm/s') WHERE type_tag LIKE '%㎧%';
 UPDATE std_item_overrides SET category = REPLACE(category, '㎧', 'm/s') WHERE category LIKE '%㎧%';
 
 -- insp_std_overrides (검사기준 항목 오버라이드)
@@ -38,5 +38,5 @@ SELECT
   (SELECT count(*) FROM inspection_item_edits WHERE text LIKE '%㎧%' OR custom_warning LIKE '%㎧%' OR standard_dates LIKE '%㎧%' OR standard_note LIKE '%㎧%') AS edits_left,
   (SELECT count(*) FROM inspection_item_revisions WHERE description LIKE '%㎧%') AS revisions_left,
   (SELECT count(*) FROM custom_inspection_items WHERE text LIKE '%㎧%') AS custom_items_left,
-  (SELECT count(*) FROM std_item_overrides WHERE title LIKE '%㎧%' OR "overrideTitle" LIKE '%㎧%' OR basis LIKE '%㎧%' OR conclusion LIKE '%㎧%' OR source LIKE '%㎧%' OR ref LIKE '%㎧%' OR "typeTag" LIKE '%㎧%' OR category LIKE '%㎧%') AS std_overrides_left,
+  (SELECT count(*) FROM std_item_overrides WHERE title LIKE '%㎧%' OR override_title LIKE '%㎧%' OR basis LIKE '%㎧%' OR conclusion LIKE '%㎧%' OR source LIKE '%㎧%' OR ref LIKE '%㎧%' OR type_tag LIKE '%㎧%' OR category LIKE '%㎧%') AS std_overrides_left,
   (SELECT count(*) FROM insp_std_overrides WHERE text LIKE '%㎧%' OR source LIKE '%㎧%') AS insp_std_overrides_left;
