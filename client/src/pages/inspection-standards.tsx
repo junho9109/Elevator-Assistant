@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
@@ -143,8 +143,8 @@ function ItemBtn({ id, map, isActive, onClick }: { id: string; map: Record<strin
   );
 }
 
-function TreeNode({ sec, map, depth, activeKey, onSelect }: {
-  sec: Section; map: Record<string, Entry>; depth: number; activeKey: string | null; onSelect: (k: string) => void;
+function TreeNode({ sec, map, depth, activeKey, onSelect, onInteract }: {
+  sec: Section; map: Record<string, Entry>; depth: number; activeKey: string | null; onSelect: (k: string) => void; onInteract?: () => void;
 }) {
   const isActive = activeKey === sec.id;
   const hasDescendant = activeKey
@@ -159,7 +159,7 @@ function TreeNode({ sec, map, depth, activeKey, onSelect }: {
   return (
     <div>
       <div
-        onClick={() => onSelect(sec.id)}
+        onClick={() => { onSelect(sec.id); onInteract?.(); }}
         className={`w-full flex items-center gap-2 py-2.5 pr-3 text-left text-xs leading-relaxed transition-colors hover:bg-secondary cursor-pointer ${
           isActive || hasDescendant ? "text-primary font-medium" : "text-foreground"
         }`}
@@ -168,7 +168,7 @@ function TreeNode({ sec, map, depth, activeKey, onSelect }: {
         {hasChildren
           ? (
             <button
-              onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+              onClick={(e) => { e.stopPropagation(); setOpen(o => !o); onInteract?.(); }}
               className="shrink-0 p-0.5 -m-0.5"
               aria-label={open ? "하위 항목 접기" : "하위 항목 펼치기"}
             >
@@ -181,10 +181,10 @@ function TreeNode({ sec, map, depth, activeKey, onSelect }: {
       </div>
       {open && (
         <div className="border-l border-border ml-4">
-          {sec.children.map(c => <TreeNode key={c.id} sec={c} map={map} depth={depth + 1} activeKey={activeKey} onSelect={onSelect} />)}
+          {sec.children.map(c => <TreeNode key={c.id} sec={c} map={map} depth={depth + 1} activeKey={activeKey} onSelect={onSelect} onInteract={onInteract} />)}
           {sec.items.map(k => (
             <div key={k} style={{ paddingLeft: (depth + 1) * 12 }}>
-              <ItemBtn id={k} map={map} isActive={activeKey === k} onClick={() => onSelect(k)} />
+              <ItemBtn id={k} map={map} isActive={activeKey === k} onClick={() => { onSelect(k); onInteract?.(); }} />
             </div>
           ))}
         </div>
@@ -393,6 +393,11 @@ function makeSnippet(text: string, q: string, pad = 28): string {
 
 export default function InspectionStandardsPage() {
   const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [showTreeHint, setShowTreeHint] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setShowTreeHint(false), 5000);
+    return () => clearTimeout(t);
+  }, []);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [showSearch, setShowSearch] = useState(false);
@@ -669,7 +674,27 @@ export default function InspectionStandardsPage() {
             )
           ) : (
             <div className="p-2">
-              {activeTree.map(ch => <TreeNode key={ch.id} sec={ch} map={activeMap} depth={0} activeKey={activeKey} onSelect={setActiveKey} />)}
+              <div
+                className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                  showTreeHint ? "max-h-10 opacity-100 mb-1.5" : "max-h-0 opacity-0 -translate-y-1 mb-0"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-[11px] text-primary bg-primary/10 rounded-lg px-2.5 py-2">
+                  <Info size={13} className="shrink-0" />
+                  <span><b>화살표</b>를 누르면 하위 조문이 펼쳐지고, <b>조문 글자</b>를 누르면 상세보기가 열려요</span>
+                </div>
+              </div>
+              {activeTree.map(ch => (
+                <TreeNode
+                  key={ch.id}
+                  sec={ch}
+                  map={activeMap}
+                  depth={0}
+                  activeKey={activeKey}
+                  onSelect={setActiveKey}
+                  onInteract={() => setShowTreeHint(false)}
+                />
+              ))}
             </div>
           )}
         </div>
