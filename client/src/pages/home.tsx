@@ -6,6 +6,7 @@ import Fuse from "fuse.js";
 import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
+import { isSuperAdminLoggedIn } from "@/lib/super-admin";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1516,7 +1517,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [editingStandard, setEditingStandard] = useState<Standard | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Standard | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [structureImg, setStructureImg] = useState<string>(defaultStructureImg);

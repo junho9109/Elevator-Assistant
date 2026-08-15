@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { isSuperAdminLoggedIn } from "@/lib/super-admin";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -581,7 +582,7 @@ export default function MemoPage() {
   const [pendingDeleteMemoId, setPendingDeleteMemoId] = useState<number | null>(null);
   const [deletePasswordInput, setDeletePasswordInput] = useState("");
   const [isDeletePasswordDialogOpen, setIsDeletePasswordDialogOpen] = useState(false);
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
   const [newComment, setNewComment] = useState({ author: "", content: "" });
   const [isAdminPasswordDialogOpen, setIsAdminPasswordDialogOpen] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState("");

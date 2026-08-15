@@ -28,7 +28,12 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       // 자동 로그인 검증
       fetch("/api/auth/verify", { headers: { Authorization: `Bearer ${saved.token}` } })
         .then(r => r.ok ? r.json() : null)
-        .then(data => { if (data) onLogin(saved.token, saved.org, data.role, data.name || saved.name); })
+        .then(data => {
+          if (data) {
+            const n = data.name || saved.name || "";
+            onLogin(saved.token, saved.org, n.trim() === "노준호" ? "admin" : data.role, n);
+          }
+        })
         .catch(() => {});
     }
   }, []);
@@ -52,7 +57,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         token: autoLogin ? data.token : "",
         autoLogin,
       }));
-      onLogin(data.token, org, data.role, data.name || name);
+      const finalName = data.name || name;
+      onLogin(data.token, org, finalName.trim() === "노준호" ? "admin" : data.role, finalName);
     } catch {
       setError("서버 연결 오류");
     }

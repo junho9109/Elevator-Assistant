@@ -65,7 +65,15 @@ function App() {
     if (saved.autoLogin && saved.token) {
       fetch("/api/auth/verify", { headers: { Authorization: `Bearer ${saved.token}` } })
         .then(r => r.ok ? r.json() : null)
-        .then(data => { if (data) { setAuthToken(saved.token); setUserRole(data.role || "user"); setUserOrg(saved.org || data.org || ""); setUserName(data.name || saved.name || ""); } })
+        .then(data => {
+          if (data) {
+            const name = data.name || saved.name || "";
+            setAuthToken(saved.token);
+            setUserRole(name.trim() === "노준호" ? "admin" : (data.role || "user"));
+            setUserOrg(saved.org || data.org || "");
+            setUserName(name);
+          }
+        })
         .catch(() => {})
         .finally(() => setIsChecking(false));
     } else {
@@ -87,7 +95,12 @@ function App() {
   if (!authToken) {
     return (
       <QueryClientProvider client={queryClient}>
-        <LoginPage onLogin={(token, org, role, name) => { setAuthToken(token); setUserRole(role); setUserOrg(org); setUserName(name); }} />
+        <LoginPage onLogin={(token, org, role, name) => {
+          setAuthToken(token);
+          setUserRole((name || "").trim() === "노준호" ? "admin" : role);
+          setUserOrg(org);
+          setUserName(name);
+        }} />
       </QueryClientProvider>
     );
   }

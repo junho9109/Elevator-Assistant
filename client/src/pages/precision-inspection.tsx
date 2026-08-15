@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, FileText, ClipboardList, AlertTriangle, CheckCircle2, Info, ListChecks, LayoutGrid, Building2, Building, Settings, Lock, Pencil, X, RotateCcw } from "lucide-react";
+import { isSuperAdminLoggedIn } from "@/lib/super-admin";
 
 // ── 날짜 계산 유틸 ──
 function addMonths(date: Date, months: number): Date {
@@ -371,7 +372,7 @@ export default function PrecisionInspectionPage() {
   const [cardDate, setCardDate] = useState(""); // 현장진단 모드 전용: 세 번째 정밀안전검사 실시일
 
   // 관리자 모드 + 고시 발령일
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
   const [showAdminPw, setShowAdminPw] = useState(false);
   const [pwInput, setPwInput] = useState("");
   const [showNoticeEditor, setShowNoticeEditor] = useState(false);

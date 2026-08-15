@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
+import { isSuperAdminLoggedIn } from "@/lib/super-admin";
 
 type Entry = { text?: string; title?: string; source?: string; };
 
@@ -426,7 +427,7 @@ export default function InspectionStandardsPage() {
   const CURRENT_STD = "KC2050-51:2022";  // 현행 기준
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
   const [showAddItem, setShowAddItem] = useState(false);
   const [newItemId, setNewItemId] = useState("");
   const [newItemAfter, setNewItemAfter] = useState("");
