@@ -1,5 +1,6 @@
 import { useState, useEffect as _ue, useEffect, useRef, useCallback } from "react";
-import { Search, X, Send, CornerUpLeft, ImagePlus, Video } from "lucide-react";
+import { Search, X, Send, CornerUpLeft, ImagePlus, Video, ZoomIn, ZoomOut } from "lucide-react";
+import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 
 interface ChatMsg {
   id: number;
@@ -58,6 +59,7 @@ export default function ChatPage() {
   const [replyTo, setReplyTo] = useState<ChatMsg | null>(null);
   const [longPress, setLongPress] = useState<{ msg: ChatMsg; x: number; y: number } | null>(null);
   const [expandedImg, setExpandedImg] = useState<string | null>(null);
+  const expandedImgZoom = usePinchZoomPan(expandedImg ?? "closed");
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<ChatMsg[]>([]);
@@ -553,19 +555,35 @@ export default function ChatPage() {
           className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center"
           onClick={() => setExpandedImg(null)}
         >
-          <img
-            src={expandedImg}
-            alt="확대"
-            className="max-w-[90vw] max-h-[80vh] rounded-xl object-contain"
+          <div
+            className="flex items-center justify-center max-w-[90vw] max-h-[80vh] overflow-hidden"
+            style={{ touchAction: "none", cursor: expandedImgZoom.cursor }}
             onClick={e => e.stopPropagation()}
-          />
+            {...expandedImgZoom.containerHandlers}
+          >
+            <img
+              src={expandedImg}
+              alt="확대"
+              draggable={false}
+              className="max-w-[90vw] max-h-[80vh] rounded-xl object-contain"
+              style={expandedImgZoom.imgStyle}
+            />
+          </div>
           <button
             className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 flex items-center justify-center"
             onClick={() => setExpandedImg(null)}
           >
             <X size={18} className="text-white" />
           </button>
-          <p className="absolute bottom-6 text-white/60 text-xs">탭하면 닫힘</p>
+          <div className="absolute bottom-6 flex items-center gap-3" onClick={e => e.stopPropagation()}>
+            <button onClick={expandedImgZoom.zoomOut} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white">
+              <ZoomOut size={18} />
+            </button>
+            <span className="text-white/60 text-xs min-w-[36px] text-center">{Math.round(expandedImgZoom.zoom * 100)}%</span>
+            <button onClick={expandedImgZoom.zoomIn} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white">
+              <ZoomIn size={18} />
+            </button>
+          </div>
         </div>
       )}
 

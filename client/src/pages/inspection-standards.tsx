@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus, Info } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus, Info, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
+import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 
 type Entry = { text?: string; title?: string; source?: string; };
 
@@ -227,6 +228,7 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
     Array.from(fl).slice(0, Math.max(0, 10 - photos.length)).forEach(f => uploadPhoto.mutate(f));
   };
   const [photoViewer, setPhotoViewer] = useState<{ open: boolean; idx: number }>({ open: false, idx: 0 });
+  const photoZoom = usePinchZoomPan(photoViewer.open ? photoViewer.idx : "closed");
   const photoUrl = (photoId: number) => `/api/inspection-photos/${encodeURIComponent(id)}/${photoId}/image`;
 
   if (!e) return (
@@ -315,8 +317,28 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
                 <button onClick={() => setPhotoViewer({ open: false, idx: 0 })} className="text-white/70 text-lg">✕</button>
               </div>
             </div>
-            <div className="flex-1 flex items-center justify-center px-4" onClick={ev => ev.stopPropagation()}>
-              <img src={photoUrl(photos[photoViewer.idx].id)} alt="" className="max-w-full max-h-full object-contain rounded-xl" />
+            <div
+              className="flex-1 flex items-center justify-center px-4 overflow-hidden"
+              style={{ touchAction: "none", cursor: photoZoom.cursor }}
+              onClick={ev => ev.stopPropagation()}
+              {...photoZoom.containerHandlers}
+            >
+              <img
+                src={photoUrl(photos[photoViewer.idx].id)}
+                alt=""
+                draggable={false}
+                className="max-w-full max-h-full object-contain rounded-xl"
+                style={photoZoom.imgStyle}
+              />
+            </div>
+            <div className="flex items-center justify-center gap-3 shrink-0 pb-1" onClick={ev => ev.stopPropagation()}>
+              <button onClick={photoZoom.zoomOut} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white">
+                <ZoomOut size={18} />
+              </button>
+              <span className="text-white/70 text-[11px] min-w-[40px] text-center">{Math.round(photoZoom.zoom * 100)}%</span>
+              <button onClick={photoZoom.zoomIn} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white">
+                <ZoomIn size={18} />
+              </button>
             </div>
             {photos.length > 1 && (
               <div className="flex gap-2 px-4 py-3 overflow-x-auto shrink-0" onClick={ev => ev.stopPropagation()}>

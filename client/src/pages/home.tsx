@@ -3,8 +3,9 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -744,6 +745,7 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<{ id: number; mimeType: string; createdAt: string }[]>([]);
   const [viewer, setViewer] = useState<{ open: boolean; idx: number }>({ open: false, idx: 0 });
+  const viewerZoom = usePinchZoomPan(viewer.open ? viewer.idx : "closed");
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [pw, setPw] = useState("");
   const [pwErr, setPwErr] = useState(false);
@@ -856,8 +858,28 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
               <button onClick={() => setViewer({ open: false, idx: 0 })} className="text-white/70 text-lg">✕</button>
             </div>
           </div>
-          <div className="flex-1 flex items-center justify-center px-4" onClick={e => e.stopPropagation()}>
-            <img src={imgUrl(photos[viewer.idx].id)} alt="" className="max-w-full max-h-full object-contain rounded-xl" />
+          <div
+            className="flex-1 flex items-center justify-center px-4 overflow-hidden"
+            style={{ touchAction: "none", cursor: viewerZoom.cursor }}
+            onClick={e => e.stopPropagation()}
+            {...viewerZoom.containerHandlers}
+          >
+            <img
+              src={imgUrl(photos[viewer.idx].id)}
+              alt=""
+              draggable={false}
+              className="max-w-full max-h-full object-contain rounded-xl"
+              style={viewerZoom.imgStyle}
+            />
+          </div>
+          <div className="flex items-center justify-center gap-3 shrink-0 pb-1" onClick={e => e.stopPropagation()}>
+            <button onClick={viewerZoom.zoomOut} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white">
+              <ZoomOut size={18} />
+            </button>
+            <span className="text-white/70 text-[11px] min-w-[40px] text-center">{Math.round(viewerZoom.zoom * 100)}%</span>
+            <button onClick={viewerZoom.zoomIn} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white">
+              <ZoomIn size={18} />
+            </button>
           </div>
           <div className="flex gap-2 px-4 py-3 overflow-x-auto shrink-0" onClick={e => e.stopPropagation()}>
             {photos.map((p, i) => (
