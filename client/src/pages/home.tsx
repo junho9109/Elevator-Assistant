@@ -3242,10 +3242,16 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
               </div>
               <div className="divide-y divide-border max-h-[480px] overflow-y-auto">
                 {(() => {
-                  const filtered = allStdItems.filter(x =>
-                    (stdCategory === "전체" || x.category === stdCategory) &&
-                    (!stdSearch || (x.title||"").includes(stdSearch) || (x.ref||"").includes(stdSearch) || (x.conclusion||"").includes(stdSearch) || (x.basis||"").includes(stdSearch))
-                  );
+                  // 검색어를 공백 기준으로 토큰화해서, 각 토큰이 (제목/표시제목/조항/결론/근거) 중
+                  // 어디에든 하나씩만 있으면 매칭되도록 한다. (예: "승강기 번호" → "승강기"와 "번호"가
+                  // 같은 필드에 붙어있지 않아도, 서로 다른 필드에 흩어져 있어도 매칭됨)
+                  const stdTokens = stdSearch.trim().split(/\s+/).filter(Boolean);
+                  const filtered = allStdItems.filter(x => {
+                    if (stdCategory !== "전체" && x.category !== stdCategory) return false;
+                    if (stdTokens.length === 0) return true;
+                    const haystack = [x.title, (x as any).displayTitle, x.ref, x.conclusion, x.basis].join(" ");
+                    return stdTokens.every(t => haystack.includes(t));
+                  });
                   if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과 없음</p>;
                   return filtered.map((item, idx) => {
                     const headerOv = stdOverrides?.find((o: any) => o.title === (item._key || item.title));
