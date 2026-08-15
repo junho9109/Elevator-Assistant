@@ -1869,6 +1869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         context?: {
           inspCtx?: { priority: string; title: string; ref: string; content: string }[];
           techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string }[];
+          verdictCtx?: { priority: string; title: string; content: string }[];
           chatCtx?: { priority: string; content: string; note: string }[];
           memoCtx?: { title: string; content: string }[];
           precisionCtx?: { situation: string; judgment: string; basis: string; source: string }[];
@@ -2004,14 +2005,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sections.push("[1순위] 검사기준(별표22)\n" +
             context.inspCtx.map(c => `■ ${c.title}${c.ref ? ` [${c.ref}]` : ""}\n${c.content}`).join("\n\n"));
         }
+        if (context.verdictCtx?.length) {
+          sections.push("[2순위] 판정지침\n" +
+            context.verdictCtx.map(c => `■ ${c.title}\n${c.content}`).join("\n\n"));
+        }
         if (context.techCtx?.length) {
-          sections.push("[2순위] 기술자료(표준화)\n" +
+          sections.push("[3순위] 기술자료(표준화)\n" +
             context.techCtx.map(c =>
               `■ ${c.title}\n${c.basis ? `현안: ${c.basis}\n` : ""}${c.conclusion ? `결정: ${c.conclusion}\n` : ""}출처: ${c.source}`
             ).join("\n\n"));
         }
         if (context.memoCtx?.length) {
-          sections.push("[3순위] 현장메모\n" +
+          sections.push("[4순위] 현장메모\n" +
             context.memoCtx.map(c => `• [${c.title}] ${c.content}`).join("\n"));
         }
         if (context.precisionCtx?.length) {

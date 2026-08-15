@@ -17,7 +17,24 @@ import {
 } from "@/lib/api";
 import type { Standard, Hotspot } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
+import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import ReactMarkdown from "react-markdown";
+
+// ── 판정지침(승강기검사결과 판정지침) — AI검색 [2순위] 컨텍스트용 ──────────
+// inspection-standards.tsx가 화면에 보여주는 것과 동일한 원본 데이터.
+type JudgmentRow2  = { ref: string; target: string; content: string };
+type JudgmentItem2 = { num: string; content: string };
+type JudgmentSection2 =
+  | { type: "text";  title: string; text: string }
+  | { type: "list";  title: string; items: JudgmentItem2[] }
+  | { type: "table"; title: string; rows: JudgmentRow2[] };
+const JUDGMENT_SECTIONS_AI = JUDGMENT_DATA as unknown as Record<string, JudgmentSection2>;
+function judgmentSectionToText(sec: JudgmentSection2): string {
+  if (sec.type === "text") return sec.text || "";
+  if (sec.type === "list") return (sec.items || []).map(it => `${it.num} ${it.content}`).join("\n");
+  if (sec.type === "table") return (sec.rows || []).map(r => `${r.ref} ${r.target}: ${r.content}`).join("\n");
+  return "";
+}
 // STD_DATA JSON 제거 — DB(std_item_overrides) 전용으로 이전 완료
 type StdItem = { title: string; ref: string; basis: string; conclusion: string; source: string; typeTag: string; category: string; };
 const STD_ITEMS: StdItem[] = []; // DB에서 동적 로드 (useEffect에서 채움)
@@ -1820,6 +1837,21 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         };
       }).filter(c => c.basis || c.conclusion);
 
+      // 2.5) 판정지침(승강기검사결과 판정지침) — 키워드 매칭 최대 2개, 항목당 600자
+      const verdictScored = Object.values(JUDGMENT_SECTIONS_AI).map(sec => {
+        const bodyText = judgmentSectionToText(sec);
+        const combined = (sec.title + " " + bodyText).toLowerCase();
+        let score = 0;
+        primaryTerms.forEach(t => { if (t && combined.includes(t.toLowerCase())) score += 40; });
+        secondaryTerms.forEach(t => { if (t && combined.includes(t.toLowerCase())) score += 10; });
+        return { title: sec.title, bodyText, score };
+      }).filter(e => e.score >= 40).sort((a, b) => b.score - a.score);
+      const verdictCtx = verdictScored.slice(0, 2).map(e => ({
+        priority: "판정지침",
+        title: e.title,
+        content: e.bodyText.slice(0, 600),
+      })).filter(c => c.content);
+
       // 3) 채팅 참고 — 최대 2개, 항목당 150자 (실무 참고용)
       const chatCtx = chatResults.slice(0, 2).map(r => ({
         priority: "채팅참고(현장의견)",
@@ -1844,7 +1876,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       const hasPrecisionQ = precisionKeywords.some(k => qLower.includes(k));
       const precisionCtx = hasPrecisionQ ? PRECISION_RULES_SUMMARY : [];
 
-      const context = { inspCtx, techCtx, chatCtx, precisionCtx };
+      const context = { inspCtx, techCtx, verdictCtx, chatCtx, precisionCtx };
 
       // AI가 실제로 참고한 항목을 SearchResult로 변환 (카드 표시용)
       const contextUsed: SearchResult[] = [
