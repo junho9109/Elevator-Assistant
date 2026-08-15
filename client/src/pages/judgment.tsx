@@ -74,6 +74,7 @@ function ImageViewerComponent({
   const lastPanPos = useRef({ x: 0, y: 0 });
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
     if (e.touches.length === 2) {
       const distance = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -89,6 +90,7 @@ function ImageViewerComponent({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    e.stopPropagation();
     if (e.touches.length === 2 && lastTouchDistance.current !== null) {
       const distance = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -109,7 +111,8 @@ function ImageViewerComponent({
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
     lastTouchDistance.current = null;
     isPanning.current = false;
   };
@@ -159,8 +162,9 @@ function ImageViewerComponent({
   };
 
   return (
-    <div 
+    <div
       id="image-viewer-portal"
+      data-no-page-pinch="true"
       style={{
         position: 'fixed',
         top: 0,

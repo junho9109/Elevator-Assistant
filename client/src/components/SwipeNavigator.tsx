@@ -45,6 +45,8 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
               zIndex: currentIndex === i ? 1 : 0,
             }}
             onTouchStart={(e) => {
+              // 사진 상세보기 등 자체 핀치줌을 쓰는 모달이 열려있으면 페이지 전체 핀치줌은 무시한다
+              if ((e.target as HTMLElement).closest('[data-no-page-pinch]')) return;
               if (e.touches.length === 2) {
                 e.currentTarget.dataset.pinchDist = String(Math.hypot(
                   e.touches[0].clientX - e.touches[1].clientX,
@@ -54,6 +56,7 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
               }
             }}
             onTouchMove={(e) => {
+              if ((e.target as HTMLElement).closest('[data-no-page-pinch]')) return;
               if (e.touches.length === 2) {
                 const prev = parseFloat(e.currentTarget.dataset.pinchDist || "1");
                 const curr = Math.hypot(
@@ -70,6 +73,7 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
               }
             }}
             onTouchEnd={(e) => {
+              if ((e.target as HTMLElement).closest('[data-no-page-pinch]')) return;
               if (e.touches.length < 2) {
                 const scale = parseFloat(e.currentTarget.dataset.pinchScale || "1");
                 if (scale < 1.05) {

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,7 @@ function ImageViewerComponent({
   const lastPanPos = useRef({ x: 0, y: 0 });
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
     if (e.touches.length === 2) {
       const distance = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -55,6 +57,7 @@ function ImageViewerComponent({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    e.stopPropagation();
     if (e.touches.length === 2 && lastTouchDistance.current !== null) {
       const distance = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
@@ -75,7 +78,8 @@ function ImageViewerComponent({
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
     lastTouchDistance.current = null;
     isPanning.current = false;
   };
@@ -124,8 +128,9 @@ function ImageViewerComponent({
     }));
   };
 
-  return (
-    <div 
+  return createPortal(
+    <div
+      data-no-page-pinch="true"
       style={{
         position: 'fixed',
         top: 0,
@@ -275,7 +280,8 @@ function ImageViewerComponent({
       }}>
         핀치로 확대/축소 · 드래그로 이동
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

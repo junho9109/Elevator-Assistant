@@ -847,7 +847,7 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 
       {/* 이미지 뷰어 */}
       {viewer.open && photos.length > 0 && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setViewer({ open: false, idx: 0 })}>
+        <div data-no-page-pinch="true" className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setViewer({ open: false, idx: 0 })}>
           <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
             <span className="text-white text-xs">{viewer.idx + 1} / {photos.length}</span>
             <div className="flex items-center gap-3">

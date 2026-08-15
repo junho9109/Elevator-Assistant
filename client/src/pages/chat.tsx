@@ -549,6 +549,7 @@ export default function ChatPage() {
       {/* 이미지 확대 오버레이 */}
       {expandedImg && (
         <div
+          data-no-page-pinch="true"
           className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center"
           onClick={() => setExpandedImg(null)}
         >
