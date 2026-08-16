@@ -123,9 +123,12 @@ export default async function runApp(
   },
   () => {
     log(`serving on port ${port}`);
-    // 서버 시작 후 백그라운드에서 standard_index seed 실행
-    seedStandardIndex().catch((e) => console.error("[SEED] 오류:", e));
-    seedStdItems().catch((e) => console.error("[SEED] std_items 오류:", e));
+    // [비활성화] 서버 재시작 시 자동 seed — DB가 이미 실시간 편집되는 단일 진실 소스가 된 뒤로는
+    // 위험한 동작이 됨: 관리자가 정리/삭제로 행 수를 임계치(90%/83개) 밑으로 줄이면,
+    // 다음 배포(=서버 재시작)에서 정적 JSON 스냅샷이 통째로 재시딩되어 방금 지운 옛 데이터가
+    // 되살아난다. (2026-08-16 표준화 자료 정리 직후 재배포로 실제 발생.)
+    // seedStandardIndex().catch((e) => console.error("[SEED] 오류:", e));
+    // seedStdItems().catch((e) => console.error("[SEED] std_items 오류:", e));
   }
 );
 }

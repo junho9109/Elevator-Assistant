@@ -1,6 +1,12 @@
 /**
- * standard_index.json → inspection_base_items 일괄 저장
- * 서버 시작 시 자동 실행 (기존 데이터 보호 포함)
+ * [비활성화됨 — app.ts에서 더 이상 호출하지 않음, 2026-08-16]
+ * standard_index.json → inspection_base_items 일괄 저장 / 표준화_parsed.json → std_item_overrides 일괄 저장
+ * 과거엔 서버 시작 시 자동 실행됐으나, DB(inspection_base_items/std_item_overrides)가
+ * 실시간으로 관리자가 편집·삭제하는 단일 진실 소스가 된 이후로는 위험함:
+ * 관리자가 데이터를 정리해서 행 수가 임계치(90%/83개) 밑으로 내려가면, 다음 서버
+ * 재시작(=배포)에서 정적 JSON 스냅샷이 통째로 재시딩되어 방금 지운 옛 데이터가 되살아난다.
+ * (2026-08-16 표준화 자료 정리 직후 재배포로 실제 발생한 문제.)
+ * 다시 켜지 마세요 — 필요하면 아래 함수를 직접 한 번 실행하는 별도 스크립트로 쓰세요.
  */
 import { readFileSync } from "fs";
 import { join } from "path";
