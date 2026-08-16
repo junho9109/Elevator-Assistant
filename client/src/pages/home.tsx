@@ -2543,9 +2543,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       typeTag: ov?.typeTag || (standard as any).typeTag || "",
       // 분류: ov.category 우선 → 없으면 원본 category
       category: ov?.category || (standard as any).category || "",
-      permitDate: standard.permitDate || "",
-      inspectionDate: standard.inspectionDate || "",
-      inspectionYear: standard.inspectionYear || "",
+      // 건축허가일/기준적용일/검사일: STD_ITEMS 기반 가상 항목(id=-1)은 standard.xxx가 항상 null이라
+      // std_item_overrides에 저장된 ov.xxx를 우선 사용한다 (기존엔 이게 없어서 재수정할 때마다 비어보였음)
+      permitDate: (ov as any)?.permitDate || standard.permitDate || "",
+      inspectionDate: (ov as any)?.inspectionDate || standard.inspectionDate || "",
+      inspectionYear: (ov as any)?.inspectionYear || standard.inspectionYear || "",
       images: standard.imageUrls || [],
     });
     setSelectedStandard(null); setShowAddModal(true);
@@ -2576,6 +2578,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             basis: form.basis || "", conclusion: form.conclusion || "",
             source: form.source || "", ref: form.standardNumber || "",
             typeTag: (form as any).typeTag || "", category: (form as any).category || "",
+            permitDate: form.permitDate || "", inspectionDate: form.inspectionDate || "", inspectionYear: form.inspectionYear || "",
           }),
         });
         if (!ovRes.ok) {
@@ -2606,6 +2609,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             overrideTitle: "", basis: form.basis || "", conclusion: form.conclusion || "",
             source: form.source || "", ref: form.standardNumber || "",
             typeTag: form.typeTag || "", category: form.category || "",
+            permitDate: form.permitDate || "", inspectionDate: form.inspectionDate || "", inspectionYear: form.inspectionYear || "",
           }),
         });
         await refetchStdOverrides();

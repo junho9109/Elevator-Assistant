@@ -178,6 +178,9 @@ export const stdItemOverrides = pgTable("std_item_overrides", {
   ref: text("ref"),                         // 검사기준 조항 수정값
   typeTag: text("type_tag"),                // 유형 태그 수정값
   category: text("category"),              // 분류 수정값
+  permitDate: varchar("permit_date", { length: 20 }),         // 건축허가일
+  inspectionDate: varchar("inspection_date", { length: 20 }), // 기준적용일(검사기준적용일)
+  inspectionYear: varchar("inspection_year", { length: 20 }), // 검사일
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   manuallyEdited: boolean("manually_edited").default(false),  // 수동 수정 여부
 });
