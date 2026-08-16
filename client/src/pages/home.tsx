@@ -628,31 +628,42 @@ function formatTime(): string {
 // ==================== DatePicker ====================
 function DatePicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const [show, setShow] = useState(false);
+  const [pickMode, setPickMode] = useState<"day" | "year">("day"); // 연도 그리드로 빠르게 이동
   const [viewYear, setViewYear] = useState(() => value ? parseInt(value.split("-")[0]) : new Date().getFullYear());
   const [viewMonth, setViewMonth] = useState(() => value ? parseInt(value.split("-")[1]) - 1 : new Date().getMonth());
+  const [yearGridStart, setYearGridStart] = useState(() => (value ? parseInt(value.split("-")[0]) : new Date().getFullYear()) - 5);
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
   const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
   const blanks = Array.from({ length: firstDay }, (_, i) => i);
   const months = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+  const yearGrid = Array.from({ length: 12 }, (_, i) => yearGridStart + i);
   const selectDay = (day: number) => {
     onChange(`${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`);
     setShow(false);
   };
+  const openYearGrid = () => { setYearGridStart(viewYear - 5); setPickMode("year"); };
+  const selectYear = (y: number) => { setViewYear(y); setPickMode("day"); };
   return (
     <div className="relative">
       <label className="block text-sm font-medium mb-1">{label}</label>
-      <div className="flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer hover:border-primary bg-card" onClick={() => setShow(!show)}>
+      <div className="flex items-center gap-2 border rounded-lg px-3 py-2 cursor-pointer hover:border-primary bg-card" onClick={() => { setShow(!show); setPickMode("day"); }}>
         <Calendar className="h-4 w-4 text-muted-foreground" />
         <span className={`text-sm ${value ? "text-foreground" : "text-muted-foreground"}`}>{value || "날짜 선택"}</span>
         {value && <button className="ml-auto text-muted-foreground" onClick={e => { e.stopPropagation(); onChange(""); }}><X className="h-3 w-3" /></button>}
       </div>
-      {show && (
+      {show && pickMode === "day" && (
         <div className="absolute z-50 mt-1 bg-card border rounded-xl shadow-xl p-4 w-72">
           <div className="flex items-center justify-between mb-3">
-            <button onClick={() => { if (viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); }} className="p-1 hover:bg-muted rounded">◀</button>
-            <span className="font-semibold text-sm">{viewYear}년 {months[viewMonth]}</span>
-            <button onClick={() => { if (viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1); }} className="p-1 hover:bg-muted rounded">▶</button>
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setViewYear(y=>y-1)} className="p-1 hover:bg-muted rounded text-xs" title="1년 전">◀◀</button>
+              <button onClick={() => { if (viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); }} className="p-1 hover:bg-muted rounded" title="1개월 전">◀</button>
+            </div>
+            <button onClick={openYearGrid} className="font-semibold text-sm px-2 py-0.5 rounded hover:bg-muted" title="연도 빠른 이동">{viewYear}년 {months[viewMonth]}</button>
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => { if (viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1); }} className="p-1 hover:bg-muted rounded" title="1개월 후">▶</button>
+              <button onClick={() => setViewYear(y=>y+1)} className="p-1 hover:bg-muted rounded text-xs" title="1년 후">▶▶</button>
+            </div>
           </div>
           <div className="grid grid-cols-7 text-center text-xs text-muted-foreground mb-1">{["일","월","화","수","목","금","토"].map(d=><div key={d}>{d}</div>)}</div>
           <div className="grid grid-cols-7 text-center text-sm">
@@ -664,11 +675,25 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
           </div>
         </div>
       )}
+      {show && pickMode === "year" && (
+        <div className="absolute z-50 mt-1 bg-card border rounded-xl shadow-xl p-4 w-72">
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => setYearGridStart(y=>y-12)} className="p-1 hover:bg-muted rounded" title="이전 12년">◀</button>
+            <span className="font-semibold text-sm">{yearGridStart}년 ~ {yearGridStart+11}년</span>
+            <button onClick={() => setYearGridStart(y=>y+12)} className="p-1 hover:bg-muted rounded" title="다음 12년">▶</button>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {yearGrid.map(y => (
+              <button key={y} onClick={() => selectYear(y)} className={`py-2 rounded-lg text-sm hover:bg-primary/20 ${y===viewYear?"bg-primary text-primary-foreground":"bg-muted/50"}`}>{y}</button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", basis: "", conclusion: "", source: "", permitDate: "", inspectionDate: "", inspectionYear: "", images: [] as string[] };
+const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", basis: "", conclusion: "", source: "", permitDate: "", inspectionDate: "", inspectionYear: "", installInspectionDate: "", images: [] as string[] };
 
 // ── 리치 텍스트 에디터 (글자색 지원) ──
 const COLOR_PALETTE = [
@@ -1774,6 +1799,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           permitDate: (ov as any)?.permitDate || "",
           inspectionDate: (ov as any)?.inspectionDate || "",
           inspectionYear: (ov as any)?.inspectionYear || "",
+          installInspectionDate: (ov as any)?.installInspectionDate || "",
         };
       }).filter(c => c.basis || c.conclusion);
 
@@ -2488,6 +2514,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       permitDate: (ov as any)?.permitDate || standard.permitDate || "",
       inspectionDate: (ov as any)?.inspectionDate || standard.inspectionDate || "",
       inspectionYear: (ov as any)?.inspectionYear || standard.inspectionYear || "",
+      installInspectionDate: (ov as any)?.installInspectionDate || (standard as any).installInspectionDate || "",
       images: standard.imageUrls || [],
     });
     setSelectedStandard(null); setShowAddModal(true);
@@ -2522,7 +2549,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             basis: form.basis || "", conclusion: form.conclusion || "",
             source: form.source || "", ref: form.standardNumber || "",
             typeTag: (form as any).typeTag || "", category: (form as any).category || "",
-            permitDate: form.permitDate || "", inspectionDate: form.inspectionDate || "", inspectionYear: form.inspectionYear || "",
+            permitDate: form.permitDate || "", inspectionDate: form.inspectionDate || "", inspectionYear: form.inspectionYear || "", installInspectionDate: form.installInspectionDate || "",
           }),
         });
         if (!ovRes.ok) {
@@ -2552,7 +2579,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             overrideTitle: "", basis: form.basis || "", conclusion: form.conclusion || "",
             source: form.source || "", ref: form.standardNumber || "",
             typeTag: form.typeTag || "", category: form.category || "",
-            permitDate: form.permitDate || "", inspectionDate: form.inspectionDate || "", inspectionYear: form.inspectionYear || "",
+            permitDate: form.permitDate || "", inspectionDate: form.inspectionDate || "", inspectionYear: form.inspectionYear || "", installInspectionDate: form.installInspectionDate || "",
           }),
         });
         await refetchStdOverrides();
@@ -3078,6 +3105,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
               <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
               <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />
               <DatePicker label="검사일" value={form.inspectionYear} onChange={v => setForm(prev => ({ ...prev, inspectionYear: v }))} />
+              <DatePicker label="설치검사일" value={form.installInspectionDate} onChange={v => setForm(prev => ({ ...prev, installInspectionDate: v }))} />
               <div>
                 <label className="block text-sm font-medium mb-1">사진 (최대 10장)</label>
                 <input type="file" accept="image/*" multiple className="w-full text-sm text-muted-foreground file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary" onChange={handleImageUpload} />
@@ -3254,6 +3282,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                                     permitDate: null,
                                     inspectionDate: null,
                                     inspectionYear: null,
+                                    installInspectionDate: null,
                                     hotspotId: null,
                                     inspectionRound: null,
                                     createdAt: new Date().toISOString(),
@@ -3334,7 +3363,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                                     basis: item.basis || "", conclusion: item.conclusion || "",
                                     source: item.source || "", typeTag: item.typeTag || "", category: item.category || "",
                                     categoryId: null, imageUrls: null,
-                                    permitDate: null, inspectionDate: null, inspectionYear: null,
+                                    permitDate: null, inspectionDate: null, inspectionYear: null, installInspectionDate: null,
                                     hotspotId: null, inspectionRound: null, createdAt: new Date().toISOString(),
                                   } as any;
                                   openEditModal(virtualStd);

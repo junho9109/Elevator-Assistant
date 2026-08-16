@@ -181,6 +181,7 @@ export const stdItemOverrides = pgTable("std_item_overrides", {
   permitDate: varchar("permit_date", { length: 20 }),         // 건축허가일
   inspectionDate: varchar("inspection_date", { length: 20 }), // 기준적용일(검사기준적용일)
   inspectionYear: varchar("inspection_year", { length: 20 }), // 검사일
+  installInspectionDate: varchar("install_inspection_date", { length: 20 }), // 설치검사일
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   manuallyEdited: boolean("manually_edited").default(false),  // 수동 수정 여부
 });
