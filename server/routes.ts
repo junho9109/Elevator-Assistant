@@ -1868,7 +1868,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         mode?: "fast" | "precise";
         context?: {
           inspCtx?: { priority: string; title: string; ref: string; content: string }[];
-          techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string }[];
+          techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string; permitDate?: string; inspectionDate?: string; inspectionYear?: string }[];
           verdictCtx?: { priority: string; title: string; content: string }[];
           chatCtx?: { priority: string; content: string; note: string }[];
           memoCtx?: { title: string; content: string }[];
@@ -2011,9 +2011,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         if (context.techCtx?.length) {
           sections.push("[3순위] 기술자료(표준화)\n" +
-            context.techCtx.map(c =>
-              `■ ${c.title}\n${c.basis ? `현안: ${c.basis}\n` : ""}${c.conclusion ? `결정: ${c.conclusion}\n` : ""}출처: ${c.source}`
-            ).join("\n\n"));
+            context.techCtx.map(c => {
+              const dates = [
+                c.permitDate ? `건축허가일: ${c.permitDate}` : "",
+                c.inspectionDate ? `검사기준적용일: ${c.inspectionDate}` : "",
+                c.inspectionYear ? `검사일: ${c.inspectionYear}` : "",
+              ].filter(Boolean).join(" / ");
+              return `■ ${c.title}\n${c.basis ? `현안: ${c.basis}\n` : ""}${c.conclusion ? `결정: ${c.conclusion}\n` : ""}${dates ? `적용시기: ${dates}\n` : ""}출처: ${c.source}`;
+            }).join("\n\n"));
         }
         if (context.memoCtx?.length) {
           sections.push("[4순위] 현장메모\n" +

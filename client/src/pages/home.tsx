@@ -1834,6 +1834,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           basis,
           conclusion: conclusionRaw.length > 10 ? conclusionRaw.slice(0, 600) : "",
           source: ov?.source || std?.source || "",
+          // 건축허가일/검사기준적용일/검사일 — std_item_overrides에만 있는 필드(레거시 STD_ITEMS엔 없음)
+          permitDate: (ov as any)?.permitDate || "",
+          inspectionDate: (ov as any)?.inspectionDate || "",
+          inspectionYear: (ov as any)?.inspectionYear || "",
         };
       }).filter(c => c.basis || c.conclusion);
 
