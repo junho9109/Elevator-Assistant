@@ -2554,7 +2554,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   };
 
   const handleSubmit = async () => {
-    if (!form.title.trim()) { toast({ title: "표준화명을 입력해주세요.", variant: "destructive" }); return; }
+    // 표준화명(제목)도 필수가 아니라 선택 입력 — 다만 std-overrides는 title을 키로 쓰므로
+    // 완전히 비어있으면 저장 자체가 불가능해서, 비어있을 때만 식별용 placeholder를 채운다.
+    // (setForm은 비동기라 이 함수 안에서 바로 못 읽으므로 로컬 변수로 따로 들고 다닌다)
+    const effectiveTitle = form.title.trim() || `표준화-${Date.now()}`;
+    if (effectiveTitle !== form.title) setForm(prev => ({ ...prev, title: effectiveTitle }));
     try {
       if (editingStandard) {
         // STD_ITEMS 전용(id=-1)이 아닌 경우만 standards 테이블 업데이트
@@ -2592,10 +2596,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         await refetchStdOverrides();
         toast({ title: "수정되었습니다." });
       } else {
-        if (!form.basis.trim()) { toast({ title: "현안 및 근거 조항을 입력해주세요.", variant: "destructive" }); return; }
         const data = {
           categoryId: ((form as any).hotspotCategoryId && !isNaN(parseInt((form as any).hotspotCategoryId))) ? parseInt((form as any).hotspotCategoryId) : null,
-          title: form.title, standardNumber: form.standardNumber || null,
+          title: effectiveTitle, standardNumber: form.standardNumber || null,
           body: form.basis || form.conclusion || " ",
           permitDate: form.permitDate || null, inspectionDate: form.inspectionDate || null,
           inspectionYear: form.inspectionYear || null,
@@ -2603,7 +2606,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         };
         const createdStd = await createStandard.mutateAsync(data);
         // 신규 생성 시에도 확장 필드(basis/conclusion/source 등)를 오버라이드로 저장
-        await fetch(`/api/std-overrides/${encodeURIComponent(form.title)}`, {
+        await fetch(`/api/std-overrides/${encodeURIComponent(effectiveTitle)}`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             overrideTitle: "", basis: form.basis || "", conclusion: form.conclusion || "",
@@ -3107,7 +3110,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">표준화명 *</label>
+                <label className="block text-sm font-medium mb-1">표준화명</label>
                 {editingStandard ? (
                   // 수정 모드: overrideTitle 수정 (원본 title 키는 유지, 표시 이름만 변경)
                   <Input placeholder={form.title || "표준화명 입력"} value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} />
@@ -3120,7 +3123,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 <Input placeholder="예: 6.3.2" value={form.standardNumber} onChange={e => setForm(prev => ({ ...prev, standardNumber: e.target.value }))} />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">현안 및 근거 조항{!editingStandard && " *"}</label>
+                <label className="block text-sm font-medium mb-1">현안 및 근거 조항</label>
                 <RichTextEditor value={form.basis} onChange={v => setForm(prev => ({ ...prev, basis: v }))} placeholder="현안 사항 및 근거 조항" minHeight="80px" />
               </div>
               <div>
@@ -3409,134 +3412,6 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   );
                   });
                 })()}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================== 모달들 ==================== */}
-
-      
-      {/* 삭제 확인 */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setDeleteConfirm(null)}>
-          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="font-semibold mb-2">삭제 확인</h2>
-            <p className="text-sm text-muted-foreground mb-6">"{deleteConfirm.title}"을 삭제하시겠습니까?</p>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setDeleteConfirm(null)}>취소</Button>
-              <Button variant="destructive" className="flex-1" onClick={handleDelete}>삭제</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 버튼 추가 */}
-      {showAddHotspot && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddHotspot(false)}>
-          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="font-semibold mb-4">버튼 추가</h2>
-            <Input placeholder="예: 기계실" value={newHotspotLabel} onChange={e => setNewHotspotLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAddHotspot()} className="mb-2" />
-            <p className="text-xs text-muted-foreground mb-4">추가 후 드래그해서 위치 조정하세요.</p>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setShowAddHotspot(false)}>취소</Button>
-              <Button className="flex-1" onClick={handleAddHotspot}>추가</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 버튼 삭제 확인 */}
-      {deleteHotspotConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setDeleteHotspotConfirm(null)}>
-          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="font-semibold mb-2">버튼 삭제</h2>
-            <p className="text-sm text-muted-foreground mb-6">"{deleteHotspotConfirm.label}" 버튼을 삭제하시겠습니까?</p>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setDeleteHotspotConfirm(null)}>취소</Button>
-              <Button variant="destructive" className="flex-1" onClick={handleDeleteHotspot}>삭제</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 표준화 항목 삭제 확인 */}
-      {stdItemDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setStdItemDeleteConfirm(null)}>
-          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
-            <h2 className="font-semibold mb-2">표준화 삭제</h2>
-            <p className="text-sm text-muted-foreground mb-6">"{stdItemDeleteConfirm.displayTitle}"을 삭제하시겠습니까?</p>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setStdItemDeleteConfirm(null)}>취소</Button>
-              <Button variant="destructive" className="flex-1" onClick={handleDeleteStdItem}>삭제</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 추가/수정 모달 */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddModal(false)}>
-          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center p-5 border-b border-border">
-              <h2 className="font-semibold">{editingStandard ? "표준화 수정" : "표준화 추가"}</h2>
-              <button onClick={() => setShowAddModal(false)} className="text-muted-foreground"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">분류</label>
-                <select className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50" value={form.categoryId} onChange={e => { const h = hotspots.find(h => String(h.id) === e.target.value); setForm(prev => ({ ...prev, categoryId: e.target.value, hotspotCategoryId: h?.categoryId ? String(h.categoryId) : "", category: h?.label || "" })); }}>
-                  <option value="">전체</option>
-                  {hotspots.map(h => <option key={h.id} value={String(h.id)}>{h.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">표준화명 *</label>
-                {editingStandard ? (
-                  // 수정 모드: overrideTitle 수정 (원본 title 키는 유지, 표시 이름만 변경)
-                  <Input placeholder={form.title || "표준화명 입력"} value={form.overrideTitle} onChange={e => setForm(prev => ({ ...prev, overrideTitle: e.target.value }))} />
-                ) : (
-                  <Input placeholder="표준화명 입력" value={form.title} onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))} />
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">항목 번호</label>
-                <Input placeholder="예: 6.3.2" value={form.standardNumber} onChange={e => setForm(prev => ({ ...prev, standardNumber: e.target.value }))} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">현안 및 근거 조항{!editingStandard && " *"}</label>
-                <RichTextEditor value={form.basis} onChange={v => setForm(prev => ({ ...prev, basis: v }))} placeholder="현안 사항 및 근거 조항" minHeight="80px" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">검사방법 표준화 결정</label>
-                <RichTextEditor value={form.conclusion} onChange={v => setForm(prev => ({ ...prev, conclusion: v }))} placeholder="표준화 결정 내용" minHeight="100px" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">출처 (회차)</label>
-                <input className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card" value={form.source} onChange={e => setForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 2026년 제1차 표준화" />
-              </div>
-
-              <DatePicker label="건축허가일" value={form.permitDate} onChange={v => setForm(prev => ({ ...prev, permitDate: v }))} />
-              <DatePicker label="검사기준적용일" value={form.inspectionDate} onChange={v => setForm(prev => ({ ...prev, inspectionDate: v }))} />
-              <DatePicker label="검사일" value={form.inspectionYear} onChange={v => setForm(prev => ({ ...prev, inspectionYear: v }))} />
-              <div>
-                <label className="block text-sm font-medium mb-1">사진 (최대 10장)</label>
-                <input type="file" accept="image/*" multiple className="w-full text-sm text-muted-foreground file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary" onChange={handleImageUpload} />
-                {form.images.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2 mt-3">
-                    {form.images.map((img, i) => (
-                      <div key={i} className="relative">
-                        <img src={img} alt="" className="w-full h-20 object-cover rounded-xl border border-border" />
-                        <button className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs" onClick={() => setForm(prev => ({ ...prev, images: prev.images.filter((_, idx) => idx !== i) }))}>×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-3 pt-2">
-                <Button variant="outline" className="flex-1" onClick={() => setShowAddModal(false)}>취소</Button>
-                <Button className="flex-1" onClick={handleSubmit}>저장</Button>
               </div>
             </div>
           </div>
