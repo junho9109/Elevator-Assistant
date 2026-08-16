@@ -1309,50 +1309,13 @@ function CounterWeightCalcCard() {
 }
 
 export default function Home({ defaultTab = "chat", role = "user", onLogout }: { defaultTab?: "chat" | "map"; role?: string; onLogout?: () => void }) {
-  // 표준화 데이터 DB 로드 (standards + std-overrides(camelCase, 정식 API) 병합)
-  useEffect(() => {
-    if (STD_ITEMS.length > 0) return;
-    Promise.all([
-      fetch("/api/standards").then(r => r.json()),
-      fetch("/api/std-overrides").then(r => r.json()).catch(() => []),
-    ]).then(([rows, overrides]) => {
-      // std-overrides를 Map으로 변환 (title 기준 우선 적용)
-      const overrideMap: Record<string, any> = {};
-      (overrides || []).forEach((o: any) => {
-        if (o.title) overrideMap[o.title] = o;
-      });
-
-      rows.forEach((r: any) => {
-        const ov = overrideMap[r.title];
-        STD_ITEMS.push({
-          title: ov?.overrideTitle || r.title || "",
-          ref: ov?.ref || "",
-          basis: ov?.basis || r.body || "",
-          conclusion: ov?.conclusion || "",
-          source: ov?.source || (r.inspection_year ? `${r.inspection_year}년 제${r.inspection_round}차 표준화` : ""),
-          typeTag: ov?.typeTag || "",
-          category: ov?.category || "",
-        });
-        // override에만 있는 추가 항목 제거 (standards에 없는 것)
-        delete overrideMap[r.title];
-      });
-
-      // std-overrides에만 있는 항목 추가
-      Object.values(overrideMap).forEach((o: any) => {
-        if (o.title) {
-          STD_ITEMS.push({
-            title: o.overrideTitle || o.title || "",
-            ref: o.ref || "",
-            basis: o.basis || "",
-            conclusion: o.conclusion || "",
-            source: o.source || "",
-            typeTag: o.typeTag || "",
-            category: o.category || "",
-          });
-        }
-      });
-    }).catch(() => {});
-  }, []);
+  // [제거됨 — 2026-08-16] 예전엔 여기서 /api/standards(레거시 standards 테이블) + /api/std-overrides를
+  // 병합해 모듈 전역 배열 STD_ITEMS를 채웠음. std_item_overrides가 표준화 자료의 단일 진실 소스가 된 뒤로는
+  // 이 로직이 버그였음: STD_ITEMS는 컴포넌트 상태가 아닌 모듈 전역 mutable 배열이라 populate돼도
+  // 리렌더를 트리거하지 않다가, 저장 후 refetchStdOverrides()로 allStdItems useMemo가 재계산되는
+  // 순간에야 그 사이 비동기로 채워진 레거시 standards 데이터가 한꺼번에 화면에 노출됐다
+  // ("저장하면 예전 항목이 보이고 새로고침하면 사라짐" 버그의 원인). STD_ITEMS는 이제 항상 빈 배열로 유지하고,
+  // allStdItems는 std_item_overrides(DB)만 사용한다.
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { data: standards = [] } = useStandards();
@@ -1409,49 +1372,22 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
-  // allStdItems — DB(std_item_overrides) 우선, JSON(STD_ITEMS)은 DB에 없는 항목 폴백용
+  // allStdItems — std_item_overrides(DB)가 단일 진실 소스. 레거시 STD_ITEMS/standards 폴백은 제거됨(2026-08-16).
   const allStdItems = useMemo(() => {
     const hotspotLabels = hotspots.map(h => h.label);
     const dbItems = stdOverrides || [];
-
-    if (dbItems.length >= 83) {
-      // DB에 원본이 SEED됐으면 DB만 사용
-      return dbItems.map((ov: any) => ({
-        title: ov.title,           // 검색/매칭 키
-        displayTitle: ov.overrideTitle || ov.title,  // 화면 표시용
-        _key: ov.title,
-        ref: ov.ref || "",
-        basis: ov.basis || "",
-        conclusion: ov.conclusion || "",
-        source: ov.source || "",
-        typeTag: ov.typeTag || "",
-        category: normalizeCat(ov.category || "기타", hotspotLabels),
-        manuallyEdited: ov.manuallyEdited || false,
-      }));
-    }
-
-    // DB SEED 전 — JSON + DB 오버라이드 병합 (기존 방식)
-    const overrideMap = new Map(dbItems.map((ov: any) => [ov.title, ov]));
-    const baseItems = STD_ITEMS.map(s => {
-      const ov = overrideMap.get(s.title);
-      const rawCat = (ov?.category && ov.category !== "") ? ov.category : (s.category || "기타");
-      return { ...s, _key: s.title, category: normalizeCat(rawCat, hotspotLabels) };
-    });
-    const stdTitles = new Set(STD_ITEMS.map(s => s.title));
-    const newItemsFromDb = dbItems
-      .filter((ov: any) => !stdTitles.has(ov.title))
-      .map((ov: any) => ({
-        title: ov.title,
-        displayTitle: ov.overrideTitle || ov.title,
-        _key: ov.title,
-        ref: ov.ref || "",
-        basis: ov.basis || "",
-        conclusion: ov.conclusion || "",
-        source: ov.source || "",
-        typeTag: ov.typeTag || "",
-        category: normalizeCat(ov.category || "기타", hotspotLabels),
-      }));
-    return [...baseItems, ...newItemsFromDb];
+    return dbItems.map((ov: any) => ({
+      title: ov.title,           // 검색/매칭 키
+      displayTitle: ov.overrideTitle || ov.title,  // 화면 표시용
+      _key: ov.title,
+      ref: ov.ref || "",
+      basis: ov.basis || "",
+      conclusion: ov.conclusion || "",
+      source: ov.source || "",
+      typeTag: ov.typeTag || "",
+      category: normalizeCat(ov.category || "기타", hotspotLabels),
+      manuallyEdited: ov.manuallyEdited || false,
+    }));
   }, [stdOverrides, hotspots]);
   const createStandard = useCreateStandard();
   const updateStandard = useUpdateStandard();
