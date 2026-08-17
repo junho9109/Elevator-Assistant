@@ -3317,8 +3317,19 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                         const fmtText = (s: string) => (s || '').replace(/\u2023\s*/g, '\n\u2023 ').replace(/\u25B8\s*/g, '\n\u25B8 ').replace(/\u2605\s*/g, '\n\u2605 ').replace(/\u203B\s*/g, '\n\u203B ').replace(/\n{3,}/g, '\n\n').trim();
                         const dispBasis = fmtText(ov?.basis || item.basis);
                         const dispConclusion = fmtText(ov?.conclusion || item.conclusion);
+                        const dispDates = [
+                          { label: "건축허가일", value: (ov as any)?.permitDate },
+                          { label: "검사기준적용일", value: (ov as any)?.inspectionDate },
+                          { label: "검사일", value: (ov as any)?.inspectionYear },
+                          { label: "설치검사일", value: (ov as any)?.installInspectionDate },
+                        ].filter(d => d.value);
                         return (
                         <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
+                          {dispDates.length > 0 && (
+                            <p className="text-[11px] font-medium text-amber-700 bg-amber-50 rounded-lg px-2 py-1.5">
+                              {dispDates.map(d => `${d.label} ${d.value}`).join(" · ")}
+                            </p>
+                          )}
                           {(dispRef || dispBasis) && (
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
