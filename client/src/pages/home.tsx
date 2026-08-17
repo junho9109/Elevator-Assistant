@@ -3325,11 +3325,6 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                         ].filter(d => d.value);
                         return (
                         <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
-                          {dispDates.length > 0 && (
-                            <p className="text-[11px] font-medium text-amber-700 bg-amber-50 rounded-lg px-2 py-1.5">
-                              {dispDates.map(d => `${d.label} ${d.value}`).join(" · ")}
-                            </p>
-                          )}
                           {(dispRef || dispBasis) && (
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">검사기준 내용</p>
@@ -3342,6 +3337,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">표준화</p>
                               <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: dispConclusion }} />
                             </div>
+                          )}
+                          {dispDates.length > 0 && (
+                            <p className="text-[11px] font-medium text-red-700 bg-red-50 rounded-lg px-2 py-1.5 inline-block">
+                              {dispDates.map(d => `${d.label} ${d.value}`).join(" · ")}
+                            </p>
                           )}
                           <StdPhotoSection itemKey={item.title} />
                           <StdCommentSection
