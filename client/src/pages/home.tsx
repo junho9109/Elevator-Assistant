@@ -3344,7 +3344,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                           )}
                           {dispDates.length > 0 && (
                             <p className="text-[11px] font-medium text-red-700 bg-red-50 rounded-lg px-2 py-1.5 inline-block">
-                              {dispDates.map(d => `${d.label} ${d.value}`).join(" · ")}
+                              {dispDates.map(d => `${d.label} ${d.value} 이후`).join(" · ")}
                             </p>
                           )}
                           <StdPhotoSection itemKey={item.title} />
