@@ -2571,7 +2571,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           inspectionYear: form.inspectionYear || null,
           imageUrls: form.images.length > 0 ? form.images : null, hotspotId: null, inspectionRound: null,
         };
-        const createdStd = await createStandard.mutateAsync(data);
+        // standards(레거시) 테이블은 inspectionYear가 varchar(4)라 "검사일"에 실제 날짜(YYYY-MM-DD, 10자)를
+        // 넣으면 Zod 검증에서 too_big 오류로 거부된다. 표시/저장의 단일 진실 소스는 std_item_overrides이므로
+        // 레거시 테이블 저장은 실패해도 무시하고 계속 진행한다(수정 경로와 동일한 처리).
+        try { await createStandard.mutateAsync(data); }
+        catch (e) { console.warn("[standards 생성 실패, 오버라이드만 저장]", e); }
         // 신규 생성 시에도 확장 필드(basis/conclusion/source 등)를 오버라이드로 저장
         await fetch(`/api/std-overrides/${encodeURIComponent(effectiveTitle)}`, {
           method: "PUT", headers: { "Content-Type": "application/json" },
