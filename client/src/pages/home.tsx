@@ -2870,7 +2870,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   {msg.searchResults && msg.searchResults.length > 0 && !msg.isElevatorQuery && (() => {
                     const TYPE_LABEL: Record<string, string> = {
                       inspection: "검사기준", standard: "기술자료",
-                      judgment: "검사가이드", chat: "채팅"
+                      judgment: "검사가이드", chat: "채팅", article: "조문 원문"
                     };
                     const PRIORITY_STYLE: Record<number, { bg: string; text: string; label: string }> = {
                       1: { bg: "#4B7BF5", text: "white", label: "1순위" },
