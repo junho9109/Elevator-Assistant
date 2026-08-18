@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { isDuplicateName, isValidEmployeeId } from "@/lib/teams";
 
 interface LoginPageProps {
   onLogin: (token: string, org: string, role: string, name: string) => void;
@@ -8,12 +9,15 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [orgs, setOrgs] = useState<string[]>([]);
   const [org, setOrg] = useState("");
   const [name, setName] = useState("");
+  const [empIdInput, setEmpIdInput] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [savePw, setSavePw] = useState(true);
   const [autoLogin, setAutoLogin] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const needsEmpId = isDuplicateName(name);
 
   useEffect(() => {
     // 소속 목록 불러오기
@@ -23,6 +27,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
     if (saved.org) setOrg(saved.org);
     if (saved.name) setName(saved.name);
+    if (saved.empId) setEmpIdInput(saved.empId);
     if (saved.pw) setPassword(saved.pw);
     if (saved.autoLogin && saved.token) {
       // 자동 로그인 검증
@@ -30,8 +35,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data) {
-            const n = data.name || saved.name || "";
-            onLogin(saved.token, saved.org, n.trim() === "노준호" ? "admin" : data.role, n);
+            const n = (data.name || saved.name || "").trim();
+            const finalName = isDuplicateName(n) && saved.empId ? `${n}(${saved.empId})` : n;
+            onLogin(saved.token, saved.org, finalName === "노준호" ? "admin" : data.role, finalName);
           }
         })
         .catch(() => {});
@@ -40,6 +46,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   const handleLogin = async () => {
     if (!org || !name || !password) { setError("소속, 이름, 비밀번호를 모두 입력하세요."); return; }
+    if (needsEmpId && !empIdInput.trim()) { setError("동명이인이 있습니다. 사번을 입력하세요."); return; }
+    if (needsEmpId && !isValidEmployeeId(name, empIdInput)) { setError("사번이 일치하지 않습니다."); return; }
     setLoading(true);
     setError("");
     try {
@@ -53,12 +61,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       localStorage.setItem("loginInfo", JSON.stringify({
         org,
         name,
+        empId: needsEmpId ? empIdInput.trim() : "",
         pw: savePw ? password : "",
         token: autoLogin ? data.token : "",
         autoLogin,
       }));
-      const finalName = data.name || name;
-      onLogin(data.token, org, finalName.trim() === "노준호" ? "admin" : data.role, finalName);
+      const rawName = (data.name || name).trim();
+      const finalName = needsEmpId ? `${rawName}(${empIdInput.trim()})` : rawName;
+      onLogin(data.token, org, finalName === "노준호" ? "admin" : data.role, finalName);
     } catch {
       setError("서버 연결 오류");
     }
@@ -100,6 +110,20 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               className="w-full border border-border rounded-xl px-3.5 py-2.5 text-sm bg-background outline-none focus:border-[#1e3a5f]"
             />
           </div>
+
+          {/* 사번 (동명이인 구분용) */}
+          {needsEmpId && (
+            <div className="mb-4">
+              <label className="text-[11px] font-semibold text-muted-foreground mb-1.5 block">사번 (동명이인 구분)</label>
+              <input
+                type="text"
+                value={empIdInput}
+                onChange={e => { setEmpIdInput(e.target.value); setError(""); }}
+                placeholder="사번을 입력하세요"
+                className="w-full border border-border rounded-xl px-3.5 py-2.5 text-sm bg-background outline-none focus:border-[#1e3a5f]"
+              />
+            </div>
+          )}
 
           {/* 비밀번호 */}
           <div className="mb-5">

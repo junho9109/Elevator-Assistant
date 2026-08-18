@@ -15,6 +15,7 @@ import TechnicalDataPage from "@/pages/technical-data";
 import ChatPage from "@/pages/chat";
 import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
+import { isDuplicateName } from "@/lib/teams";
 
 function Router() {
   return (
@@ -67,9 +68,10 @@ function App() {
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data) {
-            const name = data.name || saved.name || "";
+            const rawName = (data.name || saved.name || "").trim();
+            const name = isDuplicateName(rawName) && saved.empId ? `${rawName}(${saved.empId})` : rawName;
             setAuthToken(saved.token);
-            setUserRole(name.trim() === "노준호" ? "admin" : (data.role || "user"));
+            setUserRole(name === "노준호" ? "admin" : (data.role || "user"));
             setUserOrg(saved.org || data.org || "");
             setUserName(name);
           }
@@ -83,7 +85,7 @@ function App() {
 
   const handleLogout = () => {
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
-    localStorage.setItem("loginInfo", JSON.stringify({ org: saved.org, name: saved.name, pw: saved.pw }));
+    localStorage.setItem("loginInfo", JSON.stringify({ org: saved.org, name: saved.name, empId: saved.empId, pw: saved.pw }));
     setAuthToken(null);
     setUserRole("user");
     setUserOrg("");

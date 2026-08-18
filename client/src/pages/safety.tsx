@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Calendar, ChevronDown, ChevronUp, Shield, AlertTriangle, ClipboardCheck, Trash2 } from "lucide-react";
+import { getTeamsForName } from "@/lib/teams";
 
 type PpeItem = { id: number; name: string; issuedDate: string | null; expiryDate: string | null; standard: string | null; howToWear: string | null; createdAt: string; };
 type NearMiss = { id: number; date: string; disasterType: string; workType: string; description: string; imageUrls: string[] | null; createdAt: string; };
@@ -452,7 +453,12 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                           <span className="text-xs px-2 py-0.5 rounded-md bg-orange-100 text-orange-700">미평가</span>
                         )}
                       </div>
-                      <p className="text-sm font-medium truncate">{item.content}</p>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className="text-sm font-medium truncate min-w-0">{item.content}</p>
+                        {getTeamsForName(item.registeredByName).map(t => (
+                          <span key={t} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0 whitespace-nowrap">{t}</span>
+                        ))}
+                      </div>
                       <p className="text-xs text-muted-foreground mt-0.5">등록: {item.registeredByName} · {new Date(item.createdAt).toLocaleDateString()}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
