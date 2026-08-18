@@ -1011,10 +1011,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { db } = await import("./db");
       const { riskHazardItems } = await import("@shared/schema");
-      const { eq, desc } = await import("drizzle-orm");
+      const { eq, and, desc } = await import("drizzle-orm");
       const branchId = req.query.branchId as string | undefined;
-      const rows = branchId
-        ? await db.select().from(riskHazardItems).where(eq(riskHazardItems.branchId, branchId)).orderBy(desc(riskHazardItems.createdAt))
+      const team = req.query.team as string | undefined;
+      const conditions = [] as any[];
+      if (branchId) conditions.push(eq(riskHazardItems.branchId, branchId));
+      if (team) conditions.push(eq(riskHazardItems.team, team));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskHazardItems).where(and(...conditions)).orderBy(desc(riskHazardItems.createdAt))
         : await db.select().from(riskHazardItems).orderBy(desc(riskHazardItems.createdAt));
       res.json(rows);
     } catch (error) {
@@ -1025,12 +1029,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/risk-hazard-items", async (req, res) => {
     try {
       const { db } = await import("./db");
-      const { riskHazardItems, insertRiskHazardItemSchema } = await import("@shared/schema");
-      const validated = insertRiskHazardItemSchema.parse(req.body);
+      const { riskHazardItems, riskItemSelections, insertRiskHazardItemSchema } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      // selectEmployeeId/selectEmployeeName — 팀원이 "직접 등록"할 때만 넘어옴(=등록과 동시에 본인 선택으로 처리)
+      const { selectEmployeeId, selectEmployeeName, ...body } = req.body;
+      const validated = insertRiskHazardItemSchema.parse(body);
+      if (!validated.isTemplate && validated.team && selectEmployeeId) {
+        // 같은 팀에서 이미 선택한 항목이 있는지 확인 (1인 1항목)
+        const mine = await db.select({ id: riskItemSelections.id })
+          .from(riskItemSelections)
+          .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+          .where(and(eq(riskHazardItems.team, validated.team), eq(riskItemSelections.employeeId, selectEmployeeId)));
+        if (mine.length > 0) {
+          return res.status(409).json({ error: "이미 선택한 항목이 있습니다. 먼저 선택을 취소하세요." });
+        }
+      }
       const [row] = await db.insert(riskHazardItems).values(validated).returning();
+      if (!validated.isTemplate && validated.team && selectEmployeeId && selectEmployeeName) {
+        await db.insert(riskItemSelections).values({ hazardItemId: row.id, employeeId: selectEmployeeId, employeeName: selectEmployeeName });
+      }
       res.status(201).json(row);
     } catch (error) {
       res.status(400).json({ error: "Invalid risk hazard item data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 항목 선택(예시 선택) — 항목 1개당 1명만 선택 가능, 팀당 1인 1항목 ──
+  app.get("/api/risk-item-selections", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskItemSelections, riskHazardItems } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const team = req.query.team as string | undefined;
+      const rows = team
+        ? await db.select({
+            id: riskItemSelections.id,
+            hazardItemId: riskItemSelections.hazardItemId,
+            employeeId: riskItemSelections.employeeId,
+            employeeName: riskItemSelections.employeeName,
+            createdAt: riskItemSelections.createdAt,
+          }).from(riskItemSelections)
+            .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+            .where(eq(riskHazardItems.team, team))
+        : await db.select().from(riskItemSelections);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk item selections");
+    }
+  });
+
+  app.post("/api/risk-item-selections", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskItemSelections, riskHazardItems, insertRiskItemSelectionSchema } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const validated = insertRiskItemSelectionSchema.parse(req.body);
+      const [item] = await db.select().from(riskHazardItems).where(eq(riskHazardItems.id, validated.hazardItemId));
+      if (!item) return res.status(404).json({ error: "항목을 찾을 수 없습니다." });
+      if (!item.team) return res.status(400).json({ error: "팀이 지정되지 않은 항목입니다." });
+      const [taken] = await db.select().from(riskItemSelections).where(eq(riskItemSelections.hazardItemId, validated.hazardItemId));
+      if (taken) return res.status(409).json({ error: "이미 다른 팀원이 선택한 항목입니다." });
+      const mine = await db.select({ id: riskItemSelections.id })
+        .from(riskItemSelections)
+        .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+        .where(and(eq(riskHazardItems.team, item.team), eq(riskItemSelections.employeeId, validated.employeeId)));
+      if (mine.length > 0) return res.status(409).json({ error: "이미 선택한 항목이 있습니다. 먼저 선택을 취소하세요." });
+      const [row] = await db.insert(riskItemSelections).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid selection data", detail: String(error) });
+    }
+  });
+
+  app.delete("/api/risk-item-selections/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskItemSelections } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { employeeId, admin } = req.query as { employeeId?: string; admin?: string };
+      const isAdmin = admin === "true";
+      const [sel] = await db.select().from(riskItemSelections).where(eq(riskItemSelections.id, id));
+      if (!sel) return res.status(404).json({ error: "Not found" });
+      if (!isAdmin && sel.employeeId !== employeeId) {
+        return res.status(403).json({ error: "본인이 선택한 항목만 취소할 수 있습니다." });
+      }
+      await db.delete(riskItemSelections).where(eq(riskItemSelections.id, id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to cancel selection", detail: String(error) });
     }
   });
 

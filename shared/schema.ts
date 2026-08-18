@@ -477,6 +477,8 @@ export const riskHazardItems = pgTable("risk_hazard_items", {
   branchId: varchar("branch_id", { length: 50 }).notNull(), // 지사
   registeredById: varchar("registered_by_id", { length: 20 }).notNull(),
   registeredByName: varchar("registered_by_name", { length: 50 }).notNull(),
+  team: varchar("team", { length: 50 }),                  // 팀(반) — 관리자 예시/팀원 직접등록 시 지정. 기존 항목은 null(미분류)
+  isTemplate: boolean("is_template").default(false).notNull(), // true=관리자가 등록한 예시(선택 전까지 평가 대상 아님)
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -488,6 +490,21 @@ export const insertRiskHazardItemSchema = createInsertSchema(riskHazardItems).om
 });
 export type InsertRiskHazardItem = z.infer<typeof insertRiskHazardItemSchema>;
 export type RiskHazardItem = typeof riskHazardItems.$inferSelect;
+
+// ── 위험성평가: 팀원의 항목 선택(예시 선택 또는 직접등록 시 자동 생성) — 항목당 1명만 선택 가능 ──
+export const riskItemSelections = pgTable("risk_item_selections", {
+  id: serial("id").primaryKey(),
+  hazardItemId: integer("hazard_item_id").notNull(),
+  employeeId: varchar("employee_id", { length: 50 }).notNull(),
+  employeeName: varchar("employee_name", { length: 50 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertRiskItemSelectionSchema = createInsertSchema(riskItemSelections).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertRiskItemSelection = z.infer<typeof insertRiskItemSelectionSchema>;
+export type RiskItemSelection = typeof riskItemSelections.$inferSelect;
 
 // ── 위험성평가: 개인별 평가입력 ──
 export const riskAssessments = pgTable("risk_assessments", {

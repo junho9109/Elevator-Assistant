@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Calendar, ChevronDown, ChevronUp, Shield, AlertTriangle, ClipboardCheck, Trash2 } from "lucide-react";
-import { getTeamsForName } from "@/lib/teams";
+import { getTeamsForName, TEAM_ROSTERS } from "@/lib/teams";
 
 type PpeItem = { id: number; name: string; issuedDate: string | null; expiryDate: string | null; standard: string | null; howToWear: string | null; createdAt: string; };
 type NearMiss = { id: number; date: string; disasterType: string; workType: string; description: string; imageUrls: string[] | null; createdAt: string; };
@@ -13,8 +13,9 @@ type RiskMethod = "checklist" | "freq_severity";
 type RiskHazardItem = {
   id: number; method: RiskMethod; workCategory: string; subWork: string | null; content: string;
   discoveryPath: string | null; fieldInfo: string | null; imageUrls: string[] | null; branchId: string;
-  registeredById: string; registeredByName: string; createdAt: string;
+  registeredById: string; registeredByName: string; team: string | null; isTemplate: boolean; createdAt: string;
 };
+type RiskItemSelection = { id: number; hazardItemId: number; employeeId: string; employeeName: string; createdAt: string; };
 type RiskAssessment = {
   id: number; hazardItemId: number; branchId: string; employeeId: string; employeeName: string;
   level: string | null; hadAccidentExperience: boolean | null; severity: number | null;
@@ -121,9 +122,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const branchName = org || DEFAULT_BRANCH;
   const ready = !!(org && name);
   const isAdmin = role === "admin";
+  const myTeam = useMemo(() => getTeamsForName(name)[0] || "", [name]); // 소속 팀 (팀 명단에 없으면 "" → 기존 방식 그대로)
   const [showAddPPE, setShowAddPPE] = useState(false);
   const [riskMethod, setRiskMethod] = useState<RiskMethod>("checklist");
   const [showAddRisk, setShowAddRisk] = useState(false);
+  const [addRiskMode, setAddRiskMode] = useState<"legacy"|"direct"|"template">("legacy");
+  const [addRiskTeam, setAddRiskTeam] = useState("");
+  const [showTemplateManager, setShowTemplateManager] = useState(false);
+  const [templateManagerTeam, setTemplateManagerTeam] = useState(() => TEAM_ROSTERS[0].name);
   const [expandedRisk, setExpandedRisk] = useState<number|null>(null);
   const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
@@ -156,6 +162,28 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryFn: async () => { const r = await fetch(`/api/risk-assessments?branchId=${encodeURIComponent(branchName)}`); return r.json(); },
     enabled: ready,
   });
+  // 팀별 예시/선택 구조 — 소속 팀이 있을 때만 조회
+  const { data: teamItems = [] } = useQuery<RiskHazardItem[]>({
+    queryKey: ["/api/risk-hazard-items", "team", myTeam],
+    queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?team=${encodeURIComponent(myTeam)}`); return r.json(); },
+    enabled: ready && !!myTeam,
+  });
+  const { data: teamSelections = [] } = useQuery<RiskItemSelection[]>({
+    queryKey: ["/api/risk-item-selections", myTeam],
+    queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(myTeam)}`); return r.json(); },
+    enabled: ready && !!myTeam,
+  });
+  // 관리자 예시 관리 패널 — 열려있을 때만, 선택한 팀 기준 조회
+  const { data: adminTeamItems = [] } = useQuery<RiskHazardItem[]>({
+    queryKey: ["/api/risk-hazard-items", "admin", templateManagerTeam],
+    queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?team=${encodeURIComponent(templateManagerTeam)}`); return r.json(); },
+    enabled: showTemplateManager && !!templateManagerTeam,
+  });
+  const { data: adminTeamSelections = [] } = useQuery<RiskItemSelection[]>({
+    queryKey: ["/api/risk-item-selections", "admin", templateManagerTeam],
+    queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(templateManagerTeam)}`); return r.json(); },
+    enabled: showTemplateManager && !!templateManagerTeam,
+  });
 
   const createPpe = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/ppe", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({...data, employeeId: empId, employeeName: empName}) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"보호구가 등록되었습니다."}); setShowAddPPE(false); } });
   const deletePpe = useMutation({ mutationFn: async (id: number) => { await fetch(`/api/ppe/${id}`, {method:"DELETE"}); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"삭제되었습니다."}); } });
@@ -167,11 +195,24 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       const r = await fetch("/api/risk-hazard-items", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!r.ok) throw new Error(); return r.json();
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] }); qc.invalidateQueries({ queryKey: ["/api/risk-branches"] }); toast({ title: "유해위험요인이 등록되었습니다." }); setShowAddRisk(false); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] });
+      qc.invalidateQueries({ queryKey: ["/api/risk-branches"] });
+      qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] });
+      toast({ title: addRiskMode === "template" ? "예시가 등록되었습니다." : "유해위험요인이 등록되었습니다." });
+      setShowAddRisk(false);
+    },
+    onError: (e: any) => toast({ title: "등록 실패", description: e.message, variant: "destructive" }),
   });
   const deleteRiskItem = useMutation({
     mutationFn: async (id: number) => { await fetch(`/api/risk-hazard-items/${id}?employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}&admin=${isAdmin}`, { method: "DELETE" }); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] }); qc.invalidateQueries({ queryKey: ["/api/risk-assessments"] }); toast({ title: "삭제되었습니다." }); setRiskDeleteConfirm(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] });
+      qc.invalidateQueries({ queryKey: ["/api/risk-assessments"] });
+      qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] });
+      toast({ title: "삭제되었습니다." });
+      setRiskDeleteConfirm(null);
+    },
   });
   const saveAssessment = useMutation({
     mutationFn: async (data: any) => {
@@ -179,6 +220,19 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       if (!r.ok) throw new Error(); return r.json();
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-assessments"] }); toast({ title: "평가가 저장되었습니다." }); },
+  });
+  const selectTemplate = useMutation({
+    mutationFn: async (hazardItemId: number) => {
+      const r = await fetch("/api/risk-item-selections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hazardItemId, employeeId: empId, employeeName: empName }) });
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || "선택에 실패했습니다."); }
+      return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] }); toast({ title: "선택되었습니다." }); },
+    onError: (e: any) => toast({ title: "선택 실패", description: e.message, variant: "destructive" }),
+  });
+  const cancelSelection = useMutation({
+    mutationFn: async (selId: number) => { await fetch(`/api/risk-item-selections/${selId}?employeeId=${encodeURIComponent(empId)}&admin=${isAdmin}`, { method: "DELETE" }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] }); toast({ title: "선택이 취소되었습니다." }); },
   });
 
   const handleNMImage = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,6 +288,23 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     });
   }, [riskItemsForMethod, assessmentsByItem, empId]);
 
+  // ── 팀별 예시/선택 구조 (myTeam이 있을 때만 사용) ──
+  const selectionByItemId = useMemo(() => new Map(teamSelections.map(s => [s.hazardItemId, s])), [teamSelections]);
+  const availableTemplates = useMemo(() => teamItems.filter(t => t.isTemplate && !selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
+  const mySelection = teamSelections.find(s => s.employeeId === empId);
+  const activeTeamItems = useMemo(() => teamItems.filter(t => selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
+  const activeTeamItemsForMethod = useMemo(() => activeTeamItems.filter(i => i.method === riskMethod), [activeTeamItems, riskMethod]);
+  const sortedActiveTeamItems = useMemo(() => {
+    return [...activeTeamItemsForMethod].sort((a, b) => {
+      const aMine = myAssessment(a.id) ? 1 : 0;
+      const bMine = myAssessment(b.id) ? 1 : 0;
+      if (aMine !== bMine) return aMine - bMine;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [activeTeamItemsForMethod, assessmentsByItem, empId]);
+  const adminTemplates = useMemo(() => adminTeamItems.filter(t => t.isTemplate), [adminTeamItems]);
+  const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
+
   function getAssessForm(itemId: number) {
     return assessForm[itemId] || { level: "중", hadAccidentExperience: false, severity: 2, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
   }
@@ -253,6 +324,101 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       payload.reductionPlan = f.reductionPlan || null;
     }
     saveAssessment.mutate(payload);
+  }
+
+  function renderRiskItemCard(item: RiskHazardItem) {
+    const mine = myAssessment(item.id);
+    const agg = computeAggregate(item.id, item.method);
+    const f = getAssessForm(item.id);
+    const liveAgg = item.method === "freq_severity"
+      ? (() => {
+          const list = assessmentsByItem.get(item.id) || [];
+          const others = list.filter(a => a.employeeId !== empId);
+          const expCount = others.filter(a=>a.hadAccidentExperience).length + (f.hadAccidentExperience?1:0);
+          const totalCount = others.length + 1;
+          const possibility = Math.round((expCount/totalCount)*5*10)/10;
+          const sevList = [...others.filter(a=>a.severity!=null).map(a=>a.severity as number), f.severity];
+          const avgSeverity = Math.round((sevList.reduce((s,v)=>s+v,0)/sevList.length)*10)/10;
+          return { possibility, avgSeverity, risk: Math.round(possibility*avgSeverity*10)/10 };
+        })()
+      : null;
+    return (
+      <div key={item.id} className={`bg-card rounded-xl shadow-sm border overflow-hidden ${mine?"border-border":"border-orange-400"}`}>
+        <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedRisk(expandedRisk===item.id?null:item.id)}>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
+              {mine ? (
+                <span className="text-xs px-2 py-0.5 rounded-md bg-green-100 text-green-700">
+                  평가완료{item.method==="checklist" ? (mine.level?` · ${mine.level}`:"") : (agg?` · 위험성 ${agg.risk}`:"")}
+                </span>
+              ) : (
+                <span className="text-xs px-2 py-0.5 rounded-md bg-orange-100 text-orange-700">미평가</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="text-sm font-medium truncate min-w-0">{item.content}</p>
+              {getTeamsForName(item.registeredByName).map(t => (
+                <span key={t} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0 whitespace-nowrap">{t}</span>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">등록: {item.registeredByName} · {new Date(item.createdAt).toLocaleDateString()}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {(isAdmin || item.registeredById===empId) && (
+              <button onClick={e=>{e.stopPropagation();setRiskDeleteConfirm(item.id);}} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="h-4 w-4"/></button>
+            )}
+            {expandedRisk===item.id?<ChevronUp className="h-4 w-4 text-gray-400"/>:<ChevronDown className="h-4 w-4 text-gray-400"/>}
+          </div>
+        </div>
+        {expandedRisk===item.id && (
+          <div className="px-4 pb-4 border-t border-border pt-3 bg-muted/30 space-y-3">
+            {item.fieldInfo && <p className="text-xs text-muted-foreground">현장정보: {item.fieldInfo}</p>}
+            {item.imageUrls && item.imageUrls.length>0 && <div className="grid grid-cols-3 gap-2">{item.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>}
+
+            <p className="text-sm font-medium text-muted-foreground pt-1">내 평가 입력 ({empName})</p>
+
+            {item.method === "checklist" ? (
+              <>
+                <div className="flex gap-2">
+                  {["상","중","하"].map(lv=>(
+                    <button key={lv} onClick={()=>setItemAssessForm(item.id,{level:lv})} className={`flex-1 text-sm py-2 rounded-lg border ${f.level===lv?(lv==="상"?"bg-red-500 text-white border-red-500":lv==="중"?"bg-orange-500 text-white border-orange-500":"bg-green-600 text-white border-green-600"):"bg-card border-border"}`}>{lv}</button>
+                  ))}
+                </div>
+                <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${CHECKLIST_LEVEL_COLOR[f.level]}`}>{CHECKLIST_LEVEL_INFO[f.level]}</p>
+                <textarea placeholder="감소대책 (선택)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요?</p>
+                <div className="flex gap-2">
+                  <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
+                  <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:false})} className={`flex-1 text-sm py-2 rounded-lg border ${!f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+                </div>
+                <p className="text-sm text-muted-foreground">중대성 (1 소 ~ 4 최대)</p>
+                <div className="flex gap-2">
+                  {[1,2,3,4].map(s=>(
+                    <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
+                  ))}
+                </div>
+                <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${SEVERITY_COLOR[f.severity]}`}>{SEVERITY_INFO[f.severity]}</p>
+                {liveAgg && (
+                  <div className="flex items-baseline gap-2 text-xs">
+                    <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
+                    <span className={`font-semibold ${liveAgg.risk>=9?"text-red-600":"text-green-700"}`}>{liveAgg.risk}</span>
+                  </div>
+                )}
+                <textarea placeholder="현재 안전보건조치" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
+                {liveAgg && liveAgg.risk>=9 && (
+                  <textarea placeholder="감소대책 (위험성 9 이상 → 작성 필요)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+                )}
+              </>
+            )}
+            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item)} disabled={saveAssessment.isPending}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   const guides = [
@@ -420,7 +586,62 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
           </div>
         )}
 
-        {activeTab==="risk" && ready && (
+        {activeTab==="risk" && ready && myTeam && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <p className="text-sm text-gray-500">{myTeam} · {empName}님</p>
+              {isAdmin && (
+                <Button size="sm" variant="outline" onClick={()=>{ const t = myTeam || TEAM_ROSTERS[0].name; setTemplateManagerTeam(t); setRiskMethod(t==="사무업무 4반" ? "checklist" : "freq_severity"); setShowTemplateManager(true); }}>예시 관리</Button>
+              )}
+            </div>
+
+            {!mySelection ? (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요. 목록에 없으면 직접 등록할 수 있습니다.</p>
+                {availableTemplates.length===0 && teamItems.filter(t=>t.isTemplate).length===0 && (
+                  <div className="text-center py-8 text-gray-400"><ClipboardCheck className="h-10 w-10 mx-auto mb-2 opacity-30"/><p className="text-sm">등록된 예시가 없습니다. 관리자에게 문의하거나 직접 등록해주세요.</p></div>
+                )}
+                {availableTemplates.map(t=>(
+                  <div key={t.id} className="bg-card rounded-xl border border-border p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <Badge variant="outline" className="text-xs mb-1">{t.workCategory}{t.subWork?` · ${t.subWork}`:""}</Badge>
+                      <p className="text-sm font-medium truncate">{t.content}</p>
+                    </div>
+                    <Button size="sm" onClick={()=>selectTemplate.mutate(t.id)} disabled={selectTemplate.isPending} className="shrink-0">선택</Button>
+                  </div>
+                ))}
+                {teamItems.filter(t=>t.isTemplate && selectionByItemId.has(t.id)).map(t=>(
+                  <div key={t.id} className="bg-muted/30 rounded-xl border border-border p-3 opacity-60">
+                    <p className="text-sm truncate">{t.content}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{selectionByItemId.get(t.id)?.employeeName}님이 선택함</p>
+                  </div>
+                ))}
+                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES.freq_severity[0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setShowAddRisk(true); }}>
+                  <Plus className="h-4 w-4 mr-1"/>목록에 없으면 직접 등록
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">내가 선택한 항목</p>
+                    <p className="text-sm text-blue-800 dark:text-blue-300 truncate">{teamItems.find(t=>t.id===mySelection.hazardItemId)?.content}</p>
+                  </div>
+                  <button onClick={()=>cancelSelection.mutate(mySelection.id)} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={()=>setRiskMethod("checklist")} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-medium border ${riskMethod==="checklist"?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>사무 · 체크리스트법</button>
+                  <button onClick={()=>setRiskMethod("freq_severity")} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-medium border ${riskMethod==="freq_severity"?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>승강기검사 · 빈도강도법</button>
+                </div>
+                <p className="text-sm text-gray-500">평가 대상 {activeTeamItemsForMethod.length}건 · 미평가 {activeTeamItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
+                {sortedActiveTeamItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
+                {sortedActiveTeamItems.map(item=>renderRiskItemCard(item))}
+              </>
+            )}
+          </div>
+        )}
+
+        {activeTab==="risk" && ready && !myTeam && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <p className="text-sm text-gray-500">{branchName} · {empName}님</p>
@@ -431,103 +652,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             </div>
             <div className="flex justify-between items-center">
               <p className="text-sm text-gray-500">유해위험요인 {riskItemsForMethod.length}건 · 미평가 {riskItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
-              <Button size="sm" onClick={()=>{ setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setShowAddRisk(true); }}><Plus className="h-4 w-4 mr-1"/>유해위험요인 등록</Button>
+              <Button size="sm" onClick={()=>{ setAddRiskMode("legacy"); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setShowAddRisk(true); }}><Plus className="h-4 w-4 mr-1"/>유해위험요인 등록</Button>
             </div>
             {sortedRiskItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>등록된 유해위험요인이 없습니다.</p></div>}
-            {sortedRiskItems.map(item=>{
-              const mine = myAssessment(item.id);
-              const agg = computeAggregate(item.id, item.method);
-              const f = getAssessForm(item.id);
-              const liveAgg = item.method === "freq_severity"
-                ? (() => {
-                    const list = assessmentsByItem.get(item.id) || [];
-                    const others = list.filter(a => a.employeeId !== empId);
-                    const expCount = others.filter(a=>a.hadAccidentExperience).length + (f.hadAccidentExperience?1:0);
-                    const totalCount = others.length + 1;
-                    const possibility = Math.round((expCount/totalCount)*5*10)/10;
-                    const sevList = [...others.filter(a=>a.severity!=null).map(a=>a.severity as number), f.severity];
-                    const avgSeverity = Math.round((sevList.reduce((s,v)=>s+v,0)/sevList.length)*10)/10;
-                    return { possibility, avgSeverity, risk: Math.round(possibility*avgSeverity*10)/10 };
-                  })()
-                : null;
-              return (
-                <div key={item.id} className={`bg-card rounded-xl shadow-sm border overflow-hidden ${mine?"border-border":"border-orange-400"}`}>
-                  <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedRisk(expandedRisk===item.id?null:item.id)}>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
-                        {mine ? (
-                          <span className="text-xs px-2 py-0.5 rounded-md bg-green-100 text-green-700">
-                            평가완료{item.method==="checklist" ? (mine.level?` · ${mine.level}`:"") : (agg?` · 위험성 ${agg.risk}`:"")}
-                          </span>
-                        ) : (
-                          <span className="text-xs px-2 py-0.5 rounded-md bg-orange-100 text-orange-700">미평가</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <p className="text-sm font-medium truncate min-w-0">{item.content}</p>
-                        {getTeamsForName(item.registeredByName).map(t => (
-                          <span key={t} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0 whitespace-nowrap">{t}</span>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">등록: {item.registeredByName} · {new Date(item.createdAt).toLocaleDateString()}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {(isAdmin || item.registeredById===empId) && (
-                        <button onClick={e=>{e.stopPropagation();setRiskDeleteConfirm(item.id);}} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="h-4 w-4"/></button>
-                      )}
-                      {expandedRisk===item.id?<ChevronUp className="h-4 w-4 text-gray-400"/>:<ChevronDown className="h-4 w-4 text-gray-400"/>}
-                    </div>
-                  </div>
-                  {expandedRisk===item.id && (
-                    <div className="px-4 pb-4 border-t border-border pt-3 bg-muted/30 space-y-3">
-                      {item.fieldInfo && <p className="text-xs text-muted-foreground">현장정보: {item.fieldInfo}</p>}
-                      {item.imageUrls && item.imageUrls.length>0 && <div className="grid grid-cols-3 gap-2">{item.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>}
-
-                      <p className="text-sm font-medium text-muted-foreground pt-1">내 평가 입력 ({empName})</p>
-
-                      {item.method === "checklist" ? (
-                        <>
-                          <div className="flex gap-2">
-                            {["상","중","하"].map(lv=>(
-                              <button key={lv} onClick={()=>setItemAssessForm(item.id,{level:lv})} className={`flex-1 text-sm py-2 rounded-lg border ${f.level===lv?(lv==="상"?"bg-red-500 text-white border-red-500":lv==="중"?"bg-orange-500 text-white border-orange-500":"bg-green-600 text-white border-green-600"):"bg-card border-border"}`}>{lv}</button>
-                            ))}
-                          </div>
-                          <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${CHECKLIST_LEVEL_COLOR[f.level]}`}>{CHECKLIST_LEVEL_INFO[f.level]}</p>
-                          <textarea placeholder="감소대책 (선택)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요?</p>
-                          <div className="flex gap-2">
-                            <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
-                            <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:false})} className={`flex-1 text-sm py-2 rounded-lg border ${!f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
-                          </div>
-                          <p className="text-sm text-muted-foreground">중대성 (1 소 ~ 4 최대)</p>
-                          <div className="flex gap-2">
-                            {[1,2,3,4].map(s=>(
-                              <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
-                            ))}
-                          </div>
-                          <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${SEVERITY_COLOR[f.severity]}`}>{SEVERITY_INFO[f.severity]}</p>
-                          {liveAgg && (
-                            <div className="flex items-baseline gap-2 text-xs">
-                              <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
-                              <span className={`font-semibold ${liveAgg.risk>=9?"text-red-600":"text-green-700"}`}>{liveAgg.risk}</span>
-                            </div>
-                          )}
-                          <textarea placeholder="현재 안전보건조치" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
-                          {liveAgg && liveAgg.risk>=9 && (
-                            <textarea placeholder="감소대책 (위험성 9 이상 → 작성 필요)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
-                          )}
-                        </>
-                      )}
-                      <Button className="w-full" size="sm" onClick={()=>submitAssessment(item)} disabled={saveAssessment.isPending}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {sortedRiskItems.map(item=>renderRiskItemCard(item))}
           </div>
         )}
       </div>
@@ -582,7 +710,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       {showAddRisk&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowAddRisk(false)}>
           <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-border" onClick={e=>e.stopPropagation()}>
-            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">유해위험요인 등록</h2><button onClick={()=>setShowAddRisk(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
+            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">{addRiskMode==="template" ? `예시 등록 (${addRiskTeam})` : "유해위험요인 등록"}</h2><button onClick={()=>setShowAddRisk(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
             <div className="p-5 space-y-4">
               <p className="text-xs text-muted-foreground -mt-2">{riskMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}에 등록됩니다.</p>
               <div>
@@ -618,8 +746,48 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   branchId: branchName,
                   registeredById: empId,
                   registeredByName: empName,
+                  ...(addRiskMode !== "legacy" ? { team: addRiskTeam, isTemplate: addRiskMode === "template" } : {}),
+                  ...(addRiskMode === "direct" ? { selectEmployeeId: empId, selectEmployeeName: empName } : {}),
                 })}>{createRiskItem.isPending?"저장 중...":"저장"}</Button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTemplateManager&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowTemplateManager(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-border" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">팀별 예시 관리</h2><button onClick={()=>setShowTemplateManager(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
+            <div className="p-5 space-y-4">
+              <div className="flex gap-1.5 flex-wrap">
+                {TEAM_ROSTERS.map(t=>(
+                  <button key={t.name} onClick={()=>{ setTemplateManagerTeam(t.name); setRiskMethod(t.name==="사무업무 4반" ? "checklist" : "freq_severity"); }} className={`text-xs px-2.5 py-1.5 rounded-lg border ${templateManagerTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>{t.name}</button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">{adminTemplates.length}/10개 등록됨</p>
+              <div className="space-y-2">
+                {adminTemplates.length===0 && <p className="text-sm text-gray-400 text-center py-6">등록된 예시가 없습니다.</p>}
+                {adminTemplates.map(t=>{
+                  const sel = adminSelectionByItemId.get(t.id);
+                  return (
+                    <div key={t.id} className="flex items-center justify-between gap-2 bg-muted/30 rounded-lg p-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm truncate">{t.content}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{sel ? `${sel.employeeName}님이 선택함` : "선택 대기 중"}</p>
+                      </div>
+                      <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
+                    </div>
+                  );
+                })}
+              </div>
+              <Button
+                className="w-full"
+                disabled={adminTemplates.length>=10}
+                onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setShowAddRisk(true); }}
+              >
+                <Plus className="h-4 w-4 mr-1"/>{adminTemplates.length>=10 ? "최대 10개 등록됨" : "예시 추가"}
+              </Button>
             </div>
           </div>
         </div>
