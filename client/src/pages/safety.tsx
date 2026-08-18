@@ -93,11 +93,22 @@ const CHECKLIST_LEVEL_INFO: Record<string, string> = {
   "중": "보통(사고 발생 시 3일 이상 90일 미만의 휴업 예상)(허용 불가능)",
   "하": "매우 낮음(3일 미만의 휴업 또는 작업 수행에 영향을 미치지 않는 부상 또는 질병이 예상되는 위험)(허용 가능)",
 };
+const CHECKLIST_LEVEL_COLOR: Record<string, string> = {
+  "상": "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400",
+  "중": "bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
+  "하": "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400",
+};
 const SEVERITY_INFO: Record<number, string> = {
   4: "최대(사고 발생 시 사망 또는 90일 이상의 휴업)",
   3: "대(사고 발생 시 3일 이상 90일 미만의 휴업)",
   2: "중(3일 미만의 휴업 또는 작업 수행에 영향을 미치지 않는 부상 또는 질병)",
   1: "소(치료가 필요 없거나, 인적 손실이 없음 ※ 아차사고)",
+};
+const SEVERITY_COLOR: Record<number, string> = {
+  4: "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400",
+  3: "bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
+  2: "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
+  1: "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400",
 };
 
 export default function SafetyPage({ org = "", name = "", role = "user" }: { org?: string; name?: string; role?: string }) {
@@ -473,7 +484,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                       {item.fieldInfo && <p className="text-xs text-muted-foreground">현장정보: {item.fieldInfo}</p>}
                       {item.imageUrls && item.imageUrls.length>0 && <div className="grid grid-cols-3 gap-2">{item.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>}
 
-                      <p className="text-xs font-medium text-muted-foreground pt-1">내 평가 입력 ({empName})</p>
+                      <p className="text-sm font-medium text-muted-foreground pt-1">내 평가 입력 ({empName})</p>
 
                       {item.method === "checklist" ? (
                         <>
@@ -482,23 +493,23 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                               <button key={lv} onClick={()=>setItemAssessForm(item.id,{level:lv})} className={`flex-1 text-sm py-2 rounded-lg border ${f.level===lv?(lv==="상"?"bg-red-500 text-white border-red-500":lv==="중"?"bg-orange-500 text-white border-orange-500":"bg-green-600 text-white border-green-600"):"bg-card border-border"}`}>{lv}</button>
                             ))}
                           </div>
-                          <p className="text-[11px] text-muted-foreground leading-relaxed">{CHECKLIST_LEVEL_INFO[f.level]}</p>
+                          <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${CHECKLIST_LEVEL_COLOR[f.level]}`}>{CHECKLIST_LEVEL_INFO[f.level]}</p>
                           <textarea placeholder="감소대책 (선택)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
                         </>
                       ) : (
                         <>
-                          <p className="text-xs text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요?</p>
+                          <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요?</p>
                           <div className="flex gap-2">
                             <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
                             <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:false})} className={`flex-1 text-sm py-2 rounded-lg border ${!f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
                           </div>
-                          <p className="text-xs text-muted-foreground">중대성 (1 소 ~ 4 최대)</p>
+                          <p className="text-sm text-muted-foreground">중대성 (1 소 ~ 4 최대)</p>
                           <div className="flex gap-2">
                             {[1,2,3,4].map(s=>(
                               <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
                             ))}
                           </div>
-                          <p className="text-[11px] text-muted-foreground leading-relaxed">{SEVERITY_INFO[f.severity]}</p>
+                          <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${SEVERITY_COLOR[f.severity]}`}>{SEVERITY_INFO[f.severity]}</p>
                           {liveAgg && (
                             <div className="flex items-baseline gap-2 text-xs">
                               <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
