@@ -1588,14 +1588,30 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // 메시지 전송
   // 음성 인식 — 네이티브 앱(Capacitor) 전용. Android WebView는 Web Speech API를 지원하지 않아
   // 반드시 네이티브 플러그인(@capacitor-community/speech-recognition)을 사용해야 한다.
+  // 주의: popup:false + partialResults:true 조합에서 네이티브 start()는 인식이 "끝날 때"가 아니라
+  // "듣기 시작한 직후" 바로 resolve된다(안드로이드 플러그인 소스 기준). 그래서 start() 이후 곧바로
+  // 리스너를 제거하면 실제 인식 결과가 도착하기 전에 리스너가 사라져 텍스트가 채워지지 않는다.
+  // → 리스너는 사용자가 멈추거나(재탭) native가 종료 이벤트를 보낼 때까지 유지해야 한다.
+  const voiceListenersRef = useRef<{ partial?: any; state?: any } | null>(null);
+  const voiceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopVoiceInput = useCallback(async () => {
+    if (voiceTimeoutRef.current) { clearTimeout(voiceTimeoutRef.current); voiceTimeoutRef.current = null; }
+    try { await SpeechRecognition.stop(); } catch {}
+    const listeners = voiceListenersRef.current;
+    voiceListenersRef.current = null;
+    try { await listeners?.partial?.remove(); } catch {}
+    try { await listeners?.state?.remove(); } catch {}
+    setIsListening(false);
+  }, []);
+
   const toggleVoiceInput = useCallback(async () => {
     if (!Capacitor.isNativePlatform()) {
       toast({ title: "음성 입력은 앱에서만 지원됩니다.", variant: "destructive" });
       return;
     }
     if (isListening) {
-      try { await SpeechRecognition.stop(); } catch {}
-      setIsListening(false);
+      await stopVoiceInput();
       return;
     }
     try {
@@ -1612,6 +1628,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       const partialListener = await SpeechRecognition.addListener("partialResults", (data: { matches: string[] }) => {
         if (data.matches && data.matches[0]) setInputText(data.matches[0]);
       });
+      // 네이티브에서 음성 인식이 자연 종료되면(무음 감지 등) listeningState:"stopped" 이벤트가 온다 — 이때 자동으로 마이크 상태를 정리
+      const stateListener = await SpeechRecognition.addListener("listeningState", (data: { status: string }) => {
+        if (data.status === "stopped") stopVoiceInput();
+      });
+      voiceListenersRef.current = { partial: partialListener, state: stateListener };
       setIsListening(true);
       await SpeechRecognition.start({
         language: "ko-KR",
@@ -1620,15 +1641,15 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         partialResults: true,
         popup: false,
       });
-      // start()는 인식이 끝날 때(정지/타임아웃) 결과를 담아 resolve된다 — 리스너 정리 및 상태 반영
-      await partialListener.remove();
-      setIsListening(false);
+      // 위 start()는 듣기 시작 직후 resolve됨(최종 결과 아님) — 여기서 리스너를 제거하지 않는다.
+      // 오류 등으로 종료 이벤트가 오지 않는 경우를 대비한 안전장치(20초 후 자동 정리)
+      voiceTimeoutRef.current = setTimeout(() => { stopVoiceInput(); }, 20000);
     } catch (e) {
       setIsListening(false);
       console.error("[음성 인식 오류]", e);
       toast({ title: "음성 인식에 실패했습니다.", variant: "destructive" });
     }
-  }, [isListening, toast]);
+  }, [isListening, toast, stopVoiceInput]);
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
