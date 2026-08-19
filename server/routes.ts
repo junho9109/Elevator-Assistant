@@ -127,6 +127,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const CLUSTER_SIMILARITY_THRESHOLD = 0.88;
   async function applyFeedbackToPool(pool: any, question: string, answer: string, rating: number) {
     const questionEmbedding = await getEmbedding(question);
+    return applyFeedbackToPoolWithEmbedding(pool, question, answer, rating, questionEmbedding);
+  }
+  // 임베딩을 미리 계산해둔 경우(재구축 시 여러 건을 병렬로 임베딩 후 순차 반영할 때) 사용하는 버전
+  async function applyFeedbackToPoolWithEmbedding(pool: any, question: string, answer: string, rating: number, questionEmbedding: number[] | null) {
     if (!questionEmbedding) {
       console.error("[피드백 클러스터링] OpenAI 임베딩 생성 실패 — 이 피드백은 독립 클러스터로 저장됩니다 (OPENAI_API_KEY 확인 필요)");
     }
@@ -308,8 +312,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rows = await pool.query(
         `SELECT question, answer, rating FROM ai_feedback ORDER BY created_at ASC`
       );
-      for (const r of rows.rows) {
-        await applyFeedbackToPool(pool, r.question, r.answer, r.rating);
+      // 임베딩 API 호출(가장 느린 부분)은 먼저 전부 병렬로 끝내고, 클러스터 반영은 순서를 지켜 순차 처리
+      const embeddings = await Promise.all(rows.rows.map((r: any) => getEmbedding(r.question)));
+      for (let i = 0; i < rows.rows.length; i++) {
+        const r = rows.rows[i];
+        await applyFeedbackToPoolWithEmbedding(pool, r.question, r.answer, r.rating, embeddings[i]);
       }
       const clusters = await pool.query(
         `SELECT id, question, thumbs_up, thumbs_down, status FROM ai_answer_pool ORDER BY id ASC`
