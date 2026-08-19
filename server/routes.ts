@@ -145,11 +145,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("[피드백 클러스터링] OpenAI 임베딩 생성 실패 — 이 피드백은 독립 클러스터로 저장됩니다 (OPENAI_API_KEY 확인 필요)");
     }
 
-    let matched: { id: number; thumbs_up: number; thumbs_down: number } | null = null;
+    let matched: { id: number; thumbs_up: number; thumbs_down: number; status: string } | null = null;
     if (questionEmbedding) {
       const vecStr = `[${questionEmbedding.join(",")}]`;
       const nearest = await pool.query(
-        `SELECT id, thumbs_up, thumbs_down, 1 - (embedding <=> $1::vector) as similarity
+        `SELECT id, thumbs_up, thumbs_down, status, 1 - (embedding <=> $1::vector) as similarity
          FROM ai_answer_pool WHERE embedding IS NOT NULL
          ORDER BY embedding <=> $1::vector LIMIT 1`,
         [vecStr]
@@ -158,6 +158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         matched = nearest.rows[0];
       }
     }
+    const previousStatus = matched ? matched.status : 'pending';
 
     let thumbsUp = 0, thumbsDown = 0, poolId;
     if (matched) {
@@ -188,13 +189,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       poolId = inserted.rows[0].id;
     }
 
-    // 상태 자동 분류: 클러스터 누적 👍3+ → approved, 👎3+ → excluded
-    let newStatus = 'pending';
-    if (thumbsUp >= 3) newStatus = 'approved';
-    if (thumbsDown >= 3) newStatus = 'excluded';
+    // 상태 자동 분류: 고정 3표 문턱 대신 순 점수(좋아요-아쉬워요)로 판단 —
+    // 사용자 수가 적어 같은 취지의 질문에 3명이 좋아요를 누르는 일이 드물기 때문에,
+    // 첫 좋아요부터 바로 승인하고 이후 아쉬워요가 더 쌓이면 즉시 재검토(제외)되도록 함
+    let newStatus: 'pending' | 'approved' | 'excluded' = 'pending';
+    if (thumbsUp > thumbsDown) newStatus = 'approved';
+    else if (thumbsDown > thumbsUp) newStatus = 'excluded';
     await pool.query(`UPDATE ai_answer_pool SET status = $1 WHERE id = $2`, [newStatus, poolId]);
 
-    return { poolId, thumbsUp, thumbsDown, newStatus, matchedExisting: !!matched };
+    const statusChangedToExcluded = previousStatus !== 'excluded' && newStatus === 'excluded';
+    return { poolId, thumbsUp, thumbsDown, newStatus, matchedExisting: !!matched, statusChangedToExcluded };
   }
 
   // 유사 질문 검색 — approved 답변 중 가장 유사한 것 반환
@@ -239,10 +243,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       // 2) answer_pool 업데이트 — 질문 임베딩 유사도로 클러스터링해서 누적 (공유 헬퍼 사용)
-      const { thumbsUp, thumbsDown, newStatus } = await applyFeedbackToPool(pool, question, answer, rating);
+      const { thumbsUp, thumbsDown, newStatus, statusChangedToExcluded } = await applyFeedbackToPool(pool, question, answer, rating);
 
-      // 3) 👎 3+ 도달 시 관리자에게 FCM 알림
-      if (thumbsDown === 3) {
+      // 3) 클러스터가 새로 제외(excluded) 상태로 전환되는 순간 관리자에게 FCM 알림
+      if (statusChangedToExcluded) {
         try {
           if (firebaseAdmin) {
             const tokenRows = await pool.query(`SELECT token FROM push_tokens`);
