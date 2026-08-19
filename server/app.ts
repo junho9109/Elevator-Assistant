@@ -29,6 +29,37 @@ async function ensureChatTable() {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       )
     `);
+    // AI검색 좋아요/아쉬워요 피드백 + 답변 풀 테이블 (기존에 부트스트랩이 누락되어 있었음)
+    try {
+      await pool.query(`CREATE EXTENSION IF NOT EXISTS vector`);
+    } catch (e) {
+      console.error("vector 확장 활성화 실패:", e);
+    }
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_feedback (
+        id SERIAL PRIMARY KEY,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        rating INTEGER NOT NULL,
+        sections TEXT[] DEFAULT '{}',
+        reasons TEXT[] DEFAULT '{}',
+        comment TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_answer_pool (
+        id SERIAL PRIMARY KEY,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        thumbs_up INTEGER DEFAULT 0 NOT NULL,
+        thumbs_down INTEGER DEFAULT 0 NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending' NOT NULL,
+        embedding vector(1536),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }

@@ -1053,6 +1053,7 @@ function FeedbackModal({ rating, onSubmit, onSkip, onClose }: { rating: 1 | -1; 
 }
 
 function FeedbackButtons({ question, answer }: { question: string; answer: string }) {
+  const { toast } = useToast();
   const [rated, setRated] = React.useState<1 | -1 | null>(null);
   const [modalRating, setModalRating] = React.useState<1 | -1 | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -1061,14 +1062,17 @@ function FeedbackButtons({ question, answer }: { question: string; answer: strin
     if (rated || loading) return;
     setLoading(true);
     try {
-      await fetch("/api/ai-feedback", {
+      const res = await fetch("/api/ai-feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question, answer, rating, sections, reasons, comment }),
       });
+      if (!res.ok) throw new Error("피드백 저장 실패");
       setRated(rating);
       setModalRating(null);
-    } catch (e) {}
+    } catch (e) {
+      toast({ title: "피드백 저장에 실패했습니다. 다시 시도해주세요.", variant: "destructive" });
+    }
     setLoading(false);
   };
 
