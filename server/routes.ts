@@ -313,6 +313,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // [임시 진단용] 표준화 자료 출처(source) 현황 조회 — 확인 끝나면 제거 예정
+  app.get("/api/debug/std-source-report", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    try {
+      const { pool } = await import("./db");
+      const rows = await pool.query(
+        `SELECT title, override_title, source FROM std_item_overrides ORDER BY title`
+      );
+      const missingSource = rows.rows.filter((r: any) => !r.source || !String(r.source).trim());
+      const withSource = rows.rows.filter((r: any) => r.source && String(r.source).trim());
+      res.json({
+        total: rows.rows.length,
+        missingSourceCount: missingSource.length,
+        missingSource: missingSource.map((r: any) => ({ title: r.title, overrideTitle: r.override_title })),
+        withSource: withSource.map((r: any) => ({ title: r.title, overrideTitle: r.override_title, source: r.source })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "조회 실패" });
+    }
+  });
+
   app.get("/api/standards/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
