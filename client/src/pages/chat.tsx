@@ -76,6 +76,7 @@ export default function ChatPage() {
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastIdRef = useRef<number>(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const CACHE_KEY = "chat_msgs_cache";
 
@@ -144,6 +145,24 @@ export default function ChatPage() {
     };
     window.addEventListener("scrollToChatMsg", handler);
     return () => window.removeEventListener("scrollToChatMsg", handler);
+  }, []);
+
+  // AI검색 답변에서 "채팅에서 묻기"로 넘어온 질문을 입력창에 채워넣기
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const text = (e as CustomEvent).detail?.text;
+      if (typeof text !== "string") return;
+      setInput(text);
+      setTimeout(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      }, 200);
+    };
+    window.addEventListener("chatPrefill", handler);
+    return () => window.removeEventListener("chatPrefill", handler);
   }, []);
 
   useEffect(() => {
@@ -631,6 +650,7 @@ export default function ChatPage() {
             <Video size={16} className="text-muted-foreground" />
           </button>
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); }}}

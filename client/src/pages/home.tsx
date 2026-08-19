@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
@@ -2915,6 +2915,17 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   </div>
                   {msg.role === "assistant" && msg.content && i > 0 && messages[i-1]?.role === "user" && (
                     <div className="w-full">
+                      <button
+                        onClick={() => {
+                          const q = messages[i-1].content;
+                          window.dispatchEvent(new CustomEvent("chatPrefill", { detail: { text: q } }));
+                          window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } }));
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 text-[12px] font-medium text-muted-foreground border border-border rounded-xl py-2 mb-1.5"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        이 질문 채팅에서 묻기
+                      </button>
                       <FeedbackButtons question={messages[i-1].content} answer={msg.content} />
                     </div>
                   )}
