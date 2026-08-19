@@ -160,46 +160,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [question, answer, rating, sections || [], reasons || [], comment || null]
       );
 
-      // 2) answer_pool 업데이트 (question 기준 upsert)
-      const existing = await pool.query(
-        `SELECT id, thumbs_up, thumbs_down FROM ai_answer_pool WHERE question = $1 AND answer = $2`,
-        [question, answer]
-      );
+      // 2) answer_pool 업데이트 — 질문 임베딩 유사도로 클러스터링해서 누적
+      // (질문 문자열이나 답변 문자열이 토씨 하나라도 다르면 별개로 취급하던 기존 방식은
+      //  LLM 답변이 매번 표현이 달라지는 특성상 사실상 절대 3표 문턱에 도달하지 못했음.
+      //  → 이제 질문을 임베딩해 기존 클러스터들과 코사인 유사도를 비교, 표현이 달라도
+      //  같은 취지의 질문이면 같은 클러스터로 묶어 좋아요/아쉬워요를 누적한다)
+      const CLUSTER_SIMILARITY_THRESHOLD = 0.88;
+      const questionEmbedding = await getEmbedding(question);
+      if (!questionEmbedding) {
+        console.error("[피드백 클러스터링] OpenAI 임베딩 생성 실패 — 이 피드백은 독립 클러스터로 저장됩니다 (OPENAI_API_KEY 확인 필요)");
+      }
+
+      let matched: { id: number; thumbs_up: number; thumbs_down: number } | null = null;
+      if (questionEmbedding) {
+        const vecStr = `[${questionEmbedding.join(",")}]`;
+        const nearest = await pool.query(
+          `SELECT id, thumbs_up, thumbs_down, 1 - (embedding <=> $1::vector) as similarity
+           FROM ai_answer_pool WHERE embedding IS NOT NULL
+           ORDER BY embedding <=> $1::vector LIMIT 1`,
+          [vecStr]
+        );
+        if (nearest.rows.length > 0 && nearest.rows[0].similarity >= CLUSTER_SIMILARITY_THRESHOLD) {
+          matched = nearest.rows[0];
+        }
+      }
 
       let thumbsUp = 0, thumbsDown = 0, poolId;
-      if (existing.rows.length > 0) {
-        thumbsUp = existing.rows[0].thumbs_up + (rating === 1 ? 1 : 0);
-        thumbsDown = existing.rows[0].thumbs_down + (rating === -1 ? 1 : 0);
-        poolId = existing.rows[0].id;
-        await pool.query(
-          `UPDATE ai_answer_pool SET thumbs_up = $1, thumbs_down = $2, updated_at = NOW() WHERE id = $3`,
-          [thumbsUp, thumbsDown, poolId]
-        );
+      if (matched) {
+        poolId = matched.id;
+        thumbsUp = matched.thumbs_up + (rating === 1 ? 1 : 0);
+        thumbsDown = matched.thumbs_down + (rating === -1 ? 1 : 0);
+        // 좋아요를 받은 경우 클러스터 대표 답변을 이번 답변으로 갱신 (참고 자료가 계속 최신 상태 유지)
+        if (rating === 1) {
+          await pool.query(
+            `UPDATE ai_answer_pool SET thumbs_up = $1, thumbs_down = $2, answer = $3, updated_at = NOW() WHERE id = $4`,
+            [thumbsUp, thumbsDown, answer, poolId]
+          );
+        } else {
+          await pool.query(
+            `UPDATE ai_answer_pool SET thumbs_up = $1, thumbs_down = $2, updated_at = NOW() WHERE id = $3`,
+            [thumbsUp, thumbsDown, poolId]
+          );
+        }
       } else {
+        // 유사한 기존 클러스터가 없으면 새 클러스터 생성 (임베딩 생성 실패 시 embedding은 NULL로 저장 — 추후 매칭 대상에서만 제외되고 pending으로는 유지)
         thumbsUp = rating === 1 ? 1 : 0;
         thumbsDown = rating === -1 ? 1 : 0;
+        const vecStr = questionEmbedding ? `[${questionEmbedding.join(",")}]` : null;
         const inserted = await pool.query(
-          `INSERT INTO ai_answer_pool (question, answer, thumbs_up, thumbs_down) VALUES ($1, $2, $3, $4) RETURNING id`,
-          [question, answer, thumbsUp, thumbsDown]
+          `INSERT INTO ai_answer_pool (question, answer, thumbs_up, thumbs_down, embedding) VALUES ($1, $2, $3, $4, $5::vector) RETURNING id`,
+          [question, answer, thumbsUp, thumbsDown, vecStr]
         );
         poolId = inserted.rows[0].id;
       }
 
-      // 3) 상태 자동 분류: 👍3+ → approved, 👎3+ → excluded
+      // 3) 상태 자동 분류: 클러스터 누적 👍3+ → approved, 👎3+ → excluded
       let newStatus = 'pending';
       if (thumbsUp >= 3) newStatus = 'approved';
       if (thumbsDown >= 3) newStatus = 'excluded';
       await pool.query(`UPDATE ai_answer_pool SET status = $1 WHERE id = $2`, [newStatus, poolId]);
-
-      // 3-1) approved로 새로 전환되는 순간 임베딩 생성 (최초 1회)
-      if (newStatus === 'approved' && thumbsUp === 3) {
-        getEmbedding(question).then(async (emb) => {
-          if (emb) {
-            const vecStr = `[${emb.join(",")}]`;
-            await pool.query(`UPDATE ai_answer_pool SET embedding = $1::vector WHERE id = $2`, [vecStr, poolId]);
-          }
-        }).catch(() => {});
-      }
 
       // 4) 👎 3+ 도달 시 관리자에게 FCM 알림
       if (thumbsDown === 3) {
