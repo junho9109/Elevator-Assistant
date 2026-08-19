@@ -97,8 +97,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI 답변 피드백 API
-  // OpenAI 임베딩 생성 헬퍼
+  // OpenAI 임베딩 생성 헬퍼 (네트워크가 막혀있는 등의 상황에서 무한 대기하지 않도록 8초 타임아웃)
   async function getEmbedding(text: string): Promise<number[] | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       const resp = await fetch("https://api.openai.com/v1/embeddings", {
         method: "POST",
@@ -110,12 +112,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           model: "text-embedding-3-small",
           input: text.slice(0, 8000),
         }),
+        signal: controller.signal,
       });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        console.error(`[임베딩] OpenAI 응답 오류 status=${resp.status}:`, errText.slice(0, 300));
+        return null;
+      }
       const data = await resp.json();
       return data?.data?.[0]?.embedding || null;
     } catch (e) {
       console.error("[임베딩] 생성 실패:", e);
       return null;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -297,6 +307,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       res.status(500).json({ error: e.message || "피드백 내보내기 실패" });
     }
+  });
+
+  // [임시 진단용] OpenAI 임베딩 호출이 실제로 되는지 확인 — 진단 끝나면 제거 예정
+  app.get("/api/debug/test-embedding", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    const started = Date.now();
+    const emb = await getEmbedding("테스트");
+    res.json({
+      openaiKeySet: !!process.env.OPENAI_API_KEY,
+      keyPrefix: process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.slice(0, 7) : null,
+      embeddingLength: emb ? emb.length : null,
+      tookMs: Date.now() - started,
+    });
   });
 
   // [일회성 관리 API] 기존에 쌓인 ai_feedback 로그를 새 클러스터링 방식으로 재구축
