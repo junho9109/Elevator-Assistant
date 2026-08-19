@@ -322,6 +322,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // [임시 진단용] ai_answer_pool 현재 상태를 읽기만 함 (재구축 시도 없이) — 진단 끝나면 제거 예정
+  app.get("/api/debug/pool-status", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    try {
+      const { pool } = await import("./db");
+      const rows = await pool.query(
+        `SELECT id, question, thumbs_up, thumbs_down, status, (embedding IS NOT NULL) as has_embedding FROM ai_answer_pool ORDER BY id ASC`
+      );
+      res.json({ count: rows.rows.length, rows: rows.rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "조회 실패" });
+    }
+  });
+
   // [일회성 관리 API] 기존에 쌓인 ai_feedback 로그를 새 클러스터링 방식으로 재구축
   // ai_answer_pool을 비우고 ai_feedback(원본 로그, 훼손되지 않음)을 시간순으로 다시 재생해
   // 지금 도입한 임베딩 유사도 클러스터링을 과거 데이터에도 소급 적용한다. 여러 번 실행해도 안전(멱등).
