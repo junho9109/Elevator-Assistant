@@ -1592,11 +1592,16 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // "듣기 시작한 직후" 바로 resolve된다(안드로이드 플러그인 소스 기준). 그래서 start() 이후 곧바로
   // 리스너를 제거하면 실제 인식 결과가 도착하기 전에 리스너가 사라져 텍스트가 채워지지 않는다.
   // → 리스너는 사용자가 멈추거나(재탭) native가 종료 이벤트를 보낼 때까지 유지해야 한다.
+  // 추가 주의: partialResults:true일 때 안드로이드 플러그인은 DICTATION_MODE(연속 인식)를 켜기 때문에
+  // 말을 멈춰도 onEndOfSpeech가 자동으로 오지 않는다(마이크가 계속 켜진 채로 대기) — 따라서 자연 종료를
+  // native에 맡기지 않고, 새 인식 결과가 도착할 때마다 무음 타이머를 리셋해 "말이 끝났다"를 직접 판단한다.
   const voiceListenersRef = useRef<{ partial?: any; state?: any } | null>(null);
-  const voiceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 아예 말을 시작 안 할 때의 전체 안전장치
+  const voiceSilenceRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 말이 끊긴 뒤 자동 종료용
 
   const stopVoiceInput = useCallback(async () => {
     if (voiceTimeoutRef.current) { clearTimeout(voiceTimeoutRef.current); voiceTimeoutRef.current = null; }
+    if (voiceSilenceRef.current) { clearTimeout(voiceSilenceRef.current); voiceSilenceRef.current = null; }
     try { await SpeechRecognition.stop(); } catch {}
     const listeners = voiceListenersRef.current;
     voiceListenersRef.current = null;
@@ -1627,6 +1632,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       }
       const partialListener = await SpeechRecognition.addListener("partialResults", (data: { matches: string[] }) => {
         if (data.matches && data.matches[0]) setInputText(data.matches[0]);
+        // 말이 들어올 때마다 "말 시작 안 함" 안전 타임아웃은 해제하고, "말이 끊김" 타이머를 새로 건다 —
+        // 1.5초간 새 인식 결과가 없으면 사용자가 말을 마쳤다고 보고 자동으로 마이크를 끈다
+        if (voiceTimeoutRef.current) { clearTimeout(voiceTimeoutRef.current); voiceTimeoutRef.current = null; }
+        if (voiceSilenceRef.current) clearTimeout(voiceSilenceRef.current);
+        voiceSilenceRef.current = setTimeout(() => { stopVoiceInput(); }, 1500);
       });
       // 네이티브에서 음성 인식이 자연 종료되면(무음 감지 등) listeningState:"stopped" 이벤트가 온다 — 이때 자동으로 마이크 상태를 정리
       const stateListener = await SpeechRecognition.addListener("listeningState", (data: { status: string }) => {
@@ -1642,8 +1652,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         popup: false,
       });
       // 위 start()는 듣기 시작 직후 resolve됨(최종 결과 아님) — 여기서 리스너를 제거하지 않는다.
-      // 오류 등으로 종료 이벤트가 오지 않는 경우를 대비한 안전장치(20초 후 자동 정리)
-      voiceTimeoutRef.current = setTimeout(() => { stopVoiceInput(); }, 20000);
+      // 말을 아예 시작하지 않는 경우를 대비한 안전장치(8초 내 첫 인식 결과가 없으면 자동 종료) —
+      // 말이 시작되면 partialResults 리스너가 이 타이머를 해제하고 무음(1.5초) 타이머로 넘어간다
+      voiceTimeoutRef.current = setTimeout(() => { stopVoiceInput(); }, 8000);
     } catch (e) {
       setIsListening(false);
       console.error("[음성 인식 오류]", e);
