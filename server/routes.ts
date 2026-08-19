@@ -119,6 +119,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }
 
+  // 질문 임베딩 유사도로 answer_pool 클러스터링 — POST /api/ai-feedback 및 재구축(rebuild) 양쪽에서 공유
+  // (질문 문자열이나 답변 문자열이 토씨 하나라도 다르면 별개로 취급하던 기존 방식은
+  //  LLM 답변이 매번 표현이 달라지는 특성상 사실상 절대 3표 문턱에 도달하지 못했음.
+  //  → 질문을 임베딩해 기존 클러스터들과 코사인 유사도를 비교, 표현이 달라도
+  //  같은 취지의 질문이면 같은 클러스터로 묶어 좋아요/아쉬워요를 누적한다)
+  const CLUSTER_SIMILARITY_THRESHOLD = 0.88;
+  async function applyFeedbackToPool(pool: any, question: string, answer: string, rating: number) {
+    const questionEmbedding = await getEmbedding(question);
+    if (!questionEmbedding) {
+      console.error("[피드백 클러스터링] OpenAI 임베딩 생성 실패 — 이 피드백은 독립 클러스터로 저장됩니다 (OPENAI_API_KEY 확인 필요)");
+    }
+
+    let matched: { id: number; thumbs_up: number; thumbs_down: number } | null = null;
+    if (questionEmbedding) {
+      const vecStr = `[${questionEmbedding.join(",")}]`;
+      const nearest = await pool.query(
+        `SELECT id, thumbs_up, thumbs_down, 1 - (embedding <=> $1::vector) as similarity
+         FROM ai_answer_pool WHERE embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector LIMIT 1`,
+        [vecStr]
+      );
+      if (nearest.rows.length > 0 && nearest.rows[0].similarity >= CLUSTER_SIMILARITY_THRESHOLD) {
+        matched = nearest.rows[0];
+      }
+    }
+
+    let thumbsUp = 0, thumbsDown = 0, poolId;
+    if (matched) {
+      poolId = matched.id;
+      thumbsUp = matched.thumbs_up + (rating === 1 ? 1 : 0);
+      thumbsDown = matched.thumbs_down + (rating === -1 ? 1 : 0);
+      // 좋아요를 받은 경우 클러스터 대표 답변을 이번 답변으로 갱신 (참고 자료가 계속 최신 상태 유지)
+      if (rating === 1) {
+        await pool.query(
+          `UPDATE ai_answer_pool SET thumbs_up = $1, thumbs_down = $2, answer = $3, updated_at = NOW() WHERE id = $4`,
+          [thumbsUp, thumbsDown, answer, poolId]
+        );
+      } else {
+        await pool.query(
+          `UPDATE ai_answer_pool SET thumbs_up = $1, thumbs_down = $2, updated_at = NOW() WHERE id = $3`,
+          [thumbsUp, thumbsDown, poolId]
+        );
+      }
+    } else {
+      // 유사한 기존 클러스터가 없으면 새 클러스터 생성 (임베딩 생성 실패 시 embedding은 NULL로 저장 — 추후 매칭 대상에서만 제외되고 pending으로는 유지)
+      thumbsUp = rating === 1 ? 1 : 0;
+      thumbsDown = rating === -1 ? 1 : 0;
+      const vecStr = questionEmbedding ? `[${questionEmbedding.join(",")}]` : null;
+      const inserted = await pool.query(
+        `INSERT INTO ai_answer_pool (question, answer, thumbs_up, thumbs_down, embedding) VALUES ($1, $2, $3, $4, $5::vector) RETURNING id`,
+        [question, answer, thumbsUp, thumbsDown, vecStr]
+      );
+      poolId = inserted.rows[0].id;
+    }
+
+    // 상태 자동 분류: 클러스터 누적 👍3+ → approved, 👎3+ → excluded
+    let newStatus = 'pending';
+    if (thumbsUp >= 3) newStatus = 'approved';
+    if (thumbsDown >= 3) newStatus = 'excluded';
+    await pool.query(`UPDATE ai_answer_pool SET status = $1 WHERE id = $2`, [newStatus, poolId]);
+
+    return { poolId, thumbsUp, thumbsDown, newStatus, matchedExisting: !!matched };
+  }
+
   // 유사 질문 검색 — approved 답변 중 가장 유사한 것 반환
   app.post("/api/ai-similar-answers", async (req, res) => {
     try {
@@ -160,67 +224,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         [question, answer, rating, sections || [], reasons || [], comment || null]
       );
 
-      // 2) answer_pool 업데이트 — 질문 임베딩 유사도로 클러스터링해서 누적
-      // (질문 문자열이나 답변 문자열이 토씨 하나라도 다르면 별개로 취급하던 기존 방식은
-      //  LLM 답변이 매번 표현이 달라지는 특성상 사실상 절대 3표 문턱에 도달하지 못했음.
-      //  → 이제 질문을 임베딩해 기존 클러스터들과 코사인 유사도를 비교, 표현이 달라도
-      //  같은 취지의 질문이면 같은 클러스터로 묶어 좋아요/아쉬워요를 누적한다)
-      const CLUSTER_SIMILARITY_THRESHOLD = 0.88;
-      const questionEmbedding = await getEmbedding(question);
-      if (!questionEmbedding) {
-        console.error("[피드백 클러스터링] OpenAI 임베딩 생성 실패 — 이 피드백은 독립 클러스터로 저장됩니다 (OPENAI_API_KEY 확인 필요)");
-      }
+      // 2) answer_pool 업데이트 — 질문 임베딩 유사도로 클러스터링해서 누적 (공유 헬퍼 사용)
+      const { thumbsUp, thumbsDown, newStatus } = await applyFeedbackToPool(pool, question, answer, rating);
 
-      let matched: { id: number; thumbs_up: number; thumbs_down: number } | null = null;
-      if (questionEmbedding) {
-        const vecStr = `[${questionEmbedding.join(",")}]`;
-        const nearest = await pool.query(
-          `SELECT id, thumbs_up, thumbs_down, 1 - (embedding <=> $1::vector) as similarity
-           FROM ai_answer_pool WHERE embedding IS NOT NULL
-           ORDER BY embedding <=> $1::vector LIMIT 1`,
-          [vecStr]
-        );
-        if (nearest.rows.length > 0 && nearest.rows[0].similarity >= CLUSTER_SIMILARITY_THRESHOLD) {
-          matched = nearest.rows[0];
-        }
-      }
-
-      let thumbsUp = 0, thumbsDown = 0, poolId;
-      if (matched) {
-        poolId = matched.id;
-        thumbsUp = matched.thumbs_up + (rating === 1 ? 1 : 0);
-        thumbsDown = matched.thumbs_down + (rating === -1 ? 1 : 0);
-        // 좋아요를 받은 경우 클러스터 대표 답변을 이번 답변으로 갱신 (참고 자료가 계속 최신 상태 유지)
-        if (rating === 1) {
-          await pool.query(
-            `UPDATE ai_answer_pool SET thumbs_up = $1, thumbs_down = $2, answer = $3, updated_at = NOW() WHERE id = $4`,
-            [thumbsUp, thumbsDown, answer, poolId]
-          );
-        } else {
-          await pool.query(
-            `UPDATE ai_answer_pool SET thumbs_up = $1, thumbs_down = $2, updated_at = NOW() WHERE id = $3`,
-            [thumbsUp, thumbsDown, poolId]
-          );
-        }
-      } else {
-        // 유사한 기존 클러스터가 없으면 새 클러스터 생성 (임베딩 생성 실패 시 embedding은 NULL로 저장 — 추후 매칭 대상에서만 제외되고 pending으로는 유지)
-        thumbsUp = rating === 1 ? 1 : 0;
-        thumbsDown = rating === -1 ? 1 : 0;
-        const vecStr = questionEmbedding ? `[${questionEmbedding.join(",")}]` : null;
-        const inserted = await pool.query(
-          `INSERT INTO ai_answer_pool (question, answer, thumbs_up, thumbs_down, embedding) VALUES ($1, $2, $3, $4, $5::vector) RETURNING id`,
-          [question, answer, thumbsUp, thumbsDown, vecStr]
-        );
-        poolId = inserted.rows[0].id;
-      }
-
-      // 3) 상태 자동 분류: 클러스터 누적 👍3+ → approved, 👎3+ → excluded
-      let newStatus = 'pending';
-      if (thumbsUp >= 3) newStatus = 'approved';
-      if (thumbsDown >= 3) newStatus = 'excluded';
-      await pool.query(`UPDATE ai_answer_pool SET status = $1 WHERE id = $2`, [newStatus, poolId]);
-
-      // 4) 👎 3+ 도달 시 관리자에게 FCM 알림
+      // 3) 👎 3+ 도달 시 관리자에게 FCM 알림
       if (thumbsDown === 3) {
         try {
           if (firebaseAdmin) {
@@ -285,6 +292,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.send(csv);
     } catch (e: any) {
       res.status(500).json({ error: e.message || "피드백 내보내기 실패" });
+    }
+  });
+
+  // [일회성 관리 API] 기존에 쌓인 ai_feedback 로그를 새 클러스터링 방식으로 재구축
+  // ai_answer_pool을 비우고 ai_feedback(원본 로그, 훼손되지 않음)을 시간순으로 다시 재생해
+  // 지금 도입한 임베딩 유사도 클러스터링을 과거 데이터에도 소급 적용한다. 여러 번 실행해도 안전(멱등).
+  app.get("/api/ai-feedback/rebuild-pool", async (req, res) => {
+    try {
+      if (req.query.secret !== "rebuild-elevator-2026") {
+        return res.status(403).json({ error: "forbidden" });
+      }
+      const { pool } = await import("./db");
+      await pool.query(`TRUNCATE ai_answer_pool RESTART IDENTITY`);
+      const rows = await pool.query(
+        `SELECT question, answer, rating FROM ai_feedback ORDER BY created_at ASC`
+      );
+      for (const r of rows.rows) {
+        await applyFeedbackToPool(pool, r.question, r.answer, r.rating);
+      }
+      const clusters = await pool.query(
+        `SELECT id, question, thumbs_up, thumbs_down, status FROM ai_answer_pool ORDER BY id ASC`
+      );
+      const statusCounts = clusters.rows.reduce((acc: any, c: any) => {
+        acc[c.status] = (acc[c.status] || 0) + 1;
+        return acc;
+      }, {});
+      res.json({
+        ok: true,
+        totalFeedbackReplayed: rows.rows.length,
+        totalClusters: clusters.rows.length,
+        statusCounts,
+        clusters: clusters.rows,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "재구축 실패" });
     }
   });
 
