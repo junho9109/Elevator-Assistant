@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
+import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 import { isSuperAdminLoggedIn } from "@/lib/super-admin";
@@ -1479,6 +1481,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     }
   ]);
   const [inputText, setInputText] = useState("");
+  const [isListening, setIsListening] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [accidentStats, setAccidentStats] = useState<{yearly: any[], age: any[]}>({ yearly: [], age: [] });
   const [statsLoaded, setStatsLoaded] = useState(false);
@@ -1579,6 +1582,50 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   }, [messages, isTyping]);
 
   // 메시지 전송
+  // 음성 인식 — 네이티브 앱(Capacitor) 전용. Android WebView는 Web Speech API를 지원하지 않아
+  // 반드시 네이티브 플러그인(@capacitor-community/speech-recognition)을 사용해야 한다.
+  const toggleVoiceInput = useCallback(async () => {
+    if (!Capacitor.isNativePlatform()) {
+      toast({ title: "음성 입력은 앱에서만 지원됩니다.", variant: "destructive" });
+      return;
+    }
+    if (isListening) {
+      try { await SpeechRecognition.stop(); } catch {}
+      setIsListening(false);
+      return;
+    }
+    try {
+      const { available } = await SpeechRecognition.available();
+      if (!available) {
+        toast({ title: "이 기기에서는 음성 인식을 사용할 수 없습니다.", variant: "destructive" });
+        return;
+      }
+      const perm = await SpeechRecognition.requestPermissions();
+      if (perm.speechRecognition !== "granted") {
+        toast({ title: "마이크 권한이 필요합니다.", variant: "destructive" });
+        return;
+      }
+      const partialListener = await SpeechRecognition.addListener("partialResults", (data: { matches: string[] }) => {
+        if (data.matches && data.matches[0]) setInputText(data.matches[0]);
+      });
+      setIsListening(true);
+      await SpeechRecognition.start({
+        language: "ko-KR",
+        maxResults: 1,
+        prompt: "말씀해주세요",
+        partialResults: true,
+        popup: false,
+      });
+      // start()는 인식이 끝날 때(정지/타임아웃) 결과를 담아 resolve된다 — 리스너 정리 및 상태 반영
+      await partialListener.remove();
+      setIsListening(false);
+    } catch (e) {
+      setIsListening(false);
+      console.error("[음성 인식 오류]", e);
+      toast({ title: "음성 인식에 실패했습니다.", variant: "destructive" });
+    }
+  }, [isListening, toast]);
+
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim()) return;
     const userMsg: Message = { role: "user", content: text, time: formatTime() };
@@ -2989,9 +3036,16 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage(inputText)}
-                placeholder="궁금한 것을 물어보세요..."
+                placeholder={isListening ? "듣고 있어요..." : "궁금한 것을 물어보세요..."}
                 className="flex-1 bg-secondary rounded-full px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
               />
+              <button
+                onClick={toggleVoiceInput}
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors shrink-0 ${isListening ? "bg-red-500 text-white animate-pulse" : "bg-secondary text-muted-foreground"}`}
+                title="음성 입력"
+              >
+                {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
               <button
                 onClick={() => sendMessage(inputText)}
                 disabled={!inputText.trim() || isTyping}

@@ -19,6 +19,7 @@
   "notes": "removed framer motion dependency",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
+    "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor/android": "^8.2.0",
     "@capacitor/live-updates": "^0.5.0",
     "@capacitor/push-notifications": "^8.1.2",
