@@ -326,21 +326,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ai_answer_pool을 비우고 ai_feedback(원본 로그, 훼손되지 않음)을 시간순으로 다시 재생해
   // 지금 도입한 임베딩 유사도 클러스터링을 과거 데이터에도 소급 적용한다. 여러 번 실행해도 안전(멱등).
   app.get("/api/ai-feedback/rebuild-pool", async (req, res) => {
+    const progress: string[] = [];
+    let responded = false;
+    const watchdog = setTimeout(() => {
+      if (!responded) {
+        responded = true;
+        console.error("[재구축] 워치독 타임아웃, 진행 상황:", progress);
+        res.status(500).json({ error: "타임아웃", progress });
+      }
+    }, 20000);
     try {
       if (req.query.secret !== "rebuild-elevator-2026") {
+        clearTimeout(watchdog);
+        responded = true;
         return res.status(403).json({ error: "forbidden" });
       }
+      progress.push("import db");
       const { pool } = await import("./db");
+      progress.push("truncate");
       await pool.query(`TRUNCATE ai_answer_pool RESTART IDENTITY`);
+      progress.push("select feedback rows");
       const rows = await pool.query(
         `SELECT question, answer, rating FROM ai_feedback ORDER BY created_at ASC`
       );
+      progress.push(`got ${rows.rows.length} rows, embedding...`);
       // 임베딩 API 호출(가장 느린 부분)은 먼저 전부 병렬로 끝내고, 클러스터 반영은 순서를 지켜 순차 처리
       const embeddings = await Promise.all(rows.rows.map((r: any) => getEmbedding(r.question)));
+      progress.push(`embedded ${embeddings.filter(Boolean).length}/${embeddings.length}, clustering...`);
       for (let i = 0; i < rows.rows.length; i++) {
         const r = rows.rows[i];
         await applyFeedbackToPoolWithEmbedding(pool, r.question, r.answer, r.rating, embeddings[i]);
+        progress.push(`row ${i + 1}/${rows.rows.length} done`);
       }
+      progress.push("select clusters");
       const clusters = await pool.query(
         `SELECT id, question, thumbs_up, thumbs_down, status FROM ai_answer_pool ORDER BY id ASC`
       );
@@ -348,15 +366,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         acc[c.status] = (acc[c.status] || 0) + 1;
         return acc;
       }, {});
-      res.json({
-        ok: true,
-        totalFeedbackReplayed: rows.rows.length,
-        totalClusters: clusters.rows.length,
-        statusCounts,
-        clusters: clusters.rows,
-      });
+      clearTimeout(watchdog);
+      if (!responded) {
+        responded = true;
+        res.json({
+          ok: true,
+          totalFeedbackReplayed: rows.rows.length,
+          totalClusters: clusters.rows.length,
+          statusCounts,
+          clusters: clusters.rows,
+        });
+      }
     } catch (e: any) {
-      res.status(500).json({ error: e.message || "재구축 실패" });
+      clearTimeout(watchdog);
+      console.error("[재구축] 오류, 진행 상황:", progress, e);
+      if (!responded) {
+        responded = true;
+        res.status(500).json({ error: e.message || "재구축 실패", progress });
+      }
     }
   });
 
