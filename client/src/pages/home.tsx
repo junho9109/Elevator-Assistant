@@ -1812,7 +1812,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       let contextResults = filteredResults.length > 0 ? filteredResults : hardFiltered.slice(0, 4);
 
       // ★ Rerank — Sonnet으로 정밀 관련성 판단 (Haiku→Sonnet 업그레이드)
-      try {
+      // 빠른 답변 모드는 속도가 최우선이라 이 별도 Claude 왕복(rerank)을 생략하고
+      // 위에서 이미 점수 기준으로 걸러진 contextResults를 그대로 쓴다.
+      if (chatMode === "precise") try {
         const candidates = contextResults.slice(0, 15).map((r, i) => ({
           id: String(i),
           title: r.title,
