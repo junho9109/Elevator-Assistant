@@ -927,27 +927,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e) { res.status(500).json({ error: "Failed to save insp-std override" }); }
   });
 
-  // TEMP: 별표2_전기식에 남아있던 옛(수정 전) 데이터 override + 예전에 잘못 생성된
-  // "별표2_전기식 엘리베이터" 중복 커스텀 항목을 정리한다. 정리 후 이 엔드포인트는 제거할 것.
-  app.get("/api/debug/clear-judgment-overrides", async (req, res) => {
-    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
-    try {
-      const db = (await import("./db")).db;
-      const { inspStdOverrides } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const [blanked] = await db.update(inspStdOverrides)
-        .set({ text: "", source: "", updatedAt: new Date() })
-        .where(eq(inspStdOverrides.itemKey, "판정지침_별표2_전기식"))
-        .returning();
-      const deletedDup = await db.delete(inspStdOverrides)
-        .where(eq(inspStdOverrides.itemKey, "판정지침_별표2_전기식 엘리베이터"))
-        .returning();
-      res.json({ blanked: blanked || null, deletedDup });
-    } catch (e) {
-      res.status(500).json({ error: String(e) });
-    }
-  });
-
     app.delete("/api/inspection-edits/:itemId", async (req, res) => {
     try {
       const itemId = req.params.itemId;
