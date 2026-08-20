@@ -452,6 +452,33 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   });
   const dataMap = useMemo(() => baseItemsToMap(baseItemsRaw || []), [baseItemsRaw]);
 
+  // 판정지침 실제 내용 — 이제 JSON은 뼈대(type/title)만 갖고, 실제 문구는 DB 오버라이드가 유일한 원본이다.
+  const { data: judgmentOverridesRaw } = useQuery<any[]>({
+    queryKey: ["/api/insp-std-overrides"],
+    queryFn: () => fetch("/api/insp-std-overrides").then(r => r.json()),
+    staleTime: 0,
+  });
+  const judgmentOverrideMap = useMemo(() => {
+    const map: Record<string, { title?: string; text?: string; items?: JudgmentItem[]; rows?: JudgmentRow[] }> = {};
+    (judgmentOverridesRaw || []).forEach((row: any) => {
+      if (row.itemKey?.startsWith("판정지침_")) {
+        const key = row.itemKey.replace("판정지침_", "");
+        try { map[key] = JSON.parse(row.text || "{}"); } catch { map[key] = { text: row.text }; }
+      }
+    });
+    return map;
+  }, [judgmentOverridesRaw]);
+  // 뼈대(JSON) + 실제 내용(DB) 병합 — JudgmentDocView.getSection()과 동일한 규칙
+  const getJudgmentSection = (key: string): JudgmentSection | null => {
+    const base = JUDGMENT_SECTIONS[key];
+    const ov = judgmentOverrideMap[key];
+    if (base?.type === "text") return { ...base, text: ov?.text ?? base.text };
+    if (base?.type === "list") return { ...base, items: ov?.items ?? base.items };
+    if (base?.type === "table") return { ...base, rows: ov?.rows ?? base.rows };
+    if (!base) return ov?.text ? { type: "text", title: ov.title || key, text: ov.text } : null;
+    return base;
+  };
+
   const handleSaveEdit = async () => {
     if (!editKey) return;
     const body = editText.trim();
@@ -568,8 +595,10 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
       });
     });
 
-    // 판정지침(본문/별표1/별표2/별표3) — 이전에는 검색 대상에서 빠져 있었음
-    Object.entries(JUDGMENT_SECTIONS).forEach(([key, sec]) => {
+    // 판정지침(본문/별표1/별표2/별표3) — 뼈대(JSON)+실제 내용(DB 오버라이드) 병합해서 검색
+    Object.keys(JUDGMENT_SECTIONS).forEach((key) => {
+      const sec = getJudgmentSection(key);
+      if (!sec) return;
       const secLabel = (sec.title || key).replace(/\[별표\d+\]\s*/, "");
       if (sec.type === "text") {
         const hay = `${sec.title || ""}\n${sec.text || ""}`;
@@ -594,7 +623,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
     });
 
     setSearchHits(hits.slice(0, 200));
-  }, [query, dataMap]);
+  }, [query, dataMap, judgmentOverrideMap]);
 
   const handleClose = () => {
     // 검색 중이었다면 검색 상태(검색창·검색 결과)는 유지 — 태블릿처럼 상세보기가 좌측 패널을
@@ -1057,14 +1086,12 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1.5">{g.label}</p>
               {g.keys.map(key => {
                 const label = getTitle(key).replace(/\[별표\d+\]\s*/, "").replace(/\s*—.*$/, "").trim();
-                const modified = hasOverride(key);
                 return (
                   <button key={key} onClick={() => { setSel(key); setEditMode(false); }}
                     className={`w-full text-left text-xs leading-relaxed px-3 py-2.5 rounded-lg transition-colors mb-0.5 ${
                       sel === key ? "bg-primary text-primary-foreground font-medium" : "hover:bg-secondary text-foreground"
                     }`}>
                     {label}
-                    {modified && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>}
                   </button>
                 );
               })}

@@ -1423,6 +1423,35 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
+
+  // 판정지침 — JSON은 뼈대(type/title)만, 실제 문구는 insp-std-overrides(DB)가 단일 진실 소스(2026-08-20 이후).
+  const { data: judgmentOverridesRaw } = useQuery<any[]>({
+    queryKey: ["/api/insp-std-overrides"],
+    queryFn: () => fetch("/api/insp-std-overrides", { cache: "no-store" }).then(r => r.json()),
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+  });
+  const judgmentOverrideMapAI = useMemo(() => {
+    const map: Record<string, { title?: string; text?: string; items?: JudgmentItem2[]; rows?: JudgmentRow2[] }> = {};
+    (judgmentOverridesRaw || []).forEach((row: any) => {
+      if (row.itemKey?.startsWith("판정지침_")) {
+        const key = row.itemKey.replace("판정지침_", "");
+        try { map[key] = JSON.parse(row.text || "{}"); } catch { map[key] = { text: row.text }; }
+      }
+    });
+    return map;
+  }, [judgmentOverridesRaw]);
+  // 뼈대(JSON) + 실제 내용(DB) 병합 — inspection-standards.tsx의 getJudgmentSection()과 동일한 규칙
+  const getJudgmentSectionAI = (key: string): JudgmentSection2 | null => {
+    const base = JUDGMENT_SECTIONS_AI[key];
+    const ov = judgmentOverrideMapAI[key];
+    if (base?.type === "text") return { ...base, text: ov?.text ?? base.text };
+    if (base?.type === "list") return { ...base, items: ov?.items ?? base.items };
+    if (base?.type === "table") return { ...base, rows: ov?.rows ?? base.rows };
+    if (!base) return ov?.text ? { type: "text", title: ov.title || key, text: ov.text } : null;
+    return base;
+  };
   // allStdItems — std_item_overrides(DB)가 단일 진실 소스. 레거시 STD_ITEMS/standards 폴백은 제거됨(2026-08-16).
   const allStdItems = useMemo(() => {
     const hotspotLabels = hotspots.map(h => h.label);
@@ -1919,7 +1948,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       }).filter(c => c.basis || c.conclusion);
 
       // 2.5) 판정지침(승강기검사결과 판정지침) — 키워드 매칭 최대 2개, 항목당 600자
-      const verdictScored = Object.values(JUDGMENT_SECTIONS_AI).map(sec => {
+      const verdictScored = Object.keys(JUDGMENT_SECTIONS_AI).map(k => getJudgmentSectionAI(k)).filter((s): s is JudgmentSection2 => !!s).map(sec => {
         const bodyText = judgmentSectionToText(sec);
         const combined = (sec.title + " " + bodyText).toLowerCase();
         let score = 0;
