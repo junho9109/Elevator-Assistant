@@ -2167,12 +2167,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             context.chatCtx.map(c => `• ${c.content}`).join("\n"));
         }
       }
-      // ── 조문 DB 검색 (inspection_item_revisions) ──────────────────
+      // ── 조문 DB 검색 / 키워드 조문 연혁 검색 / 메모 검색 / 질문유형 분류 ──
+      // 네 조회는 서로의 결과를 필요로 하지 않으므로(순서 고정 표시만 나중에 동기 처리)
+      // 병렬로 실행해 지연시간을 줄인다. (예전엔 순차 실행이라 4번의 왕복시간이 그대로 더해졌음)
       let articleCards: any[] = [];
-      // articleCards는 최종 답변 확정 후 채워짐 (아래 참고)
-      try {
-        const refMatches = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g);
-        if (refMatches && refMatches.length > 0) {
+
+      // 조문 DB 검색 (inspection_item_revisions) — 질문에 조문번호가 직접 언급된 경우
+      const articleTask = (async (): Promise<any[] | null> => {
+        try {
+          const refMatches = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g);
+          if (!refMatches || refMatches.length === 0) return null;
           const uniqueRefs = [...new Set(refMatches)].slice(0, 5) as string[];
           const { pool: pgPool } = await import("./db");
           const placeholders = uniqueRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
@@ -2185,52 +2189,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
              ORDER BY item_id, effective_date DESC NULLS FIRST`,
             uniqueRefs
           );
-          if (revRows.rows && revRows.rows.length > 0) {
-            // 컨텍스트용 텍스트
-            const revText = revRows.rows.map((r: any) => {
-              const dateInfo = r.introduction_type === 'current'
-                ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
-                : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
-              return `[${r.item_id}] ${dateInfo}\n${r.description}`;
-            }).join("\n\n");
-            sections.push("[별표22 조문 원문]\n" + revText);
-
-            // 카드용 데이터 — item_id별로 그룹핑
-            const grouped: Record<string, any[]> = {};
-            for (const r of revRows.rows as any[]) {
-              if (!grouped[r.item_id]) grouped[r.item_id] = [];
-              grouped[r.item_id].push({
-                type: r.introduction_type === 'current' ? 'current' : 'old',
-                effectiveDate: r.effective_date,
-                expiryDate: r.expiry_date,
-                description: r.description,
-              });
-            }
-            articleCards = Object.entries(grouped).map(([itemId, versions]) => ({
-              itemId,
-              versions,
-            }));
-          }
+          return (revRows.rows && revRows.rows.length > 0) ? (revRows.rows as any[]) : null;
+        } catch (e) {
+          return null; // 조문 DB 조회 실패 시 무시
         }
-      } catch (e) {
-        // 조문 DB 조회 실패 시 무시
-      }
+      })();
 
-      // ── 조문 연혁 키워드 검색 (조문번호를 언급하지 않는 질문도 커버) ──
-      // 예: "장애인용 점형블럭" 처럼 조문번호 없이 주제로만 물어봐도
-      // inspection_item_revisions.description에서 키워드로 찾아 컨텍스트에 포함시킨다.
-      try {
-        const STOPWORDS = new Set([
-          "관련", "대해", "대한", "알려줘", "무엇", "뭐", "어떻게", "해야", "하는지",
-          "확인", "경우", "있는지", "해줘", "그리고", "되나요", "되는지", "인가요",
-          "입니다", "궁금해요", "궁금합니다", "엘리베이터", "승강기", "기준", "조문", "규정", "조항",
-        ]);
-        const tokens = (userQuestion.match(/[가-힣A-Za-z0-9]+/g) || [])
-          .filter((t: string) => t.length >= 2 && !STOPWORDS.has(t));
-        const uniqueTokens = [...new Set(tokens)].slice(0, 6) as string[];
-        if (uniqueTokens.length > 0) {
+      // 조문 연혁 키워드 검색 (조문번호를 언급하지 않는 질문도 커버) — SQL 자체는 위 조회와 무관하므로
+      // 동시에 실행하고, 중복 제거(articleCards와 겹치는 item_id 제외)만 두 결과가 모두 온 뒤 처리한다.
+      const keywordTask = (async (): Promise<any[] | null> => {
+        try {
+          const STOPWORDS = new Set([
+            "관련", "대해", "대한", "알려줘", "무엇", "뭐", "어떻게", "해야", "하는지",
+            "확인", "경우", "있는지", "해줘", "그리고", "되나요", "되는지", "인가요",
+            "입니다", "궁금해요", "궁금합니다", "엘리베이터", "승강기", "기준", "조문", "규정", "조항",
+          ]);
+          const tokens = (userQuestion.match(/[가-힣A-Za-z0-9]+/g) || [])
+            .filter((t: string) => t.length >= 2 && !STOPWORDS.has(t));
+          const uniqueTokens = [...new Set(tokens)].slice(0, 6) as string[];
+          if (uniqueTokens.length === 0) return null;
           const { pool: kwPool } = await import("./db");
-          const existingIds = new Set(articleCards.map((a: any) => a.itemId));
           const likeConds = uniqueTokens.map((_, i) => `description ILIKE $${i + 1}`).join(" OR ");
           const matchCountExpr = uniqueTokens.map((_, i) => `(CASE WHEN description ILIKE $${i + 1} THEN 1 ELSE 0 END)`).join(" + ");
           const likeParams = uniqueTokens.map(t => `%${t}%`);
@@ -2245,65 +2223,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
              LIMIT 8`,
             likeParams
           );
-          const newRows = (kwRows.rows as any[]).filter(r => !existingIds.has(r.item_id));
-          if (newRows.length > 0) {
-            const revText = newRows.map((r: any) => {
-              const dateInfo = r.introduction_type === 'current'
-                ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
-                : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
-              return `[${r.item_id}] ${dateInfo}\n${r.description}`;
-            }).join("\n\n");
-            sections.push("[키워드 매칭 조문 연혁]\n" + revText);
-
-            const kwGrouped: Record<string, any[]> = {};
-            for (const r of newRows) {
-              if (!kwGrouped[r.item_id]) kwGrouped[r.item_id] = [];
-              kwGrouped[r.item_id].push({
-                type: r.introduction_type === 'current' ? 'current' : 'old',
-                effectiveDate: r.effective_date,
-                expiryDate: r.expiry_date,
-                description: r.description,
-              });
-            }
-            articleCards.push(...Object.entries(kwGrouped).map(([itemId, versions]) => ({ itemId, versions })));
-          }
+          return kwRows.rows as any[];
+        } catch (e) {
+          return null; // 키워드 조문 연혁 검색 실패 시 무시
         }
-      } catch (e) {
-        // 키워드 조문 연혁 검색 실패 시 무시
-      }
+      })();
 
-      const contextText = (sections.length > 0 || elevatorInfoSection || goodAnswerRefSection)
-        ? "\n\n---\n" + sections.join("\n\n") + elevatorInfoSection + goodAnswerRefSection + "\n---"
-        : "";
-
-      // ── 메모 자동 검색 ─────────────────────────────────────────────────
-      let memoSection = "";
-      try {
-        const kwMatches = userQuestion.match(/[가-힣a-zA-Z]{2,6}/g) || [];
-        const kws = [...new Set(kwMatches)].slice(0, 3);
-        const memoHits: string[] = [];
-        for (const kw of kws) {
-          const memos = await storage.searchMemos(kw);
-          memos.slice(0, 2).forEach((m: any) => {
-            const content = m.content || m.description || "";
-            if (content) memoHits.push(`[${m.title || "메모"}] ${content.slice(0, 250)}`);
+      // 메모 자동 검색 — 최대 3개 키워드를 병렬로 조회 (예전엔 for-await 순차 조회였음)
+      const memoTask = (async (): Promise<string> => {
+        try {
+          const kwMatches = userQuestion.match(/[가-힣a-zA-Z]{2,6}/g) || [];
+          const kws = [...new Set(kwMatches)].slice(0, 3) as string[];
+          const memoResults = await Promise.all(kws.map(kw => storage.searchMemos(kw).catch(() => [] as any[])));
+          const memoHits: string[] = [];
+          memoResults.forEach((memos: any[]) => {
+            memos.slice(0, 2).forEach((m: any) => {
+              const content = m.content || m.description || "";
+              if (content) memoHits.push(`[${m.title || "메모"}] ${content.slice(0, 250)}`);
+            });
           });
+          return memoHits.length > 0 ? "\n\n[현장메모]\n" + [...new Set(memoHits)].slice(0, 4).join("\n") : "";
+        } catch {
+          return "";
         }
-        if (memoHits.length > 0) {
-          memoSection = "\n\n[현장메모]\n" + [...new Set(memoHits)].slice(0, 4).join("\n");
-        }
-      } catch {}
+      })();
 
       // ════════════════════════════════════════════════════════════
       // 0단계: 질문 유형 분류 (Haiku — 경량 빠름)
       // 유형: LOOKUP(조문/기준조회) | JUDGMENT(판정/판단) | CALCULATE(계산)
       // ════════════════════════════════════════════════════════════
-      let questionType: "LOOKUP" | "JUDGMENT" | "CALCULATE" = "LOOKUP";
-      try {
-        const classifier = await anthropic.messages.create({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 20,
-          system: `승강기 검사 질문을 분류한다. 아래 중 하나만 반환한다.
+      const classifierTask = (async (): Promise<"LOOKUP" | "JUDGMENT" | "CALCULATE"> => {
+        try {
+          const classifier = await anthropic.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 20,
+            system: `승강기 검사 질문을 분류한다. 아래 중 하나만 반환한다.
 LOOKUP: 조문·기준·규정을 묻는 질문 (예: "기준이 뭐야", "조문 알려줘")
 JUDGMENT: 판정·적부·합격여부를 묻는 질문 (예: "적합한가", "지적해야 하나")
 CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하는 질문
@@ -2311,12 +2265,71 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
   - 명사형: "균형추 여유거리", "카 상부틈새", "완충기 행정" 등 수치 계산이 명확히 필요한 항목명만 해당
   - 단순 기준 조회("높이 기준", "거리 기준", "설치 높이" 등)는 LOOKUP으로 분류
 단어 하나만 반환.`,
-          messages: [{ role: "user", content: userQuestion }],
-        });
-        const cls = classifier.content[0].type === "text" ? classifier.content[0].text.trim() : "";
-        if (cls === "JUDGMENT") questionType = "JUDGMENT";
-        else if (cls === "CALCULATE") questionType = "CALCULATE";
-      } catch {}
+            messages: [{ role: "user", content: userQuestion }],
+          });
+          const cls = classifier.content[0].type === "text" ? classifier.content[0].text.trim() : "";
+          if (cls === "JUDGMENT") return "JUDGMENT";
+          if (cls === "CALCULATE") return "CALCULATE";
+        } catch {}
+        return "LOOKUP";
+      })();
+
+      const [articleRows, keywordRows, memoSection, questionType] = await Promise.all([
+        articleTask, keywordTask, memoTask, classifierTask,
+      ]);
+
+      // ── 병렬 조회 결과를 고정된 순서(조문번호 직접매칭 → 키워드 매칭)로 합성 ──
+      if (articleRows) {
+        const revText = articleRows.map((r: any) => {
+          const dateInfo = r.introduction_type === 'current'
+            ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
+            : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
+          return `[${r.item_id}] ${dateInfo}\n${r.description}`;
+        }).join("\n\n");
+        sections.push("[별표22 조문 원문]\n" + revText);
+
+        const grouped: Record<string, any[]> = {};
+        for (const r of articleRows) {
+          if (!grouped[r.item_id]) grouped[r.item_id] = [];
+          grouped[r.item_id].push({
+            type: r.introduction_type === 'current' ? 'current' : 'old',
+            effectiveDate: r.effective_date,
+            expiryDate: r.expiry_date,
+            description: r.description,
+          });
+        }
+        articleCards = Object.entries(grouped).map(([itemId, versions]) => ({ itemId, versions }));
+      }
+
+      if (keywordRows) {
+        const existingIds = new Set(articleCards.map((a: any) => a.itemId));
+        const newRows = keywordRows.filter((r: any) => !existingIds.has(r.item_id));
+        if (newRows.length > 0) {
+          const revText = newRows.map((r: any) => {
+            const dateInfo = r.introduction_type === 'current'
+              ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
+              : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
+            return `[${r.item_id}] ${dateInfo}\n${r.description}`;
+          }).join("\n\n");
+          sections.push("[키워드 매칭 조문 연혁]\n" + revText);
+
+          const kwGrouped: Record<string, any[]> = {};
+          for (const r of newRows) {
+            if (!kwGrouped[r.item_id]) kwGrouped[r.item_id] = [];
+            kwGrouped[r.item_id].push({
+              type: r.introduction_type === 'current' ? 'current' : 'old',
+              effectiveDate: r.effective_date,
+              expiryDate: r.expiry_date,
+              description: r.description,
+            });
+          }
+          articleCards.push(...Object.entries(kwGrouped).map(([itemId, versions]) => ({ itemId, versions })));
+        }
+      }
+
+      const contextText = (sections.length > 0 || elevatorInfoSection || goodAnswerRefSection)
+        ? "\n\n---\n" + sections.join("\n\n") + elevatorInfoSection + goodAnswerRefSection + "\n---"
+        : "";
 
       // CALCULATE: 자료에서 공식 추출 → 필요 변수 질문 → 계산
       if (questionType === "CALCULATE") {
