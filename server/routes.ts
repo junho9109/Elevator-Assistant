@@ -899,6 +899,147 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── TEMP DEBUG: 별표2 소형 5.1.5~14.2.5.3 원문 교체 + 전기식/유압식/덤웨이터 동일항목 표기통일 (확인 후 제거 예정) ──
+  app.get("/api/debug/fix-sohyung-checklist", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const { eq, inArray } = await import("drizzle-orm");
+
+      const newChecklistRows = [
+        { ref: "5.1.5", target: "승강로내돌출물", content: "• 승강로내돌출물이카의안전운행에지장을줌" },
+        { ref: "5.1.6", target: "승강로누수", content: "• 카천정및승강로누수로인한카상부물 고임또는물낙하" },
+        { ref: "5.2.1", target: "승강로구획", content: "• 승강로구획안됨" },
+        { ref: "5.2.2.2.1, 5.2.2.2.2", target: "점검문/비상문", content: "• 점검문/비상문잠금장치및도어스위치모두 미작동(기능상실)" },
+        { ref: "5.3.1.2", target: "승강로유리마감", content: "• 승강로유리미설치" },
+        { ref: "5.4.3", target: "승강장문의문턱아랫부분", content: "• 승강장문출입시또는운행중출입구아래가 끼이는구조임(런닝오픈방식의경우)" },
+        { ref: "5.7.1.4, 5.7.2.4, 5.7.3.4", target: "카위자동정지장치", content: "• 카의상승자동제어정지장치작동안됨" },
+        { ref: "5.7.4.1", target: "피트구획/누수", content: "• 피트구획안됨\n• 피트침수(발목이상잠김)로피트검사불가" },
+        { ref: "6.4.2.1", target: "승강로구동장치의보수관리", content: "• 보수관리를위한접근불가능" },
+        { ref: "6.4.7.1", target: "승강로내부출입(문)", content: "• 출입문잠금장치및도어스위치모두미작동 (기능상실)" },
+        { ref: "6.4.7.2", target: "승강로외부작업구역에서 출입(문)", content: "• 출입문잠금장치및도어스위치모두미작동 (기능상실)" },
+        { ref: "7.1", target: "승강장문", content: "• 승강장문미설치" },
+        { ref: "7.2.3.3", target: "유리로된승강장문짝", content: "• 승강장문유리미설치" },
+        { ref: "7.4.2.1", target: "승강장문가이드등", content: "• 승강장문가이드슈없음 (한개의문짝가이드슈1개이상없음)\n• 가이드슈고정불량으로이탈우려있음 (한개의문짝고정볼트2개이상이탈)\n• 방범창등파손으로승강로외부에서카또는 균형추에닿을수있음\n• 도어행거롤러이탈\n• 도어연동로프절단또는파단,고정볼트 미취부등으로문이탈우려있음" },
+        { ref: "7.5.2.1.1.3, 8.7.2.1.1.3", target: "문닫힘안전장치", content: "• 문닫힘안전장치미작동(기능상실)\n- 카및승강장에모두설치된경우모두미작동시\n- 카문양쪽모두설치된경우모두미작동시" },
+        { ref: "7.7.3", target: "승강장문잠금장치", content: "• 승강장문잠금장치미작동(기능상실)" },
+        { ref: "7.7.3.1", target: "승강장문잠금", content: "• 승강장문잠금장치가걸리지않은상태로카가 움직임(잠금장치와도어스위치가일체형인경우)" },
+        { ref: "7.7.3.1.7", target: "승강장문잠금작용", content: "• 간단한충격등에의해승강장문잠금장치의 잠금이해제됨" },
+        { ref: "7.7.3.2.4", target: "승강장문도어클로저", content: "• 승강장문도어클로저미설치또는미작동 (승강장문과카문연동방식의경우)\n• 승강장문도어클로저고정불량또는파손등으로 주행간섭및도어이탈우려있음" },
+        { ref: "7.7.4.1", target: "승강장문닫힘입증전기안전장치", content: "• 승강장문도어스위치미작동(기능상실)" },
+        { ref: "7.7.5.1", target: "잠금/닫힘정상시퀀스의구성", content: "• 승강장문도어단락감지장치미작동(기능상실)" },
+        { ref: "8.3.1", target: "카의밀폐식구획", content: "• 카(벽/지붕/바닥등)구획안됨" },
+        { ref: "8.3.2.2", target: "카벽유리", content: "• 카벽유리미설치" },
+        { ref: "8.4.1", target: "에이프런", content: "• 에이프런미설치(런닝오픈시)\n• 에이프런고정불량으로뒤로밀림시추락되는 구조임" },
+        { ref: "8.5.1", target: "카문", content: "• 카출입구문미설치" },
+        { ref: "8.5.2", target: "2개이상의카출입구", content: "• 2개이상의양방향출입구가동시에열림" },
+        { ref: "8.6.5", target: "카문의전망창", content: "• 카문전망창미설치\n• 유리창파손으로카내에서승강로내부부품에 닿을우려있음" },
+        { ref: "8.6.6", target: "카문가이드등", content: "• 카문가이드슈없음 (한개의문짝가이드슈1개이상없음)\n• 가이드슈고정불량으로이탈우려있음 (한개의문짝고정볼트2개이상이탈)\n• 방범창등파손으로카내에서신체의일부가 카외부로노출되는구조임" },
+        { ref: "8.6.7.2", target: "유리로된카문짝마감", content: "• 카문유리미설치" },
+        { ref: "8.8", target: "문닫힘동작의반전", content: "• 카주조작반내열림버튼미작동" },
+        { ref: "8.9.1, 8.9.2", target: "카문닫힘입증전기안전장치", content: "• 카문도어스위치미작동 (도어스위치단락등기능상실)" },
+        { ref: "8.11.1", target: "카정지/도어개폐장치", content: "• 카문도어개폐장치미작동" },
+        { ref: "8.15", target: "카상부의설비", content: "• 카상부제어장치(점검운전)및정지장치모두 미설치또는미작동" },
+        { ref: "9.1.6, 9.9.4.5", target: "로프파손상태", content: "• 스트랜드1개이상의파단" },
+        { ref: "9.2.2.1", target: "로프끝부분의고정(소켓)", content: "• 주로프고정부이탈또는이탈우려있음" },
+        { ref: "9.2.2.2, 9.3.1", target: "권상기도르래", content: "• 권상기도르래모든홈언더컷잔여량1mm 미만(언더컷이없는구조제외)\n• 125%하중적재시로프가도르래에서미끄러짐\n• 권상기도르래균열또는파손\n• 도르래가권상기축에서이탈우려있음" },
+        { ref: "9.8.1.1", target: "카비상정지장치", content: "• 비상정지장치미작동(기능상실)\n• 비상정지장치한쪽만작동됨\n• 비상정지장치롤러또는쐐기가한쪽없음\n• 비상정지장치연결기구설치불량으로비상정지 장치가작동되지않는구조임" },
+        { ref: "9.8.3.2", target: "비상정지장치복귀", content: "• 정상작동후복귀안됨\n• 정상작동후심각한손상있음" },
+        { ref: "9.8.5", target: "비상정지장치전기적확인", content: "• 비상정지장치안전스위치미작동(기능상실)" },
+        { ref: "9.9.2.1", target: "카측조속기작동", content: "• 조속기미작동(과속스위치또는캣치)\n• 조속기작동속도(과속스위치또는캣치)초과 (단,이상유무발견시속도측정)" },
+        { ref: "9.9.2.4.3", target: "시험후조속기로프/관련 부품상태", content: "• 정상작동후심각한손상있음\n• 비상정지장치작동전조속기로프슬립발생" },
+        { ref: "9.9.3.3", target: "시험후안전로프/관련 부품상태", content: "• 정상작동후심각한손상있음\n• 비상정지장치작동전안전로프슬립발생" },
+        { ref: "9.10.1", target: "상승과속방지장치", content: "• 상승과속방지장치미작동(기능상실)" },
+        { ref: "9.11.1, 9.11.2", target: "개문출발방지장치", content: "• 개문출발방지장치미작동(기능상실)" },
+        { ref: "9.11.5", target: "개문출발방지장치의정지거리", content: "• 개문출발방지장치정지거리초과" },
+        { ref: "10.1.1", target: "가이드레일및가이드슈등", content: "• 가이드레일고정불량으로레일에서카또는 실린더가이탈될수있음\n• 카/균형추/실린더가이드슈가레일에서이탈 되는구조임" },
+        { ref: "10.3.1, 10.3.2", target: "완충기/고정된멈춤쇄기", content: "• 완충기미설치\n• 완충기고정불량으로전도되거나받침대로부터 이탈됨" },
+        { ref: "10.5.1.1", target: "파이널리미트스위치 (전기식소형)", content: "• 상부또는하부파이널리미트스위치미작동 (기능상실)" },
+        { ref: "10.5.2.1", target: "파이널리미트스위치 (유압식소형)", content: "• 상부파이널리미트스위치미작동(기능상실)-리미트스위치모두작동안될경우" },
+        { ref: "11.2.1", target: "카도어록", content: "• 카도어록미작동 (벽간거리125mm초과시설치된경우)" },
+        { ref: "12.1", target: "구동기", content: "• 정상운전안됨\n• 유압파워유니트카마다설치안됨\n• 자체구동기미설치" },
+        { ref: "12.2.3.1.1", target: "브레이크시스템", content: "• 주동력또는제어회로전원차단시브레이크 미작동" },
+        { ref: "12.2.3.2.1", target: "브레이크제동능력", content: "• 브레이크미작동(기능상실)\n• 브레이크감속도초과(정지거리등)" },
+        { ref: "12.2.3.2.2", target: "브레이크작동관련부품", content: "• 플런저개방또는복귀작동안됨 (플런저유격없음)\n• 기타브레이크작동관련주요부품등의심각한 손상있음\n• 브레이크라이닝심한마모(리벳과드럼접촉)" },
+        { ref: "12.7", target: "로프/체인이완감지장치 (포지티브방식)", content: "• 주로프/체인이완감지장치미작동 (이완감지못하는등기능상실)" },
+        { ref: "12.3.2.2.1, 12.3.2.2.4", target: "잭설치/고정", content: "• 유압잭설치불량으로전도및붕괴될수있는 구조임" },
+        { ref: "12.3.2.3.1", target: "램정지수단", content: "• 램이탈방지장치미설치또는미작동\n• 램이탈방지정지스위치미작동\n• 카의상승자동제어정지장치미작동" },
+        { ref: "12.3.2.5.1", target: "다단잭램정지수단", content: "• 램이탈방지장치미설치또는미작동" },
+        { ref: "12.3.3.1.1", target: "배관", content: "• 압력배관기름누설과다로정상착상안됨" },
+        { ref: "12.3.5.2.2", target: "체크밸브작동", content: "• 체크밸브미작동(전원차단시제위치유지안됨)" },
+        { ref: "12.3.5.5.1", target: "럽처밸브", content: "• 럽처밸브미작동(비상정지장치미설치시)" },
+        { ref: "12.3.5.6.1", target: "유량제한장치", content: "• 유량제한장치미작동(비상정지장치미설치시)" },
+        { ref: "12.3.9.1.1", target: "수동조작비상하강밸브", content: "• 수동하강밸브미작동" },
+        { ref: "12.3.12.1", target: "전동기공회전방지장치", content: "• 공회전방지장치미작동" },
+        { ref: "12.4", target: "카의정상착상/재-착상정확도", content: "• 승강장호출시카가정상적으로도착하지않음 (±60mm초과착상오차발생시)\n• 카가호출층에도착하지않음\n• 바닥맞춤보정장치미작동" },
+        { ref: "13.1.3", target: "전기설비의절연저항", content: "• 각회로절연저항측정값기준미만" },
+        { ref: "14.1.2.1.1, 14.1.2.4", target: "전기안전장치등", content: "• 제어회로의이상으로인한오동작발생\n• 안전과관련회로를인위적으로단락시킨경우\n• 전기안전장치작동시구동기정지안됨" },
+        { ref: "14.2.3.1", target: "카내비상통화장치", content: "• 카내에서외부호출및통화안됨" },
+        { ref: "14.2.3.5", target: "외부비상통화장치", content: "• 외부비상통화장치미설치또는미작동\n• 비상통화외부연결장치미설치" },
+        { ref: "14.2.5.1", target: "과부하방지장치", content: "• 과부하감지장치미작동(기능상실)" },
+        { ref: "14.2.5.3", target: "과부하알림/문개방등", content: "• 과부하알림장치미설치\n• 과부하감지장치작동시문이닫히거나카가 출발함" },
+      ];
+
+      const keys = ["판정지침_별표2_소형", "판정지침_별표2_전기식", "판정지침_별표2_유압식", "판정지침_별표2_덤웨이터"];
+      const rows = await db.select().from(inspStdOverrides).where(inArray(inspStdOverrides.itemKey, keys));
+      const byKey: Record<string, any> = {};
+      for (const r of rows) {
+        try { byKey[r.itemKey] = JSON.parse(r.text || "{}"); } catch { byKey[r.itemKey] = null; }
+      }
+
+      const existingSohyung = byKey["판정지침_별표2_소형"];
+      if (!existingSohyung?.rows) return res.status(500).json({ error: "no existing 소형 rows found" });
+
+      const splitIdx = existingSohyung.rows.findIndex((r: any) => r.ref === "4.8");
+      if (splitIdx < 0) return res.status(500).json({ error: "split point ref 4.8 not found" });
+      const keptTail = existingSohyung.rows.slice(splitIdx);
+
+      const norm = (s: string) => (s || "").replace(/\s+/g, "");
+      const elec = byKey["판정지침_별표2_전기식"]?.rows || [];
+      const hyd = byKey["판정지침_별표2_유압식"]?.rows || [];
+      const dw = byKey["판정지침_별표2_덤웨이터"]?.rows || [];
+
+      const reformatted: any[] = [];
+      const finalChecklist = newChecklistRows.map((row) => {
+        for (const [srcName, srcRows] of [["전기식", elec], ["유압식", hyd], ["덤웨이터", dw]] as const) {
+          for (const srcRow of srcRows as any[]) {
+            if (norm(srcRow.target) === norm(row.target) && norm(srcRow.content) === norm(row.content)) {
+              if (srcRow.target !== row.target || srcRow.content !== row.content) {
+                reformatted.push({ ref: row.ref, source: srcName, before: { target: row.target, content: row.content }, after: { target: srcRow.target, content: srcRow.content } });
+                return { ref: row.ref, target: srcRow.target, content: srcRow.content };
+              }
+              return row;
+            }
+          }
+        }
+        return row;
+      });
+
+      const finalRows = [...finalChecklist, ...keptTail];
+      const newPayload = { title: existingSohyung.title, rows: finalRows };
+
+      let applied = false;
+      if (req.query.apply === "1") {
+        await db.update(inspStdOverrides)
+          .set({ text: JSON.stringify(newPayload), source: "판정지침_수정", updatedAt: new Date() })
+          .where(eq(inspStdOverrides.itemKey, "판정지침_별표2_소형"));
+        applied = true;
+      }
+
+      res.json({
+        applied,
+        checklistRowCount: finalChecklist.length,
+        keptTailCount: keptTail.length,
+        totalRowCount: finalRows.length,
+        reformattedCount: reformatted.length,
+        reformatted,
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // ── 검사기준 오버라이드 API ──
   app.get("/api/insp-std-overrides", async (req, res) => {
     try {
