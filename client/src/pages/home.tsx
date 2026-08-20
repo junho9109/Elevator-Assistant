@@ -176,7 +176,11 @@ function splitKeywords(question: string): { primary: string[]; secondary: string
   const judgeWords = ['합격','불합격','시정','적합','부적합','지적'];
 
   const norm = question.replace(/[?？!！.,。]/g, ' ').trim();
-  const words = norm.split(/\s+/).map(w => w.replace(/[은는이가을를의에서로부터까지도만]/g, '')).filter(w => w.length >= 2);
+  // 조사 제거는 단어 "끝"에 붙은 것만 떼어낸다(anchored). 예전엔 /g 플래그로 단어 어디든
+  // 매칭되는 한 글자를 다 지웠는데, 이 경우 띄어쓰기 없이 이어붙여 입력한 문장
+  // (예: "기계실로가는통로나계단이없는경우")이 "로/가/는/이" 등을 통째로 잃고 전혀 다른
+  // 문자열로 뭉개져 판정지침 원문과 매칭이 안 되는 문제가 있었다.
+  const words = norm.split(/\s+/).map(w => w.replace(/(에서|로부터|까지|은|는|이|가|을|를|의|로|도|만)$/, '')).filter(w => w.length >= 2);
 
   const secondary: string[] = [];
   const primary: string[] = [];
