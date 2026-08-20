@@ -291,6 +291,22 @@ function scoreMatch(
       const sim = ngramSimilarity(normOrig, normText.slice(0, 200));
       if (sim >= 0.6) score = Math.round(sim * 60);
     }
+    // ★ 복합어 분해 폴백 — 위 매칭은 전체 질문 문자열이 제목/본문에 "그대로" 포함되어야만
+    // 성공한다. 그런데 실제 질문은 "승강장문 유효폭 기준"처럼 핵심어 뒤에 "기준/뭐야" 같은
+    // 부가어가 붙는 게 보통이라, 제목이 "승강장문 유효 폭 제한"처럼 끝맺음 단어가 다르면
+    // (부가어 "기준"이 제목엔 없음) 전체 문자열 포함 검사가 항상 실패해 아예 매칭이 안 됐다.
+    // allTerms(부가어 제거된 핵심 명사들)가 제목/본문에 전부(또는 절반 이상) 있으면 매칭시킨다.
+    if (score === 0 && allTerms && allTerms.length > 0) {
+      const normedTerms = allTerms.map(t => t.toLowerCase().replace(/\s+/g, '')).filter(t => t.length >= 2);
+      if (normedTerms.length > 0) {
+        const inTitle = normedTerms.filter(t => normTitle.includes(t)).length;
+        const inText = normedTerms.filter(t => normText.includes(t)).length;
+        const matched = Math.max(inTitle, inText);
+        const ratio = matched / normedTerms.length;
+        if (ratio === 1) score = inTitle === normedTerms.length ? 120 : 75;
+        else if (ratio >= 0.5) score = 55;
+      }
+    }
   }
 
   if (score === 0) return 0;
@@ -1697,21 +1713,35 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       return;
     }
 
-    // ⑩ Query Rewriting — 서버 API를 통해 Haiku로 최적 검색어 생성 (CORS 방지)
-    let searchQueries: string[] = [text];
-    try {
-      const qrRes = await fetch("/api/query-rewrite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: text })
-      });
-      if (qrRes.ok) {
-        const qrData = await qrRes.json();
-        if (Array.isArray(qrData.queries) && qrData.queries.length > 0) {
-          searchQueries = [text, ...qrData.queries.filter((q: string) => q !== text)];
-        }
-      }
-    } catch {}
+    // ⑩ Query Rewriting(서버 API, Haiku) + 채팅 메시지 검색 — 서로 독립적이므로 병렬 실행
+    // (예전엔 Query Rewriting을 먼저 끝까지 기다린 뒤에야 채팅 검색을 시작해 두 번의
+    // 네트워크 왕복이 그대로 더해졌음)
+    const [qrQueries, chatMsgsRaw] = await Promise.all([
+      (async (): Promise<string[]> => {
+        try {
+          const qrRes = await fetch("/api/query-rewrite", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: text })
+          });
+          if (qrRes.ok) {
+            const qrData = await qrRes.json();
+            if (Array.isArray(qrData.queries)) return qrData.queries as string[];
+          }
+        } catch {}
+        return [];
+      })(),
+      (async (): Promise<any[]> => {
+        try {
+          const chatRes = await fetch(`/api/chat-messages?search=${encodeURIComponent(text)}&limit=20`);
+          if (chatRes.ok) return await chatRes.json();
+        } catch {}
+        return [];
+      })(),
+    ]);
+    const searchQueries: string[] = qrQueries.length > 0
+      ? [text, ...qrQueries.filter((q: string) => q !== text)]
+      : [text];
 
     // ⑦ 멀티 쿼리 검색 — 각 검색어로 검색 후 교집합 우선
     let results = searchAllData(text, standards, stdOverrides, INSPECTION_CONTENT);
@@ -1740,31 +1770,27 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       if (merged.length > 0) results = merged;
     }
 
-    // ── 채팅 메시지 검색 (별도 보관 — UI 표시용)
+    // ── 채팅 메시지 검색 결과 처리 (위에서 이미 병렬로 조회됨, 별도 보관 — UI 표시용)
     let chatResults: SearchResult[] = [];
-    try {
-      const chatRes = await fetch(`/api/chat-messages?search=${encodeURIComponent(text)}&limit=20`);
-      if (chatRes.ok) {
-        const chatMsgs = await chatRes.json();
-        chatResults = chatMsgs.map((m: any) => ({
-          type: "chat" as const,
-          title: m.content.slice(0, 50).replace(/\n/g, " "),
-          content: m.content.slice(0, 150),
-          query: String(m.id),
-          score: 50,
-          chatMeta: {
-            id: m.id,
-            userName: m.userName,
-            createdAt: m.createdAt,
-            replyToUser: m.replyToUser,
-            replyToContent: m.replyToContent,
-            hasImage: false,
-          },
-        }));
-        // UI 검색 결과에는 채팅도 포함 (표시용)
-        results = [...results, ...chatResults];
-      }
-    } catch {}
+    if (Array.isArray(chatMsgsRaw) && chatMsgsRaw.length > 0) {
+      chatResults = chatMsgsRaw.map((m: any) => ({
+        type: "chat" as const,
+        title: m.content.slice(0, 50).replace(/\n/g, " "),
+        content: m.content.slice(0, 150),
+        query: String(m.id),
+        score: 50,
+        chatMeta: {
+          id: m.id,
+          userName: m.userName,
+          createdAt: m.createdAt,
+          replyToUser: m.replyToUser,
+          replyToContent: m.replyToContent,
+          hasImage: false,
+        },
+      }));
+      // UI 검색 결과에는 채팅도 포함 (표시용)
+      results = [...results, ...chatResults];
+    }
 
     // 카드 표시 제한:
     // 1) score 기준 정렬

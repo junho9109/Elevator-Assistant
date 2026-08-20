@@ -2015,25 +2015,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userQuestion = messages[messages.length - 1]?.content || "";
 
       // 좋은 평가를 받은 유사 답변 참고 (RAG) — 참고만 하고 그대로 복사하지 않도록 프롬프트에 명시
-      let goodAnswerRefSection = "";
-      try {
-        const embedding = await getEmbedding(userQuestion);
-        if (embedding) {
-          const { pool: ragPool } = await import("./db");
-          const vecStr = `[${embedding.join(",")}]`;
-          const simRows = await ragPool.query(
-            `SELECT question, answer, 1 - (embedding <=> $1::vector) as similarity
-             FROM ai_answer_pool
-             WHERE status = 'approved' AND embedding IS NOT NULL
-             ORDER BY embedding <=> $1::vector LIMIT 1`,
-            [vecStr]
-          );
-          if (simRows.rows.length > 0 && simRows.rows[0].similarity >= 0.82) {
-            const ref = simRows.rows[0];
-            goodAnswerRefSection = `\n\n[참고 — 과거 유사 질문에 좋은 평가를 받은 답변 스타일]\n질문: ${ref.question}\n답변: ${ref.answer.slice(0, 500)}\n(참고만 하고 현재 질문에 맞게 새로 작성할 것. 그대로 복사하지 말 것)`;
+      // 아래에서 바로 await하지 않고 Promise만 만들어 둔 뒤, 뒤따르는 승강기번호 조회/DB조회들과
+      // 함께 나중에 한꺼번에 기다린다 — 임베딩 호출 왕복시간을 다른 작업과 겹쳐서 지연을 줄인다.
+      const ragTask = (async (): Promise<string> => {
+        try {
+          const embedding = await getEmbedding(userQuestion);
+          if (embedding) {
+            const { pool: ragPool } = await import("./db");
+            const vecStr = `[${embedding.join(",")}]`;
+            const simRows = await ragPool.query(
+              `SELECT question, answer, 1 - (embedding <=> $1::vector) as similarity
+               FROM ai_answer_pool
+               WHERE status = 'approved' AND embedding IS NOT NULL
+               ORDER BY embedding <=> $1::vector LIMIT 1`,
+              [vecStr]
+            );
+            if (simRows.rows.length > 0 && simRows.rows[0].similarity >= 0.82) {
+              const ref = simRows.rows[0];
+              return `\n\n[참고 — 과거 유사 질문에 좋은 평가를 받은 답변 스타일]\n질문: ${ref.question}\n답변: ${ref.answer.slice(0, 500)}\n(참고만 하고 현재 질문에 맞게 새로 작성할 것. 그대로 복사하지 말 것)`;
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+        return "";
+      })();
 
       // 승강기 고유번호 감지 (7자리 숫자 또는 4자리-3자리 형식)
       let elevatorInfoSection = "";
@@ -2274,8 +2278,8 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
         return "LOOKUP";
       })();
 
-      const [articleRows, keywordRows, memoSection, questionType] = await Promise.all([
-        articleTask, keywordTask, memoTask, classifierTask,
+      const [goodAnswerRefSection, articleRows, keywordRows, memoSection, questionType] = await Promise.all([
+        ragTask, articleTask, keywordTask, memoTask, classifierTask,
       ]);
 
       // ── 병렬 조회 결과를 고정된 순서(조문번호 직접매칭 → 키워드 매칭)로 합성 ──
