@@ -852,10 +852,11 @@ export default function InspectionStandardsPage() {
 // ── 판정지침 뷰 컴포넌트 ──────────────────────────────────────────────
 function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
   const [sel, setSel] = useState<string | null>(null);
-  const [overrides, setOverrides] = useState<Record<string, { title?: string; text?: string }>>({});
+  const [overrides, setOverrides] = useState<Record<string, { title?: string; text?: string; items?: JudgmentItem[] }>>({});
   const [editMode, setEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editText, setEditText] = useState("");
+  const [editItems, setEditItems] = useState<JudgmentItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [addMode, setAddMode] = useState(false);
   const [newKey, setNewKey] = useState("");
@@ -868,7 +869,7 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
     fetch("/api/insp-std-overrides")
       .then(r => r.json())
       .then((rows: any[]) => {
-        const map: Record<string, { title?: string; text?: string }> = {};
+        const map: Record<string, { title?: string; text?: string; items?: JudgmentItem[] }> = {};
         const customs: string[] = [];
         rows.forEach((row: any) => {
           if (row.itemKey?.startsWith("판정지침_")) {
@@ -905,6 +906,9 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
     if (base?.type === "text" && ov?.text) {
       return { ...base, text: ov.text };
     }
+    if (base?.type === "list" && ov?.items) {
+      return { ...base, items: ov.items };
+    }
     if (!base) {
       // 관리자가 새로 추가한 항목(base 원본이 없음)은 override 자체가 곧 본문
       return ov?.text ? { type: "text", title: ov.title || key, text: ov.text } : null;
@@ -913,15 +917,16 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
   };
   const hasOverride = (key: string) => !!overrides[key];
 
-  const saveOverride = async (key: string, title: string, text: string) => {
+  const saveOverride = async (key: string, title: string, text?: string, items?: JudgmentItem[]) => {
     setSaving(true);
     try {
+      const payload: { title: string; text?: string; items?: JudgmentItem[] } = items ? { title, items } : { title, text };
       await fetch(`/api/insp-std-overrides/${encodeURIComponent("판정지침_" + key)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: JSON.stringify({ title, text }), source: "판정지침_수정" }),
+        body: JSON.stringify({ text: JSON.stringify(payload), source: "판정지침_수정" }),
       });
-      setOverrides(prev => ({ ...prev, [key]: { title, text } }));
+      setOverrides(prev => ({ ...prev, [key]: items ? { title, items } : { title, text } }));
       setEditMode(false);
     } catch {}
     setSaving(false);
@@ -947,9 +952,14 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
 
   const openEdit = (key: string) => {
     const base = JUDGMENT_SECTIONS[key];
-    const baseText = base?.type === "text" ? base.text : "";
+    if (base?.type === "list") {
+      const ov = overrides[key];
+      setEditItems(ov?.items ? ov.items.map(it => ({ ...it })) : base.items.map(it => ({ ...it })));
+    } else {
+      const baseText = base?.type === "text" ? base.text : "";
+      setEditText(overrides[key]?.text || baseText);
+    }
     setEditTitle(getTitle(key));
-    setEditText(overrides[key]?.text || baseText);
     setEditMode(true);
   };
 
@@ -1027,7 +1037,7 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
               )}
               {editMode && (
                 <>
-                  <button onClick={() => saveOverride(sel!, editTitle, editText)} disabled={saving}
+                  <button onClick={() => cur?.type === "list" ? saveOverride(sel!, editTitle, undefined, editItems) : saveOverride(sel!, editTitle, editText)} disabled={saving}
                     className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">
                     {saving ? "저장중..." : "저장"}
                   </button>
@@ -1054,6 +1064,37 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
                 />
               : cur?.type === "text"
                 ? <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{cur.text}</p>
+              : cur?.type === "list" && editMode
+                ? <div className="space-y-2">
+                    {editItems.map((item, i) => (
+                      <div key={i} className="bg-muted/40 border border-border rounded-xl p-3 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground">번호</span>
+                          <input
+                            className="w-16 text-xs font-semibold text-primary border border-border rounded-lg px-2 py-1 bg-card"
+                            value={item.num}
+                            onChange={e => setEditItems(prev => prev.map((it, idx) => idx === i ? { ...it, num: e.target.value } : it))}
+                          />
+                          <button
+                            onClick={() => setEditItems(prev => prev.filter((_, idx) => idx !== i))}
+                            className="ml-auto text-[10px] px-2 py-1 rounded-lg border border-red-300 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                            항목 삭제
+                          </button>
+                        </div>
+                        <textarea
+                          className="w-full text-xs leading-relaxed border border-border rounded-lg p-2 bg-card resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          rows={3}
+                          value={item.content}
+                          onChange={e => setEditItems(prev => prev.map((it, idx) => idx === i ? { ...it, content: e.target.value } : it))}
+                        />
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setEditItems(prev => [...prev, { num: String(prev.length + 1), content: "" }])}
+                      className="w-full text-xs py-2 rounded-lg border border-dashed border-primary text-primary hover:bg-primary/5 transition-colors">
+                      + 항목 추가
+                    </button>
+                  </div>
               : cur?.type === "list"
                 ? <div className="space-y-2">
                     {cur.items.map((item, i) => (
