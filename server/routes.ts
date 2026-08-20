@@ -927,35 +927,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e) { res.status(500).json({ error: "Failed to save insp-std override" }); }
   });
 
-  // TEMP: 별표2_전기식 override를 잘못 초기화(공백처리)했던 것을 복구.
-  // 관리자가 직접 띄어쓰기 등을 정리해서 저장했던 66행(14.2.5.3까지, 유압식으로 옮겨진
-  // 뒤쪽 항목은 제외)을 tmp-restore-override.json에서 읽어 다시 저장한다. 복구 후 이
-  // 엔드포인트와 데이터 파일은 제거할 것.
-  app.get("/api/debug/restore-judgment-override", async (req, res) => {
-    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
-    try {
-      const fs = await import("fs");
-      const path = await import("path");
-      const filePath = path.join(process.cwd(), "server", "tmp-restore-override.json");
-      const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-      const db = (await import("./db")).db;
-      const { inspStdOverrides } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const itemKey = "판정지침_별표2_전기식";
-      const text = JSON.stringify(data);
-      const existing = await db.select().from(inspStdOverrides).where(eq(inspStdOverrides.itemKey, itemKey)).limit(1);
-      let row;
-      if (existing.length > 0) {
-        [row] = await db.update(inspStdOverrides).set({ text, source: "판정지침_수정", updatedAt: new Date() }).where(eq(inspStdOverrides.itemKey, itemKey)).returning();
-      } else {
-        [row] = await db.insert(inspStdOverrides).values({ itemKey, text, source: "판정지침_수정" }).returning();
-      }
-      res.json({ rowCount: data.rows.length, updatedAt: row?.updatedAt });
-    } catch (e) {
-      res.status(500).json({ error: String(e) });
-    }
-  });
-
     app.delete("/api/inspection-edits/:itemId", async (req, res) => {
     try {
       const itemId = req.params.itemId;
