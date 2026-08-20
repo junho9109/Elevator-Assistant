@@ -414,13 +414,17 @@ function makeSnippet(text: string, q: string, pad = 28): string {
   return (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
 }
 
-export default function InspectionStandardsPage() {
+export default function InspectionStandardsPage({ isActive }: { isActive?: boolean }) {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [showTreeHint, setShowTreeHint] = useState(true);
+  // 이 페이지는 다른 페이지로 이동해도 unmount되지 않고 화면에서만 숨겨지므로(SwipeNavigator),
+  // 이 페이지로 "다시 들어올 때"(isActive: false → true)마다 안내문구를 다시 띄운다.
   useEffect(() => {
+    if (!isActive) return;
+    setShowTreeHint(true);
     const t = setTimeout(() => setShowTreeHint(false), 10000);
     return () => clearTimeout(t);
-  }, []);
+  }, [isActive]);
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [showSearch, setShowSearch] = useState(false);

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, cloneElement, isValidElement } from "react";
 
 interface SwipeNavigatorProps {
   pages: React.ReactNode[];
@@ -85,7 +85,10 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
             }}
           >
             <div style={{ minHeight: "100%", transformOrigin: "center top", transition: "transform 0.1s" }}>
-              {page}
+              {/* 페이지들이 전환 시에도 unmount되지 않고 계속 마운트된 채로 opacity만 바뀌므로,
+                  "다시 들어왔을 때 한 번 더 보여줘야 하는" 안내문구 등을 위해 현재 활성 여부를
+                  isActive prop으로 각 페이지에 내려준다. */}
+              {isValidElement(page) ? cloneElement(page as React.ReactElement<any>, { isActive: currentIndex === i }) : page}
             </div>
           </div>
         ))}
