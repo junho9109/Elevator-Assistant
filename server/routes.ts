@@ -899,6 +899,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── TEMP DEBUG: 판정지침 별표2 사이드바 그룹 재현 (확인 후 제거 예정) ──
+  app.get("/api/debug/judgment-byulpyo2-groups", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const fs = await import("fs");
+      const path = await import("path");
+      const jsonPath = path.join(process.cwd(), "client/src/data/판정지침_parsed.json");
+      const JUDGMENT_SECTIONS = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+      const rows = await db.select().from(inspStdOverrides);
+
+      const customs: string[] = [];
+      const overridesMap: Record<string, any> = {};
+      rows.forEach((row: any) => {
+        if (row.itemKey?.startsWith("판정지침_")) {
+          const key = row.itemKey.replace("판정지침_", "");
+          let data: any;
+          try { data = JSON.parse(row.text || "{}"); } catch { data = { text: row.text }; }
+          overridesMap[key] = data;
+          if (!JUDGMENT_SECTIONS[key]) customs.push(key);
+        }
+      });
+
+      const baseKeys = Object.keys(JUDGMENT_SECTIONS);
+      const allKeys = [...new Set([...baseKeys, ...customs])];
+      const byulpyo2Keys = allKeys.filter(k => k.startsWith("별표2_"));
+
+      const getTitle = (key: string) =>
+        (overridesMap[key]?.title || JUDGMENT_SECTIONS[key]?.title || key)
+          .replace(/\[별표\d+\]\s*/, "").replace(/\s*—.*$/, "").trim();
+
+      res.json({
+        totalOverrideRows: rows.length,
+        judgmentOverrideItemKeys: rows.filter((r: any) => r.itemKey?.startsWith("판정지침_")).map((r: any) => r.itemKey),
+        customKeys: customs,
+        byulpyo2Count: byulpyo2Keys.length,
+        byulpyo2Keys: byulpyo2Keys.map(k => ({ key: k, label: getTitle(k), hasBase: !!JUDGMENT_SECTIONS[k], hasOverride: !!overridesMap[k] })),
+      });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // ── 검사기준 오버라이드 API ──
   app.get("/api/insp-std-overrides", async (req, res) => {
     try {
