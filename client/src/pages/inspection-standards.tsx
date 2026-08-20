@@ -974,9 +974,9 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
 
   const groups = [
     { label: "본문", keys: allKeys.filter(k => k === "본문") },
-    { label: "별표1 — 착수전 불합격", keys: allKeys.filter(k => k === "별표1") },
-    { label: "별표2 — 완성·정기·수시검사", keys: allKeys.filter(k => k.startsWith("별표2_")) },
-    { label: "별표3 — 정밀안전검사", keys: allKeys.filter(k => k.startsWith("별표3_")) },
+    { label: "별표1-완성·정기·수시·정밀안전검사 불합격항목", keys: allKeys.filter(k => k === "별표1") },
+    { label: "별표2-완성·정기·수시검사 불합격 항목", keys: allKeys.filter(k => k.startsWith("별표2_")) },
+    { label: "별표3-정밀안전검사 불합격 항목", keys: allKeys.filter(k => k.startsWith("별표3_")) },
     ...(customKeys.filter(k => !["본문","별표1"].includes(k) && !k.startsWith("별표2_") && !k.startsWith("별표3_")).length > 0
       ? [{ label: "추가 항목", keys: customKeys.filter(k => !["본문","별표1"].includes(k) && !k.startsWith("별표2_") && !k.startsWith("별표3_")) }]
       : []),
