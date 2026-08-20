@@ -899,6 +899,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── TEMP DEBUG: 덤웨이터 vs 전기식/유압식 내용 동일 항목 비교 (확인 후 제거 예정) ──
+  app.get("/api/debug/compare-dumbwaiter-rows", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const { eq, inArray } = await import("drizzle-orm");
+
+      const keys = ["판정지침_별표2_덤웨이터", "판정지침_별표2_전기식", "판정지침_별표2_유압식"];
+      const rows = await db.select().from(inspStdOverrides).where(inArray(inspStdOverrides.itemKey, keys));
+
+      const byKey: Record<string, any> = {};
+      for (const r of rows) {
+        try { byKey[r.itemKey] = JSON.parse(r.text || "{}"); } catch { byKey[r.itemKey] = null; }
+      }
+
+      const norm = (s: string) => (s || "").replace(/\s+/g, "");
+
+      const dw = byKey["판정지침_별표2_덤웨이터"]?.rows || [];
+      const elec = byKey["판정지침_별표2_전기식"]?.rows || [];
+      const hyd = byKey["판정지침_별표2_유압식"]?.rows || [];
+
+      const matches: any[] = [];
+      dw.forEach((dwRow: any, idx: number) => {
+        const dwTargetNorm = norm(dwRow.target);
+        const dwContentNorm = norm(dwRow.content);
+        for (const [srcName, srcRows] of [["전기식", elec], ["유압식", hyd]] as const) {
+          for (const srcRow of srcRows as any[]) {
+            if (norm(srcRow.target) === dwTargetNorm && norm(srcRow.content) === dwContentNorm) {
+              matches.push({
+                dwIndex: idx,
+                dwRef: dwRow.ref,
+                dwTarget: dwRow.target,
+                dwContent: dwRow.content,
+                matchedSource: srcName,
+                matchedRef: srcRow.ref,
+                matchedTarget: srcRow.target,
+                matchedContent: srcRow.content,
+              });
+            }
+          }
+        }
+      });
+
+      res.json({ dwTotal: dw.length, matchCount: matches.length, matches });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // ── 검사기준 오버라이드 API ──
   app.get("/api/insp-std-overrides", async (req, res) => {
     try {
