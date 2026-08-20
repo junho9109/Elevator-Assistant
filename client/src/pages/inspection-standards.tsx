@@ -899,7 +899,16 @@ function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
   const getTitle = (key: string) => overrides[key]?.title || JUDGMENT_SECTIONS[key]?.title || key;
   const getSection = (key: string): JudgmentSection | null => {
     const base = JUDGMENT_SECTIONS[key];
-    if (!base) return null;
+    const ov = overrides[key];
+    // "text" 타입만 편집 UI가 있으므로, 저장된 수정 내용(overrides)이 있으면 화면 표시에도 반영한다.
+    // (예전에는 base 원본만 그대로 반환해 편집 후 저장해도 화면에는 수정 전 내용이 계속 보였음)
+    if (base?.type === "text" && ov?.text) {
+      return { ...base, text: ov.text };
+    }
+    if (!base) {
+      // 관리자가 새로 추가한 항목(base 원본이 없음)은 override 자체가 곧 본문
+      return ov?.text ? { type: "text", title: ov.title || key, text: ov.text } : null;
+    }
     return base;
   };
   const hasOverride = (key: string) => !!overrides[key];
