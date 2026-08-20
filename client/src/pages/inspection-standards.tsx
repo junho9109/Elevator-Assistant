@@ -404,7 +404,7 @@ function GenerationDetail({ id, gen, onClose }: { id: string; gen: GenerationDoc
   );
 }
 
-type SearchHit = { docId: DocId; scopeLabel: string; itemId: string; title: string; snippet: string };
+type SearchHit = { docId: DocId; scopeLabel: string; itemId: string; title: string; snippet: string; sectionKey?: string };
 
 function makeSnippet(text: string, q: string, pad = 28): string {
   const idx = text.toLowerCase().indexOf(q.toLowerCase());
@@ -439,6 +439,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   const [addItemError, setAddItemError] = useState("");
   const [addItemConflict, setAddItemConflict] = useState<{ itemId: string; text: string } | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
+  const [judgmentJumpKey, setJudgmentJumpKey] = useState<string | null>(null);
   const [pwInput, setPwInput] = useState("");
   const [showPw, setShowPw] = useState(false);
   const queryClient = useQueryClient();
@@ -566,6 +567,32 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
         }
       });
     });
+
+    // 판정지침(본문/별표1/별표2/별표3) — 이전에는 검색 대상에서 빠져 있었음
+    Object.entries(JUDGMENT_SECTIONS).forEach(([key, sec]) => {
+      const secLabel = (sec.title || key).replace(/\[별표\d+\]\s*/, "");
+      if (sec.type === "text") {
+        const hay = `${sec.title || ""}\n${sec.text || ""}`;
+        if (hay.toLowerCase().includes(kw)) {
+          hits.push({ docId: "judgment2016", scopeLabel: "판정지침", itemId: key, title: secLabel, snippet: makeSnippet(sec.text || "", q), sectionKey: key });
+        }
+      } else if (sec.type === "list") {
+        sec.items.forEach(it => {
+          const hay = `${it.num || ""}\n${it.content || ""}`;
+          if (hay.toLowerCase().includes(kw)) {
+            hits.push({ docId: "judgment2016", scopeLabel: "판정지침", itemId: it.num, title: `${secLabel} · ${it.num}`.trim(), snippet: makeSnippet(it.content || "", q), sectionKey: key });
+          }
+        });
+      } else if (sec.type === "table") {
+        sec.rows.forEach(r => {
+          const hay = `${r.ref || ""}\n${r.target || ""}\n${r.content || ""}`;
+          if (hay.toLowerCase().includes(kw)) {
+            hits.push({ docId: "judgment2016", scopeLabel: "판정지침", itemId: r.ref, title: `${secLabel} · ${r.target || ""}`.trim(), snippet: makeSnippet(r.content || "", q), sectionKey: key });
+          }
+        });
+      }
+    });
+
     setSearchHits(hits.slice(0, 200));
   }, [query, dataMap]);
 
@@ -622,7 +649,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => { setShowSearch(s => !s); setQuery(""); setSearchHits([]); }}
+                onClick={() => { setShowSearch(s => !s); setQuery(""); setSearchHits([]); setActiveKey(null); }}
                 className="shrink-0 shadow-sm hover:shadow-md transition-all"
                 title={showSearch ? "검색 닫기" : "검색"}
               >
@@ -652,7 +679,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
               autoFocus
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="조문 내용 검색… (현행 + 모든 연도 대상)"
+              placeholder="조문 내용 검색… (현행 + 모든 연도 + 판정지침 대상)"
               className="w-full text-xs bg-card border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 placeholder:text-muted-foreground"
             />
           </div>
@@ -661,29 +688,46 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
 
       {/* 본문 */}
       <div className="flex-1 overflow-hidden flex min-h-0">
-        {selectedDoc === "judgment2016" && <JudgmentDocView isAdminMode={isAdminMode} />}
-        <div className={selectedDoc !== "judgment2016" ? "contents" : "hidden"}>
+        {selectedDoc === "judgment2016" && !(showSearch && query.trim()) && (
+          <JudgmentDocView isAdminMode={isAdminMode} jumpToKey={judgmentJumpKey} onJumpApplied={() => setJudgmentJumpKey(null)} />
+        )}
+        <div className={(selectedDoc !== "judgment2016" || (showSearch && query.trim())) ? "contents" : "hidden"}>
         {/* 좌측: 트리 또는 검색결과 */}
         <div className={`${activeKey ? "hidden md:flex md:w-72" : "flex-1"} flex-col overflow-y-auto border-r border-border`}>
           {showSearch && query.trim() ? (
             searchHits.length > 0 ? (
               <div className="p-2 space-y-1.5">
                 <p className="text-xs text-muted-foreground px-2 py-1.5 font-medium">
-                  "{query.trim()}" 검색 결과 · {searchHits.length}건 (현행 + 전체 연도)
+                  "{query.trim()}" 검색 결과 · {searchHits.length}건 (현행 + 전체 연도 + 판정지침)
                 </p>
                 {searchHits.map((h, i) => {
-                  const isActiveHit = activeKey === h.itemId && selectedDoc === h.docId;
+                  const isActiveHit = h.docId !== "judgment2016" && activeKey === h.itemId && selectedDoc === h.docId;
                   return (
                   <button
                     key={`${h.docId}-${h.itemId}-${i}`}
-                    onClick={() => { setSelectedDoc(h.docId); setActiveKey(h.itemId); }}
+                    onClick={() => {
+                      if (h.docId === "judgment2016") {
+                        // 판정지침은 항목이 아니라 문서(별표) 단위로 상세를 여는 구조라
+                        // JudgmentDocView 쪽으로 넘어가서 해당 문서를 직접 열어준다.
+                        setJudgmentJumpKey(h.sectionKey || h.itemId);
+                        setSelectedDoc("judgment2016");
+                        setShowSearch(false);
+                        setQuery("");
+                        setSearchHits([]);
+                      } else {
+                        setSelectedDoc(h.docId);
+                        setActiveKey(h.itemId);
+                      }
+                    }}
                     className={`w-full text-left border rounded-xl px-3 py-2.5 transition-colors ${
                       isActiveHit ? "border-primary bg-primary/10" : "border-border hover:bg-secondary"
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-[9px] shrink-0 rounded-full px-1.5 py-0.5 ${
-                        h.docId === "byulpyo22" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground border border-border"
+                        h.docId === "byulpyo22" ? "bg-primary/10 text-primary"
+                        : h.docId === "judgment2016" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                        : "bg-muted text-muted-foreground border border-border"
                       }`}>{h.scopeLabel}</span>
                       <span className="font-mono text-[10px] text-primary font-medium">{h.itemId}</span>
                       <span className="text-xs text-muted-foreground flex-1 truncate">{h.title}</span>
@@ -854,8 +898,15 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   );
 }
 // ── 판정지침 뷰 컴포넌트 ──────────────────────────────────────────────
-function JudgmentDocView({ isAdminMode }: { isAdminMode: boolean }) {
+function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMode: boolean; jumpToKey?: string | null; onJumpApplied?: () => void }) {
   const [sel, setSel] = useState<string | null>(null);
+
+  // 검색 결과에서 특정 항목으로 이동해왔을 때 — 해당 문서를 곧바로 선택 상태로 연다.
+  useEffect(() => {
+    if (!jumpToKey) return;
+    setSel(jumpToKey);
+    onJumpApplied?.();
+  }, [jumpToKey]);
   const [overrides, setOverrides] = useState<Record<string, { title?: string; text?: string; items?: JudgmentItem[]; rows?: JudgmentRow[] }>>({});
   const [editMode, setEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
