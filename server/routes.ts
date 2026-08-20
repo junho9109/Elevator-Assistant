@@ -980,6 +980,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── TEMP DEBUG: 덤웨이터 5.1.5 항목명 오적용 되돌리기 (확인 후 제거 예정) ──
+  app.get("/api/debug/revert-dumbwaiter-5115", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const existing = await db.select().from(inspStdOverrides).where(eq(inspStdOverrides.itemKey, "판정지침_별표2_덤웨이터")).limit(1);
+      if (existing.length === 0) return res.status(404).json({ error: "not found" });
+      const payload = JSON.parse(existing[0].text || "{}");
+      const row = payload.rows.find((r: any) => r.ref === "5.1.5");
+      const before = row?.target;
+      if (row) row.target = "승강로 내 돌출물";
+      await db.update(inspStdOverrides)
+        .set({ text: JSON.stringify(payload), source: "판정지침_수정", updatedAt: new Date() })
+        .where(eq(inspStdOverrides.itemKey, "판정지침_별표2_덤웨이터"));
+      res.json({ reverted: true, before, after: row?.target });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // ── 검사기준 오버라이드 API ──
   app.get("/api/insp-std-overrides", async (req, res) => {
     try {
