@@ -1010,6 +1010,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── TEMP DEBUG: 판정지침 JSON vs DB 오버라이드 ref-set 비교 검증 (확인 후 제거 예정) ──
+  app.get("/api/debug/verify-judgment-overrides", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const fs = await import("fs");
+      const path = await import("path");
+      const jsonPath = path.join(process.cwd(), "client/src/data/판정지침_parsed.json");
+      const JUDGMENT_SECTIONS: Record<string, any> = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+
+      const existingRows = await db.select().from(inspStdOverrides);
+      const overrideByKey: Record<string, any> = {};
+      existingRows.forEach((r: any) => {
+        if (r.itemKey?.startsWith("판정지침_")) {
+          const key = r.itemKey.replace("판정지침_", "");
+          try { overrideByKey[key] = JSON.parse(r.text || "{}"); } catch { overrideByKey[key] = null; }
+        }
+      });
+
+      const refsOf = (payload: any): string[] => {
+        if (!payload) return [];
+        if (payload.rows) return payload.rows.flatMap((r: any) => String(r.ref).split(/,\s*/));
+        if (payload.items) return payload.items.map((i: any) => String(i.num));
+        return [];
+      };
+
+      const report: any[] = [];
+      for (const key of Object.keys(JUDGMENT_SECTIONS)) {
+        const base = JUDGMENT_SECTIONS[key];
+        const ov = overrideByKey[key];
+        const baseRefs = new Set(refsOf(base));
+        const ovRefs = new Set(refsOf(ov));
+        const missingInOverride = [...baseRefs].filter(r => !ovRefs.has(r));
+        const extraInOverride = [...ovRefs].filter(r => !baseRefs.has(r));
+        report.push({
+          key,
+          type: base.type,
+          hasOverride: !!ov,
+          baseRowCount: (base.rows || base.items || []).length,
+          overrideRowCount: ov ? (ov.rows || ov.items || []).length : 0,
+          baseRefCount: baseRefs.size,
+          overrideRefCount: ovRefs.size,
+          missingInOverride,
+          extraInOverride,
+        });
+      }
+      res.json(report);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // ── 검사기준 오버라이드 API ──
   app.get("/api/insp-std-overrides", async (req, res) => {
     try {
