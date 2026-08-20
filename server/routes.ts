@@ -943,6 +943,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── TEMP DEBUG: 판정지침 DB 백필 (JSON→DB, 확인 후 제거 예정) ──
+  app.get("/api/debug/backfill-judgment-overrides", async (req, res) => {
+    if (req.query.secret !== "rebuild-elevator-2026") return res.status(403).json({ error: "forbidden" });
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const fs = await import("fs");
+      const path = await import("path");
+      const jsonPath = path.join(process.cwd(), "client/src/data/판정지침_parsed.json");
+      const JUDGMENT_SECTIONS: Record<string, any> = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+
+      const existingRows = await db.select().from(inspStdOverrides);
+      const existingByKey: Record<string, any> = {};
+      existingRows.forEach((r: any) => {
+        if (r.itemKey?.startsWith("판정지침_")) existingByKey[r.itemKey.replace("판정지침_", "")] = r;
+      });
+
+      const report: any = { fixed: [], created: [], skipped: [] };
+
+      // 1) 유압식 override — 뒤에 붙은 에스컬레이터 misplaced 29건(5.3.5~7.2.4) 잘라내기
+      const hydKey = "별표2_유압식";
+      const hydRow = existingByKey[hydKey];
+      if (hydRow) {
+        let payload: any;
+        try { payload = JSON.parse(hydRow.text || "{}"); } catch { payload = null; }
+        if (payload?.rows) {
+          const cutIdx = payload.rows.findIndex((r: any) => r.ref === "14.2.5.3");
+          if (cutIdx >= 0 && payload.rows.length > cutIdx + 1) {
+            const newRows = payload.rows.slice(0, cutIdx + 1);
+            const newPayload = { title: payload.title, rows: newRows };
+            await db.update(inspStdOverrides)
+              .set({ text: JSON.stringify(newPayload), source: "판정지침_수정", updatedAt: new Date() })
+              .where(eq(inspStdOverrides.itemKey, "판정지침_" + hydKey));
+            report.fixed.push({ key: hydKey, before: payload.rows.length, after: newRows.length });
+          } else {
+            report.skipped.push({ key: hydKey, reason: "already correct or ref not found", count: payload.rows.length });
+          }
+        }
+      }
+
+      // 2) 오버라이드 없는 별표2/별표3 문서 10종 — 현재 JSON 내용 그대로 백필
+      const missingKeys = [
+        "별표2_에스컬레이터", "별표2_덤웨이터", "별표2_소형", "별표2_수직형", "별표2_경사형",
+        "별표3_전기식", "별표3_유압식", "별표3_소형", "별표3_덤웨이터", "별표3_에스컬레이터",
+      ];
+      for (const key of missingKeys) {
+        if (existingByKey[key]) { report.skipped.push({ key, reason: "override already exists" }); continue; }
+        const base = JUDGMENT_SECTIONS[key];
+        if (!base) { report.skipped.push({ key, reason: "not found in JSON" }); continue; }
+        const payload = base.type === "table" ? { title: base.title, rows: base.rows }
+          : base.type === "list" ? { title: base.title, items: base.items }
+          : { title: base.title, text: base.text };
+        await db.insert(inspStdOverrides).values({
+          itemKey: "판정지침_" + key,
+          text: JSON.stringify(payload),
+          source: "판정지침_수정",
+        });
+        report.created.push({ key, type: base.type, count: (base.rows || base.items || []).length });
+      }
+
+      res.json(report);
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // ── 검사기준 오버라이드 API ──
   app.get("/api/insp-std-overrides", async (req, res) => {
     try {
