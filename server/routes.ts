@@ -943,7 +943,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      res.json({ dwTotal: dw.length, matchCount: matches.length, matches });
+      // 인덱스별 대표 매치 선택 (전기식 우선, 없으면 유압식)
+      const bestByIndex = new Map<number, any>();
+      for (const m of matches) {
+        if (!bestByIndex.has(m.dwIndex)) bestByIndex.set(m.dwIndex, m);
+        else if (bestByIndex.get(m.dwIndex).matchedSource !== "전기식" && m.matchedSource === "전기식") bestByIndex.set(m.dwIndex, m);
+      }
+
+      const changed: any[] = [];
+      const newRows = dw.map((dwRow: any, idx: number) => {
+        const best = bestByIndex.get(idx);
+        if (!best) return dwRow;
+        if (best.matchedTarget === dwRow.target && best.matchedContent === dwRow.content) return dwRow;
+        changed.push({ dwIndex: idx, ref: dwRow.ref, before: { target: dwRow.target, content: dwRow.content }, after: { target: best.matchedTarget, content: best.matchedContent }, source: best.matchedSource });
+        return { ref: dwRow.ref, target: best.matchedTarget, content: best.matchedContent };
+      });
+
+      const cutoffIdx = dw.findIndex((r: any) => r.ref === "9.8.3.2");
+      const matchedIdxSet = new Set(matches.map((m: any) => m.dwIndex));
+      const unmatchedAfterCutoff = dw
+        .map((r: any, idx: number) => ({ idx, ref: r.ref, target: r.target }))
+        .filter((r: any) => r.idx > cutoffIdx && !matchedIdxSet.has(r.idx));
+
+      let applied = false;
+      if (req.query.apply === "1" && changed.length > 0) {
+        const newPayload = { title: byKey["판정지침_별표2_덤웨이터"].title, rows: newRows };
+        await db.update(inspStdOverrides)
+          .set({ text: JSON.stringify(newPayload), source: "판정지침_수정", updatedAt: new Date() })
+          .where(eq(inspStdOverrides.itemKey, "판정지침_별표2_덤웨이터"));
+        applied = true;
+      }
+
+      res.json({ dwTotal: dw.length, matchCount: matches.length, changedCount: changed.length, applied, changed, cutoffIdx, unmatchedAfterCutoff });
     } catch (e) {
       res.status(500).json({ error: String(e) });
     }
