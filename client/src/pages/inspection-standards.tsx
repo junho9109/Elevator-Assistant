@@ -418,7 +418,7 @@ export default function InspectionStandardsPage() {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [showTreeHint, setShowTreeHint] = useState(true);
   useEffect(() => {
-    const t = setTimeout(() => setShowTreeHint(false), 5000);
+    const t = setTimeout(() => setShowTreeHint(false), 10000);
     return () => clearTimeout(t);
   }, []);
   const [query, setQuery] = useState("");
