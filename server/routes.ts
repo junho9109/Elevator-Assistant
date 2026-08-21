@@ -1165,21 +1165,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: reduction_plan 3개 컬럼 추가 (완료 후 제거 예정)
-  app.get("/api/debug/add-reduction-plan-columns", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { sql: sqlOp } = await import("drizzle-orm");
-      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS reduction_plan text`);
-      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS reduction_plan_updated_by varchar(50)`);
-      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS reduction_plan_updated_at timestamp`);
-      res.json({ ok: true });
-    } catch (error) {
-      res.status(500).json({ error: "failed", detail: String(error) });
-    }
-  });
-
   // ── 위험성평가: 감소대책(항목 단위 공동 작성) — 팀 집계 위험성이 9 이상인 항목에 한해
   // 특정 개인이 아니라 팀 누구나(관리자 포함) 작성·수정할 수 있음 ──
   app.put("/api/risk-hazard-items/:id/reduction-plan", async (req, res) => {
