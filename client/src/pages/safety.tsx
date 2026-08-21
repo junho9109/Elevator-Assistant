@@ -14,6 +14,7 @@ type RiskHazardItem = {
   id: number; method: RiskMethod; workCategory: string; subWork: string | null; content: string;
   discoveryPath: string | null; fieldInfo: string | null; imageUrls: string[] | null; branchId: string;
   registeredById: string; registeredByName: string; team: string | null; isTemplate: boolean; isMandatory: boolean; createdAt: string;
+  reductionPlan: string | null; reductionPlanUpdatedBy: string | null; reductionPlanUpdatedAt: string | null;
 };
 type RiskItemSelection = { id: number; hazardItemId: number; employeeId: string; employeeName: string; createdAt: string; };
 type EmployeeTeamOverride = { id: number; employeeId: string; team: string; setBy: string | null; updatedAt: string; };
@@ -285,6 +286,15 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-assessments"] }); toast({ title: "평가가 저장되었습니다." }); },
   });
+  // 감소대책은 항목(팀 집계) 단위 공동 작성 필드 — 개인 평가가 아니라 riskHazardItems 자체를 갱신
+  const saveReductionPlan = useMutation({
+    mutationFn: async ({ id, reductionPlan }: { id: number; reductionPlan: string }) => {
+      const r = await fetch(`/api/risk-hazard-items/${id}/reduction-plan`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reductionPlan, updatedBy: empName }) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] }); toast({ title: "감소대책이 저장되었습니다." }); },
+  });
+  const [reductionPlanDraft, setReductionPlanDraft] = useState<Record<number, string>>({});
   const selectTemplate = useMutation({
     mutationFn: async (hazardItemId: number) => {
       const r = await fetch("/api/risk-item-selections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hazardItemId, employeeId: empId, employeeName: empName }) });
@@ -389,7 +399,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       payload.hadAccidentExperience = f.hadAccidentExperience;
       payload.severity = f.severity;
       payload.currentSafetyMeasure = f.currentSafetyMeasure || null;
-      payload.reductionPlan = f.reductionPlan || null;
+      // 감소대책은 개인 평가가 아니라 항목(팀 집계) 단위 공동 작성 필드로 별도 관리됨 (saveReductionPlan)
     }
     saveAssessment.mutate(payload);
   }
@@ -475,13 +485,33 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   </div>
                 )}
                 <textarea placeholder="현재 안전보건조치 *" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
-                {liveAgg && liveAgg.risk>=9 && (
-                  <textarea placeholder="감소대책 (위험성 9 이상 → 작성 필요)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
-                )}
               </>
             )}
             {!f.currentSafetyMeasure?.trim() && <p className="text-xs text-red-500">현재 안전보건조치를 입력해야 저장할 수 있습니다.</p>}
             <Button className="w-full" size="sm" onClick={()=>submitAssessment(item)} disabled={saveAssessment.isPending || !f.currentSafetyMeasure?.trim()}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
+
+            {item.method==="freq_severity" && agg && (agg as any).risk>=9 && (
+              <div className="pt-3 border-t border-orange-300 space-y-2">
+                <p className="text-sm font-medium text-orange-700">감소대책 (팀 공동 작성 · 위험성 {(agg as any).risk})</p>
+                <p className="text-xs text-muted-foreground">특정 개인의 평가가 아니라 이 항목 전체에 대한 공동 대책입니다. 팀원 누구나 작성·수정할 수 있습니다.</p>
+                <textarea
+                  placeholder="감소대책을 입력하세요"
+                  value={reductionPlanDraft[item.id] ?? item.reductionPlan ?? ""}
+                  onChange={e=>setReductionPlanDraft(p=>({...p,[item.id]:e.target.value}))}
+                  className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"
+                />
+                {item.reductionPlanUpdatedBy && (
+                  <p className="text-xs text-muted-foreground">마지막 수정: {item.reductionPlanUpdatedBy} · {item.reductionPlanUpdatedAt ? new Date(item.reductionPlanUpdatedAt).toLocaleString() : ""}</p>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  disabled={saveReductionPlan.isPending}
+                  onClick={()=>saveReductionPlan.mutate({ id: item.id, reductionPlan: reductionPlanDraft[item.id] ?? item.reductionPlan ?? "" })}
+                >{saveReductionPlan.isPending?"저장 중...":"감소대책 저장"}</Button>
+              </div>
+            )}
           </div>
         )}
       </div>

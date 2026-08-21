@@ -480,6 +480,11 @@ export const riskHazardItems = pgTable("risk_hazard_items", {
   team: varchar("team", { length: 50 }),                  // 팀(반) — 관리자 예시/팀원 직접등록 시 지정. 기존 항목은 null(미분류)
   isTemplate: boolean("is_template").default(false).notNull(), // true=관리자가 등록한 예시(선택 전까지 평가 대상 아님)
   isMandatory: boolean("is_mandatory").default(false).notNull(), // true=특정 지사 필수항목. 1인1선택 대상에서 제외되고 팀원 전원이 별도로 평가해야 함
+  // 감소대책은 개인 평가가 아니라 항목(팀 집계) 단위 공동 작성 필드 — 팀 위험성이 사후에 9 이상으로 올라도
+  // 특정 개인의 평가에 귀속되지 않고, 팀 누구나(관리자 포함) 채우거나 고칠 수 있게 함
+  reductionPlan: text("reduction_plan"),
+  reductionPlanUpdatedBy: varchar("reduction_plan_updated_by", { length: 50 }),
+  reductionPlanUpdatedAt: timestamp("reduction_plan_updated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
