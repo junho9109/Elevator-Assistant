@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { isSuperAdminLoggedIn } from "@/lib/super-admin";
+import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -524,10 +524,13 @@ export default function JudgmentPage() {
     }
   });
   
-  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
-  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
-  const [adminPassword, setAdminPassword] = useState("");
-  
+  const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
+  useEffect(() => {
+    const handler = (e: Event) => setIsAdminMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+    return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+  }, []);
+
   const [customEdits, setCustomEdits] = useState<Record<string, CustomItemEdit>>({});
   const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
@@ -1166,36 +1169,6 @@ export default function JudgmentPage() {
   useEffect(() => {
     localStorage.setItem("judgmentReplacedItemIds", JSON.stringify(Array.from(replacedItemIds)));
   }, [replacedItemIds]);
-
-  const handleAdminModeClick = () => {
-    if (isAdminMode) {
-      setIsAdminMode(false);
-      toast({
-        title: "관리자 모드 종료",
-        description: "관리자 모드가 비활성화되었습니다.",
-      });
-    } else {
-      setIsPasswordDialogOpen(true);
-    }
-  };
-
-  const handlePasswordSubmit = () => {
-    if (adminPassword === "910919") {
-      setIsPasswordDialogOpen(false);
-      setAdminPassword("");
-      setIsAdminMode(true);
-      toast({
-        title: "관리자 모드 진입",
-        description: "관리자 모드가 활성화되었습니다.",
-      });
-    } else {
-      toast({
-        title: "비밀번호 오류",
-        description: "비밀번호가 올바르지 않습니다.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleSaveConfirm = () => {
     const resultCount = Object.keys(results).length;
@@ -1939,19 +1912,6 @@ export default function JudgmentPage() {
                   </Button>
                 </>
               )}
-              <Button
-                variant={isAdminMode ? "default" : "outline"}
-                size="icon"
-                onClick={handleAdminModeClick}
-                className={cn(
-                  "shrink-0 shadow-sm hover:shadow-md transition-all",
-                  isAdminMode && "bg-red-500 hover:bg-red-600"
-                )}
-                data-testid="button-admin-mode-judgment"
-                title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
             </div>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
@@ -2120,37 +2080,6 @@ export default function JudgmentPage() {
           </div>
         </div>
       </div>
-
-      {/* Password Dialog */}
-      <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
-        <DialogContent className="sm:max-w-[300px]">
-          <DialogHeader>
-            <DialogTitle>관리자 모드</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="admin-password-judgment">비밀번호 입력</Label>
-              <Input
-                id="admin-password-judgment"
-                type="password"
-                placeholder="비밀번호를 입력하세요"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handlePasswordSubmit();
-                  }
-                }}
-                data-testid="input-admin-password-judgment"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>취소</Button>
-            <Button onClick={handlePasswordSubmit} data-testid="button-submit-password-judgment">확인</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Edit Item Dialog */}
 

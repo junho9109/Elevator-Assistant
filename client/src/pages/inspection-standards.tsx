@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
-import { isSuperAdminLoggedIn } from "@/lib/super-admin";
+import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 
 type Entry = { text?: string; title?: string; source?: string; };
 
@@ -431,7 +431,12 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   const CURRENT_STD = "KC2050-51:2022";  // 현행 기준
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
+  const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
+  useEffect(() => {
+    const handler = (e: Event) => setIsAdminMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+    return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+  }, []);
   const [showAddItem, setShowAddItem] = useState(false);
   const [newItemId, setNewItemId] = useState("");
   const [newItemAfter, setNewItemAfter] = useState("");
@@ -440,8 +445,6 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   const [addItemConflict, setAddItemConflict] = useState<{ itemId: string; text: string } | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
   const [judgmentJumpKey, setJudgmentJumpKey] = useState<string | null>(null);
-  const [pwInput, setPwInput] = useState("");
-  const [showPw, setShowPw] = useState(false);
   const queryClient = useQueryClient();
 
   // 현행(별표22) 조문 — DB에서 직접 조회, 별도 override 없이 이 값이 곧 화면에 뜨는 값
@@ -664,18 +667,6 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                 </Button>
               )}
               <Button
-                variant={isAdminMode ? "default" : "outline"}
-                size="icon"
-                onClick={() => {
-                  if (isAdminMode) { setIsAdminMode(false); }
-                  else { setShowPw(true); }
-                }}
-                className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
-                title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
-              <Button
                 variant="outline"
                 size="icon"
                 onClick={() => { setShowSearch(s => !s); setQuery(""); setSearchHits([]); setActiveKey(null); }}
@@ -832,32 +823,6 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
       </div>
 
         </div>
-    {/* 비밀번호 다이얼로그 */}
-    {showPw && (
-      <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-        <div className="bg-card rounded-2xl p-6 w-full max-w-xs flex flex-col gap-4 text-center">
-          <Lock size={28} className="mx-auto text-amber-500" />
-          <h3 className="text-sm font-medium">수정 권한 확인</h3>
-          <p className="text-xs text-muted-foreground">관리자 비밀번호를 입력하세요</p>
-          <input
-            type="password" value={pwInput} onChange={e => setPwInput(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") {
-              if (pwInput === "910919") { setIsAdminMode(true); setShowPw(false); setPwInput(""); }
-              else { alert("비밀번호가 틀렸습니다."); setPwInput(""); }
-            }}}
-            className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-secondary text-center tracking-widest"
-            placeholder="••••••"
-          />
-          <div className="flex gap-2">
-            <button onClick={() => { setShowPw(false); setPwInput(""); }} className="flex-1 py-2 text-sm border border-border rounded-xl hover:bg-secondary">취소</button>
-            <button onClick={() => {
-              if (pwInput === "910919") { setIsAdminMode(true); setShowPw(false); setPwInput(""); }
-              else { alert("비밀번호가 틀렸습니다."); setPwInput(""); }
-            }} className="flex-2 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl flex-1">확인</button>
-          </div>
-        </div>
-      </div>
-    )}
 
     {/* 검사기준 수정 모달 */}
     {editKey && (

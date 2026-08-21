@@ -8,7 +8,7 @@ import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
-import { isSuperAdminLoggedIn } from "@/lib/super-admin";
+import { getGlobalAdminMode, setGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1554,9 +1554,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [editingStandard, setEditingStandard] = useState<Standard | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Standard | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
+  const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
+  useEffect(() => {
+    const handler = (e: Event) => setIsAdminMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+    return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+  }, []);
   const [structureImg, setStructureImg] = useState<string>(defaultStructureImg);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -2800,6 +2805,21 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 업데이트 내역
               </button>
               <button
+                onClick={() => {
+                  if (isAdminMode) {
+                    setIsAdminMode(false);
+                    setGlobalAdminMode(false);
+                  } else {
+                    setIsPasswordDialogOpen(true);
+                  }
+                }}
+                title={isAdminMode ? "관리자 모드 종료 (전체 페이지에 적용)" : "관리자 모드 진입 (전체 페이지에 적용)"}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-medium ${isAdminMode ? "bg-red-500 border-red-500 text-white hover:bg-red-600" : "border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400"}`}
+              >
+                <Settings className="h-3.5 w-3.5" />
+                {isAdminMode ? "관리자 모드 끄기" : "관리자 모드"}
+              </button>
+              <button
                 onClick={() => { if (onLogout) onLogout(); }}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted"
               >
@@ -3306,21 +3326,6 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">구조도 & 기술자료</h2>
               <div className="flex gap-2">
-                <Button
-                  variant={isAdminMode ? "default" : "outline"}
-                  size="icon"
-                  onClick={() => {
-                    if (isAdminMode) {
-                      setIsAdminMode(false);
-                    } else {
-                      setIsPasswordDialogOpen(true);
-                    }
-                  }}
-                  className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
-                  title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
                 {isAdminMode && (
                   <Button size="sm" onClick={openAddModal}>
                     <Plus className="h-4 w-4 mr-1" />추가
@@ -3773,7 +3778,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       {isPasswordDialogOpen && createPortal(
         <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:9999,backgroundColor:"rgba(0,0,0,0.6)"}} onClick={() => setIsPasswordDialogOpen(false)}>
           <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:"calc(100% - 64px)",maxWidth:"320px",zIndex:10000}} className="bg-card rounded-2xl shadow-2xl p-6" onClick={e => e.stopPropagation()} onFocus={e => e.stopPropagation()}>
-            <h2 className="font-semibold text-base mb-4">관리자 모드</h2>
+            <h2 className="font-semibold text-base mb-1">관리자 모드</h2>
+            <p className="text-xs text-muted-foreground mb-4">여기서 켜면 모든 페이지(구조도/검사기준/정밀검사/메모/판정)에 함께 적용됩니다.</p>
             <input
               type="password"
               placeholder="비밀번호 입력"
@@ -3783,6 +3789,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 if (e.key === "Enter") {
                   if (adminPassword === "910919") {
                     setIsAdminMode(true);
+                    setGlobalAdminMode(true);
                     setIsPasswordDialogOpen(false);
                     setAdminPassword("");
                   } else {
@@ -3799,6 +3806,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 onClick={() => {
                   if (adminPassword === "910919") {
                     setIsAdminMode(true);
+                    setGlobalAdminMode(true);
                     setIsPasswordDialogOpen(false);
                     setAdminPassword("");
                   } else {

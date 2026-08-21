@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, FileText, ClipboardList, AlertTriangle, CheckCircle2, Info, ListChecks, LayoutGrid, Building2, Building, Settings, Lock, Pencil, X, RotateCcw } from "lucide-react";
-import { isSuperAdminLoggedIn } from "@/lib/super-admin";
+import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 
 // ── 날짜 계산 유틸 ──
 function addMonths(date: Date, months: number): Date {
@@ -371,10 +371,13 @@ export default function PrecisionInspectionPage() {
   const [contractStatus, setContractStatus] = useState("");
   const [cardDate, setCardDate] = useState(""); // 현장진단 모드 전용: 세 번째 정밀안전검사 실시일
 
-  // 관리자 모드 + 고시 발령일
-  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
-  const [showAdminPw, setShowAdminPw] = useState(false);
-  const [pwInput, setPwInput] = useState("");
+  // 관리자 모드(전역 스위치, AI검색 페이지에서 켜고 끔) + 고시 발령일
+  const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
+  useEffect(() => {
+    const handler = (e: Event) => setIsAdminMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+    return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+  }, []);
   const [showNoticeEditor, setShowNoticeEditor] = useState(false);
   const [noticeDateOverride, setNoticeDateOverride] = useState<string | null>(() => {
     try { return localStorage.getItem(NOTICE_DATE_KEY); } catch { return null; }
@@ -509,15 +512,6 @@ export default function PrecisionInspectionPage() {
                 <p className="text-xs text-muted-foreground truncate">부품보완 이행기간 연장 · 필요서류 · 업무처리 안내</p>
               </div>
             </div>
-            <Button
-              variant={isAdminMode ? "default" : "outline"}
-              size="icon"
-              onClick={() => { if (isAdminMode) setIsAdminMode(false); else setShowAdminPw(true); }}
-              className={`shrink-0 ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
-              title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
           </div>
           <div className="flex items-center gap-2 mt-2">
             <span className="text-[11px] text-muted-foreground">고시 발령일</span>
@@ -808,34 +802,6 @@ export default function PrecisionInspectionPage() {
         </>
         )}
       </div>
-
-      {/* 관리자 비밀번호 모달 */}
-      {showAdminPw && createPortal(
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { setShowAdminPw(false); setPwInput(""); }}>
-          <div className="bg-card rounded-2xl p-6 w-full max-w-xs flex flex-col gap-4 text-center" onClick={ev => ev.stopPropagation()}>
-            <Lock size={28} className="mx-auto text-amber-500" />
-            <h3 className="text-sm font-medium">관리자 권한 확인</h3>
-            <p className="text-xs text-muted-foreground">관리자 비밀번호를 입력하세요</p>
-            <input
-              type="password" value={pwInput} onChange={e => setPwInput(e.target.value)} autoFocus
-              onKeyDown={e => { if (e.key === "Enter") {
-                if (pwInput === ADMIN_PASSWORD) { setIsAdminMode(true); setShowAdminPw(false); setPwInput(""); }
-                else { alert("비밀번호가 틀렸습니다."); setPwInput(""); }
-              }}}
-              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-secondary text-center tracking-widest"
-              placeholder="••••••"
-            />
-            <div className="flex gap-2">
-              <button onClick={() => { setShowAdminPw(false); setPwInput(""); }} className="flex-1 py-2 text-sm border border-border rounded-xl hover:bg-secondary">취소</button>
-              <button onClick={() => {
-                if (pwInput === ADMIN_PASSWORD) { setIsAdminMode(true); setShowAdminPw(false); setPwInput(""); }
-                else { alert("비밀번호가 틀렸습니다."); setPwInput(""); }
-              }} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">확인</button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
 
       {/* 고시 발령일 수정 모달 (관리자) */}
       {showNoticeEditor && createPortal(

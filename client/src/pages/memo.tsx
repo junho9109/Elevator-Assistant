@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { isSuperAdminLoggedIn } from "@/lib/super-admin";
+import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -582,10 +582,13 @@ export default function MemoPage() {
   const [pendingDeleteMemoId, setPendingDeleteMemoId] = useState<number | null>(null);
   const [deletePasswordInput, setDeletePasswordInput] = useState("");
   const [isDeletePasswordDialogOpen, setIsDeletePasswordDialogOpen] = useState(false);
-  const [isAdminMode, setIsAdminMode] = useState(() => isSuperAdminLoggedIn());
+  const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
+  useEffect(() => {
+    const handler = (e: Event) => setIsAdminMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+    return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+  }, []);
   const [newComment, setNewComment] = useState({ author: "", content: "" });
-  const [isAdminPasswordDialogOpen, setIsAdminPasswordDialogOpen] = useState(false);
-  const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const [imageViewer, setImageViewer] = useState<ImageViewerState>({
     isOpen: false,
     images: [],
@@ -762,26 +765,6 @@ export default function MemoPage() {
     }
   };
 
-  const handleAdminModeToggle = () => {
-    if (isAdminMode) {
-      setIsAdminMode(false);
-      toast({ title: "관리자 모드 해제" });
-    } else {
-      setAdminPasswordInput("");
-      setIsAdminPasswordDialogOpen(true);
-    }
-  };
-
-  const verifyAdminPassword = () => {
-    if (adminPasswordInput === MASTER_PASSWORD) {
-      setIsAdminMode(true);
-      setIsAdminPasswordDialogOpen(false);
-      setAdminPasswordInput("");
-      toast({ title: "관리자 모드 활성화" });
-    } else {
-      toast({ title: "비밀번호가 틀렸습니다", variant: "destructive" });
-    }
-  };
 
   const updateMemo = useMutation({
     mutationFn: async () => {
@@ -936,16 +919,6 @@ export default function MemoPage() {
                 data-testid="input-memo-search"
               />
             </div>
-            <Button
-              onClick={handleAdminModeToggle}
-              variant={isAdminMode ? "default" : "outline"}
-              size="icon"
-              data-testid="button-admin-mode"
-              className={`shrink-0 shadow-sm hover:shadow-md transition-all ${isAdminMode ? "bg-red-500 hover:bg-red-600" : ""}`}
-              title={isAdminMode ? "관리자 모드 종료" : "관리자 모드 진입"}
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
             <Button onClick={handleCreateMemo} size="sm" data-testid="button-create-memo">
               <Plus className="w-4 h-4" />
             </Button>
@@ -1219,31 +1192,6 @@ export default function MemoPage() {
           </DialogContent>
         </Dialog>
 
-        {/* 관리자 비밀번호 다이얼로그 */}
-        <Dialog open={isAdminPasswordDialogOpen} onOpenChange={setIsAdminPasswordDialogOpen}>
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>관리자 모드</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3 py-2">
-              <input
-                type="password"
-                placeholder="관리자 비밀번호 입력"
-                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50"
-                value={adminPasswordInput}
-                onChange={e => setAdminPasswordInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && verifyAdminPassword()}
-              />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAdminPasswordDialogOpen(false)}>취소</Button>
-              <Button onClick={verifyAdminPassword}>확인</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        
-        
         {imageViewer.isOpen && (
           <ImageViewerComponent
             imageViewer={imageViewer}
