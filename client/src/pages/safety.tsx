@@ -13,7 +13,7 @@ type RiskMethod = "checklist" | "freq_severity";
 type RiskHazardItem = {
   id: number; method: RiskMethod; workCategory: string; subWork: string | null; content: string;
   discoveryPath: string | null; fieldInfo: string | null; imageUrls: string[] | null; branchId: string;
-  registeredById: string; registeredByName: string; team: string | null; isTemplate: boolean; createdAt: string;
+  registeredById: string; registeredByName: string; team: string | null; isTemplate: boolean; isMandatory: boolean; createdAt: string;
 };
 type RiskItemSelection = { id: number; hazardItemId: number; employeeId: string; employeeName: string; createdAt: string; };
 type EmployeeTeamOverride = { id: number; employeeId: string; team: string; setBy: string | null; updatedAt: string; };
@@ -151,6 +151,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [expandedRisk, setExpandedRisk] = useState<number|null>(null);
   const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
+  const [isMandatoryForm, setIsMandatoryForm] = useState(false);
   const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   const [selectedDef, setSelectedDef] = useState(PPE_DEFAULTS[0]);
   const [ppeForm, setPpeForm] = useState({ name: PPE_DEFAULTS[0].name, issuedDate: "", expiryDate: "", standard: PPE_DEFAULTS[0].standard, howToWear: PPE_DEFAULTS[0].howToWear });
@@ -351,7 +352,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
   // ── 팀별 예시/선택 구조 (myTeam이 있을 때만 사용) ──
   const selectionByItemId = useMemo(() => new Map(teamSelections.map(s => [s.hazardItemId, s])), [teamSelections]);
-  const availableTemplates = useMemo(() => teamItems.filter(t => t.isTemplate && !selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
+  const availableTemplates = useMemo(() => teamItems.filter(t => t.isTemplate && !t.isMandatory && !selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
+  // 서울강서지사 등 특정 지사 필수 항목 — 1인 1선택 대상에서 제외되고, 팀원 전원이 본인 선택과 별개로 반드시 평가해야 함
+  const mandatoryTeamItems = useMemo(() => teamItems.filter(t => t.isMandatory), [teamItems]);
   const mySelection = teamSelections.find(s => s.employeeId === empId);
   const activeTeamItems = useMemo(() => teamItems.filter(t => selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
   const activeTeamItemsForMethod = useMemo(() => activeTeamItems.filter(i => i.method === riskMethod), [activeTeamItems, riskMethod]);
@@ -363,7 +366,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [activeTeamItemsForMethod, assessmentsByItem, empId]);
-  const adminTemplates = useMemo(() => adminTeamItems.filter(t => t.isTemplate), [adminTeamItems]);
+  const adminTemplates = useMemo(() => adminTeamItems.filter(t => t.isTemplate && !t.isMandatory), [adminTeamItems]);
+  const adminMandatoryItems = useMemo(() => adminTeamItems.filter(t => t.isMandatory), [adminTeamItems]);
   const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
 
   function getAssessForm(itemId: number) {
@@ -659,6 +663,32 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               )}
             </div>
 
+            {mandatoryTeamItems.length>0 && (
+              <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-900 p-3 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-red-700 dark:text-red-400 flex items-center gap-1">
+                    <AlertTriangle className="h-4 w-4 shrink-0"/>필수 평가 항목
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">본인 선택 항목(1인 1선택)과 별개로, 팀원 전원이 반드시 평가해야 합니다.</p>
+                </div>
+                {myTeamMembers.length>0 && (
+                  <div className="bg-card rounded-lg p-2.5 space-y-1">
+                    {myTeamMembers.map(memberName=>{
+                      const done = mandatoryTeamItems.every(mi => (assessmentsByItem.get(mi.id)||[]).some(a=>a.employeeName===memberName));
+                      return (
+                        <div key={memberName} className="flex items-center gap-2 py-0.5">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                          <span className="text-sm flex-1">{memberName}</span>
+                          <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"평가완료":"미평가"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {mandatoryTeamItems.map(item=>renderRiskItemCard(item))}
+              </div>
+            )}
+
             {!mySelection ? (
               <div className="space-y-3">
                 <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요. 목록에 없으면 직접 등록할 수 있습니다.</p>
@@ -679,7 +709,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     </div>
                   </div>
                 )}
-                {availableTemplates.length===0 && teamItems.filter(t=>t.isTemplate).length===0 && (
+                {availableTemplates.length===0 && teamItems.filter(t=>t.isTemplate && !t.isMandatory).length===0 && (
                   <div className="text-center py-8 text-gray-400"><ClipboardCheck className="h-10 w-10 mx-auto mb-2 opacity-30"/><p className="text-sm">등록된 예시가 없습니다. 관리자에게 문의하거나 직접 등록해주세요.</p></div>
                 )}
                 {availableTemplates.map(t=>(
@@ -691,13 +721,13 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <Button size="sm" onClick={()=>selectTemplate.mutate(t.id)} disabled={selectTemplate.isPending} className="shrink-0">선택</Button>
                   </div>
                 ))}
-                {teamItems.filter(t=>t.isTemplate && selectionByItemId.has(t.id)).map(t=>(
+                {teamItems.filter(t=>t.isTemplate && !t.isMandatory && selectionByItemId.has(t.id)).map(t=>(
                   <div key={t.id} className="bg-muted/30 rounded-xl border border-border p-3 opacity-60">
                     <p className="text-sm truncate">{t.content}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{selectionByItemId.get(t.id)?.employeeName}님이 선택함</p>
                   </div>
                 ))}
-                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES.freq_severity[0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setShowAddRisk(true); }}>
+                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES.freq_severity[0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setShowAddRisk(true); }}>
                   <Plus className="h-4 w-4 mr-1"/>목록에 없으면 직접 등록
                 </Button>
               </div>
@@ -764,7 +794,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             </div>
             <div className="flex justify-between items-center">
               <p className="text-sm text-gray-500">유해위험요인 {riskItemsForMethod.length}건 · 미평가 {riskItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
-              <Button size="sm" onClick={()=>{ setAddRiskMode("legacy"); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setShowAddRisk(true); }}><Plus className="h-4 w-4 mr-1"/>유해위험요인 등록</Button>
+              <Button size="sm" onClick={()=>{ setAddRiskMode("legacy"); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setShowAddRisk(true); }}><Plus className="h-4 w-4 mr-1"/>유해위험요인 등록</Button>
             </div>
             {sortedRiskItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>등록된 유해위험요인이 없습니다.</p></div>}
             {sortedRiskItems.map(item=>renderRiskItemCard(item))}
@@ -840,6 +870,15 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 </select>
               </div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">현장 추가정보 (선택)</label><Input value={riskForm.fieldInfo} onChange={e=>setRiskForm(p=>({...p,fieldInfo:e.target.value}))} placeholder="예: 승강기 고유번호, 관리번호 등"/></div>
+              {addRiskMode==="template" && (
+                <label className="flex items-start gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 rounded-xl p-3 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={isMandatoryForm} onChange={e=>setIsMandatoryForm(e.target.checked)} />
+                  <span className="text-xs text-red-700 dark:text-red-400">
+                    <span className="font-medium block">필수 평가 항목으로 등록</span>
+                    이 항목은 1인 1선택 대상에서 제외되고, 팀원 전원이 본인 선택과 별개로 반드시 평가해야 합니다. (예: 서울강서지사 특화 위험요인)
+                  </span>
+                </label>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">사진 첨부 (최대 5장)</label>
                 <input type="file" accept="image/*" multiple className="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700" onChange={handleRiskImage}/>
@@ -859,6 +898,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   registeredById: empId,
                   registeredByName: empName,
                   ...(addRiskMode !== "legacy" ? { team: addRiskTeam, isTemplate: addRiskMode === "template" } : {}),
+                  ...(addRiskMode === "template" ? { isMandatory: isMandatoryForm } : {}),
                   ...(addRiskMode === "direct" ? { selectEmployeeId: empId, selectEmployeeName: empName } : {}),
                 })}>{createRiskItem.isPending?"저장 중...":"저장"}</Button>
               </div>
@@ -919,10 +959,32 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               <Button
                 className="w-full"
                 disabled={adminTemplates.length>=10}
-                onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setShowAddRisk(true); }}
+                onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setShowAddRisk(true); }}
               >
                 <Plus className="h-4 w-4 mr-1"/>{adminTemplates.length>=10 ? "최대 10개 등록됨" : "예시 추가"}
               </Button>
+
+              <div className="border-t border-border pt-4 space-y-2">
+                <p className="text-sm font-medium text-red-700 dark:text-red-400">필수 평가 항목 관리</p>
+                <p className="text-xs text-muted-foreground">1인 1선택 대상에서 제외되고, 팀원 전원이 별도로 평가해야 하는 항목입니다. (예: 서울강서지사 특화 위험요인)</p>
+                {adminMandatoryItems.length===0 && <p className="text-sm text-gray-400 text-center py-4">등록된 필수 항목이 없습니다.</p>}
+                {adminMandatoryItems.map(t=>(
+                  <div key={t.id} className="flex items-center justify-between gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 rounded-lg p-2.5">
+                    <div className="min-w-0">
+                      <p className="text-sm truncate">{t.content}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{t.branchId}</p>
+                    </div>
+                    <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(true); setShowAddRisk(true); }}
+                >
+                  <Plus className="h-4 w-4 mr-1"/>필수 항목 추가
+                </Button>
+              </div>
             </div>
           </div>
         </div>

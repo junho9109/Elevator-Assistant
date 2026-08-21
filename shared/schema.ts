@@ -479,6 +479,7 @@ export const riskHazardItems = pgTable("risk_hazard_items", {
   registeredByName: varchar("registered_by_name", { length: 50 }).notNull(),
   team: varchar("team", { length: 50 }),                  // 팀(반) — 관리자 예시/팀원 직접등록 시 지정. 기존 항목은 null(미분류)
   isTemplate: boolean("is_template").default(false).notNull(), // true=관리자가 등록한 예시(선택 전까지 평가 대상 아님)
+  isMandatory: boolean("is_mandatory").default(false).notNull(), // true=특정 지사 필수항목. 1인1선택 대상에서 제외되고 팀원 전원이 별도로 평가해야 함
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -1228,6 +1228,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: isMandatory 컬럼 추가 + 팀별 예시 10건 시딩 (완료 후 제거 예정)
+  app.get("/api/debug/seed-mandatory-risk-items", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { db } = await import("./db");
+      const { sql: sqlOp } = await import("drizzle-orm");
+      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS is_mandatory boolean NOT NULL DEFAULT false`);
+      if (req.query.seed !== "1") return res.json({ ok: true, migrated: true, seeded: false });
+      const { riskHazardItems } = await import("@shared/schema");
+      const admin = { registeredById: "노준호", registeredByName: "노준호", branchId: "서울강서지사" as string };
+      const items = [
+        { ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: "기계실 검사", content: "권상기·과속조절기 회전체 보호커버 미비로 인한 협착(끼임) 위험", discoveryPath: "아차사고", team: "전기식 엘리베이터 1반", isTemplate: true, isMandatory: false },
+        { ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: "기계실 검사", content: "기계실 제어반 점검·전류 측정 중 감전 위험", discoveryPath: "아차사고", team: "전기식 엘리베이터 1반", isTemplate: true, isMandatory: false },
+        { ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: "카상부(체대) 검사", content: "카 상부 이동 중 돌출물 충돌 및 추락 위험", discoveryPath: "아차사고", team: "전기식 엘리베이터 1반", isTemplate: true, isMandatory: false },
+        { ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: "피트 검사", content: "피트 사다리 미설치·규격 미달로 인한 미끄러짐·추락 위험", discoveryPath: "아차사고", team: "유압식 엘리베이터 2반", isTemplate: true, isMandatory: false },
+        { ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: "피트 검사", content: "피트 바닥 기름·누수로 인한 전도·화재·감전 위험", discoveryPath: "순회점검", team: "유압식 엘리베이터 2반", isTemplate: true, isMandatory: false },
+        { ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: "피트 검사", content: "피트 스크린(균형추 방호벽) 미설치로 인한 협착·충돌 위험", discoveryPath: "순회점검", fieldInfo: "서울강서지사 현장 6곳 이상(우장산롯데3차, 신정이펜하우스5단지, 목동월드메르디앙3차, 홍진빌딩, 코아상가, 삼성한사랑1차 등) 반복 지적됨", team: "유압식 엘리베이터 2반", isTemplate: true, isMandatory: true },
+        { ...admin, method: "freq_severity", workCategory: "에스컬레이터", subWork: "콤·스텝 검사", content: "콤 플레이트·스텝 틈새 검사 중 손가락 끼임 위험", discoveryPath: "아차사고", team: "에스컬레이터 및 휠체어리프트 3반", isTemplate: true, isMandatory: false },
+        { ...admin, method: "freq_severity", workCategory: "수직형 휠체어리프트", subWork: "구동부 검사", content: "휠체어리프트 주로프 인입구 손가락 끼임 위험", discoveryPath: "아차사고", team: "에스컬레이터 및 휠체어리프트 3반", isTemplate: true, isMandatory: false },
+        { ...admin, method: "checklist", workCategory: "사무", subWork: "사무실 내 이동", content: "사무실·계단 이동 중 바닥 미끄러짐·단차로 인한 낙상 위험", discoveryPath: "아차사고", team: "사무업무 4반", isTemplate: true, isMandatory: false },
+        { ...admin, method: "checklist", workCategory: "출장", subWork: "출퇴근·현장 이동", content: "출장 및 출퇴근 차량 이동 중 교통사고 위험", discoveryPath: "아차사고", team: "사무업무 4반", isTemplate: true, isMandatory: false },
+      ];
+      const inserted = await db.insert(riskHazardItems).values(items as any).returning({ id: riskHazardItems.id, content: riskHazardItems.content, team: riskHazardItems.team, isMandatory: riskHazardItems.isMandatory });
+      res.json({ ok: true, migrated: true, seeded: true, inserted });
+    } catch (error) {
+      res.status(500).json({ error: "failed", detail: String(error) });
+    }
+  });
+
   // ── 위험성평가: 팀 배정 오버라이드 (본인 선택 또는 관리자 지정, 언제든 재변경 가능) ──
   app.get("/api/employee-team-overrides", async (req, res) => {
     try {
