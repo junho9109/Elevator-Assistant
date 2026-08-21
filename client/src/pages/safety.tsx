@@ -191,6 +191,22 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(myTeam)}`); return r.json(); },
     enabled: ready && !!myTeam,
   });
+  // 다른 팀 조회 (읽기 전용) — 본인 팀이 아닌 다른 팀을 골라서 결과만 볼 수 있게
+  const [viewOtherTeam, setViewOtherTeam] = useState("");
+  const { data: otherTeamItems = [] } = useQuery<RiskHazardItem[]>({
+    queryKey: ["/api/risk-hazard-items", "view", viewOtherTeam],
+    queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?team=${encodeURIComponent(viewOtherTeam)}`); return r.json(); },
+    enabled: ready && !!viewOtherTeam && viewOtherTeam !== myTeam,
+  });
+  const { data: otherTeamSelections = [] } = useQuery<RiskItemSelection[]>({
+    queryKey: ["/api/risk-item-selections", "view", viewOtherTeam],
+    queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(viewOtherTeam)}`); return r.json(); },
+    enabled: ready && !!viewOtherTeam && viewOtherTeam !== myTeam,
+  });
+  const otherTeamActiveItems = useMemo(() => {
+    const selectedIds = new Set(otherTeamSelections.map(s => s.hazardItemId));
+    return otherTeamItems.filter(t => selectedIds.has(t.id));
+  }, [otherTeamItems, otherTeamSelections]);
   // 관리자 예시 관리 패널 — 열려있을 때만, 선택한 팀 기준 조회
   const { data: adminTeamItems = [] } = useQuery<RiskHazardItem[]>({
     queryKey: ["/api/risk-hazard-items", "admin", templateManagerTeam],
@@ -202,13 +218,22 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(templateManagerTeam)}`); return r.json(); },
     enabled: showTemplateManager && !!templateManagerTeam,
   });
-  // 관리자용 팀원 배정 관리 — 전체 오버라이드 목록(선택된 팀 소속 여부 계산용)
+  // 전체 팀 배정 오버라이드 목록 — 명단(TEAM_ROSTERS) 기준 팀 소속을 보정하는 데 씀 (관리자 배정 관리 + 선택 현황 표시등 둘 다 사용)
   const { data: allTeamOverrides = [] } = useQuery<EmployeeTeamOverride[]>({
-    queryKey: ["/api/employee-team-overrides", "admin-all"],
+    queryKey: ["/api/employee-team-overrides", "all"],
     queryFn: async () => { const r = await fetch(`/api/employee-team-overrides`); return r.json(); },
-    enabled: showTemplateManager,
+    enabled: ready,
   });
   const overrideByEmployeeId = useMemo(() => new Map(allTeamOverrides.map(o => [o.employeeId, o])), [allTeamOverrides]);
+  function membersOfTeam(teamName: string): string[] {
+    const rosterMembers = TEAM_ROSTERS.find(t => t.name === teamName)?.members || [];
+    const overriddenIntoTeam = allTeamOverrides.filter(o => o.team === teamName).map(o => o.employeeId);
+    const set = new Set<string>();
+    rosterMembers.forEach(m => { const ov = overrideByEmployeeId.get(m); if (!ov || ov.team === teamName) set.add(m); });
+    overriddenIntoTeam.forEach(m => set.add(m));
+    return Array.from(set);
+  }
+  const myTeamMembers = useMemo(() => myTeam ? membersOfTeam(myTeam) : [], [myTeam, allTeamOverrides]);
   const [newMemberName, setNewMemberName] = useState("");
   const adminSetTeamMutation = useMutation({
     mutationFn: async ({ employeeId, team }: { employeeId: string; team: string }) => {
@@ -219,14 +244,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/employee-team-overrides"] }); toast({ title: "팀 배정을 변경했습니다." }); setNewMemberName(""); },
   });
   // 현재 관리 중인 팀에 속한 사람 목록 = 명단 멤버 ∪ (그 팀으로 오버라이드된 사람) - (다른 팀으로 오버라이드된 명단 멤버)
-  const templateManagerTeamMembers = useMemo(() => {
-    const rosterMembers = TEAM_ROSTERS.find(t => t.name === templateManagerTeam)?.members || [];
-    const overriddenIntoTeam = allTeamOverrides.filter(o => o.team === templateManagerTeam).map(o => o.employeeId);
-    const set = new Set<string>();
-    rosterMembers.forEach(m => { const ov = overrideByEmployeeId.get(m); if (!ov || ov.team === templateManagerTeam) set.add(m); });
-    overriddenIntoTeam.forEach(m => set.add(m));
-    return Array.from(set);
-  }, [templateManagerTeam, allTeamOverrides, overrideByEmployeeId]);
+  const templateManagerTeamMembers = useMemo(() => membersOfTeam(templateManagerTeam), [templateManagerTeam, allTeamOverrides]);
 
   const createPpe = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/ppe", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({...data, employeeId: empId, employeeName: empName}) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"보호구가 등록되었습니다."}); setShowAddPPE(false); } });
   const deletePpe = useMutation({ mutationFn: async (id: number) => { await fetch(`/api/ppe/${id}`, {method:"DELETE"}); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"삭제되었습니다."}); } });
@@ -644,6 +662,23 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             {!mySelection ? (
               <div className="space-y-3">
                 <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요. 목록에 없으면 직접 등록할 수 있습니다.</p>
+                {myTeamMembers.length>0 && (
+                  <div className="bg-card rounded-xl border border-border p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">팀원 선택 현황 · {teamSelections.length}/{myTeamMembers.length}명</p>
+                    <div className="space-y-1">
+                      {myTeamMembers.map(memberName=>{
+                        const done = teamSelections.some(s=>s.employeeName===memberName);
+                        return (
+                          <div key={memberName} className="flex items-center gap-2 py-1">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                            <span className={`text-sm flex-1 ${done?"":"text-muted-foreground"}`}>{memberName}</span>
+                            <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"선택완료":"미선택"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {availableTemplates.length===0 && teamItems.filter(t=>t.isTemplate).length===0 && (
                   <div className="text-center py-8 text-gray-400"><ClipboardCheck className="h-10 w-10 mx-auto mb-2 opacity-30"/><p className="text-sm">등록된 예시가 없습니다. 관리자에게 문의하거나 직접 등록해주세요.</p></div>
                 )}
@@ -684,6 +719,36 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 {sortedActiveTeamItems.map(item=>renderRiskItemCard(item))}
               </>
             )}
+
+            <div className="pt-2 border-t border-border">
+              <p className="text-sm font-medium mb-1">다른 팀 조회</p>
+              <p className="text-xs text-muted-foreground mb-2">평가는 본인 팀에서만 할 수 있고, 다른 팀은 결과만 볼 수 있습니다.</p>
+              <div className="flex gap-1.5 flex-wrap mb-2">
+                {TEAM_ROSTERS.filter(t=>t.name!==myTeam).map(t=>(
+                  <button key={t.name} onClick={()=>setViewOtherTeam(v=>v===t.name?"":t.name)} className={`text-xs px-2.5 py-1.5 rounded-lg border ${viewOtherTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>{t.name}</button>
+                ))}
+              </div>
+              {viewOtherTeam && (
+                otherTeamActiveItems.length===0
+                  ? <p className="text-sm text-gray-400 text-center py-6">선택된 항목이 없습니다.</p>
+                  : <div className="space-y-2">
+                      {otherTeamActiveItems.map(item=>{
+                        const agg = computeAggregate(item.id, item.method);
+                        return (
+                          <div key={item.id} className="bg-card rounded-xl border border-border p-3">
+                            <p className="text-sm font-medium">{item.content}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">등록: {item.registeredByName}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {agg
+                                ? (item.method==="checklist" ? `위험도 ${(agg as any).level}` : `위험성 ${(agg as any).risk} · ${(agg as any).participants}명 평가`)
+                                : "아직 평가 없음"}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+              )}
+            </div>
           </div>
         )}
 
