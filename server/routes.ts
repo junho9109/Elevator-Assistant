@@ -927,6 +927,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e) { res.status(500).json({ error: "Failed to save insp-std override" }); }
   });
 
+  // TEMP DEBUG: 별표3 정밀안전검사 불합격 항목 전면 재작성 (PDF 원문 전사, group 필드 포함)
+  app.get("/api/debug/fix-byeopyo3", async (req, res) => {
+    try {
+      const secret = req.query.secret;
+      if (secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const apply = req.query.apply === "1";
+
+      const { jeongisik, yuapsik, sohyung, deomweiteo, eseukeulleiteo } = await import("./byeopyo3-data");
+
+      const docs: { key: string; title: string; rows: typeof jeongisik }[] = [
+        { key: "판정지침_별표3_전기식", title: "[별표3] 전기식 엘리베이터 (정밀안전검사)", rows: jeongisik },
+        { key: "판정지침_별표3_유압식", title: "[별표3] 유압식 엘리베이터 (정밀안전검사)", rows: yuapsik },
+        { key: "판정지침_별표3_소형", title: "[별표3] 소형 엘리베이터 (정밀안전검사)", rows: sohyung },
+        { key: "판정지침_별표3_덤웨이터", title: "[별표3] 덤웨이터 (정밀안전검사)", rows: deomweiteo },
+        { key: "판정지침_별표3_에스컬레이터", title: "[별표3] 에스컬레이터 및 무빙워크 (정밀안전검사)", rows: eseukeulleiteo },
+      ];
+
+      const summary = docs.map(d => ({
+        key: d.key,
+        rowCount: d.rows.length,
+        groupCount: new Set(d.rows.map(r => r.group)).size,
+        sample: d.rows.slice(0, 3).map(r => ({ ref: r.ref, target: r.target, group: r.group })),
+      }));
+
+      if (!apply) {
+        return res.json({ dryRun: true, docs: summary });
+      }
+
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const results: any[] = [];
+      for (const d of docs) {
+        const payload = {
+          title: d.title,
+          rows: d.rows.map(r => ({
+            ref: r.ref,
+            target: r.target,
+            content: r.content.map(c => "• " + c).join("\n"),
+            group: r.group,
+          })),
+        };
+        const text = JSON.stringify(payload);
+        const existing = await db.select().from(inspStdOverrides).where(eq(inspStdOverrides.itemKey, d.key)).limit(1);
+        if (existing.length > 0) {
+          await db.update(inspStdOverrides).set({ text, source: "판정지침_수정", updatedAt: new Date() }).where(eq(inspStdOverrides.itemKey, d.key));
+        } else {
+          await db.insert(inspStdOverrides).values({ itemKey: d.key, text, source: "판정지침_수정" });
+        }
+        results.push({ key: d.key, rowCount: d.rows.length, applied: true });
+      }
+
+      res.json({ applied: true, docs: results });
+    } catch (e) {
+      console.error("[fix-byeopyo3 오류]", e);
+      res.status(500).json({ error: "Failed to fix byeopyo3", detail: String(e) });
+    }
+  });
+
     app.delete("/api/inspection-edits/:itemId", async (req, res) => {
     try {
       const itemId = req.params.itemId;
