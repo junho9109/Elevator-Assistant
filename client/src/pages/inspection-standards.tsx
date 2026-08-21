@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus, Info, ZoomIn, ZoomOut } from "lucide-react";
@@ -56,7 +56,7 @@ const GENERATIONS: GenerationDoc[] = Object.values(generationModules)
   .filter((g) => g?.meta?.effectiveDate)
   .sort((a, b) => a.meta.effectiveDate.localeCompare(b.meta.effectiveDate));
 
-type JudgmentRow   = { ref: string; target: string; content: string };
+type JudgmentRow   = { ref: string; target: string; content: string; group?: string };
 type JudgmentItem  = { num: string; content: string };
 type JudgmentSection =
   | { type: "text";  title: string; text: string }
@@ -614,7 +614,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
         });
       } else if (sec.type === "table") {
         sec.rows.forEach(r => {
-          const hay = `${r.ref || ""}\n${r.target || ""}\n${r.content || ""}`;
+          const hay = `${r.group || ""}\n${r.ref || ""}\n${r.target || ""}\n${r.content || ""}`;
           if (hay.toLowerCase().includes(kw)) {
             hits.push({ docId: "judgment2016", scopeLabel: "판정지침", itemId: r.ref, title: `${secLabel} · ${r.target || ""}`.trim(), snippet: makeSnippet(r.content || "", q), sectionKey: key });
           }
@@ -1198,6 +1198,12 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
                 ? <div className="space-y-2">
                     {editRows.map((row, i) => (
                       <div key={i} className="bg-muted/40 border border-border rounded-xl p-3 space-y-1.5">
+                        <input
+                          className="w-full text-[11px] font-semibold text-primary/80 border border-dashed border-border rounded-lg px-2 py-1 bg-card"
+                          placeholder="판정기준 대분류 (예: 1.1 제동장치 제동성능 판정기준) — 이전 행과 같으면 비워두세요"
+                          value={row.group || ""}
+                          onChange={e => setEditRows(prev => prev.map((r, idx) => idx === i ? { ...r, group: e.target.value } : r))}
+                        />
                         <div className="flex items-center gap-2">
                           <input
                             className="w-24 text-[11px] font-semibold text-primary border border-border rounded-lg px-2 py-1 bg-card"
@@ -1227,7 +1233,7 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
                       </div>
                     ))}
                     <button
-                      onClick={() => setEditRows(prev => [...prev, { ref: "", target: "", content: "" }])}
+                      onClick={() => setEditRows(prev => [...prev, { ref: "", target: "", content: "", group: "" }])}
                       className="w-full text-xs py-2 rounded-lg border border-dashed border-primary text-primary hover:bg-primary/5 transition-colors">
                       + 행 추가
                     </button>
@@ -1244,11 +1250,18 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
                       </thead>
                       <tbody>
                         {cur.rows.map((row, i) => (
-                          <tr key={i} className={i % 2 === 0 ? "" : "bg-muted/20"}>
-                            <td className="border border-border px-2 py-2 text-primary font-semibold align-top text-[11px] leading-relaxed">{row.ref}</td>
-                            <td className="border border-border px-2 py-2 align-top leading-relaxed">{row.target}</td>
-                            <td className="border border-border px-2 py-2 leading-relaxed whitespace-pre-wrap align-top">{row.content}</td>
-                          </tr>
+                          <Fragment key={i}>
+                            {row.group && row.group !== cur.rows[i - 1]?.group && (
+                              <tr className="bg-primary/10">
+                                <td colSpan={3} className="border border-border px-2 py-1.5 text-primary font-semibold text-[11px]">{row.group}</td>
+                              </tr>
+                            )}
+                            <tr className={i % 2 === 0 ? "" : "bg-muted/20"}>
+                              <td className="border border-border px-2 py-2 text-primary font-semibold align-top text-[11px] leading-relaxed">{row.ref}</td>
+                              <td className="border border-border px-2 py-2 align-top leading-relaxed">{row.target}</td>
+                              <td className="border border-border px-2 py-2 leading-relaxed whitespace-pre-wrap align-top">{row.content}</td>
+                            </tr>
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>

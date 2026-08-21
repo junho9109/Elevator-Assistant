@@ -24,7 +24,7 @@ import ReactMarkdown from "react-markdown";
 
 // ── 판정지침(승강기검사결과 판정지침) — AI검색 [2순위] 컨텍스트용 ──────────
 // inspection-standards.tsx가 화면에 보여주는 것과 동일한 원본 데이터.
-type JudgmentRow2  = { ref: string; target: string; content: string };
+type JudgmentRow2  = { ref: string; target: string; content: string; group?: string };
 type JudgmentItem2 = { num: string; content: string };
 type JudgmentSection2 =
   | { type: "text";  title: string; text: string }
@@ -34,7 +34,10 @@ const JUDGMENT_SECTIONS_AI = JUDGMENT_DATA as unknown as Record<string, Judgment
 function judgmentSectionToText(sec: JudgmentSection2): string {
   if (sec.type === "text") return sec.text || "";
   if (sec.type === "list") return (sec.items || []).map(it => `${it.num} ${it.content}`).join("\n");
-  if (sec.type === "table") return (sec.rows || []).map(r => `${r.ref} ${r.target}: ${r.content}`).join("\n");
+  if (sec.type === "table") return (sec.rows || []).map((r, i, arr) => {
+    const groupLine = r.group && r.group !== arr[i - 1]?.group ? `[${r.group}]\n` : "";
+    return `${groupLine}${r.ref} ${r.target}: ${r.content}`;
+  }).join("\n");
   return "";
 }
 // STD_DATA JSON 제거 — DB(std_item_overrides) 전용으로 이전 완료
