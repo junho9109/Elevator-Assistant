@@ -1228,6 +1228,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: employee_team_overrides 테이블 생성 (스키마 최초 배포 후 제거 예정)
+  app.get("/api/debug/create-team-overrides-table", async (req, res) => {
+    try {
+      const secret = req.query.secret;
+      if (secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS employee_team_overrides (
+          id serial PRIMARY KEY,
+          employee_id varchar(50) NOT NULL UNIQUE,
+          team varchar(50) NOT NULL,
+          set_by varchar(20),
+          updated_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to create table", detail: String(e) });
+    }
+  });
+
+  // ── 위험성평가: 팀 배정 오버라이드 (본인 선택 또는 관리자 지정, 언제든 재변경 가능) ──
+  app.get("/api/employee-team-overrides", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { employeeTeamOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const employeeId = req.query.employeeId as string | undefined;
+      const rows = employeeId
+        ? await db.select().from(employeeTeamOverrides).where(eq(employeeTeamOverrides.employeeId, employeeId))
+        : await db.select().from(employeeTeamOverrides);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch employee team overrides");
+    }
+  });
+
+  app.put("/api/employee-team-overrides/:employeeId", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { employeeTeamOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const employeeId = req.params.employeeId;
+      const { team, setBy } = req.body as { team: string; setBy?: string };
+      if (!team) return res.status(400).json({ error: "team is required" });
+      const existing = await db.select().from(employeeTeamOverrides).where(eq(employeeTeamOverrides.employeeId, employeeId)).limit(1);
+      let row;
+      if (existing.length > 0) {
+        [row] = await db.update(employeeTeamOverrides).set({ team, setBy: setBy || null, updatedAt: new Date() }).where(eq(employeeTeamOverrides.employeeId, employeeId)).returning();
+      } else {
+        [row] = await db.insert(employeeTeamOverrides).values({ employeeId, team, setBy: setBy || null }).returning();
+      }
+      res.json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to save team override", detail: String(error) });
+    }
+  });
+
+  app.delete("/api/employee-team-overrides/:employeeId", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { employeeTeamOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(employeeTeamOverrides).where(eq(employeeTeamOverrides.employeeId, req.params.employeeId));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete team override", detail: String(error) });
+    }
+  });
+
   // Judgment results routes
   app.get("/api/judgment-results/:sessionId", async (req, res) => {
     try {

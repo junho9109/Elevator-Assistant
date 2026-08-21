@@ -537,3 +537,19 @@ export const insertRiskAssessmentSchema = createInsertSchema(riskAssessments).om
 export type InsertRiskAssessment = z.infer<typeof insertRiskAssessmentSchema>;
 export type RiskAssessment = typeof riskAssessments.$inferSelect;
 
+// ── 위험성평가: 팀 배정 오버라이드 — TEAM_ROSTERS 고정 명단 대신 본인 선택 또는 관리자 지정으로
+// 팀을 바꿀 수 있게 함. employeeId(=로그인 이름) 당 1개, 언제든 다시 변경 가능(잠금 없음). ──
+export const employeeTeamOverrides = pgTable("employee_team_overrides", {
+  id: serial("id").primaryKey(),
+  employeeId: varchar("employee_id", { length: 50 }).notNull().unique(), // 로그인 이름
+  team: varchar("team", { length: 50 }).notNull(),                      // 배정된 팀(반) 이름
+  setBy: varchar("set_by", { length: 20 }),                             // 'self' | 'admin'
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export const insertEmployeeTeamOverrideSchema = createInsertSchema(employeeTeamOverrides).omit({
+  id: true,
+  updatedAt: true,
+});
+export type InsertEmployeeTeamOverride = z.infer<typeof insertEmployeeTeamOverrideSchema>;
+export type EmployeeTeamOverride = typeof employeeTeamOverrides.$inferSelect;
+

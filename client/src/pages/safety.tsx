@@ -16,6 +16,7 @@ type RiskHazardItem = {
   registeredById: string; registeredByName: string; team: string | null; isTemplate: boolean; createdAt: string;
 };
 type RiskItemSelection = { id: number; hazardItemId: number; employeeId: string; employeeName: string; createdAt: string; };
+type EmployeeTeamOverride = { id: number; employeeId: string; team: string; setBy: string | null; updatedAt: string; };
 type RiskAssessment = {
   id: number; hazardItemId: number; branchId: string; employeeId: string; employeeName: string;
   level: string | null; hadAccidentExperience: boolean | null; severity: number | null;
@@ -122,7 +123,24 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const branchName = org || DEFAULT_BRANCH;
   const ready = !!(org && name);
   const isAdmin = role === "admin";
-  const myTeam = useMemo(() => getTeamsForName(name)[0] || "", [name]); // 소속 팀 (팀 명단에 없으면 "" → 기존 방식 그대로)
+  // 소속 팀 — 기본은 명단(TEAM_ROSTERS) 기준이지만, 본인이 직접 바꾸거나 관리자가 지정한 오버라이드가 있으면 그걸 우선한다.
+  // 오버라이드는 누가 설정했든(본인/관리자) 항상 다시 바꿀 수 있다(잠금 없음).
+  const { data: myTeamOverrideRows = [] } = useQuery<EmployeeTeamOverride[]>({
+    queryKey: ["/api/employee-team-overrides", "self", name],
+    queryFn: async () => { const r = await fetch(`/api/employee-team-overrides?employeeId=${encodeURIComponent(name)}`); return r.json(); },
+    enabled: !!name,
+  });
+  const myTeamOverride = myTeamOverrideRows[0];
+  const myTeam = useMemo(() => myTeamOverride?.team || getTeamsForName(name)[0] || "", [name, myTeamOverride]);
+  const [showTeamPicker, setShowTeamPicker] = useState(false);
+  const setMyTeamMutation = useMutation({
+    mutationFn: async (team: string) => {
+      const r = await fetch(`/api/employee-team-overrides/${encodeURIComponent(name)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team, setBy: "self" }) });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/employee-team-overrides"] }); toast({ title: "팀을 변경했습니다." }); setShowTeamPicker(false); },
+  });
   const [showAddPPE, setShowAddPPE] = useState(false);
   const [riskMethod, setRiskMethod] = useState<RiskMethod>("checklist");
   const [showAddRisk, setShowAddRisk] = useState(false);
@@ -184,6 +202,31 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(templateManagerTeam)}`); return r.json(); },
     enabled: showTemplateManager && !!templateManagerTeam,
   });
+  // 관리자용 팀원 배정 관리 — 전체 오버라이드 목록(선택된 팀 소속 여부 계산용)
+  const { data: allTeamOverrides = [] } = useQuery<EmployeeTeamOverride[]>({
+    queryKey: ["/api/employee-team-overrides", "admin-all"],
+    queryFn: async () => { const r = await fetch(`/api/employee-team-overrides`); return r.json(); },
+    enabled: showTemplateManager,
+  });
+  const overrideByEmployeeId = useMemo(() => new Map(allTeamOverrides.map(o => [o.employeeId, o])), [allTeamOverrides]);
+  const [newMemberName, setNewMemberName] = useState("");
+  const adminSetTeamMutation = useMutation({
+    mutationFn: async ({ employeeId, team }: { employeeId: string; team: string }) => {
+      const r = await fetch(`/api/employee-team-overrides/${encodeURIComponent(employeeId)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team, setBy: "admin" }) });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/employee-team-overrides"] }); toast({ title: "팀 배정을 변경했습니다." }); setNewMemberName(""); },
+  });
+  // 현재 관리 중인 팀에 속한 사람 목록 = 명단 멤버 ∪ (그 팀으로 오버라이드된 사람) - (다른 팀으로 오버라이드된 명단 멤버)
+  const templateManagerTeamMembers = useMemo(() => {
+    const rosterMembers = TEAM_ROSTERS.find(t => t.name === templateManagerTeam)?.members || [];
+    const overriddenIntoTeam = allTeamOverrides.filter(o => o.team === templateManagerTeam).map(o => o.employeeId);
+    const set = new Set<string>();
+    rosterMembers.forEach(m => { const ov = overrideByEmployeeId.get(m); if (!ov || ov.team === templateManagerTeam) set.add(m); });
+    overriddenIntoTeam.forEach(m => set.add(m));
+    return Array.from(set);
+  }, [templateManagerTeam, allTeamOverrides, overrideByEmployeeId]);
 
   const createPpe = useMutation({ mutationFn: async (data: any) => { const r = await fetch("/api/ppe", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({...data, employeeId: empId, employeeName: empName}) }); if(!r.ok) throw new Error(); return r.json(); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"보호구가 등록되었습니다."}); setShowAddPPE(false); } });
   const deletePpe = useMutation({ mutationFn: async (id: number) => { await fetch(`/api/ppe/${id}`, {method:"DELETE"}); }, onSuccess: () => { qc.invalidateQueries({queryKey:["/api/ppe"]}); toast({title:"삭제되었습니다."}); } });
@@ -589,7 +632,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         {activeTab==="risk" && ready && myTeam && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <p className="text-sm text-gray-500">{myTeam} · {empName}님</p>
+              <p className="text-sm text-gray-500">
+                {myTeam} · {empName}님
+                <button onClick={()=>setShowTeamPicker(true)} className="ml-2 text-xs text-primary underline">변경</button>
+              </p>
               {isAdmin && (
                 <Button size="sm" variant="outline" onClick={()=>{ const t = myTeam || TEAM_ROSTERS[0].name; setTemplateManagerTeam(t); setRiskMethod(t==="사무업무 4반" ? "checklist" : "freq_severity"); setShowTemplateManager(true); }}>예시 관리</Button>
               )}
@@ -645,6 +691,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <p className="text-sm text-gray-500">{branchName} · {empName}님</p>
+              <Button size="sm" variant="outline" onClick={()=>setShowTeamPicker(true)}>팀 선택하기</Button>
             </div>
             <div className="flex gap-2">
               <button onClick={()=>setRiskMethod("checklist")} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-medium border ${riskMethod==="checklist"?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>사무 · 체크리스트법</button>
@@ -765,6 +812,29 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <button key={t.name} onClick={()=>{ setTemplateManagerTeam(t.name); setRiskMethod(t.name==="사무업무 4반" ? "checklist" : "freq_severity"); }} className={`text-xs px-2.5 py-1.5 rounded-lg border ${templateManagerTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>{t.name}</button>
                 ))}
               </div>
+              <div className="bg-muted/30 rounded-xl p-3 space-y-2">
+                <p className="text-sm font-medium">팀원 배정 관리</p>
+                <p className="text-xs text-muted-foreground">이 팀 소속으로 표시할 사람과, 각자의 팀을 여기서 바꿀 수 있습니다.</p>
+                <div className="space-y-1.5">
+                  {templateManagerTeamMembers.length===0 && <p className="text-xs text-gray-400 py-2">배정된 팀원이 없습니다.</p>}
+                  {templateManagerTeamMembers.map(memberName=>(
+                    <div key={memberName} className="flex items-center justify-between gap-2 bg-card rounded-lg p-2 border border-border">
+                      <span className="text-sm truncate">{memberName}</span>
+                      <select
+                        className="text-xs border border-border rounded-lg px-2 py-1 bg-card"
+                        value={templateManagerTeam}
+                        onChange={e=>adminSetTeamMutation.mutate({ employeeId: memberName, team: e.target.value })}
+                      >
+                        {TEAM_ROSTERS.map(t=><option key={t.name} value={t.name}>{t.name}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-1.5 pt-1">
+                  <Input placeholder="이름 입력" value={newMemberName} onChange={e=>setNewMemberName(e.target.value)} className="text-sm h-8" />
+                  <Button size="sm" disabled={!newMemberName.trim() || adminSetTeamMutation.isPending} onClick={()=>adminSetTeamMutation.mutate({ employeeId: newMemberName.trim(), team: templateManagerTeam })}>추가</Button>
+                </div>
+              </div>
               <p className="text-xs text-muted-foreground">{adminTemplates.length}/10개 등록됨</p>
               <div className="space-y-2">
                 {adminTemplates.length===0 && <p className="text-sm text-gray-400 text-center py-6">등록된 예시가 없습니다.</p>}
@@ -788,6 +858,30 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               >
                 <Plus className="h-4 w-4 mr-1"/>{adminTemplates.length>=10 ? "최대 10개 등록됨" : "예시 추가"}
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showTeamPicker&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowTeamPicker(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-1">
+              <h2 className="text-lg font-bold">팀 변경</h2>
+              <button onClick={()=>setShowTeamPicker(false)} className="text-gray-400"><X className="h-5 w-5"/></button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">소속 팀을 선택하세요. 언제든 다시 바꿀 수 있습니다.</p>
+            <div className="space-y-2">
+              {TEAM_ROSTERS.map(t=>(
+                <button
+                  key={t.name}
+                  onClick={()=>setMyTeamMutation.mutate(t.name)}
+                  disabled={setMyTeamMutation.isPending}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border text-sm ${myTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card border-border hover:bg-muted"}`}
+                >
+                  {t.name}
+                </button>
+              ))}
             </div>
           </div>
         </div>
