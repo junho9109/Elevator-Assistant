@@ -132,6 +132,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   });
   const myTeamOverride = myTeamOverrideRows[0];
   const myTeam = useMemo(() => myTeamOverride?.team || getTeamsForName(name)[0] || "", [name, myTeamOverride]);
+  // 팀마다 평가 방식이 고정되어 있음 — 이용자가 직접 고를 필요 없이 소속 팀에 맞는 방식을 안내만 함
+  const myTeamMethod: RiskMethod = myTeam === "사무업무 4반" ? "checklist" : "freq_severity";
   const [showTeamPicker, setShowTeamPicker] = useState(false);
   const setMyTeamMutation = useMutation({
     mutationFn: async (team: string) => {
@@ -357,7 +359,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const mandatoryTeamItems = useMemo(() => teamItems.filter(t => t.isMandatory), [teamItems]);
   const mySelection = teamSelections.find(s => s.employeeId === empId);
   const activeTeamItems = useMemo(() => teamItems.filter(t => selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
-  const activeTeamItemsForMethod = useMemo(() => activeTeamItems.filter(i => i.method === riskMethod), [activeTeamItems, riskMethod]);
+  const activeTeamItemsForMethod = useMemo(() => activeTeamItems.filter(i => i.method === myTeamMethod), [activeTeamItems, myTeamMethod]);
   const sortedActiveTeamItems = useMemo(() => {
     return [...activeTeamItemsForMethod].sort((a, b) => {
       const aMine = myAssessment(a.id) ? 1 : 0;
@@ -381,6 +383,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     const payload: any = { hazardItemId: item.id, branchId: branchName, employeeId: empId, employeeName: empName, implementStatus: f.implementStatus, implementDate: f.implementDate || null, implementOwner: f.implementOwner || null };
     if (item.method === "checklist") {
       payload.level = f.level;
+      payload.currentSafetyMeasure = f.currentSafetyMeasure || null;
       payload.reductionPlan = f.reductionPlan || null;
     } else {
       payload.hadAccidentExperience = f.hadAccidentExperience;
@@ -430,9 +433,6 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             <p className="text-xs text-muted-foreground mt-0.5">등록: {item.registeredByName} · {new Date(item.createdAt).toLocaleDateString()}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {(isAdmin || item.registeredById===empId) && (
-              <button onClick={e=>{e.stopPropagation();setRiskDeleteConfirm(item.id);}} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="h-4 w-4"/></button>
-            )}
             {expandedRisk===item.id?<ChevronUp className="h-4 w-4 text-gray-400"/>:<ChevronDown className="h-4 w-4 text-gray-400"/>}
           </div>
         </div>
@@ -451,6 +451,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   ))}
                 </div>
                 <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${CHECKLIST_LEVEL_COLOR[f.level]}`}>{CHECKLIST_LEVEL_INFO[f.level]}</p>
+                <textarea placeholder="현재 안전보건조치 *" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
                 <textarea placeholder="감소대책 (선택)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
               </>
             ) : (
@@ -473,13 +474,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <span className={`font-semibold ${liveAgg.risk>=9?"text-red-600":"text-green-700"}`}>{liveAgg.risk}</span>
                   </div>
                 )}
-                <textarea placeholder="현재 안전보건조치" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
+                <textarea placeholder="현재 안전보건조치 *" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
                 {liveAgg && liveAgg.risk>=9 && (
                   <textarea placeholder="감소대책 (위험성 9 이상 → 작성 필요)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
                 )}
               </>
             )}
-            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item)} disabled={saveAssessment.isPending}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
+            {!f.currentSafetyMeasure?.trim() && <p className="text-xs text-red-500">현재 안전보건조치를 입력해야 저장할 수 있습니다.</p>}
+            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item)} disabled={saveAssessment.isPending || !f.currentSafetyMeasure?.trim()}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
           </div>
         )}
       </div>
@@ -713,12 +715,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <div className="text-center py-8 text-gray-400"><ClipboardCheck className="h-10 w-10 mx-auto mb-2 opacity-30"/><p className="text-sm">등록된 예시가 없습니다. 관리자에게 문의하거나 직접 등록해주세요.</p></div>
                 )}
                 {availableTemplates.map(t=>(
-                  <div key={t.id} className="bg-card rounded-xl border border-border p-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <Badge variant="outline" className="text-xs mb-1">{t.workCategory}{t.subWork?` · ${t.subWork}`:""}</Badge>
-                      <p className="text-sm font-medium truncate">{t.content}</p>
-                    </div>
-                    <Button size="sm" onClick={()=>selectTemplate.mutate(t.id)} disabled={selectTemplate.isPending} className="shrink-0">선택</Button>
+                  <div key={t.id} className="bg-card rounded-xl border border-border p-3 space-y-2">
+                    <Badge variant="outline" className="text-xs">{t.workCategory}{t.subWork?` · ${t.subWork}`:""}</Badge>
+                    <p className="text-sm font-medium whitespace-pre-wrap">{t.content}</p>
+                    {t.fieldInfo && <p className="text-xs text-muted-foreground">현장정보: {t.fieldInfo}</p>}
+                    {t.imageUrls && t.imageUrls.length>0 && (
+                      <div className="grid grid-cols-3 gap-2">{t.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>
+                    )}
+                    <Button size="sm" className="w-full" onClick={()=>selectTemplate.mutate(t.id)} disabled={selectTemplate.isPending}>선택</Button>
                   </div>
                 ))}
                 {teamItems.filter(t=>t.isTemplate && !t.isMandatory && selectionByItemId.has(t.id)).map(t=>(
@@ -727,7 +731,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <p className="text-xs text-muted-foreground mt-0.5">{selectionByItemId.get(t.id)?.employeeName}님이 선택함</p>
                   </div>
                 ))}
-                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES.freq_severity[0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setShowAddRisk(true); }}>
+                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskMethod(myTeamMethod); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[myTeamMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setShowAddRisk(true); }}>
                   <Plus className="h-4 w-4 mr-1"/>목록에 없으면 직접 등록
                 </Button>
               </div>
@@ -740,9 +744,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   </div>
                   <button onClick={()=>cancelSelection.mutate(mySelection.id)} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
                 </div>
-                <div className="flex gap-2">
-                  <button onClick={()=>setRiskMethod("checklist")} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-medium border ${riskMethod==="checklist"?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>사무 · 체크리스트법</button>
-                  <button onClick={()=>setRiskMethod("freq_severity")} className={`flex-1 text-center py-2 px-3 rounded-lg text-xs font-medium border ${riskMethod==="freq_severity"?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>승강기검사 · 빈도강도법</button>
+                <div className="text-center py-2 px-3 rounded-lg text-xs font-medium border bg-muted/40 text-muted-foreground border-border">
+                  {myTeam} · {myTeamMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}으로 평가합니다
                 </div>
                 <p className="text-sm text-gray-500">평가 대상 {activeTeamItemsForMethod.length}건 · 미평가 {activeTeamItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
                 {sortedActiveTeamItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
