@@ -605,9 +605,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     const withExp = list.filter(a => a.hadAccidentExperience !== null);
     const withSev = list.filter(a => a.severity != null);
     if (withExp.length === 0 && withSev.length === 0) return null;
+    // 중대성이 아직 아무도 평가되지 않았다면(1단계만 끝난 상태) 위험성 자체를 산정할 수 없음 — "허용 가능(0점)"으로 오판해 2단계를 건너뛰지 않도록 별도 처리
+    const severityAssessed = withSev.length > 0;
     const experienced = withExp.filter(a => a.hadAccidentExperience).length;
     const possibility = withExp.length > 0 ? Math.round((experienced / withExp.length) * 5 * 10) / 10 : 0;
-    const avgSeverity = withSev.length > 0 ? Math.round((withSev.reduce((s, a) => s + (a.severity || 0), 0) / withSev.length) * 10) / 10 : 0;
+    const avgSeverity = severityAssessed ? Math.round((withSev.reduce((s, a) => s + (a.severity || 0), 0) / withSev.length) * 10) / 10 : 0;
+    if (!severityAssessed) {
+      return {
+        possibility, avgSeverity: null, risk: null, participants: list.length,
+        level: null, label: null, allow: null,
+        finalRisk: null, finalLevel: null, finalLabel: null, finalAllow: null, resolved: false,
+      };
+    }
     const risk = Math.round(possibility * avgSeverity * 10) / 10;
     const initial = riskLevelOf(risk);
     let finalRisk = risk, finalLevel = initial.level, finalLabel = initial.label, finalAllow = initial.allow, resolved = initial.allow === "허용 가능";
@@ -668,6 +677,16 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const memberExperienceDone = (memberName: string) => activeTeamItemsForMethod.every(item => (assessmentsByItem.get(item.id) || []).some(a => a.employeeName === memberName && a.hadAccidentExperience != null));
   const membersExperienceDoneCount = useMemo(() => myTeamMembers.filter(memberExperienceDone).length, [myTeamMembers, activeTeamItemsForMethod, assessmentsByItem]);
   const experiencePhaseComplete = useMemo(() => myTeamMethod === "freq_severity" && myTeamMembers.length > 0 && myTeamMembers.every(memberExperienceDone), [myTeamMethod, myTeamMembers, activeTeamItemsForMethod, assessmentsByItem]);
+  // 내가 제안한 항목의 경험 여부는 이미 선택 단계에서 답했으므로, 1단계 화면에서 별도 클릭 없이 자동으로 저장
+  useEffect(() => {
+    if (!mySelection || myTeamMethod !== "freq_severity" || experiencePhaseComplete || experiencePhaseForcedOpen) return;
+    const myItem = activeTeamItemsForMethod.find(i => i.id === mySelection.hazardItemId);
+    if (!myItem) return;
+    const mine = assessmentsByItem.get(myItem.id)?.find(a => a.employeeId === empId);
+    if (mine?.hadAccidentExperience != null) return;
+    if (saveAssessment.isPending) return;
+    saveAssessment.mutate({ hazardItemId: myItem.id, branchId: branchName, employeeId: empId, employeeName: empName, round: activeRound, hadAccidentExperience: mySelection.hadAccidentExperience ?? false, currentSafetyMeasure: myItem.referenceSafetyMeasure || null });
+  }, [mySelection?.id, mySelection?.hazardItemId, myTeamMethod, experiencePhaseComplete, experiencePhaseForcedOpen, activeTeamItemsForMethod, assessmentsByItem]);
   const adminTemplates = useMemo(() => adminTeamItems.filter(t => t.isTemplate && !t.isMandatory), [adminTeamItems]);
   const adminMandatoryItems = useMemo(() => adminTeamItems.filter(t => t.isMandatory), [adminTeamItems]);
   // 본인의 필수+수시+선택 항목 평가를 모두 마쳐야 "공유"(다른 팀 결과 보기)가 열림
@@ -733,13 +752,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             <p className="text-sm font-medium mt-0.5">{mine!.hadAccidentExperience ? "예" : "아니오"} <span className="text-xs text-muted-foreground font-normal">(저장됨)</span></p>
           </div>
         ) : isMine ? (
-          <>
-            <div className="bg-muted/40 rounded-lg p-2">
-              <p className="text-xs font-medium text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함) 경험</p>
-              <p className="text-sm font-medium mt-0.5">{myValue ? "예" : "아니오"} <span className="text-xs text-muted-foreground font-normal">(선택 단계에서 답변함)</span></p>
-            </div>
-            <Button size="sm" className="w-full" disabled={saveAssessment.isPending} onClick={()=>submitExperienceOnly(item)}>{saveAssessment.isPending?"저장 중...":"저장"}</Button>
-          </>
+          <div className="bg-muted/40 rounded-lg p-2">
+            <p className="text-xs font-medium text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함) 경험</p>
+            <p className="text-sm font-medium mt-0.5">{myValue ? "예" : "아니오"} <span className="text-xs text-muted-foreground font-normal">(선택 단계에서 답변함 · 자동 저장 중...)</span></p>
+          </div>
         ) : (
           <>
             <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? (가능성 산정)</p>
@@ -818,9 +834,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     const sharedAssessments = (assessmentsByItem.get(item.id) || []).filter(a => a.employeeId !== empId);
     const badge = !mine
       ? { text: "미평가", cls: "bg-orange-100 text-orange-700" }
-      : agg?.resolved
-        ? { text: `평가완료${item.method==="checklist" ? (agg.level?` · ${agg.level}`:"") : (agg.finalRisk!=null?` · 위험성 ${agg.finalRisk}(${agg.finalLevel})`:"")}`, cls: "bg-green-100 text-green-700" }
-        : { text: "허용 불가능 · 개선 필요", cls: "bg-red-100 text-red-700" };
+      : (item.method==="freq_severity" && agg && agg.avgSeverity==null)
+        ? { text: "가능성 답변완료 · 중대성 평가 대기", cls: "bg-blue-100 text-blue-700" }
+        : agg?.resolved
+          ? { text: `평가완료${item.method==="checklist" ? (agg.level?` · ${agg.level}`:"") : (agg.finalRisk!=null?` · 위험성 ${agg.finalRisk}(${agg.finalLevel})`:"")}`, cls: "bg-green-100 text-green-700" }
+          : { text: "허용 불가능 · 개선 필요", cls: "bg-red-100 text-red-700" };
     return (
       <div key={item.id} className={`bg-card rounded-xl shadow-sm border overflow-hidden ${mine?"border-border":"border-orange-400"}`}>
         <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedRisk(expandedRisk===item.id?null:item.id)}>
@@ -1518,7 +1536,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                                 {agg
                                   ? (item.method==="checklist"
                                       ? `위험도 ${agg.level ?? "-"} · ${agg.resolved?"허용 가능(종료)":"허용 불가능(재평가 필요)"}`
-                                      : `위험성 ${agg.finalRisk ?? agg.risk}(${agg.finalLevel ?? agg.level}) · ${agg.finalAllow ?? agg.allow} · ${agg.participants}명 평가 · ${agg.resolved?"종료":"재평가 필요"}`)
+                                      : agg.avgSeverity==null
+                                        ? `가능성 답변완료(${agg.possibility}) · 중대성 평가 대기 · ${agg.participants}명 평가`
+                                        : `위험성 ${agg.finalRisk ?? agg.risk}(${agg.finalLevel ?? agg.level}) · ${agg.finalAllow ?? agg.allow} · ${agg.participants}명 평가 · ${agg.resolved?"종료":"재평가 필요"}`)
                                   : "아직 평가 없음"}
                               </p>
                               {plans.length>0 && (
