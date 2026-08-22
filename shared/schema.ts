@@ -482,8 +482,8 @@ export const riskHazardItems = pgTable("risk_hazard_items", {
   isMandatory: boolean("is_mandatory").default(false).notNull(), // true=특정 지사 필수항목. 1인1선택 대상에서 제외되고 팀원 전원이 별도로 평가해야 함
   // 선택 단계에서 참고할 수 있는 현재 안전보건조치(관리자가 사전에 채워 넣는 참고자료 — 개인 평가 입력값과는 별개)
   referenceSafetyMeasure: text("reference_safety_measure"),
-  // 감소대책은 개인 평가가 아니라 항목(팀 집계) 단위 공동 작성 필드 — 팀 위험성이 사후에 9 이상으로 올라도
-  // 특정 개인의 평가에 귀속되지 않고, 팀 누구나(관리자 포함) 채우거나 고칠 수 있게 함
+  // (사용 안 함 — 예전 "항목 단위 공동 감소대책" 모델의 잔여 컬럼. 개선대책은 riskAssessments.reductionPlan에
+  // 개인별로 저장되고 팀원에게 공유되는 방식으로 되돌아감. 데이터 보존을 위해 컬럼만 남겨둠.)
   reductionPlan: text("reduction_plan"),
   reductionPlanUpdatedBy: varchar("reduction_plan_updated_by", { length: 50 }),
   reductionPlanUpdatedAt: timestamp("reduction_plan_updated_at"),
@@ -499,12 +499,15 @@ export const insertRiskHazardItemSchema = createInsertSchema(riskHazardItems).om
 export type InsertRiskHazardItem = z.infer<typeof insertRiskHazardItemSchema>;
 export type RiskHazardItem = typeof riskHazardItems.$inferSelect;
 
-// ── 위험성평가: 팀원의 항목 선택(예시 선택 또는 직접등록 시 자동 생성) — 항목당 1명만 선택 가능 ──
+// ── 위험성평가: 팀원의 항목 선택(예시 선택 또는 직접등록 시 자동 생성) — 항목당 1명만 선택 가능(회차별) ──
 export const riskItemSelections = pgTable("risk_item_selections", {
   id: serial("id").primaryKey(),
   hazardItemId: integer("hazard_item_id").notNull(),
   employeeId: varchar("employee_id", { length: 50 }).notNull(),
   employeeName: varchar("employee_name", { length: 50 }).notNull(),
+  round: varchar("round", { length: 100 }).notNull(), // 예: '2026년도 정기 위험성평가', 수시평가는 신청 시 부여되는 회차명
+  // 선택과 동시에 답하는 경험 여부 — "선택 단계에서 경험했는지를 같이 선택" 요구사항 반영
+  hadAccidentExperience: boolean("had_accident_experience"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 export const insertRiskItemSelectionSchema = createInsertSchema(riskItemSelections).omit({
@@ -514,13 +517,14 @@ export const insertRiskItemSelectionSchema = createInsertSchema(riskItemSelectio
 export type InsertRiskItemSelection = z.infer<typeof insertRiskItemSelectionSchema>;
 export type RiskItemSelection = typeof riskItemSelections.$inferSelect;
 
-// ── 위험성평가: 개인별 평가입력 ──
+// ── 위험성평가: 개인별 평가입력 (회차별로 누적 — 같은 항목이라도 회차가 다르면 별도 기록) ──
 export const riskAssessments = pgTable("risk_assessments", {
   id: serial("id").primaryKey(),
   hazardItemId: integer("hazard_item_id").notNull(),
   branchId: varchar("branch_id", { length: 50 }).notNull(),
   employeeId: varchar("employee_id", { length: 20 }).notNull(),
   employeeName: varchar("employee_name", { length: 50 }).notNull(),
+  round: varchar("round", { length: 100 }).notNull(),
   // 체크리스트법(사무)
   level: varchar("level", { length: 10 }),               // '상' | '중' | '하'
   // 빈도강도법(승강기검사)
@@ -528,6 +532,8 @@ export const riskAssessments = pgTable("risk_assessments", {
   severity: integer("severity"),                          // 중대성 1~4
   // 공통
   currentSafetyMeasure: text("current_safety_measure"),
+  // 감소대책은 개인별 작성 필드 — 위험성 9 이상인 사람 각자가 본인 의견을 작성하고, 팀원 전체에게 공유되어 노출됨
+  // (하나의 공동 필드로 합치지 않음 — 다양한 개별 의견을 모아 사고를 줄인다는 취지)
   reductionPlan: text("reduction_plan"),
   implementStatus: varchar("implement_status", { length: 10 }), // '완료' | '미완료'
   implementDate: varchar("implement_date", { length: 10 }),
@@ -544,6 +550,27 @@ export const insertRiskAssessmentSchema = createInsertSchema(riskAssessments).om
 });
 export type InsertRiskAssessment = z.infer<typeof insertRiskAssessmentSchema>;
 export type RiskAssessment = typeof riskAssessments.$inferSelect;
+
+// ── 위험성평가: 수시 평가 신청 — 정기 회차 외에 필요할 때 신청하면 관리자가 승인 후 별도 회차로 진행 ──
+export const riskAdhocRequests = pgTable("risk_adhoc_requests", {
+  id: serial("id").primaryKey(),
+  branchId: varchar("branch_id", { length: 50 }).notNull(),
+  team: varchar("team", { length: 50 }).notNull(),
+  requestedById: varchar("requested_by_id", { length: 20 }).notNull(),
+  requestedByName: varchar("requested_by_name", { length: 50 }).notNull(),
+  reason: text("reason").notNull(),
+  status: varchar("status", { length: 10 }).notNull().default("대기"), // '대기' | '진행중' | '완료'
+  round: varchar("round", { length: 100 }), // '진행중'으로 전환 시 관리자가 부여하는 회차명 (예: '2026년 수시평가-1')
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export const insertRiskAdhocRequestSchema = createInsertSchema(riskAdhocRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertRiskAdhocRequest = z.infer<typeof insertRiskAdhocRequestSchema>;
+export type RiskAdhocRequest = typeof riskAdhocRequests.$inferSelect;
 
 // ── 위험성평가: 팀 배정 오버라이드 — TEAM_ROSTERS 고정 명단 대신 본인 선택 또는 관리자 지정으로
 // 팀을 바꿀 수 있게 함. employeeId(=로그인 이름) 당 1개, 언제든 다시 변경 가능(잠금 없음). ──

@@ -1050,6 +1050,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: round 컬럼 + 수시평가신청 테이블 1회성 마이그레이션 (사용 후 제거 예정)
+  app.get("/api/debug/migrate-round-and-adhoc", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { db } = await import("./db");
+      const { sql: sqlOp } = await import("drizzle-orm");
+      const CURRENT_ROUND = "2026년도 정기 위험성평가";
+      await db.execute(sqlOp`ALTER TABLE risk_item_selections ADD COLUMN IF NOT EXISTS round varchar(100)`);
+      await db.execute(sqlOp`ALTER TABLE risk_item_selections ADD COLUMN IF NOT EXISTS had_accident_experience boolean`);
+      await db.execute(sqlOp`UPDATE risk_item_selections SET round = ${CURRENT_ROUND} WHERE round IS NULL`);
+      await db.execute(sqlOp`ALTER TABLE risk_item_selections ALTER COLUMN round SET NOT NULL`);
+
+      await db.execute(sqlOp`ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS round varchar(100)`);
+      await db.execute(sqlOp`UPDATE risk_assessments SET round = ${CURRENT_ROUND} WHERE round IS NULL`);
+      await db.execute(sqlOp`ALTER TABLE risk_assessments ALTER COLUMN round SET NOT NULL`);
+
+      await db.execute(sqlOp`CREATE TABLE IF NOT EXISTS risk_adhoc_requests (
+        id serial PRIMARY KEY,
+        branch_id varchar(50) NOT NULL,
+        team varchar(50) NOT NULL,
+        requested_by_id varchar(20) NOT NULL,
+        requested_by_name varchar(50) NOT NULL,
+        reason text NOT NULL,
+        status varchar(10) NOT NULL DEFAULT '대기',
+        round varchar(100),
+        created_at timestamp NOT NULL DEFAULT now(),
+        updated_at timestamp NOT NULL DEFAULT now()
+      )`);
+      res.json({ ok: true, migrated: true });
+    } catch (error) {
+      res.status(500).json({ error: "failed", detail: String(error) });
+    }
+  });
+
   // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
   app.get("/api/risk-hazard-items", async (req, res) => {
     try {
@@ -1075,22 +1109,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { db } = await import("./db");
       const { riskHazardItems, riskItemSelections, insertRiskHazardItemSchema } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
-      // selectEmployeeId/selectEmployeeName — 팀원이 "직접 등록"할 때만 넘어옴(=등록과 동시에 본인 선택으로 처리)
-      const { selectEmployeeId, selectEmployeeName, ...body } = req.body;
+      // selectEmployeeId/selectEmployeeName/selectRound/selectHadAccidentExperience — 팀원이 "직접 등록"할 때만 넘어옴(=등록과 동시에 본인 선택으로 처리)
+      const { selectEmployeeId, selectEmployeeName, selectRound, selectHadAccidentExperience, ...body } = req.body;
       const validated = insertRiskHazardItemSchema.parse(body);
       if (!validated.isTemplate && validated.team && selectEmployeeId) {
-        // 같은 팀에서 이미 선택한 항목이 있는지 확인 (1인 1항목)
+        // 같은 팀/같은 회차에서 이미 선택한 항목이 있는지 확인 (1인 1항목)
         const mine = await db.select({ id: riskItemSelections.id })
           .from(riskItemSelections)
           .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
-          .where(and(eq(riskHazardItems.team, validated.team), eq(riskItemSelections.employeeId, selectEmployeeId)));
+          .where(and(eq(riskHazardItems.team, validated.team), eq(riskItemSelections.employeeId, selectEmployeeId), eq(riskItemSelections.round, selectRound || "")));
         if (mine.length > 0) {
           return res.status(409).json({ error: "이미 선택한 항목이 있습니다. 먼저 선택을 취소하세요." });
         }
       }
       const [row] = await db.insert(riskHazardItems).values(validated).returning();
       if (!validated.isTemplate && validated.team && selectEmployeeId && selectEmployeeName) {
-        await db.insert(riskItemSelections).values({ hazardItemId: row.id, employeeId: selectEmployeeId, employeeName: selectEmployeeName });
+        await db.insert(riskItemSelections).values({ hazardItemId: row.id, employeeId: selectEmployeeId, employeeName: selectEmployeeName, round: selectRound, hadAccidentExperience: selectHadAccidentExperience ?? null });
       }
       res.status(201).json(row);
     } catch (error) {
@@ -1098,24 +1132,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── 위험성평가: 항목 선택(예시 선택) — 항목 1개당 1명만 선택 가능, 팀당 1인 1항목 ──
+  // ── 위험성평가: 항목 선택(예시 선택) — 항목 1개당 1명만 선택 가능, 팀당 1인 1항목 (회차별) ──
   app.get("/api/risk-item-selections", async (req, res) => {
     try {
       const { db } = await import("./db");
       const { riskItemSelections, riskHazardItems } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { eq, and } = await import("drizzle-orm");
       const team = req.query.team as string | undefined;
-      const rows = team
-        ? await db.select({
-            id: riskItemSelections.id,
-            hazardItemId: riskItemSelections.hazardItemId,
-            employeeId: riskItemSelections.employeeId,
-            employeeName: riskItemSelections.employeeName,
-            createdAt: riskItemSelections.createdAt,
-          }).from(riskItemSelections)
-            .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
-            .where(eq(riskHazardItems.team, team))
-        : await db.select().from(riskItemSelections);
+      const round = req.query.round as string | undefined;
+      const cols = {
+        id: riskItemSelections.id,
+        hazardItemId: riskItemSelections.hazardItemId,
+        employeeId: riskItemSelections.employeeId,
+        employeeName: riskItemSelections.employeeName,
+        round: riskItemSelections.round,
+        hadAccidentExperience: riskItemSelections.hadAccidentExperience,
+        createdAt: riskItemSelections.createdAt,
+      };
+      let rows;
+      if (team && round) {
+        rows = await db.select(cols).from(riskItemSelections)
+          .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+          .where(and(eq(riskHazardItems.team, team), eq(riskItemSelections.round, round)));
+      } else if (team) {
+        rows = await db.select(cols).from(riskItemSelections)
+          .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+          .where(eq(riskHazardItems.team, team));
+      } else if (round) {
+        rows = await db.select().from(riskItemSelections).where(eq(riskItemSelections.round, round));
+      } else {
+        rows = await db.select().from(riskItemSelections);
+      }
       res.json(rows);
     } catch (error) {
       handleError(res, error, "Failed to fetch risk item selections");
@@ -1131,17 +1178,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [item] = await db.select().from(riskHazardItems).where(eq(riskHazardItems.id, validated.hazardItemId));
       if (!item) return res.status(404).json({ error: "항목을 찾을 수 없습니다." });
       if (!item.team) return res.status(400).json({ error: "팀이 지정되지 않은 항목입니다." });
-      const [taken] = await db.select().from(riskItemSelections).where(eq(riskItemSelections.hazardItemId, validated.hazardItemId));
+      const [taken] = await db.select().from(riskItemSelections).where(and(eq(riskItemSelections.hazardItemId, validated.hazardItemId), eq(riskItemSelections.round, validated.round)));
       if (taken) return res.status(409).json({ error: "이미 다른 팀원이 선택한 항목입니다." });
       const mine = await db.select({ id: riskItemSelections.id })
         .from(riskItemSelections)
         .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
-        .where(and(eq(riskHazardItems.team, item.team), eq(riskItemSelections.employeeId, validated.employeeId)));
+        .where(and(eq(riskHazardItems.team, item.team), eq(riskItemSelections.employeeId, validated.employeeId), eq(riskItemSelections.round, validated.round)));
       if (mine.length > 0) return res.status(409).json({ error: "이미 선택한 항목이 있습니다. 먼저 선택을 취소하세요." });
       const [row] = await db.insert(riskItemSelections).values(validated).returning();
       res.status(201).json(row);
     } catch (error) {
       res.status(400).json({ error: "Invalid selection data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 회차 목록 조회 (공유 아카이브에서 연도/회차별로 열람할 때 사용) ──
+  app.get("/api/risk-rounds", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAssessments, riskItemSelections } = await import("@shared/schema");
+      const a = await db.selectDistinct({ round: riskAssessments.round }).from(riskAssessments);
+      const s = await db.selectDistinct({ round: riskItemSelections.round }).from(riskItemSelections);
+      const set = new Set<string>();
+      [...a, ...s].forEach(r => { if (r.round) set.add(r.round); });
+      res.json(Array.from(set));
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk rounds");
     }
   });
 
@@ -1166,27 +1228,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
 
-  // ── 위험성평가: 감소대책(항목 단위 공동 작성) — 팀 집계 위험성이 9 이상인 항목에 한해
-  // 특정 개인이 아니라 팀 누구나(관리자 포함) 작성·수정할 수 있음 ──
-  app.put("/api/risk-hazard-items/:id/reduction-plan", async (req, res) => {
-    try {
-      const { db } = await import("./db");
-      const { riskHazardItems } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const id = parseInt(req.params.id);
-      const { reductionPlan, updatedBy } = req.body as { reductionPlan?: string; updatedBy?: string };
-      if (!updatedBy) return res.status(400).json({ error: "updatedBy가 필요합니다." });
-      const [row] = await db.update(riskHazardItems)
-        .set({ reductionPlan: reductionPlan || null, reductionPlanUpdatedBy: updatedBy, reductionPlanUpdatedAt: new Date() })
-        .where(eq(riskHazardItems.id, id))
-        .returning();
-      if (!row) return res.status(404).json({ error: "Not found" });
-      res.json(row);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update reduction plan", detail: String(error) });
-    }
-  });
-
   app.delete("/api/risk-hazard-items/:id", async (req, res) => {
     try {
       const { db } = await import("./db");
@@ -1208,15 +1249,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── 위험성평가: 개인별 평가입력 (사번 기준 upsert) ──
+  // ── 위험성평가: 개인별 평가입력 (사번+회차 기준 upsert) ──
   app.get("/api/risk-assessments", async (req, res) => {
     try {
       const { db } = await import("./db");
       const { riskAssessments } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { eq, and } = await import("drizzle-orm");
       const branchId = req.query.branchId as string | undefined;
-      const rows = branchId
-        ? await db.select().from(riskAssessments).where(eq(riskAssessments.branchId, branchId))
+      const round = req.query.round as string | undefined;
+      const conditions = [] as any[];
+      if (branchId) conditions.push(eq(riskAssessments.branchId, branchId));
+      if (round) conditions.push(eq(riskAssessments.round, round));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskAssessments).where(and(...conditions))
         : await db.select().from(riskAssessments);
       res.json(rows);
     } catch (error) {
@@ -1233,7 +1278,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [existing] = await db.select().from(riskAssessments).where(
         and(
           eq(riskAssessments.hazardItemId, validated.hazardItemId),
-          eq(riskAssessments.employeeId, validated.employeeId)
+          eq(riskAssessments.employeeId, validated.employeeId),
+          eq(riskAssessments.round, validated.round)
         )
       );
       if (existing) {
@@ -1247,6 +1293,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(row);
     } catch (error) {
       res.status(400).json({ error: "Invalid risk assessment data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 수시 평가 신청 ──
+  app.get("/api/risk-adhoc-requests", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAdhocRequests } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const team = req.query.team as string | undefined;
+      const rows = team
+        ? await db.select().from(riskAdhocRequests).where(eq(riskAdhocRequests.team, team)).orderBy(desc(riskAdhocRequests.createdAt))
+        : await db.select().from(riskAdhocRequests).orderBy(desc(riskAdhocRequests.createdAt));
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch adhoc requests");
+    }
+  });
+
+  app.post("/api/risk-adhoc-requests", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAdhocRequests, insertRiskAdhocRequestSchema } = await import("@shared/schema");
+      const validated = insertRiskAdhocRequestSchema.parse(req.body);
+      const [row] = await db.insert(riskAdhocRequests).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid adhoc request data", detail: String(error) });
+    }
+  });
+
+  app.put("/api/risk-adhoc-requests/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAdhocRequests } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { status, round } = req.body as { status?: string; round?: string };
+      const patch: any = { updatedAt: new Date() };
+      if (status) patch.status = status;
+      if (round !== undefined) patch.round = round || null;
+      const [row] = await db.update(riskAdhocRequests).set(patch).where(eq(riskAdhocRequests.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Not found" });
+      res.json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update adhoc request", detail: String(error) });
     }
   });
 
