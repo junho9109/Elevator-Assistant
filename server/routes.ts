@@ -1227,11 +1227,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
       const { db } = await import("./db");
       const { riskRoundOverrides } = await import("@shared/schema");
-      const { eq, and } = await import("drizzle-orm");
-      const team = req.query.team as string | undefined;
-      const round = req.query.round as string | undefined;
-      if (!team || !round) return res.status(400).json({ error: "team, round required" });
-      const deleted = await db.delete(riskRoundOverrides).where(and(eq(riskRoundOverrides.team, team), eq(riskRoundOverrides.round, round))).returning();
+      const { eq } = await import("drizzle-orm");
+      const id = req.query.id ? parseInt(req.query.id as string) : undefined;
+      if (!id) return res.status(400).json({ error: "id required" });
+      const deleted = await db.delete(riskRoundOverrides).where(eq(riskRoundOverrides.id, id)).returning();
       res.json({ ok: true, deleted });
     } catch (error: any) {
       res.status(500).json({ error: String(error?.message || error) });
