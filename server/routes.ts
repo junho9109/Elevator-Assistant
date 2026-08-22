@@ -1050,40 +1050,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: round 컬럼 + 수시평가신청 테이블 1회성 마이그레이션 (사용 후 제거 예정)
-  app.get("/api/debug/migrate-round-and-adhoc", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { sql: sqlOp } = await import("drizzle-orm");
-      const CURRENT_ROUND = "2026년도 정기 위험성평가";
-      await db.execute(sqlOp`ALTER TABLE risk_item_selections ADD COLUMN IF NOT EXISTS round varchar(100)`);
-      await db.execute(sqlOp`ALTER TABLE risk_item_selections ADD COLUMN IF NOT EXISTS had_accident_experience boolean`);
-      await db.execute(sqlOp`UPDATE risk_item_selections SET round = ${CURRENT_ROUND} WHERE round IS NULL`);
-      await db.execute(sqlOp`ALTER TABLE risk_item_selections ALTER COLUMN round SET NOT NULL`);
-
-      await db.execute(sqlOp`ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS round varchar(100)`);
-      await db.execute(sqlOp`UPDATE risk_assessments SET round = ${CURRENT_ROUND} WHERE round IS NULL`);
-      await db.execute(sqlOp`ALTER TABLE risk_assessments ALTER COLUMN round SET NOT NULL`);
-
-      await db.execute(sqlOp`CREATE TABLE IF NOT EXISTS risk_adhoc_requests (
-        id serial PRIMARY KEY,
-        branch_id varchar(50) NOT NULL,
-        team varchar(50) NOT NULL,
-        requested_by_id varchar(20) NOT NULL,
-        requested_by_name varchar(50) NOT NULL,
-        reason text NOT NULL,
-        status varchar(10) NOT NULL DEFAULT '대기',
-        round varchar(100),
-        created_at timestamp NOT NULL DEFAULT now(),
-        updated_at timestamp NOT NULL DEFAULT now()
-      )`);
-      res.json({ ok: true, migrated: true });
-    } catch (error) {
-      res.status(500).json({ error: "failed", detail: String(error) });
-    }
-  });
-
   // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
   app.get("/api/risk-hazard-items", async (req, res) => {
     try {
