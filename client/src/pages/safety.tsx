@@ -175,9 +175,20 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [isMandatoryForm, setIsMandatoryForm] = useState(false);
   const [referenceSafetyMeasureForm, setReferenceSafetyMeasureForm] = useState("");
   const [directExperienceForm, setDirectExperienceForm] = useState<boolean | undefined>(undefined);
+  const [directExperienceAttempt, setDirectExperienceAttempt] = useState(false);
+  function flashDirectExperience() {
+    setDirectExperienceAttempt(true);
+    setTimeout(() => setDirectExperienceAttempt(false), 1500);
+  }
   const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   // 선택 단계에서 함께 답하는 경험 여부(템플릿별 임시 답변) 및 회차/수시평가 관련 상태
   const [templateExperienceDraft, setTemplateExperienceDraft] = useState<Record<number, boolean | undefined>>({});
+  // 경험여부를 답하지 않고 "선택"을 누르려 할 때만 잠깐 강조 표시(평상시엔 켜져있지 않음)
+  const [templateExperienceAttempt, setTemplateExperienceAttempt] = useState<Record<number, boolean>>({});
+  function flashTemplateExperience(itemId: number) {
+    setTemplateExperienceAttempt(p => ({ ...p, [itemId]: true }));
+    setTimeout(() => setTemplateExperienceAttempt(p => ({ ...p, [itemId]: false })), 1500);
+  }
   const [activeRound, setActiveRound] = useState(CURRENT_ROUND);
   const [showAdhocRequest, setShowAdhocRequest] = useState(false);
   const [adhocReason, setAdhocReason] = useState("");
@@ -241,6 +252,21 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-adhoc-requests", myTeam],
     queryFn: async () => { const r = await fetch(`/api/risk-adhoc-requests?team=${encodeURIComponent(myTeam)}`); return r.json(); },
     enabled: ready && !!myTeam,
+  });
+  // 팀원 절반 이상이 선택을 완료하면 "무시하고 평가하기"로 전원 완료를 건너뛸 수 있음 — 한 명이라도 누르면 팀 전체에 즉시 반영됨
+  const { data: roundOverrides = [] } = useQuery<{ id: number; team: string; round: string }[]>({
+    queryKey: ["/api/risk-round-overrides", myTeam, activeRound],
+    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    enabled: ready && !!myTeam,
+  });
+  const roundForcedOpen = roundOverrides.length > 0;
+  const [showForceOpenConfirm, setShowForceOpenConfirm] = useState(false);
+  const forceOpenRound = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, forcedById: empId, forcedByName: empName }) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] }); toast({ title: "선택을 완료한 팀원만으로 평가를 시작합니다." }); setShowForceOpenConfirm(false); },
   });
   const createAdhocRequest = useMutation({
     mutationFn: async () => {
@@ -454,6 +480,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   }, [activeTeamItemsForMethod, assessmentsByItem, empId]);
   const adminTemplates = useMemo(() => adminTeamItems.filter(t => t.isTemplate && !t.isMandatory), [adminTeamItems]);
   const adminMandatoryItems = useMemo(() => adminTeamItems.filter(t => t.isMandatory), [adminTeamItems]);
+  // 본인의 필수+수시+선택 항목 평가를 모두 마쳐야 "공유"(다른 팀 결과 보기)가 열림
+  const myEvaluationComplete = useMemo(() => {
+    if (!mySelection) return false;
+    const myMandatory = [...branchMandatoryItems, ...adhocMandatoryItems].filter(item => mandatoryTargets(item).includes(empName));
+    if (myMandatory.some(item => !myAssessment(item.id))) return false;
+    if (sortedActiveTeamItems.some(item => !myAssessment(item.id))) return false;
+    return true;
+  }, [mySelection, branchMandatoryItems, adhocMandatoryItems, sortedActiveTeamItems, assessmentsByItem, empName]);
   const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
 
   function getAssessForm(itemId: number) {
@@ -1037,15 +1071,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                       <div className="grid grid-cols-3 gap-2">{t.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>
                     )}
                     {myTeamMethod==="freq_severity" && (
-                      <div className={`rounded-lg p-2 transition-colors ${templateExperienceDraft[t.id]===undefined ? "bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 animate-pulse" : ""}`}>
-                        <p className={`text-xs mb-1 ${templateExperienceDraft[t.id]===undefined ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? *</p>
+                      <div className={`rounded-lg p-2 transition-colors ${templateExperienceAttempt[t.id] ? "bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 animate-pulse" : ""}`}>
+                        <p className={`text-xs mb-1 ${templateExperienceAttempt[t.id] ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? *</p>
                         <div className="flex gap-2">
-                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:true}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===true?"bg-primary text-primary-foreground border-primary":templateExperienceDraft[t.id]===undefined?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>예</button>
-                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:false}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===false?"bg-primary text-primary-foreground border-primary":templateExperienceDraft[t.id]===undefined?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>아니오</button>
+                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:true}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===true?"bg-primary text-primary-foreground border-primary":templateExperienceAttempt[t.id]?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>예</button>
+                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:false}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===false?"bg-primary text-primary-foreground border-primary":templateExperienceAttempt[t.id]?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>아니오</button>
                         </div>
                       </div>
                     )}
-                    <Button size="sm" className="w-full" onClick={()=>selectTemplate.mutate({ hazardItemId: t.id, hadAccidentExperience: templateExperienceDraft[t.id]! })} disabled={selectTemplate.isPending || (myTeamMethod==="freq_severity" && templateExperienceDraft[t.id]===undefined)}>선택</Button>
+                    <Button size="sm" className="w-full" onClick={()=>{
+                      if (myTeamMethod==="freq_severity" && templateExperienceDraft[t.id]===undefined) { flashTemplateExperience(t.id); return; }
+                      selectTemplate.mutate({ hazardItemId: t.id, hadAccidentExperience: templateExperienceDraft[t.id] ?? false });
+                    }} disabled={selectTemplate.isPending}>선택</Button>
                   </div>
                 ))}
                 {teamItems.filter(t=>t.isTemplate && !t.isMandatory && selectionByItemId.has(t.id)).map(t=>(
@@ -1058,7 +1095,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <Plus className="h-4 w-4 mr-1"/>목록에 없으면 직접 등록
                 </Button>
               </div>
-            ) : !allTeamSelected ? (
+            ) : !allTeamSelected && !roundForcedOpen ? (
               <div className="space-y-3">
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -1087,6 +1124,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                         );
                       })}
                     </div>
+                    {teamSelections.length / myTeamMembers.length >= 0.5 && (
+                      <Button size="sm" variant="outline" className="w-full mt-2" onClick={()=>setShowForceOpenConfirm(true)}>무시하고 평가하기</Button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1108,6 +1148,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               </>
             )}
 
+            {myEvaluationComplete ? (
             <div className="pt-2 border-t border-border">
               <p className="text-sm font-medium mb-1">공유 — 다른 팀 결과 보기</p>
               <p className="text-xs text-muted-foreground mb-2">평가는 본인 팀에서만 할 수 있고, 다른 팀은 결과만 볼 수 있습니다. 위에서 회차를 바꾸면 지난 회차 기록도 볼 수 있습니다.</p>
@@ -1137,6 +1178,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     </div>
               )}
             </div>
+            ) : (
+              <div className="pt-2 border-t border-border">
+                <p className="text-xs text-muted-foreground text-center py-3">본인 평가(필수·수시·선택 항목)를 모두 완료하면 다른 팀의 결과를 볼 수 있습니다.</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -1244,11 +1290,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 </label>
               )}
               {addRiskMode==="direct" && riskMethod==="freq_severity" && (
-                <div className={`rounded-xl p-3 transition-colors ${directExperienceForm===undefined ? "bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 animate-pulse" : ""}`}>
-                  <label className={`block text-sm font-medium mb-1 ${directExperienceForm===undefined ? "text-red-600 dark:text-red-400" : "text-gray-700"}`}>최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? *</label>
+                <div className={`rounded-xl p-3 transition-colors ${directExperienceAttempt ? "bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 animate-pulse" : ""}`}>
+                  <label className={`block text-sm font-medium mb-1 ${directExperienceAttempt ? "text-red-600 dark:text-red-400" : "text-gray-700"}`}>최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? *</label>
                   <div className="flex gap-2">
-                    <button onClick={()=>setDirectExperienceForm(true)} className={`flex-1 text-sm py-2 rounded-lg border ${directExperienceForm===true?"bg-primary text-primary-foreground border-primary":directExperienceForm===undefined?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>예</button>
-                    <button onClick={()=>setDirectExperienceForm(false)} className={`flex-1 text-sm py-2 rounded-lg border ${directExperienceForm===false?"bg-primary text-primary-foreground border-primary":directExperienceForm===undefined?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>아니오</button>
+                    <button onClick={()=>setDirectExperienceForm(true)} className={`flex-1 text-sm py-2 rounded-lg border ${directExperienceForm===true?"bg-primary text-primary-foreground border-primary":directExperienceAttempt?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>예</button>
+                    <button onClick={()=>setDirectExperienceForm(false)} className={`flex-1 text-sm py-2 rounded-lg border ${directExperienceForm===false?"bg-primary text-primary-foreground border-primary":directExperienceAttempt?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>아니오</button>
                   </div>
                 </div>
               )}
@@ -1259,21 +1305,24 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               </div>
               <div className="flex gap-3 pt-2">
                 <Button variant="outline" className="flex-1" onClick={()=>setShowAddRisk(false)}>취소</Button>
-                <Button className="flex-1" disabled={!riskForm.content.trim()||createRiskItem.isPending||(addRiskMode==="direct"&&riskMethod==="freq_severity"&&directExperienceForm===undefined)} onClick={()=>createRiskItem.mutate({
-                  method: riskMethod,
-                  workCategory: riskForm.workCategory,
-                  subWork: riskForm.subWork || null,
-                  content: riskForm.content,
-                  discoveryPath: riskForm.discoveryPath,
-                  fieldInfo: riskForm.fieldInfo || null,
-                  imageUrls: riskForm.images.length>0 ? riskForm.images : null,
-                  branchId: branchName,
-                  registeredById: empId,
-                  registeredByName: empName,
-                  ...(addRiskMode !== "legacy" ? { team: addRiskTeam, isTemplate: addRiskMode === "template" } : {}),
-                  ...(addRiskMode === "template" ? { isMandatory: isMandatoryForm, referenceSafetyMeasure: referenceSafetyMeasureForm || null } : {}),
-                  ...(addRiskMode === "direct" ? { selectEmployeeId: empId, selectEmployeeName: empName, selectRound: activeRound, selectHadAccidentExperience: riskMethod==="freq_severity" ? directExperienceForm : null } : {}),
-                })}>{createRiskItem.isPending?"저장 중...":"저장"}</Button>
+                <Button className="flex-1" disabled={!riskForm.content.trim()||createRiskItem.isPending} onClick={()=>{
+                  if (addRiskMode==="direct" && riskMethod==="freq_severity" && directExperienceForm===undefined) { flashDirectExperience(); return; }
+                  createRiskItem.mutate({
+                    method: riskMethod,
+                    workCategory: riskForm.workCategory,
+                    subWork: riskForm.subWork || null,
+                    content: riskForm.content,
+                    discoveryPath: riskForm.discoveryPath,
+                    fieldInfo: riskForm.fieldInfo || null,
+                    imageUrls: riskForm.images.length>0 ? riskForm.images : null,
+                    branchId: branchName,
+                    registeredById: empId,
+                    registeredByName: empName,
+                    ...(addRiskMode !== "legacy" ? { team: addRiskTeam, isTemplate: addRiskMode === "template" } : {}),
+                    ...(addRiskMode === "template" ? { isMandatory: isMandatoryForm, referenceSafetyMeasure: referenceSafetyMeasureForm || null } : {}),
+                    ...(addRiskMode === "direct" ? { selectEmployeeId: empId, selectEmployeeName: empName, selectRound: activeRound, selectHadAccidentExperience: riskMethod==="freq_severity" ? directExperienceForm : null } : {}),
+                  });
+                }}>{createRiskItem.isPending?"저장 중...":"저장"}</Button>
               </div>
             </div>
           </div>
@@ -1299,6 +1348,19 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   {t.name}
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showForceOpenConfirm&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowForceOpenConfirm(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
+            <p className="text-sm font-medium mb-1">아직 선택하지 못한 팀원이 있습니다.</p>
+            <p className="text-xs text-muted-foreground mb-4">선택을 마친 팀원만으로 평가를 시작할까요? 선택하지 못한 팀원은 이번 평가에서 제외되며, 이후 선택하더라도 별도로 반영되지 않습니다.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={()=>setShowForceOpenConfirm(false)}>취소</Button>
+              <Button className="flex-1" disabled={forceOpenRound.isPending} onClick={()=>forceOpenRound.mutate()}>{forceOpenRound.isPending?"처리 중...":"평가 시작"}</Button>
             </div>
           </div>
         </div>

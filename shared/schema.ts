@@ -582,6 +582,23 @@ export const insertRiskAdhocRequestSchema = createInsertSchema(riskAdhocRequests
 export type InsertRiskAdhocRequest = z.infer<typeof insertRiskAdhocRequestSchema>;
 export type RiskAdhocRequest = typeof riskAdhocRequests.$inferSelect;
 
+// ── 위험성평가: 팀원 절반 이상이 선택을 완료했을 때 "무시하고 평가하기"로 전원 완료를 건너뛴 기록.
+// (team, round) 조합으로 한 번 기록되면 그 팀·회차의 모든 팀원에게 즉시 평가 단계가 열림 ──
+export const riskRoundOverrides = pgTable("risk_round_overrides", {
+  id: serial("id").primaryKey(),
+  team: varchar("team", { length: 50 }).notNull(),
+  round: varchar("round", { length: 100 }).notNull(),
+  forcedById: varchar("forced_by_id", { length: 20 }).notNull(),
+  forcedByName: varchar("forced_by_name", { length: 50 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertRiskRoundOverrideSchema = createInsertSchema(riskRoundOverrides).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertRiskRoundOverride = z.infer<typeof insertRiskRoundOverrideSchema>;
+export type RiskRoundOverride = typeof riskRoundOverrides.$inferSelect;
+
 // ── 위험성평가: 팀 배정 오버라이드 — TEAM_ROSTERS 고정 명단 대신 본인 선택 또는 관리자 지정으로
 // 팀을 바꿀 수 있게 함. employeeId(=로그인 이름) 당 1개, 언제든 다시 변경 가능(잠금 없음). ──
 export const employeeTeamOverrides = pgTable("employee_team_overrides", {
