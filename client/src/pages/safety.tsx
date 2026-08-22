@@ -174,10 +174,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
   const [isMandatoryForm, setIsMandatoryForm] = useState(false);
   const [referenceSafetyMeasureForm, setReferenceSafetyMeasureForm] = useState("");
-  const [directExperienceForm, setDirectExperienceForm] = useState(false);
+  const [directExperienceForm, setDirectExperienceForm] = useState<boolean | undefined>(undefined);
   const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   // 선택 단계에서 함께 답하는 경험 여부(템플릿별 임시 답변) 및 회차/수시평가 관련 상태
-  const [templateExperienceDraft, setTemplateExperienceDraft] = useState<Record<number, boolean>>({});
+  const [templateExperienceDraft, setTemplateExperienceDraft] = useState<Record<number, boolean | undefined>>({});
   const [activeRound, setActiveRound] = useState(CURRENT_ROUND);
   const [showAdhocRequest, setShowAdhocRequest] = useState(false);
   const [adhocReason, setAdhocReason] = useState("");
@@ -1037,15 +1037,15 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                       <div className="grid grid-cols-3 gap-2">{t.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>
                     )}
                     {myTeamMethod==="freq_severity" && (
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요?</p>
+                      <div className={`rounded-lg p-2 transition-colors ${templateExperienceDraft[t.id]===undefined ? "bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 animate-pulse" : ""}`}>
+                        <p className={`text-xs mb-1 ${templateExperienceDraft[t.id]===undefined ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? *</p>
                         <div className="flex gap-2">
-                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:true}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===true?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
-                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:false}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===false?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:true}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===true?"bg-primary text-primary-foreground border-primary":templateExperienceDraft[t.id]===undefined?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>예</button>
+                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:false}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===false?"bg-primary text-primary-foreground border-primary":templateExperienceDraft[t.id]===undefined?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>아니오</button>
                         </div>
                       </div>
                     )}
-                    <Button size="sm" className="w-full" onClick={()=>selectTemplate.mutate({ hazardItemId: t.id, hadAccidentExperience: templateExperienceDraft[t.id] ?? false })} disabled={selectTemplate.isPending}>선택</Button>
+                    <Button size="sm" className="w-full" onClick={()=>selectTemplate.mutate({ hazardItemId: t.id, hadAccidentExperience: templateExperienceDraft[t.id]! })} disabled={selectTemplate.isPending || (myTeamMethod==="freq_severity" && templateExperienceDraft[t.id]===undefined)}>선택</Button>
                   </div>
                 ))}
                 {teamItems.filter(t=>t.isTemplate && !t.isMandatory && selectionByItemId.has(t.id)).map(t=>(
@@ -1054,7 +1054,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <p className="text-xs text-muted-foreground mt-0.5">{selectionByItemId.get(t.id)?.employeeName}님이 선택함</p>
                   </div>
                 ))}
-                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskMethod(myTeamMethod); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[myTeamMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setDirectExperienceForm(false); setShowAddRisk(true); }}>
+                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskMethod(myTeamMethod); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[myTeamMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setDirectExperienceForm(undefined); setShowAddRisk(true); }}>
                   <Plus className="h-4 w-4 mr-1"/>목록에 없으면 직접 등록
                 </Button>
               </div>
@@ -1244,11 +1244,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 </label>
               )}
               {addRiskMode==="direct" && riskMethod==="freq_severity" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요?</label>
+                <div className={`rounded-xl p-3 transition-colors ${directExperienceForm===undefined ? "bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 animate-pulse" : ""}`}>
+                  <label className={`block text-sm font-medium mb-1 ${directExperienceForm===undefined ? "text-red-600 dark:text-red-400" : "text-gray-700"}`}>최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? *</label>
                   <div className="flex gap-2">
-                    <button onClick={()=>setDirectExperienceForm(true)} className={`flex-1 text-sm py-2 rounded-lg border ${directExperienceForm?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
-                    <button onClick={()=>setDirectExperienceForm(false)} className={`flex-1 text-sm py-2 rounded-lg border ${!directExperienceForm?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+                    <button onClick={()=>setDirectExperienceForm(true)} className={`flex-1 text-sm py-2 rounded-lg border ${directExperienceForm===true?"bg-primary text-primary-foreground border-primary":directExperienceForm===undefined?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>예</button>
+                    <button onClick={()=>setDirectExperienceForm(false)} className={`flex-1 text-sm py-2 rounded-lg border ${directExperienceForm===false?"bg-primary text-primary-foreground border-primary":directExperienceForm===undefined?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>아니오</button>
                   </div>
                 </div>
               )}
@@ -1259,7 +1259,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               </div>
               <div className="flex gap-3 pt-2">
                 <Button variant="outline" className="flex-1" onClick={()=>setShowAddRisk(false)}>취소</Button>
-                <Button className="flex-1" disabled={!riskForm.content.trim()||createRiskItem.isPending} onClick={()=>createRiskItem.mutate({
+                <Button className="flex-1" disabled={!riskForm.content.trim()||createRiskItem.isPending||(addRiskMode==="direct"&&riskMethod==="freq_severity"&&directExperienceForm===undefined)} onClick={()=>createRiskItem.mutate({
                   method: riskMethod,
                   workCategory: riskForm.workCategory,
                   subWork: riskForm.subWork || null,
