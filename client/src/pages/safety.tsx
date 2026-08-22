@@ -24,7 +24,7 @@ type EmployeeTeamOverride = { id: number; employeeId: string; team: string; setB
 type RiskAssessment = {
   id: number; hazardItemId: number; branchId: string; employeeId: string; employeeName: string; round: string;
   level: string | null; hadAccidentExperience: boolean | null; severity: number | null;
-  estimatedFutureAccident: boolean | null; postImprovementEstimate: boolean | null;
+  postImprovementSeverity: number | null;
   currentSafetyMeasure: string | null; reductionPlan: string | null;
   implementStatus: string | null; implementDate: string | null; implementOwner: string | null; actionResult: string | null;
   createdAt: string; updatedAt: string;
@@ -235,6 +235,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [expandedRisk, setExpandedRisk] = useState<number|null>(null);
   // 이미 평가가 종료된(허용 가능 도달) 항목을 다시 열려고 할 때 재평가 여부를 먼저 확인
   const [reEvaluateConfirm, setReEvaluateConfirm] = useState<{ item: RiskHazardItem; hadAccidentExperience: boolean }|null>(null);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
   const [isMandatoryForm, setIsMandatoryForm] = useState(false);
@@ -245,7 +246,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     setDirectExperienceAttempt(true);
     setTimeout(() => setDirectExperienceAttempt(false), 1500);
   }
-  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; estimatedFutureAccident: boolean; postImprovementEstimate: boolean | undefined; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
+  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; postImprovementSeverity: number | undefined; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   // 선택 단계에서 함께 답하는 경험 여부(템플릿별 임시 답변) 및 회차/수시평가 관련 상태
   const [templateExperienceDraft, setTemplateExperienceDraft] = useState<Record<number, boolean | undefined>>({});
   // 경험여부를 답하지 않고 "선택"을 누르려 할 때만 잠깐 강조 표시(평상시엔 켜져있지 않음)
@@ -520,8 +521,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
   const myAssessment = (itemId: number) => assessmentsByItem.get(itemId)?.find(a => a.employeeId === empId);
 
-  // 빈도강도법: 가능성(빈도)=경험자수/참여자수×5, 중대성(강도)=추정자수/참여자수×5, 위험성=가능성×중대성
-  // 위험성이 "허용 불가능"(9 이상)이면 개선 안전보건조치 이행 후 추정 결과로 중대성을 재산정하여 "허용 가능"이 될 때까지 종료되지 않음
+  // 빈도강도법: 가능성(빈도)=경험자수/참여자수×5, 중대성(강도)=평가자들이 입력한 1~4 값의 평균, 위험성=가능성×중대성
+  // 위험성이 "허용 불가능"(9 이상)이면 개선 안전보건조치 이행 후 재산정한 중대성(1~4)으로 위험성을 다시 계산하여 "허용 가능"이 될 때까지 종료되지 않음
   function computeAggregate(itemId: number, method: RiskMethod) {
     const list = assessmentsByItem.get(itemId) || [];
     if (list.length === 0) return null;
@@ -535,20 +536,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       return { level, requiresPlan, resolved, participants: list.length };
     }
     const withExp = list.filter(a => a.hadAccidentExperience !== null);
-    const withEst = list.filter(a => a.estimatedFutureAccident !== null && a.estimatedFutureAccident !== undefined);
-    if (withExp.length === 0 && withEst.length === 0) return null;
+    const withSev = list.filter(a => a.severity != null);
+    if (withExp.length === 0 && withSev.length === 0) return null;
     const experienced = withExp.filter(a => a.hadAccidentExperience).length;
     const possibility = withExp.length > 0 ? Math.round((experienced / withExp.length) * 5 * 10) / 10 : 0;
-    const estimated = withEst.filter(a => a.estimatedFutureAccident).length;
-    const avgSeverity = withEst.length > 0 ? Math.round((estimated / withEst.length) * 5 * 10) / 10 : 0;
+    const avgSeverity = withSev.length > 0 ? Math.round((withSev.reduce((s, a) => s + (a.severity || 0), 0) / withSev.length) * 10) / 10 : 0;
     const risk = Math.round(possibility * avgSeverity * 10) / 10;
     const initial = riskLevelOf(risk);
     let finalRisk = risk, finalLevel = initial.level, finalLabel = initial.label, finalAllow = initial.allow, resolved = initial.allow === "허용 가능";
     if (initial.allow === "허용 불가능") {
-      const withPost = list.filter(a => a.postImprovementEstimate !== null && a.postImprovementEstimate !== undefined);
+      const withPost = list.filter(a => a.postImprovementSeverity != null);
       if (withPost.length > 0) {
-        const postEstimated = withPost.filter(a => a.postImprovementEstimate).length;
-        const postSeverity = Math.round((postEstimated / withPost.length) * 5 * 10) / 10;
+        const postSeverity = Math.round((withPost.reduce((s, a) => s + (a.postImprovementSeverity || 0), 0) / withPost.length) * 10) / 10;
         const postRisk = Math.round(possibility * postSeverity * 10) / 10;
         const postClass = riskLevelOf(postRisk);
         finalRisk = postRisk; finalLevel = postClass.level; finalLabel = postClass.label; finalAllow = postClass.allow;
@@ -613,7 +612,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
 
   function getAssessForm(itemId: number) {
-    return assessForm[itemId] || { level: "중", hadAccidentExperience: false, severity: 2, estimatedFutureAccident: false, postImprovementEstimate: undefined as boolean | undefined, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
+    return assessForm[itemId] || { level: "중", hadAccidentExperience: false, severity: 2, postImprovementSeverity: undefined as number | undefined, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
   }
   function setItemAssessForm(itemId: number, patch: Partial<ReturnType<typeof getAssessForm>>) {
     setAssessForm(p => ({ ...p, [itemId]: { ...getAssessForm(itemId), ...p[itemId], ...patch } }));
@@ -628,8 +627,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     } else {
       // 본인이 제안(선택)한 항목이면 선택 단계에서 이미 답한 경험 여부를 그대로 사용, 아니면 이 화면에서 입력한 값 사용
       payload.hadAccidentExperience = myExperience !== undefined ? myExperience : f.hadAccidentExperience;
-      payload.estimatedFutureAccident = f.estimatedFutureAccident;
-      payload.postImprovementEstimate = f.postImprovementEstimate !== undefined ? f.postImprovementEstimate : null;
+      payload.severity = f.severity;
+      payload.postImprovementSeverity = f.postImprovementSeverity !== undefined ? f.postImprovementSeverity : null;
       // 개선 안전보건조치는 개인별 필드 — 본인 의견을 작성하면 팀원 전체에게 공유되어 노출됨
       payload.reductionPlan = f.reductionPlan || null;
     }
@@ -674,20 +673,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
           const expCount = others.filter(a=>a.hadAccidentExperience).length + (myExperienceValue?1:0);
           const totalCount = others.length + 1;
           const possibility = Math.round((expCount/totalCount)*5*10)/10;
-          const othersEst = others.filter(a=>a.estimatedFutureAccident!=null);
-          const estList = [...othersEst.map(a=>a.estimatedFutureAccident as boolean), f.estimatedFutureAccident];
-          const estCount = estList.filter(Boolean).length;
-          const avgSeverity = Math.round((estCount/estList.length)*5*10)/10;
+          const othersSev = others.filter(a=>a.severity!=null);
+          const sevList = [...othersSev.map(a=>a.severity as number), f.severity];
+          const avgSeverity = Math.round((sevList.reduce((s,v)=>s+(v||0),0)/sevList.length)*10)/10;
           const risk = Math.round(possibility*avgSeverity*10)/10;
           const cls = riskLevelOf(risk);
           let postRisk: number | null = null, postCls: ReturnType<typeof riskLevelOf> | null = null;
           if (cls.allow === "허용 불가능") {
-            const othersPost = others.filter(a=>a.postImprovementEstimate!=null && a.postImprovementEstimate!==undefined);
-            const postList = [...othersPost.map(a=>a.postImprovementEstimate as boolean)];
-            if (f.postImprovementEstimate !== undefined) postList.push(f.postImprovementEstimate);
+            const othersPost = others.filter(a=>a.postImprovementSeverity!=null);
+            const postList = [...othersPost.map(a=>a.postImprovementSeverity as number)];
+            if (f.postImprovementSeverity !== undefined) postList.push(f.postImprovementSeverity);
             if (postList.length > 0) {
-              const postEstCount = postList.filter(Boolean).length;
-              const postSeverity = Math.round((postEstCount/postList.length)*5*10)/10;
+              const postSeverity = Math.round((postList.reduce((s,v)=>s+(v||0),0)/postList.length)*10)/10;
               postRisk = Math.round(possibility*postSeverity*10)/10;
               postCls = riskLevelOf(postRisk);
             }
@@ -763,11 +760,13 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     </div>
                   </>
                 )}
-                <p className="text-sm text-muted-foreground">향후 이 위험요인으로 사고가 발생할 것으로 추정되십니까? (중대성 산정)</p>
+                <p className="text-sm text-muted-foreground">중대성 (강도) — 1(소) ~ 4(최대) 중 선택하세요</p>
                 <div className="flex gap-2">
-                  <button onClick={()=>setItemAssessForm(item.id,{estimatedFutureAccident:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.estimatedFutureAccident?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
-                  <button onClick={()=>setItemAssessForm(item.id,{estimatedFutureAccident:false})} className={`flex-1 text-sm py-2 rounded-lg border ${!f.estimatedFutureAccident?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+                  {[1,2,3,4].map(s=>(
+                    <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
+                  ))}
                 </div>
+                <p className="text-xs text-muted-foreground">{SEVERITY_INFO[f.severity] ?? ""}</p>
                 {liveAgg && (
                   <div className="flex items-baseline gap-2 text-xs flex-wrap">
                     <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
@@ -782,11 +781,13 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <div className="space-y-2 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900 rounded-xl p-2.5">
                     <p className="text-xs font-medium text-red-700">위험성 {liveAgg.risk}({liveAgg.cls.level}) — 허용 불가능. 개선 안전보건조치를 입력하고, 이행 후 재추정을 답해야 평가가 종료됩니다.</p>
                     <textarea placeholder="개선 안전보건조치 *" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
-                    <p className="text-xs text-muted-foreground">개선 안전보건조치 이행 후에도 이 위험요인으로 사고가 발생할 것으로 추정되십니까?</p>
+                    <p className="text-xs text-muted-foreground">개선 안전보건조치 이행 후 중대성(강도)을 다시 1(소) ~ 4(최대)로 평가하세요</p>
                     <div className="flex gap-2">
-                      <button onClick={()=>setItemAssessForm(item.id,{postImprovementEstimate:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.postImprovementEstimate===true?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
-                      <button onClick={()=>setItemAssessForm(item.id,{postImprovementEstimate:false})} className={`flex-1 text-sm py-2 rounded-lg border ${f.postImprovementEstimate===false?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+                      {[1,2,3,4].map(s=>(
+                        <button key={s} onClick={()=>setItemAssessForm(item.id,{postImprovementSeverity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.postImprovementSeverity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
+                      ))}
                     </div>
+                    <p className="text-xs text-muted-foreground">{f.postImprovementSeverity!=null ? (SEVERITY_INFO[f.postImprovementSeverity] ?? "") : ""}</p>
                     {liveAgg.postCls && (
                       <div className="flex items-baseline gap-2 text-xs flex-wrap pt-1 border-t border-red-200 dark:border-red-900">
                         <span className="text-muted-foreground">개선 후 재산정 위험성</span>
@@ -807,7 +808,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium shrink-0">{a.employeeName}</span>
                       <span className="text-muted-foreground text-right">
-                        {item.method==="checklist" ? `위험도 ${a.level ?? "-"}` : `경험 ${a.hadAccidentExperience?"예":"아니오"} · 추정 ${a.estimatedFutureAccident==null?"-":a.estimatedFutureAccident?"예":"아니오"}${a.postImprovementEstimate!=null?` · 개선후추정 ${a.postImprovementEstimate?"예":"아니오"}`:""}`}
+                        {item.method==="checklist" ? `위험도 ${a.level ?? "-"}` : `경험 ${a.hadAccidentExperience?"예":"아니오"} · 중대성 ${a.severity ?? "-"}${a.postImprovementSeverity!=null?` · 개선후중대성 ${a.postImprovementSeverity}`:""}`}
                       </span>
                     </div>
                     {a.reductionPlan && <p className="text-muted-foreground mt-1 whitespace-pre-wrap">개선 안전보건조치: {a.reductionPlan}</p>}
@@ -1370,7 +1371,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-xl p-3 text-center space-y-2">
                     <p className="text-sm font-medium text-green-700 dark:text-green-400">서명 완료 · {new Date(mySignature.signedAt).toLocaleString()}</p>
                     <img src={mySignature.signatureDataUrl} alt="서명" className="mx-auto h-16 bg-white rounded border"/>
-                    <Button variant="outline" className="w-full" disabled={cancelSelection.isPending} onClick={()=>{ setExpandedRisk(null); setViewOtherTeam(""); if (mySelection) cancelSelection.mutate(mySelection.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>처음으로 돌아가기</Button>
+                    <Button variant="outline" className="w-full" onClick={()=>setShowRestartConfirm(true)}>처음으로 돌아가기</Button>
                   </div>
                 ) : (
                   <div className="bg-card rounded-xl border border-border p-3 space-y-2">
@@ -1566,6 +1567,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         </div>
       )}
 
+      {showRestartConfirm&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowRestartConfirm(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
+            <p className="text-sm font-medium mb-1">처음(항목 선택) 화면으로 돌아갈까요?</p>
+            <p className="text-xs text-muted-foreground mb-4">현재 선택은 취소되어 다시 항목을 선택해야 합니다. 이미 저장된 평가 데이터는 삭제되지 않고 그대로 남습니다.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={()=>setShowRestartConfirm(false)}>취소</Button>
+              <Button className="flex-1" disabled={cancelSelection.isPending} onClick={()=>{ setShowRestartConfirm(false); setExpandedRisk(null); setViewOtherTeam(""); if (mySelection) cancelSelection.mutate(mySelection.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{cancelSelection.isPending?"처리 중...":"처음으로"}</Button>
+            </div>
+          </div>
+        </div>
+      )}
       {reEvaluateConfirm!==null&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setReEvaluateConfirm(null)}>
           <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>

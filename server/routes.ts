@@ -1035,6 +1035,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: migrate post_improvement_severity column
+  app.get("/api/debug/migrate-post-improvement-severity", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { pool } = await import("./db");
+      await pool.query(`ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS post_improvement_severity integer`);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ error: String(error?.message || error) });
+    }
+  });
+
   // ── 위험성평가: 지사 목록 (등록된 항목/평가에서 사용된 지사명 취합) ──
   app.get("/api/risk-branches", async (req, res) => {
     try {
@@ -1433,9 +1445,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
           const expCount = itemAssessments.filter(a => a.hadAccidentExperience).length;
-          const estCount = itemAssessments.filter(a => a.estimatedFutureAccident).length;
+          const withSev = itemAssessments.filter(a => a.severity != null);
           const possibility = Math.round((expCount / total) * 5 * 10) / 10;
-          const severity = Math.round((estCount / total) * 5 * 10) / 10;
+          const severity = withSev.length > 0 ? Math.round((withSev.reduce((s, a) => s + (a.severity || 0), 0) / withSev.length) * 10) / 10 : 0;
           const risk = Math.round(possibility * severity * 10) / 10;
           const { level, allow } = levelOfRisk(risk);
           const plans = itemAssessments.filter(a => a.reductionPlan?.trim()).map(a => `[${a.employeeName}] ${a.reductionPlan}`).join("\n");

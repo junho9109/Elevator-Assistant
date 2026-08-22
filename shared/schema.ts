@@ -533,13 +533,14 @@ export const riskAssessments = pgTable("risk_assessments", {
   level: varchar("level", { length: 10 }),               // '상' | '중' | '하'
   // 빈도강도법(승강기검사)
   hadAccidentExperience: boolean("had_accident_experience"), // 최근 1년 내 사고(아차사고 포함) 경험 여부 → 가능성(빈도) = 경험자수/참여자수×5
-  // (사용 안 함 — 예전에는 평가자가 주관적으로 1~4 중대성을 선택했으나, 중대성도 "사고 추정자 수/참여자 수 × 5"로
-  // 팀 집계 계산하는 방식으로 변경됨. 데이터 보존을 위해 컬럼만 남겨둠.)
+  // 중대성(강도) 1~4 — 평가자가 직접 선택. 팀 집계 시 평균을 내어 사용
   severity: integer("severity"),
-  // 향후 이 위험요인으로 사고가 발생할 것으로 추정되는지 여부 → 중대성(강도) = 추정자수/참여자수×5 산정에 사용
+  // 개선 안전보건조치 이행 후 재산정한 중대성(강도) 1~4 — 초기 위험성이 "허용 불가능"(9 이상)일 때만 입력
+  // → 재산정된 위험성이 "허용 가능"(8 이하)이 되어야 해당 항목 평가가 종료됨
+  postImprovementSeverity: integer("post_improvement_severity"),
+  // (사용 안 함 — 한때 중대성을 "사고 추정자 수/참여자 수 × 5" 팀 집계 방식으로 계산했으나, 평가자가 직접 1~4로
+  // 입력하는 방식으로 되돌아감. 데이터 보존을 위해 컬럼만 남겨둠.)
   estimatedFutureAccident: boolean("estimated_future_accident"),
-  // 개선 안전보건조치 이행 후에도 사고가 발생할 것으로 추정되는지 여부 — 초기 위험성이 "허용 불가능"(9 이상)일 때만 입력
-  // → 개선 후 중대성(강도) 재산정에 사용, 재산정된 위험성이 "허용 가능"(8 이하)이 되어야 해당 항목 평가가 종료됨
   postImprovementEstimate: boolean("post_improvement_estimate"),
   // 공통 — 현재 안전보건조치는 관리자가 등록한 참고자료(riskHazardItems.referenceSafetyMeasure)를 그대로 스냅샷 저장 (평가자가 직접 입력하지 않음)
   currentSafetyMeasure: text("current_safety_measure"),
