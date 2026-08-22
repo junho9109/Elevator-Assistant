@@ -234,7 +234,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [templateManagerTeam, setTemplateManagerTeam] = useState(() => TEAM_ROSTERS[0].name);
   const [expandedRisk, setExpandedRisk] = useState<number|null>(null);
   // 이미 평가가 종료된(허용 가능 도달) 항목을 다시 열려고 할 때 재평가 여부를 먼저 확인
-  const [reEvaluateConfirm, setReEvaluateConfirm] = useState<RiskHazardItem|null>(null);
+  const [reEvaluateConfirm, setReEvaluateConfirm] = useState<{ item: RiskHazardItem; hadAccidentExperience: boolean }|null>(null);
   const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
   const [isMandatoryForm, setIsMandatoryForm] = useState(false);
@@ -703,11 +703,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         : { text: "허용 불가능 · 개선 필요", cls: "bg-red-100 text-red-700" };
     return (
       <div key={item.id} className={`bg-card rounded-xl shadow-sm border overflow-hidden ${mine?"border-border":"border-orange-400"}`}>
-        <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>{
-          if (expandedRisk === item.id) { setExpandedRisk(null); return; }
-          if (mine && agg?.resolved) { setReEvaluateConfirm(item); return; }
-          setExpandedRisk(item.id);
-        }}>
+        <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedRisk(expandedRisk===item.id?null:item.id)}>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
@@ -1168,6 +1164,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               )}
             </div>
 
+            {!myEvaluationComplete && (
+            <>
             {branchMandatoryItems.length>0 && (
               <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-900 p-3 space-y-3">
                 <div>
@@ -1240,7 +1238,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     )}
                     <Button size="sm" className="w-full" onClick={()=>{
                       if (myTeamMethod==="freq_severity" && templateExperienceDraft[t.id]===undefined) { flashTemplateExperience(t.id); return; }
-                      selectTemplate.mutate({ hazardItemId: t.id, hadAccidentExperience: templateExperienceDraft[t.id] ?? false });
+                      const experienceValue = templateExperienceDraft[t.id] ?? false;
+                      // 이전에 선택을 취소했다가 같은 항목을 다시 선택하는 경우, 이번 회차의 예전 평가 기록이 남아있으면 재평가 여부를 먼저 확인
+                      if (myAssessment(t.id)) { setReEvaluateConfirm({ item: t, hadAccidentExperience: experienceValue }); return; }
+                      selectTemplate.mutate({ hazardItemId: t.id, hadAccidentExperience: experienceValue });
                     }} disabled={selectTemplate.isPending}>선택</Button>
                   </div>
                 ))}
@@ -1306,9 +1307,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 {sortedActiveTeamItems.map(item=>renderRiskItemCard(item))}
               </>
             )}
+            </>
+            )}
 
-            {myEvaluationComplete ? (
-            <div className="pt-2 border-t border-border space-y-3">
+            {myEvaluationComplete && (
+            <div className="space-y-3">
               <div>
                 <p className="text-sm font-medium mb-1">결과 확인 및 서명</p>
                 <p className="text-xs text-muted-foreground">평가가 종료되었습니다. 우리 팀과 다른 팀의 선택·평가 결과, 개선된 안전보건조치를 모두 확인한 뒤 각 팀마다 확인 버튼을 눌러주세요. 전체 확인이 끝나면 서명 후 저장됩니다.</p>
@@ -1378,10 +1381,6 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 <p className="text-xs text-muted-foreground text-center py-2">모든 팀({TEAM_ROSTERS.length}개)의 결과를 확인하면 서명 단계로 진행됩니다. ({myConfirmedTeams.size}/{TEAM_ROSTERS.length})</p>
               )}
             </div>
-            ) : (
-              <div className="pt-2 border-t border-border">
-                <p className="text-xs text-muted-foreground text-center py-3">본인 평가(필수·수시·선택 항목)를 모두 완료하면 결과 확인·서명 단계로 진행됩니다. 위험성이 "허용 불가능"인 항목은 개선 안전보건조치를 반영해 "허용 가능"이 될 때까지 평가가 종료되지 않습니다.</p>
-              </div>
             )}
           </div>
         )}
@@ -1570,10 +1569,15 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setReEvaluateConfirm(null)}>
           <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
             <p className="text-sm font-medium mb-1">이미 평가가 완료된 항목입니다.</p>
-            <p className="text-xs text-muted-foreground mb-4">다시 평가하시겠습니까? 예를 누르면 처음 평가하는 것과 같은 화면으로 다시 시작합니다.</p>
+            <p className="text-xs text-muted-foreground mb-4">다시 평가하시겠습니까? 예를 누르면 처음 평가하는 것과 같이 이 항목을 다시 선택합니다.</p>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={()=>setReEvaluateConfirm(null)}>아니오</Button>
-              <Button className="flex-1" onClick={()=>{ const it = reEvaluateConfirm; setReEvaluateConfirm(null); if (it) { setAssessForm(p=>{ const n={...p}; delete n[it.id]; return n; }); setExpandedRisk(it.id); } }}>예</Button>
+              <Button className="flex-1" disabled={selectTemplate.isPending} onClick={()=>{
+                const c = reEvaluateConfirm; setReEvaluateConfirm(null);
+                if (!c) return;
+                setAssessForm(p=>{ const n={...p}; delete n[c.item.id]; return n; });
+                selectTemplate.mutate({ hazardItemId: c.item.id, hadAccidentExperience: c.hadAccidentExperience });
+              }}>예</Button>
             </div>
           </div>
         </div>
