@@ -1050,6 +1050,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: 7차 피드백 마이그레이션 - risk_assessments 컬럼 추가 + 결과확인/서명 테이블 생성 (사용 후 제거 예정)
+  app.get("/api/debug/migrate-round7", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { db } = await import("./db");
+      const { sql: sqlOp } = await import("drizzle-orm");
+      await db.execute(sqlOp`ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS estimated_future_accident boolean`);
+      await db.execute(sqlOp`ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS post_improvement_estimate boolean`);
+      await db.execute(sqlOp`CREATE TABLE IF NOT EXISTS risk_result_confirmations (
+        id serial PRIMARY KEY,
+        branch_id varchar(50) NOT NULL,
+        round varchar(100) NOT NULL,
+        team varchar(50) NOT NULL,
+        employee_id varchar(20) NOT NULL,
+        employee_name varchar(50) NOT NULL,
+        confirmed_at timestamp NOT NULL DEFAULT now()
+      )`);
+      await db.execute(sqlOp`CREATE TABLE IF NOT EXISTS risk_signatures (
+        id serial PRIMARY KEY,
+        branch_id varchar(50) NOT NULL,
+        round varchar(100) NOT NULL,
+        team varchar(50),
+        employee_id varchar(20) NOT NULL,
+        employee_name varchar(50) NOT NULL,
+        signature_data_url text NOT NULL,
+        signed_at timestamp NOT NULL DEFAULT now()
+      )`);
+      res.json({ ok: true, migrated: true });
+    } catch (error) {
+      res.status(500).json({ error: "failed", detail: String(error) });
+    }
+  });
+
   // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
   app.get("/api/risk-hazard-items", async (req, res) => {
     try {
@@ -1291,6 +1324,202 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(row);
     } catch (error) {
       res.status(400).json({ error: "Invalid risk assessment data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 결과 확인 (평가 종료 후 팀별 결과 열람 확인) ──
+  app.get("/api/risk-result-confirmations", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskResultConfirmations } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const branchId = req.query.branchId as string | undefined;
+      const round = req.query.round as string | undefined;
+      const conditions = [] as any[];
+      if (branchId) conditions.push(eq(riskResultConfirmations.branchId, branchId));
+      if (round) conditions.push(eq(riskResultConfirmations.round, round));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskResultConfirmations).where(and(...conditions))
+        : await db.select().from(riskResultConfirmations);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk result confirmations");
+    }
+  });
+
+  app.post("/api/risk-result-confirmations", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskResultConfirmations, insertRiskResultConfirmationSchema } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const validated = insertRiskResultConfirmationSchema.parse(req.body);
+      const [existing] = await db.select().from(riskResultConfirmations).where(
+        and(
+          eq(riskResultConfirmations.branchId, validated.branchId),
+          eq(riskResultConfirmations.round, validated.round),
+          eq(riskResultConfirmations.team, validated.team),
+          eq(riskResultConfirmations.employeeId, validated.employeeId)
+        )
+      );
+      if (existing) return res.json(existing);
+      const [row] = await db.insert(riskResultConfirmations).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid confirmation data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 서명 (모든 팀 결과 확인 후 최종 서명) ──
+  app.get("/api/risk-signatures", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskSignatures } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const branchId = req.query.branchId as string | undefined;
+      const round = req.query.round as string | undefined;
+      const conditions = [] as any[];
+      if (branchId) conditions.push(eq(riskSignatures.branchId, branchId));
+      if (round) conditions.push(eq(riskSignatures.round, round));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskSignatures).where(and(...conditions))
+        : await db.select().from(riskSignatures);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk signatures");
+    }
+  });
+
+  app.post("/api/risk-signatures", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskSignatures, insertRiskSignatureSchema } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const validated = insertRiskSignatureSchema.parse(req.body);
+      const [existing] = await db.select().from(riskSignatures).where(
+        and(
+          eq(riskSignatures.branchId, validated.branchId),
+          eq(riskSignatures.round, validated.round),
+          eq(riskSignatures.employeeId, validated.employeeId)
+        )
+      );
+      if (existing) {
+        const [row] = await db.update(riskSignatures)
+          .set({ ...validated, signedAt: new Date() })
+          .where(eq(riskSignatures.id, existing.id))
+          .returning();
+        return res.json(row);
+      }
+      const [row] = await db.insert(riskSignatures).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid signature data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 붙임4-1/4-3 양식 엑셀 내보내기 (관리자용) ──
+  app.get("/api/risk-assessments/export", async (req, res) => {
+    try {
+      const branchId = (req.query.branchId as string) || "";
+      const round = (req.query.round as string) || "";
+      if (!branchId || !round) return res.status(400).json({ error: "branchId, round는 필수입니다." });
+      const { db } = await import("./db");
+      const { riskHazardItems, riskAssessments, riskItemSelections } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const items = await db.select().from(riskHazardItems).where(eq(riskHazardItems.branchId, branchId));
+      const assessments = await db.select().from(riskAssessments).where(and(eq(riskAssessments.branchId, branchId), eq(riskAssessments.round, round)));
+      const selections = await db.select().from(riskItemSelections).where(and(eq(riskItemSelections.round, round)));
+
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+
+      // 팀별 業무구분 매핑 (붙임4-3 시트 구성과 동일)
+      const freqSheetGroups: { sheetName: string; workCategory: string }[] = [
+        { sheetName: "엘리베이터", workCategory: "엘리베이터" },
+        { sheetName: "에스컬레이터", workCategory: "에스컬레이터" },
+        { sheetName: "수직형 휠체어리프트", workCategory: "수직형 휠체어리프트" },
+        { sheetName: "경사형 휠체어리프트", workCategory: "경사형 휠체어리프트" },
+      ];
+      const freqHeader = ["연번","세부 업무","유해위험요인","사고 가능성(빈도)","중대성(강도)","위험성","허용여부","현재 안전보건조치","개선 안전보건조치","평가자","평가일"];
+
+      function levelOfRisk(risk: number): { level: string; allow: string } {
+        if (risk >= 15) return { level: "상", allow: "허용 불가능" };
+        if (risk >= 9) return { level: "중", allow: "허용 불가능" };
+        return { level: "하", allow: "허용 가능" };
+      }
+
+      for (const g of freqSheetGroups) {
+        const groupItems = items.filter(it => it.workCategory === g.workCategory && it.isTemplate);
+        if (groupItems.length === 0) continue;
+        const sheet = wb.addWorksheet(g.sheetName);
+        sheet.addRow(["평가업무", "승강기 검사"]);
+        sheet.addRow(["평가방법", "빈도·강도법"]);
+        sheet.addRow(["업무구분", g.workCategory]);
+        sheet.addRow(["회차", round]);
+        sheet.addRow([]);
+        sheet.addRow(freqHeader);
+        let seq = 1;
+        for (const item of groupItems) {
+          const itemAssessments = assessments.filter(a => a.hazardItemId === item.id);
+          const total = itemAssessments.length;
+          if (total === 0) {
+            sheet.addRow([seq++, item.subWork || "", item.content, "", "", "", "", item.referenceSafetyMeasure || "", "", "", ""]);
+            continue;
+          }
+          const expCount = itemAssessments.filter(a => a.hadAccidentExperience).length;
+          const estCount = itemAssessments.filter(a => a.estimatedFutureAccident).length;
+          const possibility = Math.round((expCount / total) * 5 * 10) / 10;
+          const severity = Math.round((estCount / total) * 5 * 10) / 10;
+          const risk = Math.round(possibility * severity * 10) / 10;
+          const { level, allow } = levelOfRisk(risk);
+          const plans = itemAssessments.filter(a => a.reductionPlan?.trim()).map(a => `[${a.employeeName}] ${a.reductionPlan}`).join("\n");
+          const evaluators = itemAssessments.map(a => a.employeeName).join(", ");
+          const latestDate = itemAssessments.reduce((max, a) => a.updatedAt > max ? a.updatedAt : max, itemAssessments[0].updatedAt);
+          sheet.addRow([
+            seq++, item.subWork || "", item.content,
+            possibility, severity, `${risk} (${level})`, allow,
+            item.referenceSafetyMeasure || "", plans, evaluators,
+            new Date(latestDate).toLocaleDateString("ko-KR"),
+          ]);
+        }
+        sheet.columns.forEach(c => { c.width = 22; });
+      }
+
+      // 사무(체크리스트법) 시트 — 붙임4-1
+      const checklistItems = items.filter(it => it.workCategory === "사무" || it.method === "checklist");
+      if (checklistItems.filter(it => it.isTemplate).length > 0) {
+        const sheet = wb.addWorksheet("사무");
+        sheet.addRow(["평가업무", "사무"]);
+        sheet.addRow(["평가방법", "체크리스트법"]);
+        sheet.addRow(["회차", round]);
+        sheet.addRow([]);
+        sheet.addRow(["연번","유해위험요인","위험성(상/중/하)","현재 안전보건조치","개선 안전보건조치","평가자","평가일"]);
+        let seq = 1;
+        for (const item of checklistItems.filter(it => it.isTemplate)) {
+          const itemAssessments = assessments.filter(a => a.hazardItemId === item.id);
+          if (itemAssessments.length === 0) {
+            sheet.addRow([seq++, item.content, "", item.referenceSafetyMeasure || "", "", "", ""]);
+            continue;
+          }
+          const counts: Record<string, number> = {};
+          itemAssessments.forEach(a => { if (a.level) counts[a.level] = (counts[a.level] || 0) + 1; });
+          const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+          const level = top ? top[0] : "";
+          const plans = itemAssessments.filter(a => a.reductionPlan?.trim()).map(a => `[${a.employeeName}] ${a.reductionPlan}`).join("\n");
+          const evaluators = itemAssessments.map(a => a.employeeName).join(", ");
+          const latestDate = itemAssessments.reduce((max, a) => a.updatedAt > max ? a.updatedAt : max, itemAssessments[0].updatedAt);
+          sheet.addRow([seq++, item.content, level, item.referenceSafetyMeasure || "", plans, evaluators, new Date(latestDate).toLocaleDateString("ko-KR")]);
+        }
+        sheet.columns.forEach(c => { c.width = 24; });
+      }
+
+      if (wb.worksheets.length === 0) wb.addWorksheet("결과없음");
+
+      const buffer = await wb.xlsx.writeBuffer();
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(branchId)}_${encodeURIComponent(round)}_위험성평가.xlsx"`);
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      handleError(res, error, "Failed to export risk assessments");
     }
   });
 

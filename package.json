@@ -70,6 +70,7 @@
     "drizzle-orm": "^0.39.1",
     "drizzle-zod": "^0.7.0",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "^4.4.0",
     "expo-constants": "^55.0.7",
     "expo-file-system": "^55.0.10",
     "expo-splash-screen": "^55.0.10",

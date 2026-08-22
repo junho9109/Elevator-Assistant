@@ -532,11 +532,18 @@ export const riskAssessments = pgTable("risk_assessments", {
   // 체크리스트법(사무)
   level: varchar("level", { length: 10 }),               // '상' | '중' | '하'
   // 빈도강도법(승강기검사)
-  hadAccidentExperience: boolean("had_accident_experience"), // 최근 1년 내 사고(아차사고 포함) 경험 여부
-  severity: integer("severity"),                          // 중대성 1~4
-  // 공통
+  hadAccidentExperience: boolean("had_accident_experience"), // 최근 1년 내 사고(아차사고 포함) 경험 여부 → 가능성(빈도) = 경험자수/참여자수×5
+  // (사용 안 함 — 예전에는 평가자가 주관적으로 1~4 중대성을 선택했으나, 중대성도 "사고 추정자 수/참여자 수 × 5"로
+  // 팀 집계 계산하는 방식으로 변경됨. 데이터 보존을 위해 컬럼만 남겨둠.)
+  severity: integer("severity"),
+  // 향후 이 위험요인으로 사고가 발생할 것으로 추정되는지 여부 → 중대성(강도) = 추정자수/참여자수×5 산정에 사용
+  estimatedFutureAccident: boolean("estimated_future_accident"),
+  // 개선 안전보건조치 이행 후에도 사고가 발생할 것으로 추정되는지 여부 — 초기 위험성이 "허용 불가능"(9 이상)일 때만 입력
+  // → 개선 후 중대성(강도) 재산정에 사용, 재산정된 위험성이 "허용 가능"(8 이하)이 되어야 해당 항목 평가가 종료됨
+  postImprovementEstimate: boolean("post_improvement_estimate"),
+  // 공통 — 현재 안전보건조치는 관리자가 등록한 참고자료(riskHazardItems.referenceSafetyMeasure)를 그대로 스냅샷 저장 (평가자가 직접 입력하지 않음)
   currentSafetyMeasure: text("current_safety_measure"),
-  // 감소대책은 개인별 작성 필드 — 위험성 9 이상인 사람 각자가 본인 의견을 작성하고, 팀원 전체에게 공유되어 노출됨
+  // 개선 안전보건조치는 개인별 작성 필드 — 위험성이 "허용 불가능"(9 이상)인 사람 각자가 본인 의견을 작성하고, 팀원 전체에게 공유되어 노출됨
   // (하나의 공동 필드로 합치지 않음 — 다양한 개별 의견을 모아 사고를 줄인다는 취지)
   reductionPlan: text("reduction_plan"),
   implementStatus: varchar("implement_status", { length: 10 }), // '완료' | '미완료'
@@ -554,6 +561,35 @@ export const insertRiskAssessmentSchema = createInsertSchema(riskAssessments).om
 });
 export type InsertRiskAssessment = z.infer<typeof insertRiskAssessmentSchema>;
 export type RiskAssessment = typeof riskAssessments.$inferSelect;
+
+// ── 위험성평가: 결과 확인 — 평가가 모두 종료된 후, 각 팀(본인 팀 + 다른 팀) 결과를 열람하고 "확인" 버튼을 눌렀는지 기록 ──
+export const riskResultConfirmations = pgTable("risk_result_confirmations", {
+  id: serial("id").primaryKey(),
+  branchId: varchar("branch_id", { length: 50 }).notNull(),
+  round: varchar("round", { length: 100 }).notNull(),
+  team: varchar("team", { length: 50 }).notNull(), // 확인 대상 팀 (본인 팀 또는 열람 중인 다른 팀)
+  employeeId: varchar("employee_id", { length: 20 }).notNull(),
+  employeeName: varchar("employee_name", { length: 50 }).notNull(),
+  confirmedAt: timestamp("confirmed_at").defaultNow().notNull(),
+});
+export const insertRiskResultConfirmationSchema = createInsertSchema(riskResultConfirmations).omit({ id: true, confirmedAt: true });
+export type InsertRiskResultConfirmation = z.infer<typeof insertRiskResultConfirmationSchema>;
+export type RiskResultConfirmation = typeof riskResultConfirmations.$inferSelect;
+
+// ── 위험성평가: 서명 — 모든 팀 결과 확인을 마친 후 최종 서명 (1인 1회차 1서명) ──
+export const riskSignatures = pgTable("risk_signatures", {
+  id: serial("id").primaryKey(),
+  branchId: varchar("branch_id", { length: 50 }).notNull(),
+  round: varchar("round", { length: 100 }).notNull(),
+  team: varchar("team", { length: 50 }),
+  employeeId: varchar("employee_id", { length: 20 }).notNull(),
+  employeeName: varchar("employee_name", { length: 50 }).notNull(),
+  signatureDataUrl: text("signature_data_url").notNull(), // base64 PNG 서명 이미지
+  signedAt: timestamp("signed_at").defaultNow().notNull(),
+});
+export const insertRiskSignatureSchema = createInsertSchema(riskSignatures).omit({ id: true, signedAt: true });
+export type InsertRiskSignature = z.infer<typeof insertRiskSignatureSchema>;
+export type RiskSignature = typeof riskSignatures.$inferSelect;
 
 // ── 위험성평가: 수시 평가 신청 — 정기 회차 외에 필요할 때 신청하면 관리자가 승인 후 별도 회차로 진행 ──
 export const riskAdhocRequests = pgTable("risk_adhoc_requests", {

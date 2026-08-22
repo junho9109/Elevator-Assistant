@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ type EmployeeTeamOverride = { id: number; employeeId: string; team: string; setB
 type RiskAssessment = {
   id: number; hazardItemId: number; branchId: string; employeeId: string; employeeName: string; round: string;
   level: string | null; hadAccidentExperience: boolean | null; severity: number | null;
+  estimatedFutureAccident: boolean | null; postImprovementEstimate: boolean | null;
   currentSafetyMeasure: string | null; reductionPlan: string | null;
   implementStatus: string | null; implementDate: string | null; implementOwner: string | null; actionResult: string | null;
   createdAt: string; updatedAt: string;
@@ -34,12 +35,74 @@ type RiskAdhocRequest = {
   imageUrls: string[] | null; targetMembers: string[] | null;
   status: string; round: string | null; createdAt: string; updatedAt: string;
 };
+type RiskResultConfirmation = { id: number; branchId: string; round: string; team: string; employeeId: string; employeeName: string; confirmedAt: string; };
+type RiskSignature = { id: number; branchId: string; round: string; team: string | null; employeeId: string; employeeName: string; signatureDataUrl: string; signedAt: string; };
 // 정기 회차 — 매년 갱신됨. 수시 평가는 신청 승인 시 별도 회차명이 부여됨.
 const CURRENT_ROUND = "2026년도 정기 위험성평가";
+// 위험성 수준 판정: 상(15~20,매우높음,허용불가) / 중(9~14,보통,허용불가) / 하(1~8,매우낮음,허용가능)
+function riskLevelOf(risk: number): { level: "상"|"중"|"하"; label: string; allow: "허용 가능"|"허용 불가능" } {
+  if (risk >= 15) return { level: "상", label: "매우 높음", allow: "허용 불가능" };
+  if (risk >= 9) return { level: "중", label: "보통", allow: "허용 불가능" };
+  return { level: "하", label: "매우 낮음", allow: "허용 가능" };
+}
 
 function getDaysUntilExpiry(expiryDate: string | null): number {
   if (!expiryDate) return 999;
   return Math.floor((new Date(expiryDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// 손가락/마우스로 그리는 간단한 서명 캔버스
+function SignaturePad({ onSave, saving }: { onSave: (dataUrl: string) => void; saving?: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [hasDrawn, setHasDrawn] = useState(false);
+  const drawingRef = useRef(false);
+  function getPos(e: any, canvas: HTMLCanvasElement) {
+    const rect = canvas.getBoundingClientRect();
+    const point = e.touches && e.touches[0] ? e.touches[0] : e;
+    return { x: point.clientX - rect.left, y: point.clientY - rect.top };
+  }
+  function start(e: any) {
+    const canvas = canvasRef.current as HTMLCanvasElement | null;
+    if (!canvas) return;
+    e.preventDefault();
+    drawingRef.current = true;
+    const ctx = canvas.getContext("2d");
+    const { x, y } = getPos(e, canvas);
+    ctx?.beginPath();
+    ctx?.moveTo(x, y);
+  }
+  function move(e: any) {
+    if (!drawingRef.current) return;
+    const canvas = canvasRef.current as HTMLCanvasElement | null;
+    if (!canvas) return;
+    e.preventDefault();
+    const ctx = canvas.getContext("2d");
+    const { x, y } = getPos(e, canvas);
+    if (ctx) { ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.strokeStyle = "#1f2937"; ctx.lineTo(x, y); ctx.stroke(); }
+    setHasDrawn(true);
+  }
+  function end() { drawingRef.current = false; }
+  function clear() {
+    const canvas = canvasRef.current as HTMLCanvasElement | null;
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasDrawn(false);
+  }
+  return (
+    <div className="space-y-2">
+      <canvas
+        ref={canvasRef}
+        width={320} height={140}
+        className="w-full bg-white border border-border rounded-xl touch-none"
+        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+      />
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" className="flex-1" onClick={clear}>지우기</Button>
+        <Button size="sm" className="flex-1" disabled={!hasDrawn || saving} onClick={()=>{ const canvas = canvasRef.current; if (canvas) onSave(canvas.toDataURL("image/png")); }}>{saving?"저장 중...":"서명하고 저장"}</Button>
+      </div>
+    </div>
+  );
 }
 
 function DatePicker({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -180,7 +243,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     setDirectExperienceAttempt(true);
     setTimeout(() => setDirectExperienceAttempt(false), 1500);
   }
-  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
+  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; estimatedFutureAccident: boolean; postImprovementEstimate: boolean | undefined; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   // 선택 단계에서 함께 답하는 경험 여부(템플릿별 임시 답변) 및 회차/수시평가 관련 상태
   const [templateExperienceDraft, setTemplateExperienceDraft] = useState<Record<number, boolean | undefined>>({});
   // 경험여부를 답하지 않고 "선택"을 누르려 할 때만 잠깐 강조 표시(평상시엔 켜져있지 않음)
@@ -260,6 +323,40 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     enabled: ready && !!myTeam,
   });
   const roundForcedOpen = roundOverrides.length > 0;
+  // 회차 전체(팀 무관) 선택 현황 — 결과 확인 화면에서 팀별 요약을 만들 때 사용
+  const { data: allRoundSelections = [] } = useQuery<RiskItemSelection[]>({
+    queryKey: ["/api/risk-item-selections", "round", activeRound],
+    queryFn: async () => { const r = await fetch(`/api/risk-item-selections?round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    enabled: ready,
+  });
+  // 결과 확인 — 평가 종료 후 각 팀(본인 팀 포함) 결과를 열람하고 확인했는지 기록
+  const { data: resultConfirmations = [] } = useQuery<RiskResultConfirmation[]>({
+    queryKey: ["/api/risk-result-confirmations", branchName, activeRound],
+    queryFn: async () => { const r = await fetch(`/api/risk-result-confirmations?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    enabled: ready,
+  });
+  const myConfirmedTeams = useMemo(() => new Set(resultConfirmations.filter(c => c.employeeId === empId).map(c => c.team)), [resultConfirmations, empId]);
+  const confirmTeamResult = useMutation({
+    mutationFn: async (team: string) => {
+      const r = await fetch("/api/risk-result-confirmations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branchId: branchName, round: activeRound, team, employeeId: empId, employeeName: empName }) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/risk-result-confirmations"] }),
+  });
+  // 서명 — 모든 팀 결과 확인을 마친 후 최종 서명
+  const { data: roundSignatures = [] } = useQuery<RiskSignature[]>({
+    queryKey: ["/api/risk-signatures", branchName, activeRound],
+    queryFn: async () => { const r = await fetch(`/api/risk-signatures?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    enabled: ready,
+  });
+  const mySignature = useMemo(() => roundSignatures.find(s => s.employeeId === empId), [roundSignatures, empId]);
+  const saveSignature = useMutation({
+    mutationFn: async (signatureDataUrl: string) => {
+      const r = await fetch("/api/risk-signatures", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branchId: branchName, round: activeRound, team: myTeam, employeeId: empId, employeeName: empName, signatureDataUrl }) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-signatures"] }); toast({ title: "서명이 저장되었습니다." }); },
+  });
   const [showForceOpenConfirm, setShowForceOpenConfirm] = useState(false);
   const forceOpenRound = useMutation({
     mutationFn: async () => {
@@ -296,22 +393,17 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-adhoc-requests"] }); toast({ title: "처리되었습니다." }); },
   });
-  // 다른 팀 조회(공유) — 본인 팀이 아닌 다른 팀을 골라서 결과만 볼 수 있게. 회차 선택으로 과거 연도도 열람 가능(공유 아카이브)
+  // 결과 확인 화면에서 펼쳐진 팀 (평가 완료 전에는 미사용)
   const [viewOtherTeam, setViewOtherTeam] = useState("");
-  const { data: otherTeamItems = [] } = useQuery<RiskHazardItem[]>({
-    queryKey: ["/api/risk-hazard-items", "view", viewOtherTeam],
-    queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?team=${encodeURIComponent(viewOtherTeam)}`); return r.json(); },
-    enabled: ready && !!viewOtherTeam && viewOtherTeam !== myTeam,
-  });
-  const { data: otherTeamSelections = [] } = useQuery<RiskItemSelection[]>({
-    queryKey: ["/api/risk-item-selections", "view", viewOtherTeam, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(viewOtherTeam)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
-    enabled: ready && !!viewOtherTeam && viewOtherTeam !== myTeam,
-  });
-  const otherTeamActiveItems = useMemo(() => {
-    const selectedIds = new Set(otherTeamSelections.map(s => s.hazardItemId));
-    return otherTeamItems.filter(t => selectedIds.has(t.id));
-  }, [otherTeamItems, otherTeamSelections]);
+  // 결과 확인 화면용 — 팀 이름을 넣으면 해당 팀의 선택(1인1항목)+필수/수시 항목을 모두 반환 (전체 회차 선택 데이터 기준, 팀 무관 조회 불필요)
+  function teamSummaryItems(teamName: string) {
+    const selectedIds = new Set(
+      allRoundSelections
+        .filter(s => riskItems.find(i => i.id === s.hazardItemId)?.team === teamName)
+        .map(s => s.hazardItemId)
+    );
+    return riskItems.filter(it => it.team === teamName && it.isTemplate && (it.isMandatory || selectedIds.has(it.id)));
+  }
   // 관리자 예시 관리 패널 — 열려있을 때만, 선택한 팀 기준 조회
   const { data: adminTeamItems = [] } = useQuery<RiskHazardItem[]>({
     queryKey: ["/api/risk-hazard-items", "admin", templateManagerTeam],
@@ -426,6 +518,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
   const myAssessment = (itemId: number) => assessmentsByItem.get(itemId)?.find(a => a.employeeId === empId);
 
+  // 빈도강도법: 가능성(빈도)=경험자수/참여자수×5, 중대성(강도)=추정자수/참여자수×5, 위험성=가능성×중대성
+  // 위험성이 "허용 불가능"(9 이상)이면 개선 안전보건조치 이행 후 추정 결과로 중대성을 재산정하여 "허용 가능"이 될 때까지 종료되지 않음
   function computeAggregate(itemId: number, method: RiskMethod) {
     const list = assessmentsByItem.get(itemId) || [];
     if (list.length === 0) return null;
@@ -433,16 +527,40 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       const counts: Record<string, number> = {};
       list.forEach(a => { if (a.level) counts[a.level] = (counts[a.level] || 0) + 1; });
       const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-      return top ? { level: top[0] } : null;
+      const level = top ? top[0] : null;
+      const requiresPlan = level === "상" || level === "중";
+      const resolved = level != null && (!requiresPlan || list.some(a => a.reductionPlan?.trim()));
+      return { level, requiresPlan, resolved, participants: list.length };
     }
     const withExp = list.filter(a => a.hadAccidentExperience !== null);
-    const withSev = list.filter(a => a.severity != null);
-    if (withExp.length === 0 && withSev.length === 0) return null;
+    const withEst = list.filter(a => a.estimatedFutureAccident !== null && a.estimatedFutureAccident !== undefined);
+    if (withExp.length === 0 && withEst.length === 0) return null;
     const experienced = withExp.filter(a => a.hadAccidentExperience).length;
     const possibility = withExp.length > 0 ? Math.round((experienced / withExp.length) * 5 * 10) / 10 : 0;
-    const avgSeverity = withSev.length > 0 ? Math.round((withSev.reduce((s, a) => s + (a.severity || 0), 0) / withSev.length) * 10) / 10 : 0;
+    const estimated = withEst.filter(a => a.estimatedFutureAccident).length;
+    const avgSeverity = withEst.length > 0 ? Math.round((estimated / withEst.length) * 5 * 10) / 10 : 0;
     const risk = Math.round(possibility * avgSeverity * 10) / 10;
-    return { possibility, avgSeverity, risk, participants: list.length };
+    const initial = riskLevelOf(risk);
+    let finalRisk = risk, finalLevel = initial.level, finalLabel = initial.label, finalAllow = initial.allow, resolved = initial.allow === "허용 가능";
+    if (initial.allow === "허용 불가능") {
+      const withPost = list.filter(a => a.postImprovementEstimate !== null && a.postImprovementEstimate !== undefined);
+      if (withPost.length > 0) {
+        const postEstimated = withPost.filter(a => a.postImprovementEstimate).length;
+        const postSeverity = Math.round((postEstimated / withPost.length) * 5 * 10) / 10;
+        const postRisk = Math.round(possibility * postSeverity * 10) / 10;
+        const postClass = riskLevelOf(postRisk);
+        finalRisk = postRisk; finalLevel = postClass.level; finalLabel = postClass.label; finalAllow = postClass.allow;
+        resolved = postClass.allow === "허용 가능";
+      } else {
+        resolved = false;
+      }
+    }
+    const hasPlan = list.some(a => a.reductionPlan?.trim());
+    return {
+      possibility, avgSeverity, risk, participants: list.length,
+      level: initial.level, label: initial.label, allow: initial.allow,
+      finalRisk, finalLevel, finalLabel, finalAllow, resolved: resolved && (initial.allow === "허용 가능" || hasPlan),
+    };
   }
 
   const sortedRiskItems = useMemo(() => {
@@ -481,34 +599,36 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const adminTemplates = useMemo(() => adminTeamItems.filter(t => t.isTemplate && !t.isMandatory), [adminTeamItems]);
   const adminMandatoryItems = useMemo(() => adminTeamItems.filter(t => t.isMandatory), [adminTeamItems]);
   // 본인의 필수+수시+선택 항목 평가를 모두 마쳐야 "공유"(다른 팀 결과 보기)가 열림
+  // 평가 종료 = 본인이 평가를 제출했을 뿐 아니라, 위험성이 "허용 가능" 수준까지 도달(팀 집계 기준)해야 함
   const myEvaluationComplete = useMemo(() => {
     if (!mySelection) return false;
     const myMandatory = [...branchMandatoryItems, ...adhocMandatoryItems].filter(item => mandatoryTargets(item).includes(empName));
-    if (myMandatory.some(item => !myAssessment(item.id))) return false;
-    if (sortedActiveTeamItems.some(item => !myAssessment(item.id))) return false;
+    const isResolved = (item: RiskHazardItem) => !!myAssessment(item.id) && !!computeAggregate(item.id, item.method)?.resolved;
+    if (myMandatory.some(item => !isResolved(item))) return false;
+    if (sortedActiveTeamItems.some(item => !isResolved(item))) return false;
     return true;
   }, [mySelection, branchMandatoryItems, adhocMandatoryItems, sortedActiveTeamItems, assessmentsByItem, empName]);
   const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
 
   function getAssessForm(itemId: number) {
-    return assessForm[itemId] || { level: "중", hadAccidentExperience: false, severity: 2, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
+    return assessForm[itemId] || { level: "중", hadAccidentExperience: false, severity: 2, estimatedFutureAccident: false, postImprovementEstimate: undefined as boolean | undefined, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
   }
   function setItemAssessForm(itemId: number, patch: Partial<ReturnType<typeof getAssessForm>>) {
     setAssessForm(p => ({ ...p, [itemId]: { ...getAssessForm(itemId), ...p[itemId], ...patch } }));
   }
   function submitAssessment(item: RiskHazardItem, myExperience?: boolean) {
     const f = getAssessForm(item.id);
-    const payload: any = { hazardItemId: item.id, branchId: branchName, employeeId: empId, employeeName: empName, round: activeRound, implementStatus: f.implementStatus, implementDate: f.implementDate || null, implementOwner: f.implementOwner || null };
+    // 현재 안전보건조치는 평가자가 입력하지 않음 — 관리자가 등록한 참고자료를 그대로 스냅샷 저장
+    const payload: any = { hazardItemId: item.id, branchId: branchName, employeeId: empId, employeeName: empName, round: activeRound, currentSafetyMeasure: item.referenceSafetyMeasure || null, implementStatus: f.implementStatus, implementDate: f.implementDate || null, implementOwner: f.implementOwner || null };
     if (item.method === "checklist") {
       payload.level = f.level;
-      payload.currentSafetyMeasure = f.currentSafetyMeasure || null;
       payload.reductionPlan = f.reductionPlan || null;
     } else {
       // 본인이 제안(선택)한 항목이면 선택 단계에서 이미 답한 경험 여부를 그대로 사용, 아니면 이 화면에서 입력한 값 사용
       payload.hadAccidentExperience = myExperience !== undefined ? myExperience : f.hadAccidentExperience;
-      payload.severity = f.severity;
-      payload.currentSafetyMeasure = f.currentSafetyMeasure || null;
-      // 개선대책(감소대책)은 개인별 필드 — 본인 의견을 작성하면 팀원 전체에게 공유되어 노출됨
+      payload.estimatedFutureAccident = f.estimatedFutureAccident;
+      payload.postImprovementEstimate = f.postImprovementEstimate !== undefined ? f.postImprovementEstimate : null;
+      // 개선 안전보건조치는 개인별 필드 — 본인 의견을 작성하면 팀원 전체에게 공유되어 노출됨
       payload.reductionPlan = f.reductionPlan || null;
     }
     saveAssessment.mutate(payload);
@@ -540,7 +660,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
   function renderRiskItemCard(item: RiskHazardItem) {
     const mine = myAssessment(item.id);
-    const agg = computeAggregate(item.id, item.method);
+    const agg = computeAggregate(item.id, item.method) as any;
     const f = getAssessForm(item.id);
     // 본인이 직접 선택(제안)한 항목이면 선택 단계에서 이미 경험 여부를 답했으므로 다시 묻지 않고 그 값을 재사용
     const isMyProposedItem = !!mySelection && mySelection.hazardItemId === item.id;
@@ -552,25 +672,40 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
           const expCount = others.filter(a=>a.hadAccidentExperience).length + (myExperienceValue?1:0);
           const totalCount = others.length + 1;
           const possibility = Math.round((expCount/totalCount)*5*10)/10;
-          const sevList = [...others.filter(a=>a.severity!=null).map(a=>a.severity as number), f.severity];
-          const avgSeverity = Math.round((sevList.reduce((s,v)=>s+v,0)/sevList.length)*10)/10;
-          return { possibility, avgSeverity, risk: Math.round(possibility*avgSeverity*10)/10 };
+          const othersEst = others.filter(a=>a.estimatedFutureAccident!=null);
+          const estList = [...othersEst.map(a=>a.estimatedFutureAccident as boolean), f.estimatedFutureAccident];
+          const estCount = estList.filter(Boolean).length;
+          const avgSeverity = Math.round((estCount/estList.length)*5*10)/10;
+          const risk = Math.round(possibility*avgSeverity*10)/10;
+          const cls = riskLevelOf(risk);
+          let postRisk: number | null = null, postCls: ReturnType<typeof riskLevelOf> | null = null;
+          if (cls.allow === "허용 불가능") {
+            const othersPost = others.filter(a=>a.postImprovementEstimate!=null && a.postImprovementEstimate!==undefined);
+            const postList = [...othersPost.map(a=>a.postImprovementEstimate as boolean)];
+            if (f.postImprovementEstimate !== undefined) postList.push(f.postImprovementEstimate);
+            if (postList.length > 0) {
+              const postEstCount = postList.filter(Boolean).length;
+              const postSeverity = Math.round((postEstCount/postList.length)*5*10)/10;
+              postRisk = Math.round(possibility*postSeverity*10)/10;
+              postCls = riskLevelOf(postRisk);
+            }
+          }
+          return { possibility, avgSeverity, risk, cls, postRisk, postCls };
         })()
       : null;
     const sharedAssessments = (assessmentsByItem.get(item.id) || []).filter(a => a.employeeId !== empId);
+    const badge = !mine
+      ? { text: "미평가", cls: "bg-orange-100 text-orange-700" }
+      : agg?.resolved
+        ? { text: `평가완료${item.method==="checklist" ? (agg.level?` · ${agg.level}`:"") : (agg.finalRisk!=null?` · 위험성 ${agg.finalRisk}(${agg.finalLevel})`:"")}`, cls: "bg-green-100 text-green-700" }
+        : { text: "허용 불가능 · 개선 필요", cls: "bg-red-100 text-red-700" };
     return (
       <div key={item.id} className={`bg-card rounded-xl shadow-sm border overflow-hidden ${mine?"border-border":"border-orange-400"}`}>
         <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedRisk(expandedRisk===item.id?null:item.id)}>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
-              {mine ? (
-                <span className="text-xs px-2 py-0.5 rounded-md bg-green-100 text-green-700">
-                  평가완료{item.method==="checklist" ? (mine.level?` · ${mine.level}`:"") : (agg?` · 위험성 ${agg.risk}`:"")}
-                </span>
-              ) : (
-                <span className="text-xs px-2 py-0.5 rounded-md bg-orange-100 text-orange-700">미평가</span>
-              )}
+              <span className={`text-xs px-2 py-0.5 rounded-md ${badge.cls}`}>{badge.text}</span>
             </div>
             <div className="flex items-center gap-1.5 min-w-0">
               <p className="text-sm font-medium truncate min-w-0">{item.content}</p>
@@ -586,12 +721,6 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         </div>
         {expandedRisk===item.id && (
           <div className="px-4 pb-4 border-t border-border pt-3 bg-muted/30 space-y-3">
-            {item.referenceSafetyMeasure && (
-              <div className="bg-muted/40 rounded-lg p-2">
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">현재 안전보건조치 (참고)</p>
-                <p className="text-xs text-muted-foreground whitespace-pre-wrap">{item.referenceSafetyMeasure}</p>
-              </div>
-            )}
             {item.fieldInfo && <p className="text-xs text-muted-foreground">현장정보: {item.fieldInfo}</p>}
             {item.imageUrls && item.imageUrls.length>0 && <div className="grid grid-cols-3 gap-2">{item.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>}
 
@@ -605,8 +734,16 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   ))}
                 </div>
                 <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${CHECKLIST_LEVEL_COLOR[f.level]}`}>{CHECKLIST_LEVEL_INFO[f.level]}</p>
-                <textarea placeholder="현재 안전보건조치 *" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
-                <textarea placeholder="감소대책 (선택)" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+                <div className="bg-muted/40 rounded-lg p-2">
+                  <p className="text-xs font-medium text-muted-foreground mb-0.5">현재 안전보건조치</p>
+                  <p className="text-xs text-muted-foreground whitespace-pre-wrap">{item.referenceSafetyMeasure || "등록된 참고자료가 없습니다."}</p>
+                </div>
+                {(f.level==="상"||f.level==="중") && (
+                  <div>
+                    <p className="text-xs font-medium text-orange-700 mb-1">위험도 {f.level} — 개선 안전보건조치를 입력해주세요. 본인 의견이며 팀원 전체에게 공유됩니다.</p>
+                    <textarea placeholder="개선 안전보건조치 *" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -617,37 +754,48 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요?</p>
+                    <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? (가능성 산정)</p>
                     <div className="flex gap-2">
                       <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
                       <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:false})} className={`flex-1 text-sm py-2 rounded-lg border ${!f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
                     </div>
                   </>
                 )}
-                <p className="text-sm text-muted-foreground">중대성 (1 소 ~ 4 최대)</p>
+                <p className="text-sm text-muted-foreground">향후 이 위험요인으로 사고가 발생할 것으로 추정되십니까? (중대성 산정)</p>
                 <div className="flex gap-2">
-                  {[1,2,3,4].map(s=>(
-                    <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
-                  ))}
+                  <button onClick={()=>setItemAssessForm(item.id,{estimatedFutureAccident:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.estimatedFutureAccident?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
+                  <button onClick={()=>setItemAssessForm(item.id,{estimatedFutureAccident:false})} className={`flex-1 text-sm py-2 rounded-lg border ${!f.estimatedFutureAccident?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
                 </div>
-                <p className={`text-[13px] font-semibold leading-relaxed rounded-lg px-3 py-2 ${SEVERITY_COLOR[f.severity]}`}>{SEVERITY_INFO[f.severity]}</p>
                 {liveAgg && (
-                  <div className="flex items-baseline gap-2 text-xs">
+                  <div className="flex items-baseline gap-2 text-xs flex-wrap">
                     <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
-                    <span className={`font-semibold ${liveAgg.risk>=9?"text-red-600":"text-green-700"}`}>{liveAgg.risk}</span>
+                    <span className={`font-semibold ${liveAgg.cls.allow==="허용 불가능"?"text-red-600":"text-green-700"}`}>{liveAgg.risk} · {liveAgg.cls.level}({liveAgg.cls.label}) · {liveAgg.cls.allow}</span>
                   </div>
                 )}
-                <textarea placeholder="현재 안전보건조치 *" value={f.currentSafetyMeasure} onChange={e=>setItemAssessForm(item.id,{currentSafetyMeasure:e.target.value})} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px]"/>
-                {liveAgg && liveAgg.risk>=9 && (
-                  <div>
-                    <p className="text-xs font-medium text-orange-700 mb-1">위험성 {liveAgg.risk} — 개선대책(감소대책)을 입력해주세요. 본인 의견이며 팀원 전체에게 공유됩니다.</p>
-                    <textarea placeholder="개선대책 *" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+                <div className="bg-muted/40 rounded-lg p-2">
+                  <p className="text-xs font-medium text-muted-foreground mb-0.5">현재 안전보건조치</p>
+                  <p className="text-xs text-muted-foreground whitespace-pre-wrap">{item.referenceSafetyMeasure || "등록된 참고자료가 없습니다."}</p>
+                </div>
+                {liveAgg && liveAgg.cls.allow==="허용 불가능" && (
+                  <div className="space-y-2 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900 rounded-xl p-2.5">
+                    <p className="text-xs font-medium text-red-700">위험성 {liveAgg.risk}({liveAgg.cls.level}) — 허용 불가능. 개선 안전보건조치를 입력하고, 이행 후 재추정을 답해야 평가가 종료됩니다.</p>
+                    <textarea placeholder="개선 안전보건조치 *" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+                    <p className="text-xs text-muted-foreground">개선 안전보건조치 이행 후에도 이 위험요인으로 사고가 발생할 것으로 추정되십니까?</p>
+                    <div className="flex gap-2">
+                      <button onClick={()=>setItemAssessForm(item.id,{postImprovementEstimate:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.postImprovementEstimate===true?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
+                      <button onClick={()=>setItemAssessForm(item.id,{postImprovementEstimate:false})} className={`flex-1 text-sm py-2 rounded-lg border ${f.postImprovementEstimate===false?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+                    </div>
+                    {liveAgg.postCls && (
+                      <div className="flex items-baseline gap-2 text-xs flex-wrap pt-1 border-t border-red-200 dark:border-red-900">
+                        <span className="text-muted-foreground">개선 후 재산정 위험성</span>
+                        <span className={`font-semibold ${liveAgg.postCls.allow==="허용 불가능"?"text-red-600":"text-green-700"}`}>{liveAgg.postRisk} · {liveAgg.postCls.level}({liveAgg.postCls.label}) · {liveAgg.postCls.allow}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
             )}
-            {!f.currentSafetyMeasure?.trim() && <p className="text-xs text-red-500">현재 안전보건조치를 입력해야 저장할 수 있습니다.</p>}
-            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item, isMyProposedItem ? myExperienceValue : undefined)} disabled={saveAssessment.isPending || !f.currentSafetyMeasure?.trim()}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
+            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item, isMyProposedItem ? myExperienceValue : undefined)} disabled={saveAssessment.isPending}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
 
             {sharedAssessments.length>0 && (
               <div className="pt-3 border-t border-border space-y-1.5">
@@ -657,10 +805,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium shrink-0">{a.employeeName}</span>
                       <span className="text-muted-foreground text-right">
-                        {item.method==="checklist" ? `위험도 ${a.level ?? "-"}` : `경험 ${a.hadAccidentExperience?"예":"아니오"} · 중대성 ${a.severity ?? "-"}`}
+                        {item.method==="checklist" ? `위험도 ${a.level ?? "-"}` : `경험 ${a.hadAccidentExperience?"예":"아니오"} · 추정 ${a.estimatedFutureAccident==null?"-":a.estimatedFutureAccident?"예":"아니오"}${a.postImprovementEstimate!=null?` · 개선후추정 ${a.postImprovementEstimate?"예":"아니오"}`:""}`}
                       </span>
                     </div>
-                    {a.reductionPlan && <p className="text-muted-foreground mt-1 whitespace-pre-wrap">개선대책: {a.reductionPlan}</p>}
+                    {a.reductionPlan && <p className="text-muted-foreground mt-1 whitespace-pre-wrap">개선 안전보건조치: {a.reductionPlan}</p>}
                   </div>
                 ))}
               </div>
@@ -942,7 +1090,12 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     {adhocRequests.filter(r=>r.status==="진행중" && r.round).map(r=><option key={r.round} value={r.round!}>{r.round} (수시)</option>)}
                   </select>
                 </div>
-                <Button size="sm" variant="outline" className="shrink-0" onClick={()=>setShowAdhocRequest(v=>!v)}>{showAdhocRequest ? "닫기" : "수시 평가 신청"}</Button>
+                <div className="flex gap-1.5 shrink-0">
+                  {isAdmin && (
+                    <Button size="sm" variant="outline" onClick={()=>window.open(`/api/risk-assessments/export?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`, "_blank")}>내보내기</Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={()=>setShowAdhocRequest(v=>!v)}>{showAdhocRequest ? "닫기" : "수시 평가 신청"}</Button>
+                </div>
               </div>
               {adhocRequests.length>0 && (
                 <div className="space-y-1.5 pt-1 border-t border-border">
@@ -1149,38 +1302,79 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             )}
 
             {myEvaluationComplete ? (
-            <div className="pt-2 border-t border-border">
-              <p className="text-sm font-medium mb-1">공유 — 다른 팀 결과 보기</p>
-              <p className="text-xs text-muted-foreground mb-2">평가는 본인 팀에서만 할 수 있고, 다른 팀은 결과만 볼 수 있습니다. 위에서 회차를 바꾸면 지난 회차 기록도 볼 수 있습니다.</p>
-              <div className="flex gap-1.5 flex-wrap mb-2">
-                {TEAM_ROSTERS.filter(t=>t.name!==myTeam).map(t=>(
-                  <button key={t.name} onClick={()=>setViewOtherTeam(v=>v===t.name?"":t.name)} className={`text-xs px-2.5 py-1.5 rounded-lg border ${viewOtherTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>{t.name}</button>
-                ))}
+            <div className="pt-2 border-t border-border space-y-3">
+              <div>
+                <p className="text-sm font-medium mb-1">결과 확인 및 서명</p>
+                <p className="text-xs text-muted-foreground">평가가 종료되었습니다. 우리 팀과 다른 팀의 선택·평가 결과, 개선된 안전보건조치를 모두 확인한 뒤 각 팀마다 확인 버튼을 눌러주세요. 전체 확인이 끝나면 서명 후 저장됩니다.</p>
               </div>
-              {viewOtherTeam && (
-                otherTeamActiveItems.length===0
-                  ? <p className="text-sm text-gray-400 text-center py-6">선택된 항목이 없습니다.</p>
-                  : <div className="space-y-2">
-                      {otherTeamActiveItems.map(item=>{
-                        const agg = computeAggregate(item.id, item.method);
-                        return (
-                          <div key={item.id} className="bg-card rounded-xl border border-border p-3">
-                            <p className="text-sm font-medium">{item.content}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">등록: {item.registeredByName}</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {agg
-                                ? (item.method==="checklist" ? `위험도 ${(agg as any).level}` : `위험성 ${(agg as any).risk} · ${(agg as any).participants}명 평가`)
-                                : "아직 평가 없음"}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
+              {TEAM_ROSTERS.map(t=>{
+                const items = teamSummaryItems(t.name);
+                const confirmed = myConfirmedTeams.has(t.name);
+                const expanded = viewOtherTeam === t.name;
+                return (
+                  <div key={t.name} className="bg-card rounded-xl border border-border overflow-hidden">
+                    <button className="w-full flex items-center justify-between gap-2 p-3" onClick={()=>setViewOtherTeam(v=>v===t.name?"":t.name)}>
+                      <div className="min-w-0 text-left">
+                        <p className="text-sm font-medium">{t.name}{t.name===myTeam?" (우리 팀)":""}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{items.length}건</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-xs px-2 py-0.5 rounded-md ${confirmed?"bg-green-100 text-green-700":"bg-orange-100 text-orange-700"}`}>{confirmed?"확인완료":"확인필요"}</span>
+                        {expanded?<ChevronUp className="h-4 w-4 text-gray-400"/>:<ChevronDown className="h-4 w-4 text-gray-400"/>}
+                      </div>
+                    </button>
+                    {expanded && (
+                      <div className="px-3 pb-3 space-y-2 border-t border-border pt-2">
+                        {items.length===0 && <p className="text-sm text-gray-400 text-center py-6">선택된 항목이 없습니다.</p>}
+                        {items.map(item=>{
+                          const agg = computeAggregate(item.id, item.method) as any;
+                          const list = assessmentsByItem.get(item.id) || [];
+                          const plans = list.filter(a=>a.reductionPlan?.trim());
+                          return (
+                            <div key={item.id} className="bg-muted/30 rounded-xl border border-border p-3 space-y-1">
+                              <p className="text-sm font-medium">{item.content}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {agg
+                                  ? (item.method==="checklist"
+                                      ? `위험도 ${agg.level ?? "-"} · ${agg.resolved?"허용 가능(종료)":"허용 불가능(재평가 필요)"}`
+                                      : `위험성 ${agg.finalRisk ?? agg.risk}(${agg.finalLevel ?? agg.level}) · ${agg.finalAllow ?? agg.allow} · ${agg.participants}명 평가 · ${agg.resolved?"종료":"재평가 필요"}`)
+                                  : "아직 평가 없음"}
+                              </p>
+                              {plans.length>0 && (
+                                <div className="pt-1 space-y-0.5">
+                                  {plans.map(a=>(
+                                    <p key={a.id} className="text-xs text-muted-foreground whitespace-pre-wrap">개선 안전보건조치 [{a.employeeName}]: {a.reductionPlan}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <Button size="sm" variant="outline" className="w-full" disabled={confirmed || confirmTeamResult.isPending} onClick={()=>confirmTeamResult.mutate(t.name)}>{confirmed?"확인 완료됨":confirmTeamResult.isPending?"처리 중...":"이 팀 결과 확인"}</Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {myConfirmedTeams.size >= TEAM_ROSTERS.length ? (
+                mySignature ? (
+                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-xl p-3 text-center space-y-2">
+                    <p className="text-sm font-medium text-green-700 dark:text-green-400">서명 완료 · {new Date(mySignature.signedAt).toLocaleString()}</p>
+                    <img src={mySignature.signatureDataUrl} alt="서명" className="mx-auto h-16 bg-white rounded border"/>
+                  </div>
+                ) : (
+                  <div className="bg-card rounded-xl border border-border p-3 space-y-2">
+                    <p className="text-sm font-medium">모든 팀 결과를 확인했습니다. 서명해주세요.</p>
+                    <SignaturePad saving={saveSignature.isPending} onSave={(dataUrl)=>saveSignature.mutate(dataUrl)}/>
+                  </div>
+                )
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-2">모든 팀({TEAM_ROSTERS.length}개)의 결과를 확인하면 서명 단계로 진행됩니다. ({myConfirmedTeams.size}/{TEAM_ROSTERS.length})</p>
               )}
             </div>
             ) : (
               <div className="pt-2 border-t border-border">
-                <p className="text-xs text-muted-foreground text-center py-3">본인 평가(필수·수시·선택 항목)를 모두 완료하면 다른 팀의 결과를 볼 수 있습니다.</p>
+                <p className="text-xs text-muted-foreground text-center py-3">본인 평가(필수·수시·선택 항목)를 모두 완료하면 결과 확인·서명 단계로 진행됩니다. 위험성이 "허용 불가능"인 항목은 개선 안전보건조치를 반영해 "허용 가능"이 될 때까지 평가가 종료되지 않습니다.</p>
               </div>
             )}
           </div>
