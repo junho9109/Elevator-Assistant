@@ -233,6 +233,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [showTemplateManager, setShowTemplateManager] = useState(false);
   const [templateManagerTeam, setTemplateManagerTeam] = useState(() => TEAM_ROSTERS[0].name);
   const [expandedRisk, setExpandedRisk] = useState<number|null>(null);
+  // 이미 평가가 종료된(허용 가능 도달) 항목을 다시 열려고 할 때 재평가 여부를 먼저 확인
+  const [reEvaluateConfirm, setReEvaluateConfirm] = useState<RiskHazardItem|null>(null);
   const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
   const [isMandatoryForm, setIsMandatoryForm] = useState(false);
@@ -701,7 +703,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         : { text: "허용 불가능 · 개선 필요", cls: "bg-red-100 text-red-700" };
     return (
       <div key={item.id} className={`bg-card rounded-xl shadow-sm border overflow-hidden ${mine?"border-border":"border-orange-400"}`}>
-        <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedRisk(expandedRisk===item.id?null:item.id)}>
+        <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>{
+          if (expandedRisk === item.id) { setExpandedRisk(null); return; }
+          if (mine && agg?.resolved) { setReEvaluateConfirm(item); return; }
+          setExpandedRisk(item.id);
+        }}>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
@@ -1227,8 +1233,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                       <div className={`rounded-lg p-2 transition-colors ${templateExperienceAttempt[t.id] ? "bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-800 animate-pulse" : ""}`}>
                         <p className={`text-xs mb-1 ${templateExperienceAttempt[t.id] ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? *</p>
                         <div className="flex gap-2">
-                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:true}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===true?"bg-primary text-primary-foreground border-primary":templateExperienceAttempt[t.id]?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>예</button>
-                          <button onClick={()=>setTemplateExperienceDraft(p=>({...p,[t.id]:false}))} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===false?"bg-primary text-primary-foreground border-primary":templateExperienceAttempt[t.id]?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>아니오</button>
+                          <button onClick={()=>setTemplateExperienceDraft({[t.id]:true})} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===true?"bg-primary text-primary-foreground border-primary":templateExperienceAttempt[t.id]?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>예</button>
+                          <button onClick={()=>setTemplateExperienceDraft({[t.id]:false})} className={`flex-1 text-xs py-1.5 rounded-lg border ${templateExperienceDraft[t.id]===false?"bg-primary text-primary-foreground border-primary":templateExperienceAttempt[t.id]?"bg-card border-red-300 dark:border-red-800":"bg-card border-border"}`}>아니오</button>
                         </div>
                       </div>
                     )}
@@ -1560,6 +1566,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         </div>
       )}
 
+      {reEvaluateConfirm!==null&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setReEvaluateConfirm(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
+            <p className="text-sm font-medium mb-1">이미 평가가 완료된 항목입니다.</p>
+            <p className="text-xs text-muted-foreground mb-4">다시 평가하시겠습니까? 예를 누르면 처음 평가하는 것과 같은 화면으로 다시 시작합니다.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={()=>setReEvaluateConfirm(null)}>아니오</Button>
+              <Button className="flex-1" onClick={()=>{ const it = reEvaluateConfirm; setReEvaluateConfirm(null); if (it) { setAssessForm(p=>{ const n={...p}; delete n[it.id]; return n; }); setExpandedRisk(it.id); } }}>예</Button>
+            </div>
+          </div>
+        </div>
+      )}
       {riskDeleteConfirm!==null&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setRiskDeleteConfirm(null)}>
           <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
