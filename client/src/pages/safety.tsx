@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Calendar, ChevronDown, ChevronUp, Shield, AlertTriangle, ClipboardCheck, Trash2 } from "lucide-react";
 import { getTeamsForName, TEAM_ROSTERS } from "@/lib/teams";
+import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 
 type PpeItem = { id: number; name: string; issuedDate: string | null; expiryDate: string | null; standard: string | null; howToWear: string | null; createdAt: string; };
 type NearMiss = { id: number; date: string; disasterType: string; workType: string; description: string; imageUrls: string[] | null; createdAt: string; };
@@ -133,7 +134,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const empName = name;
   const branchName = org || DEFAULT_BRANCH;
   const ready = !!(org && name);
-  const isAdmin = role === "admin";
+  // 서버 role이 admin이어도, AI검색 페이지의 전역 관리자모드 스위치가 꺼져 있으면 일반 사용자와 완전히 동일하게 보여야 함
+  const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
+  useEffect(() => {
+    const handler = (e: Event) => setIsAdminMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+    return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+  }, []);
+  const isAdmin = role === "admin" && isAdminMode;
   // 소속 팀 — 기본은 명단(TEAM_ROSTERS) 기준이지만, 본인이 직접 바꾸거나 관리자가 지정한 오버라이드가 있으면 그걸 우선한다.
   // 오버라이드는 누가 설정했든(본인/관리자) 항상 다시 바꿀 수 있다(잠금 없음).
   const { data: myTeamOverrideRows = [] } = useQuery<EmployeeTeamOverride[]>({
@@ -424,8 +432,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const selectionByItemId = useMemo(() => new Map(teamSelections.map(s => [s.hazardItemId, s])), [teamSelections]);
   const availableTemplates = useMemo(() => teamItems.filter(t => t.isTemplate && !t.isMandatory && !selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
   // 서울강서지사 등 특정 지사 필수 항목 — 1인 1선택 대상에서 제외되고, 팀원 전원이 본인 선택과 별개로 반드시 평가해야 함
-  // sourceRound가 있는 항목(수시평가신청 승인으로 자동 생성됨)은 그 회차를 보고 있을 때만 노출됨
-  const mandatoryTeamItems = useMemo(() => teamItems.filter(t => t.isMandatory && (!t.sourceRound || t.sourceRound === activeRound)), [teamItems, activeRound]);
+  const branchMandatoryItems = useMemo(() => teamItems.filter(t => t.isMandatory && !t.sourceRound), [teamItems]);
+  // 수시평가신청이 승인되어 자동 생성된 항목 — "필수 평가 항목"과는 별개로 "수시 평가 항목"으로 노출되고, 그 회차를 보고 있을 때만 나타남
+  const adhocMandatoryItems = useMemo(() => teamItems.filter(t => t.isMandatory && t.sourceRound && t.sourceRound === activeRound), [teamItems, activeRound]);
   // 수시평가 항목은 targetMembers로 지정된 사람만 대상 — 지정이 없으면(null) 팀 전원 대상
   function mandatoryTargets(item: RiskHazardItem): string[] {
     return item.targetMembers && item.targetMembers.length > 0 ? item.targetMembers : myTeamMembers;
@@ -469,6 +478,30 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       payload.reductionPlan = f.reductionPlan || null;
     }
     saveAssessment.mutate(payload);
+  }
+
+  function renderMandatoryItemBlock(item: RiskHazardItem) {
+    const targets = mandatoryTargets(item);
+    return (
+      <div key={item.id} className="space-y-2">
+        {item.sourceRound && <p className="text-xs font-medium text-blue-600">{item.sourceRound}</p>}
+        {targets.length>0 && (
+          <div className="bg-card rounded-lg p-2.5 space-y-1">
+            {targets.map(memberName=>{
+              const done = (assessmentsByItem.get(item.id)||[]).some(a=>a.employeeName===memberName);
+              return (
+                <div key={memberName} className="flex items-center gap-2 py-0.5">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                  <span className="text-sm flex-1">{memberName}</span>
+                  <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"평가완료":"미평가"}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {renderRiskItemCard(item)}
+      </div>
+    );
   }
 
   function renderRiskItemCard(item: RiskHazardItem) {
@@ -942,37 +975,27 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               )}
             </div>
 
-            {mandatoryTeamItems.length>0 && (
+            {branchMandatoryItems.length>0 && (
               <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-900 p-3 space-y-3">
                 <div>
                   <p className="text-sm font-semibold text-red-700 dark:text-red-400 flex items-center gap-1">
                     <AlertTriangle className="h-4 w-4 shrink-0"/>필수 평가 항목
                   </p>
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">본인 선택 항목(1인 1선택)과 별개로, 지정된 팀원이 반드시 평가해야 합니다.</p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">본인 선택 항목(1인 1선택)과 별개로, 팀원 전원이 반드시 평가해야 합니다.</p>
                 </div>
-                {mandatoryTeamItems.map(item=>{
-                  const targets = mandatoryTargets(item);
-                  return (
-                    <div key={item.id} className="space-y-2">
-                      {item.sourceRound && <p className="text-xs font-medium text-red-600">수시평가 · {item.sourceRound}</p>}
-                      {targets.length>0 && (
-                        <div className="bg-card rounded-lg p-2.5 space-y-1">
-                          {targets.map(memberName=>{
-                            const done = (assessmentsByItem.get(item.id)||[]).some(a=>a.employeeName===memberName);
-                            return (
-                              <div key={memberName} className="flex items-center gap-2 py-0.5">
-                                <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                                <span className="text-sm flex-1">{memberName}</span>
-                                <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"평가완료":"미평가"}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {renderRiskItemCard(item)}
-                    </div>
-                  );
-                })}
+                {branchMandatoryItems.map(item=>renderMandatoryItemBlock(item))}
+              </div>
+            )}
+
+            {adhocMandatoryItems.length>0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-900 p-3 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                    <AlertTriangle className="h-4 w-4 shrink-0"/>수시 평가 항목
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">수시 평가 신청이 승인되어 생성된 항목입니다. 지정된 팀원이 평가해야 합니다.</p>
+                </div>
+                {adhocMandatoryItems.map(item=>renderMandatoryItemBlock(item))}
               </div>
             )}
 

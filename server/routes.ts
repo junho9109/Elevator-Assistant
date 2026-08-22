@@ -1308,14 +1308,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { riskAdhocRequests, insertRiskAdhocRequestSchema } = await import("@shared/schema");
       const validated = insertRiskAdhocRequestSchema.parse(req.body);
       const [row] = await db.insert(riskAdhocRequests).values(validated).returning();
-      if (row.targetMembers && row.targetMembers.length > 0) {
-        sendPushToEmployees(
-          row.targetMembers,
-          "수시 위험성평가 대상자로 지정됨",
-          `${row.requestedByName}님이 등록한 수시 위험성평가 대상자로 지정되었습니다: ${(row.content || row.reason || "").slice(0, 60)}`,
-          { type: "risk-adhoc-request", requestId: String(row.id) }
-        );
-      }
+      // 신청 등록 시점에는 알림을 보내지 않음 — 실제로 평가할지는 관리자 승인 후 결정되므로,
+      // 알림은 승인되어 실제 평가 대상이 되는 순간(PUT status=진행중)에만 보냄
       res.status(201).json(row);
     } catch (error) {
       res.status(400).json({ error: "Invalid adhoc request data", detail: String(error) });
