@@ -1310,6 +1310,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // "처음으로 돌아가기" 시 본인의 이번 회차 평가 데이터를 완전히 삭제(진짜 처음부터 다시 시작) — 본인 것만 삭제, 팀원 데이터는 유지
+  app.delete("/api/risk-assessments", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAssessments } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const employeeId = req.query.employeeId as string | undefined;
+      const round = req.query.round as string | undefined;
+      const branchId = req.query.branchId as string | undefined;
+      if (!employeeId || !round) return res.status(400).json({ error: "employeeId, round required" });
+      const conditions = [eq(riskAssessments.employeeId, employeeId), eq(riskAssessments.round, round)];
+      if (branchId) conditions.push(eq(riskAssessments.branchId, branchId));
+      const deleted = await db.delete(riskAssessments).where(and(...conditions)).returning();
+      res.json({ ok: true, count: deleted.length });
+    } catch (error) {
+      handleError(res, error, "Failed to delete risk assessments");
+    }
+  });
+
   // ── 위험성평가: 결과 확인 (평가 종료 후 팀별 결과 열람 확인) ──
   app.get("/api/risk-result-confirmations", async (req, res) => {
     try {

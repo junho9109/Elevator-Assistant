@@ -500,7 +500,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     onError: (e: any) => toast({ title: "선택 실패", description: e.message, variant: "destructive" }),
   });
   const cancelSelection = useMutation({
-    mutationFn: async (selId: number) => {
+    mutationFn: async ({ selId, wipeAssessments }: { selId: number; wipeAssessments?: boolean }) => {
       const r1 = await fetch(`/api/risk-item-selections/${selId}?employeeId=${encodeURIComponent(empId)}&admin=${isAdmin}`, { method: "DELETE" });
       if (!r1.ok && r1.status !== 404) {
         const d = await r1.json().catch(() => ({} as any));
@@ -509,28 +509,38 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       // 선택 취소/처음으로 돌아가기 시, 강제로 열어둔 팀 게이트도 함께 잠가서 다시 "무시하고 평가하기"를 물어보도록 함
       // (이 요청이 실패하더라도 선택 취소 자체는 이미 반영된 것으로 처리 — 서버 게이트는 다음 폴링/재시도로 정리됨)
       try { await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`, { method: "DELETE" }); } catch {}
+      // "처음으로 돌아가기"(wipeAssessments=true)에서만: 진짜 처음부터 다시 시작하도록 이번 회차 본인 평가 데이터도 삭제
+      // (단순 "선택 취소"는 제안 항목만 바꾸는 것이므로 이미 제출한 평가는 건드리지 않음)
+      if (wipeAssessments) {
+        try { await fetch(`/api/risk-assessments?employeeId=${encodeURIComponent(empId)}&round=${encodeURIComponent(activeRound)}&branchId=${encodeURIComponent(branchName)}`, { method: "DELETE" }); } catch {}
+      }
     },
     // 서버 응답을 기다리지 않고 화면/입력 상태를 즉시 초기화 (낙관적 업데이트) — 네트워크 왕복 동안 "데이터가 남아있는 것처럼" 보이는 문제 방지
-    onMutate: async (selId: number) => {
+    onMutate: async ({ selId, wipeAssessments }: { selId: number; wipeAssessments?: boolean }) => {
       await qc.cancelQueries({ queryKey: ["/api/risk-item-selections"] });
+      if (wipeAssessments) await qc.cancelQueries({ queryKey: ["/api/risk-assessments"] });
       const prevTeam = qc.getQueryData<RiskItemSelection[]>(["/api/risk-item-selections", myTeam, activeRound]);
       const prevAll = qc.getQueryData<RiskItemSelection[]>(["/api/risk-item-selections", "round", activeRound]);
+      const prevAssessments = wipeAssessments ? qc.getQueryData<RiskAssessment[]>(["/api/risk-assessments", branchName, activeRound]) : undefined;
       qc.setQueryData<RiskItemSelection[]>(["/api/risk-item-selections", myTeam, activeRound], (old) => (old || []).filter(s => s.id !== selId));
       qc.setQueryData<RiskItemSelection[]>(["/api/risk-item-selections", "round", activeRound], (old) => (old || []).filter(s => s.id !== selId));
+      if (wipeAssessments) qc.setQueryData<RiskAssessment[]>(["/api/risk-assessments", branchName, activeRound], (old) => (old || []).filter(a => a.employeeId !== empId));
       setTemplateExperienceDraft({});
       setTemplateExperienceAttempt({});
       setAssessForm({});
-      return { prevTeam, prevAll };
+      return { prevTeam, prevAll, prevAssessments };
     },
-    onError: (e: any, _selId, ctx) => {
+    onError: (e: any, _vars, ctx) => {
       // 실제로 취소에 실패했다면 화면 상태를 되돌리고 에러를 표시
       if (ctx?.prevTeam) qc.setQueryData(["/api/risk-item-selections", myTeam, activeRound], ctx.prevTeam);
       if (ctx?.prevAll) qc.setQueryData(["/api/risk-item-selections", "round", activeRound], ctx.prevAll);
+      if (ctx?.prevAssessments) qc.setQueryData(["/api/risk-assessments", branchName, activeRound], ctx.prevAssessments);
       toast({ title: "선택 취소 실패", description: e?.message || "잠시 후 다시 시도해주세요.", variant: "destructive" });
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] });
       qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] });
+      qc.invalidateQueries({ queryKey: ["/api/risk-assessments"] });
     },
     onSuccess: () => {
       toast({ title: "선택이 취소되었습니다." });
@@ -1318,7 +1328,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">내가 선택한 항목</p>
                     <p className="text-sm text-blue-800 dark:text-blue-300 truncate">{teamItems.find(t=>t.id===mySelection.hazardItemId)?.content}</p>
                   </div>
-                  <button onClick={()=>cancelSelection.mutate(mySelection.id)} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
+                  <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
                 </div>
                 <div className="text-center py-8 text-gray-400 bg-card rounded-xl border border-border">
                   <ClipboardCheck className="h-10 w-10 mx-auto mb-2 opacity-30"/>
@@ -1353,7 +1363,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">내가 선택한 항목</p>
                     <p className="text-sm text-blue-800 dark:text-blue-300 truncate">{teamItems.find(t=>t.id===mySelection.hazardItemId)?.content}</p>
                   </div>
-                  <button onClick={()=>cancelSelection.mutate(mySelection.id)} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
+                  <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
                 </div>
                 <div className="text-center py-2 px-3 rounded-lg text-xs font-medium border bg-muted/40 text-muted-foreground border-border">
                   {myTeam} · {myTeamMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}으로 평가합니다
@@ -1629,10 +1639,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowRestartConfirm(false)}>
           <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
             <p className="text-sm font-medium mb-1">처음(항목 선택) 화면으로 돌아갈까요?</p>
-            <p className="text-xs text-muted-foreground mb-4">현재 선택은 취소되어 다시 항목을 선택해야 합니다. 이미 저장된 평가 데이터는 삭제되지 않고 그대로 남습니다.</p>
+            <p className="text-xs text-muted-foreground mb-4">현재 선택이 취소되고, 이번 회차에 본인이 제출한 평가 데이터도 함께 삭제되어 처음부터 다시 시작합니다. (다른 팀원의 데이터는 삭제되지 않습니다)</p>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={()=>setShowRestartConfirm(false)}>취소</Button>
-              <Button className="flex-1" disabled={cancelSelection.isPending} onClick={()=>{ setShowRestartConfirm(false); setExpandedRisk(null); setViewOtherTeam(""); setViewResultsMode(false); if (mySelection) cancelSelection.mutate(mySelection.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{cancelSelection.isPending?"처리 중...":"처음으로"}</Button>
+              <Button className="flex-1" disabled={cancelSelection.isPending} onClick={()=>{ setShowRestartConfirm(false); setExpandedRisk(null); setViewOtherTeam(""); setViewResultsMode(false); if (mySelection) cancelSelection.mutate({ selId: mySelection.id, wipeAssessments: true }); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{cancelSelection.isPending?"처리 중...":"처음으로"}</Button>
             </div>
           </div>
         </div>
