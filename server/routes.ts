@@ -1050,39 +1050,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: 7차 피드백 마이그레이션 - risk_assessments 컬럼 추가 + 결과확인/서명 테이블 생성 (사용 후 제거 예정)
-  app.get("/api/debug/migrate-round7", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { sql: sqlOp } = await import("drizzle-orm");
-      await db.execute(sqlOp`ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS estimated_future_accident boolean`);
-      await db.execute(sqlOp`ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS post_improvement_estimate boolean`);
-      await db.execute(sqlOp`CREATE TABLE IF NOT EXISTS risk_result_confirmations (
-        id serial PRIMARY KEY,
-        branch_id varchar(50) NOT NULL,
-        round varchar(100) NOT NULL,
-        team varchar(50) NOT NULL,
-        employee_id varchar(20) NOT NULL,
-        employee_name varchar(50) NOT NULL,
-        confirmed_at timestamp NOT NULL DEFAULT now()
-      )`);
-      await db.execute(sqlOp`CREATE TABLE IF NOT EXISTS risk_signatures (
-        id serial PRIMARY KEY,
-        branch_id varchar(50) NOT NULL,
-        round varchar(100) NOT NULL,
-        team varchar(50),
-        employee_id varchar(20) NOT NULL,
-        employee_name varchar(50) NOT NULL,
-        signature_data_url text NOT NULL,
-        signed_at timestamp NOT NULL DEFAULT now()
-      )`);
-      res.json({ ok: true, migrated: true });
-    } catch (error) {
-      res.status(500).json({ error: "failed", detail: String(error) });
-    }
-  });
-
   // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
   app.get("/api/risk-hazard-items", async (req, res) => {
     try {
