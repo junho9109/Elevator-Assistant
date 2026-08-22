@@ -1050,26 +1050,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: risk_round_overrides 테이블 1회성 마이그레이션 (사용 후 제거 예정)
-  app.get("/api/debug/migrate-round-overrides", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { sql: sqlOp } = await import("drizzle-orm");
-      await db.execute(sqlOp`CREATE TABLE IF NOT EXISTS risk_round_overrides (
-        id serial PRIMARY KEY,
-        team varchar(50) NOT NULL,
-        round varchar(100) NOT NULL,
-        forced_by_id varchar(20) NOT NULL,
-        forced_by_name varchar(50) NOT NULL,
-        created_at timestamp NOT NULL DEFAULT now()
-      )`);
-      res.json({ ok: true, migrated: true });
-    } catch (error) {
-      res.status(500).json({ error: "failed", detail: String(error) });
-    }
-  });
-
   // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
   app.get("/api/risk-hazard-items", async (req, res) => {
     try {
