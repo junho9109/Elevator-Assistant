@@ -1370,6 +1370,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-xl p-3 text-center space-y-2">
                     <p className="text-sm font-medium text-green-700 dark:text-green-400">서명 완료 · {new Date(mySignature.signedAt).toLocaleString()}</p>
                     <img src={mySignature.signatureDataUrl} alt="서명" className="mx-auto h-16 bg-white rounded border"/>
+                    <Button variant="outline" className="w-full" onClick={()=>{ setExpandedRisk(null); setViewOtherTeam(""); setActiveTab("ppe"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>처음으로 돌아가기</Button>
                   </div>
                 ) : (
                   <div className="bg-card rounded-xl border border-border p-3 space-y-2">
