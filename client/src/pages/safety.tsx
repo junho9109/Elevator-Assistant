@@ -16,6 +16,7 @@ type RiskHazardItem = {
   registeredById: string; registeredByName: string; team: string | null; isTemplate: boolean; isMandatory: boolean; createdAt: string;
   reductionPlan: string | null; reductionPlanUpdatedBy: string | null; reductionPlanUpdatedAt: string | null;
   referenceSafetyMeasure: string | null;
+  sourceRound: string | null; targetMembers: string[] | null;
 };
 type RiskItemSelection = { id: number; hazardItemId: number; employeeId: string; employeeName: string; round: string; hadAccidentExperience: boolean | null; createdAt: string; };
 type EmployeeTeamOverride = { id: number; employeeId: string; team: string; setBy: string | null; updatedAt: string; };
@@ -28,7 +29,9 @@ type RiskAssessment = {
 };
 type RiskAdhocRequest = {
   id: number; branchId: string; team: string; requestedById: string; requestedByName: string;
-  reason: string; status: string; round: string | null; createdAt: string; updatedAt: string;
+  reason: string; content: string | null; currentSafetyMeasure: string | null; fieldInfo: string | null;
+  imageUrls: string[] | null; targetMembers: string[] | null;
+  status: string; round: string | null; createdAt: string; updatedAt: string;
 };
 // 정기 회차 — 매년 갱신됨. 수시 평가는 신청 승인 시 별도 회차명이 부여됨.
 const CURRENT_ROUND = "2026년도 정기 위험성평가";
@@ -170,6 +173,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [activeRound, setActiveRound] = useState(CURRENT_ROUND);
   const [showAdhocRequest, setShowAdhocRequest] = useState(false);
   const [adhocReason, setAdhocReason] = useState("");
+  const [adhocContent, setAdhocContent] = useState("");
+  const [adhocCurrentSafetyMeasure, setAdhocCurrentSafetyMeasure] = useState("");
+  const [adhocFieldInfo, setAdhocFieldInfo] = useState("");
+  const [adhocImages, setAdhocImages] = useState<string[]>([]);
+  const [adhocTargetMembers, setAdhocTargetMembers] = useState<string[]>([]);
   const [adhocRoundInput, setAdhocRoundInput] = useState<Record<number, string>>({});
   const [selectedDef, setSelectedDef] = useState(PPE_DEFAULTS[0]);
   const [ppeForm, setPpeForm] = useState({ name: PPE_DEFAULTS[0].name, issuedDate: "", expiryDate: "", standard: PPE_DEFAULTS[0].standard, howToWear: PPE_DEFAULTS[0].howToWear });
@@ -228,11 +236,25 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   });
   const createAdhocRequest = useMutation({
     mutationFn: async () => {
-      const r = await fetch("/api/risk-adhoc-requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branchId: branchName, team: myTeam, requestedById: empId, requestedByName: empName, reason: adhocReason }) });
+      const r = await fetch("/api/risk-adhoc-requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        branchId: branchName, team: myTeam, requestedById: empId, requestedByName: empName,
+        reason: adhocReason || adhocContent, content: adhocContent, currentSafetyMeasure: adhocCurrentSafetyMeasure || null,
+        fieldInfo: adhocFieldInfo || null, imageUrls: adhocImages.length>0 ? adhocImages : null,
+        targetMembers: adhocTargetMembers.length>0 ? adhocTargetMembers : null,
+      }) });
       if (!r.ok) throw new Error(); return r.json();
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-adhoc-requests"] }); toast({ title: "수시 평가를 신청했습니다." }); setShowAdhocRequest(false); setAdhocReason(""); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/risk-adhoc-requests"] });
+      toast({ title: "수시 평가를 신청했습니다." });
+      setShowAdhocRequest(false); setAdhocReason(""); setAdhocContent(""); setAdhocCurrentSafetyMeasure(""); setAdhocFieldInfo(""); setAdhocImages([]); setAdhocTargetMembers([]);
+    },
   });
+  const handleAdhocImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (adhocImages.length + files.length > 5) { toast({ title: "최대 5장", variant: "destructive" }); return; }
+    files.forEach(f => { const r = new FileReader(); r.onload = ev => setAdhocImages(p => [...p, ev.target?.result as string]); r.readAsDataURL(f); });
+  };
   const updateAdhocRequest = useMutation({
     mutationFn: async ({ id, status, round }: { id: number; status?: string; round?: string }) => {
       const r = await fetch(`/api/risk-adhoc-requests/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status, round }) });
@@ -402,7 +424,12 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const selectionByItemId = useMemo(() => new Map(teamSelections.map(s => [s.hazardItemId, s])), [teamSelections]);
   const availableTemplates = useMemo(() => teamItems.filter(t => t.isTemplate && !t.isMandatory && !selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
   // 서울강서지사 등 특정 지사 필수 항목 — 1인 1선택 대상에서 제외되고, 팀원 전원이 본인 선택과 별개로 반드시 평가해야 함
-  const mandatoryTeamItems = useMemo(() => teamItems.filter(t => t.isMandatory), [teamItems]);
+  // sourceRound가 있는 항목(수시평가신청 승인으로 자동 생성됨)은 그 회차를 보고 있을 때만 노출됨
+  const mandatoryTeamItems = useMemo(() => teamItems.filter(t => t.isMandatory && (!t.sourceRound || t.sourceRound === activeRound)), [teamItems, activeRound]);
+  // 수시평가 항목은 targetMembers로 지정된 사람만 대상 — 지정이 없으면(null) 팀 전원 대상
+  function mandatoryTargets(item: RiskHazardItem): string[] {
+    return item.targetMembers && item.targetMembers.length > 0 ? item.targetMembers : myTeamMembers;
+  }
   const mySelection = teamSelections.find(s => s.employeeId === empId);
   // 팀 전원이 "선택+경험여부" 단계를 완료해야 다음 단계(평가)가 열림
   const allTeamSelected = useMemo(() => myTeamMembers.length > 0 && myTeamMembers.every(m => teamSelections.some(s => s.employeeName === m)), [myTeamMembers, teamSelections]);
@@ -750,9 +777,94 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 <button onClick={()=>setShowTeamPicker(true)} className="ml-2 text-xs text-primary underline">변경</button>
               </p>
               {isAdmin && (
-                <Button size="sm" variant="outline" onClick={()=>{ const t = myTeam || TEAM_ROSTERS[0].name; setTemplateManagerTeam(t); setRiskMethod(t==="사무업무 4반" ? "checklist" : "freq_severity"); setShowTemplateManager(true); }}>예시 관리</Button>
+                <Button size="sm" variant="outline" onClick={()=>{
+                  if (showTemplateManager) { setShowTemplateManager(false); return; }
+                  const t = myTeam || TEAM_ROSTERS[0].name; setTemplateManagerTeam(t); setRiskMethod(t==="사무업무 4반" ? "checklist" : "freq_severity"); setShowTemplateManager(true);
+                }}>{showTemplateManager ? "예시 관리 닫기" : "예시 관리"}</Button>
               )}
             </div>
+
+            {isAdmin && showTemplateManager && (
+              <div className="bg-card rounded-xl border border-border p-4 space-y-4">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-base font-bold">팀별 예시 관리</h2>
+                  <button onClick={()=>setShowTemplateManager(false)} className="text-gray-400"><X className="h-5 w-5"/></button>
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {TEAM_ROSTERS.map(t=>(
+                    <button key={t.name} onClick={()=>{ setTemplateManagerTeam(t.name); setRiskMethod(t.name==="사무업무 4반" ? "checklist" : "freq_severity"); }} className={`text-xs px-2.5 py-1.5 rounded-lg border ${templateManagerTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>{t.name}</button>
+                  ))}
+                </div>
+                <div className="bg-muted/30 rounded-xl p-3 space-y-2">
+                  <p className="text-sm font-medium">팀원 배정 관리</p>
+                  <p className="text-xs text-muted-foreground">이 팀 소속으로 표시할 사람과, 각자의 팀을 여기서 바꿀 수 있습니다.</p>
+                  <div className="space-y-1.5">
+                    {templateManagerTeamMembers.length===0 && <p className="text-xs text-gray-400 py-2">배정된 팀원이 없습니다.</p>}
+                    {templateManagerTeamMembers.map(memberName=>(
+                      <div key={memberName} className="flex items-center justify-between gap-2 bg-card rounded-lg p-2 border border-border">
+                        <span className="text-sm truncate">{memberName}</span>
+                        <select
+                          className="text-xs border border-border rounded-lg px-2 py-1 bg-card"
+                          value={templateManagerTeam}
+                          onChange={e=>adminSetTeamMutation.mutate({ employeeId: memberName, team: e.target.value })}
+                        >
+                          {TEAM_ROSTERS.map(t=><option key={t.name} value={t.name}>{t.name}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-1.5 pt-1">
+                    <Input placeholder="이름 입력" value={newMemberName} onChange={e=>setNewMemberName(e.target.value)} className="text-sm h-8" />
+                    <Button size="sm" disabled={!newMemberName.trim() || adminSetTeamMutation.isPending} onClick={()=>adminSetTeamMutation.mutate({ employeeId: newMemberName.trim(), team: templateManagerTeam })}>추가</Button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">{adminTemplates.length}/10개 등록됨</p>
+                <div className="space-y-2">
+                  {adminTemplates.length===0 && <p className="text-sm text-gray-400 text-center py-6">등록된 예시가 없습니다.</p>}
+                  {adminTemplates.map(t=>{
+                    const sel = adminSelectionByItemId.get(t.id);
+                    return (
+                      <div key={t.id} className="flex items-center justify-between gap-2 bg-muted/30 rounded-lg p-2.5">
+                        <div className="min-w-0">
+                          <p className="text-sm truncate">{t.content}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{sel ? `${sel.employeeName}님이 선택함` : "선택 대기 중"}</p>
+                        </div>
+                        <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <Button
+                  className="w-full"
+                  disabled={adminTemplates.length>=10}
+                  onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setShowAddRisk(true); }}
+                >
+                  <Plus className="h-4 w-4 mr-1"/>{adminTemplates.length>=10 ? "최대 10개 등록됨" : "예시 추가"}
+                </Button>
+
+                <div className="border-t border-border pt-4 space-y-2">
+                  <p className="text-sm font-medium text-red-700 dark:text-red-400">필수 평가 항목 관리</p>
+                  <p className="text-xs text-muted-foreground">1인 1선택 대상에서 제외되고, 팀원 전원이 별도로 평가해야 하는 항목입니다. (예: 서울강서지사 특화 위험요인)</p>
+                  {adminMandatoryItems.length===0 && <p className="text-sm text-gray-400 text-center py-4">등록된 필수 항목이 없습니다.</p>}
+                  {adminMandatoryItems.map(t=>(
+                    <div key={t.id} className="flex items-center justify-between gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 rounded-lg p-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm truncate">{t.content}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{t.branchId}</p>
+                      </div>
+                      <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(true); setReferenceSafetyMeasureForm(""); setShowAddRisk(true); }}
+                  >
+                    <Plus className="h-4 w-4 mr-1"/>필수 항목 추가
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="bg-card rounded-xl border border-border p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -763,17 +875,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     {adhocRequests.filter(r=>r.status==="진행중" && r.round).map(r=><option key={r.round} value={r.round!}>{r.round} (수시)</option>)}
                   </select>
                 </div>
-                <Button size="sm" variant="outline" className="shrink-0" onClick={()=>setShowAdhocRequest(true)}>수시 평가 신청</Button>
+                <Button size="sm" variant="outline" className="shrink-0" onClick={()=>setShowAdhocRequest(v=>!v)}>{showAdhocRequest ? "닫기" : "수시 평가 신청"}</Button>
               </div>
               {adhocRequests.length>0 && (
                 <div className="space-y-1.5 pt-1 border-t border-border">
                   {adhocRequests.map(rq=>(
                     <div key={rq.id} className="text-xs bg-muted/30 rounded-lg p-2 space-y-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate">{rq.reason}</span>
+                        <span className="truncate">{rq.content || rq.reason}</span>
                         <Badge variant="outline" className={`text-[10px] shrink-0 ${rq.status==="완료"?"bg-green-50 text-green-700":rq.status==="진행중"?"bg-blue-50 text-blue-700":"bg-orange-50 text-orange-700"}`}>{rq.status}</Badge>
                       </div>
-                      <p className="text-muted-foreground">{rq.requestedByName} · {new Date(rq.createdAt).toLocaleDateString()}{rq.round?` · ${rq.round}`:""}</p>
+                      <p className="text-muted-foreground">{rq.requestedByName} · {new Date(rq.createdAt).toLocaleDateString()}{rq.round?` · ${rq.round}`:""}{rq.fieldInfo?` · ${rq.fieldInfo}`:""}</p>
+                      {rq.targetMembers && rq.targetMembers.length>0 && <p className="text-muted-foreground">대상자: {rq.targetMembers.join(", ")}</p>}
                       {isAdmin && rq.status==="대기" && (
                         <div className="flex gap-1.5 pt-1">
                           <Input placeholder="회차명 입력" value={adhocRoundInput[rq.id]||""} onChange={e=>setAdhocRoundInput(p=>({...p,[rq.id]:e.target.value}))} className="text-xs h-7" />
@@ -787,6 +900,46 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   ))}
                 </div>
               )}
+              {showAdhocRequest && (
+                <div className="pt-2 border-t border-border space-y-3">
+                  <p className="text-xs text-muted-foreground">정기 회차 외에 위험성평가가 필요할 때 신청하세요. 관리자가 승인하면 대상자에게 별도 회차로 평가 요청이 갑니다.</p>
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">유해위험요인 *</label>
+                    <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[70px] resize-y" placeholder="어떤 위험이 있는지 구체적으로 기술해주세요" value={adhocContent} onChange={e=>setAdhocContent(e.target.value)}/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">현재 안전보건조치</label>
+                    <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[60px] resize-y" placeholder="현재 어떤 안전조치가 되어 있는지" value={adhocCurrentSafetyMeasure} onChange={e=>setAdhocCurrentSafetyMeasure(e.target.value)}/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">건물명(관리번호)</label>
+                    <Input placeholder="예: 우장산롯데3차 / 관리번호 1234" value={adhocFieldInfo} onChange={e=>setAdhocFieldInfo(e.target.value)}/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">사진 첨부 (최대 5장)</label>
+                    <input type="file" accept="image/*" multiple className="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700" onChange={handleAdhocImage}/>
+                    {adhocImages.length>0 && <div className="grid grid-cols-3 gap-2 mt-3">{adhocImages.map((img,i)=><div key={i} className="relative"><img src={img} alt="" className="w-full h-20 object-cover rounded-lg border"/><button className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs" onClick={()=>setAdhocImages(p=>p.filter((_,idx)=>idx!==i))}>×</button></div>)}</div>}
+                  </div>
+                  {myTeamMembers.length>0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">평가 대상 팀원 (선택 안 하면 팀 전원)</label>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {myTeamMembers.map(m=>(
+                          <button key={m} onClick={()=>setAdhocTargetMembers(p=>p.includes(m)?p.filter(x=>x!==m):[...p,m])} className={`text-xs px-2.5 py-1.5 rounded-lg border ${adhocTargetMembers.includes(m)?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>{m}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">신청 사유 (선택)</label>
+                    <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[50px] resize-y" placeholder="왜 지금 평가가 필요한지" value={adhocReason} onChange={e=>setAdhocReason(e.target.value)}/>
+                  </div>
+                  <div className="flex gap-3">
+                    <Button variant="outline" className="flex-1" onClick={()=>setShowAdhocRequest(false)}>취소</Button>
+                    <Button className="flex-1" disabled={!adhocContent.trim()||createAdhocRequest.isPending} onClick={()=>createAdhocRequest.mutate()}>{createAdhocRequest.isPending?"신청 중...":"신청"}</Button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {mandatoryTeamItems.length>0 && (
@@ -795,23 +948,31 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <p className="text-sm font-semibold text-red-700 dark:text-red-400 flex items-center gap-1">
                     <AlertTriangle className="h-4 w-4 shrink-0"/>필수 평가 항목
                   </p>
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">본인 선택 항목(1인 1선택)과 별개로, 팀원 전원이 반드시 평가해야 합니다.</p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">본인 선택 항목(1인 1선택)과 별개로, 지정된 팀원이 반드시 평가해야 합니다.</p>
                 </div>
-                {myTeamMembers.length>0 && (
-                  <div className="bg-card rounded-lg p-2.5 space-y-1">
-                    {myTeamMembers.map(memberName=>{
-                      const done = mandatoryTeamItems.every(mi => (assessmentsByItem.get(mi.id)||[]).some(a=>a.employeeName===memberName));
-                      return (
-                        <div key={memberName} className="flex items-center gap-2 py-0.5">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                          <span className="text-sm flex-1">{memberName}</span>
-                          <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"평가완료":"미평가"}</span>
+                {mandatoryTeamItems.map(item=>{
+                  const targets = mandatoryTargets(item);
+                  return (
+                    <div key={item.id} className="space-y-2">
+                      {item.sourceRound && <p className="text-xs font-medium text-red-600">수시평가 · {item.sourceRound}</p>}
+                      {targets.length>0 && (
+                        <div className="bg-card rounded-lg p-2.5 space-y-1">
+                          {targets.map(memberName=>{
+                            const done = (assessmentsByItem.get(item.id)||[]).some(a=>a.employeeName===memberName);
+                            return (
+                              <div key={memberName} className="flex items-center gap-2 py-0.5">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                                <span className="text-sm flex-1">{memberName}</span>
+                                <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"평가완료":"미평가"}</span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {mandatoryTeamItems.map(item=>renderRiskItemCard(item))}
+                      )}
+                      {renderRiskItemCard(item)}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -1090,106 +1251,6 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   ...(addRiskMode === "template" ? { isMandatory: isMandatoryForm, referenceSafetyMeasure: referenceSafetyMeasureForm || null } : {}),
                   ...(addRiskMode === "direct" ? { selectEmployeeId: empId, selectEmployeeName: empName, selectRound: activeRound, selectHadAccidentExperience: riskMethod==="freq_severity" ? directExperienceForm : null } : {}),
                 })}>{createRiskItem.isPending?"저장 중...":"저장"}</Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showAdhocRequest&&(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowAdhocRequest(false)}>
-          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-1">
-              <h2 className="text-lg font-bold">수시 평가 신청</h2>
-              <button onClick={()=>setShowAdhocRequest(false)} className="text-gray-400"><X className="h-5 w-5"/></button>
-            </div>
-            <p className="text-xs text-muted-foreground mb-4">정기 회차 외에 위험성평가가 필요한 사유를 적어 신청하세요. 관리자가 승인하면 별도 회차로 진행됩니다.</p>
-            <textarea className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[90px] resize-y" placeholder="신청 사유를 입력하세요" value={adhocReason} onChange={e=>setAdhocReason(e.target.value)}/>
-            <div className="flex gap-3 pt-3">
-              <Button variant="outline" className="flex-1" onClick={()=>setShowAdhocRequest(false)}>취소</Button>
-              <Button className="flex-1" disabled={!adhocReason.trim()||createAdhocRequest.isPending} onClick={()=>createAdhocRequest.mutate()}>{createAdhocRequest.isPending?"신청 중...":"신청"}</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showTemplateManager&&(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowTemplateManager(false)}>
-          <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-border" onClick={e=>e.stopPropagation()}>
-            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">팀별 예시 관리</h2><button onClick={()=>setShowTemplateManager(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
-            <div className="p-5 space-y-4">
-              <div className="flex gap-1.5 flex-wrap">
-                {TEAM_ROSTERS.map(t=>(
-                  <button key={t.name} onClick={()=>{ setTemplateManagerTeam(t.name); setRiskMethod(t.name==="사무업무 4반" ? "checklist" : "freq_severity"); }} className={`text-xs px-2.5 py-1.5 rounded-lg border ${templateManagerTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>{t.name}</button>
-                ))}
-              </div>
-              <div className="bg-muted/30 rounded-xl p-3 space-y-2">
-                <p className="text-sm font-medium">팀원 배정 관리</p>
-                <p className="text-xs text-muted-foreground">이 팀 소속으로 표시할 사람과, 각자의 팀을 여기서 바꿀 수 있습니다.</p>
-                <div className="space-y-1.5">
-                  {templateManagerTeamMembers.length===0 && <p className="text-xs text-gray-400 py-2">배정된 팀원이 없습니다.</p>}
-                  {templateManagerTeamMembers.map(memberName=>(
-                    <div key={memberName} className="flex items-center justify-between gap-2 bg-card rounded-lg p-2 border border-border">
-                      <span className="text-sm truncate">{memberName}</span>
-                      <select
-                        className="text-xs border border-border rounded-lg px-2 py-1 bg-card"
-                        value={templateManagerTeam}
-                        onChange={e=>adminSetTeamMutation.mutate({ employeeId: memberName, team: e.target.value })}
-                      >
-                        {TEAM_ROSTERS.map(t=><option key={t.name} value={t.name}>{t.name}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-1.5 pt-1">
-                  <Input placeholder="이름 입력" value={newMemberName} onChange={e=>setNewMemberName(e.target.value)} className="text-sm h-8" />
-                  <Button size="sm" disabled={!newMemberName.trim() || adminSetTeamMutation.isPending} onClick={()=>adminSetTeamMutation.mutate({ employeeId: newMemberName.trim(), team: templateManagerTeam })}>추가</Button>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">{adminTemplates.length}/10개 등록됨</p>
-              <div className="space-y-2">
-                {adminTemplates.length===0 && <p className="text-sm text-gray-400 text-center py-6">등록된 예시가 없습니다.</p>}
-                {adminTemplates.map(t=>{
-                  const sel = adminSelectionByItemId.get(t.id);
-                  return (
-                    <div key={t.id} className="flex items-center justify-between gap-2 bg-muted/30 rounded-lg p-2.5">
-                      <div className="min-w-0">
-                        <p className="text-sm truncate">{t.content}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{sel ? `${sel.employeeName}님이 선택함` : "선택 대기 중"}</p>
-                      </div>
-                      <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
-                    </div>
-                  );
-                })}
-              </div>
-              <Button
-                className="w-full"
-                disabled={adminTemplates.length>=10}
-                onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setShowAddRisk(true); }}
-              >
-                <Plus className="h-4 w-4 mr-1"/>{adminTemplates.length>=10 ? "최대 10개 등록됨" : "예시 추가"}
-              </Button>
-
-              <div className="border-t border-border pt-4 space-y-2">
-                <p className="text-sm font-medium text-red-700 dark:text-red-400">필수 평가 항목 관리</p>
-                <p className="text-xs text-muted-foreground">1인 1선택 대상에서 제외되고, 팀원 전원이 별도로 평가해야 하는 항목입니다. (예: 서울강서지사 특화 위험요인)</p>
-                {adminMandatoryItems.length===0 && <p className="text-sm text-gray-400 text-center py-4">등록된 필수 항목이 없습니다.</p>}
-                {adminMandatoryItems.map(t=>(
-                  <div key={t.id} className="flex items-center justify-between gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 rounded-lg p-2.5">
-                    <div className="min-w-0">
-                      <p className="text-sm truncate">{t.content}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{t.branchId}</p>
-                    </div>
-                    <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
-                  </div>
-                ))}
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(true); setReferenceSafetyMeasureForm(""); setShowAddRisk(true); }}
-                >
-                  <Plus className="h-4 w-4 mr-1"/>필수 항목 추가
-                </Button>
               </div>
             </div>
           </div>

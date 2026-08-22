@@ -11,10 +11,15 @@ async function initPushNotifications() {
   await PushNotifications.register();
   PushNotifications.addListener("registration", async (token) => {
     try {
+      let employeeId: string | undefined;
+      try {
+        const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+        employeeId = (saved.name || "").trim() || undefined;
+      } catch {}
       await fetch("/api/push/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.value, platform: "android" }),
+        body: JSON.stringify({ token: token.value, platform: "android", employeeId }),
       });
     } catch (e) {}
   });

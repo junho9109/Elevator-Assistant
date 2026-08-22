@@ -1050,6 +1050,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: 수시평가 신청 확장 컬럼 1회성 마이그레이션 (사용 후 제거 예정)
+  app.get("/api/debug/migrate-adhoc-v2", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { db } = await import("./db");
+      const { sql: sqlOp } = await import("drizzle-orm");
+      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS source_round varchar(100)`);
+      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS target_members text[]`);
+      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS content text`);
+      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS current_safety_measure text`);
+      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS field_info text`);
+      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS image_urls text[]`);
+      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS target_members text[]`);
+      await db.execute(sqlOp`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
+      res.json({ ok: true, migrated: true });
+    } catch (error) {
+      res.status(500).json({ error: "failed", detail: String(error) });
+    }
+  });
+
   // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
   app.get("/api/risk-hazard-items", async (req, res) => {
     try {
@@ -1263,6 +1283,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── 위험성평가: 수시 평가 신청 ──
+  // 지정된 팀원(이름)에게만 푸시 알림 전송 — 등록된 토큰이 없으면 조용히 무시
+  async function sendPushToEmployees(employeeIds: string[], title: string, body: string, data?: Record<string, string>) {
+    try {
+      if (!employeeIds || employeeIds.length === 0) return;
+      const admin = await import("firebase-admin");
+      if (!admin.default.apps.length) {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_ADMINSDK || "{}");
+        admin.default.initializeApp({ credential: admin.default.credential.cert(serviceAccount) });
+      }
+      const { pool: pgPool } = await import("./db");
+      await pgPool.query(`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
+      const rows = await pgPool.query(`SELECT token FROM push_tokens WHERE employee_id = ANY($1)`, [employeeIds]);
+      const tokens = rows.rows.map((r: any) => r.token).filter(Boolean);
+      if (tokens.length === 0) return;
+      await Promise.allSettled(
+        tokens.map((token: string) =>
+          admin.default.messaging().send({ token, notification: { title, body }, data: data || {}, android: { priority: "high" } })
+        )
+      );
+    } catch (e) {
+      console.error("[FCM] 대상자 알림 전송 실패:", e);
+    }
+  }
+
   app.get("/api/risk-adhoc-requests", async (req, res) => {
     try {
       const { db } = await import("./db");
@@ -1284,6 +1328,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { riskAdhocRequests, insertRiskAdhocRequestSchema } = await import("@shared/schema");
       const validated = insertRiskAdhocRequestSchema.parse(req.body);
       const [row] = await db.insert(riskAdhocRequests).values(validated).returning();
+      if (row.targetMembers && row.targetMembers.length > 0) {
+        sendPushToEmployees(
+          row.targetMembers,
+          "수시 위험성평가 대상자로 지정됨",
+          `${row.requestedByName}님이 등록한 수시 위험성평가 대상자로 지정되었습니다: ${(row.content || row.reason || "").slice(0, 60)}`,
+          { type: "risk-adhoc-request", requestId: String(row.id) }
+        );
+      }
       res.status(201).json(row);
     } catch (error) {
       res.status(400).json({ error: "Invalid adhoc request data", detail: String(error) });
@@ -1293,15 +1345,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/risk-adhoc-requests/:id", async (req, res) => {
     try {
       const { db } = await import("./db");
-      const { riskAdhocRequests } = await import("@shared/schema");
+      const { riskAdhocRequests, riskHazardItems } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
       const id = parseInt(req.params.id);
       const { status, round } = req.body as { status?: string; round?: string };
+      const [existing] = await db.select().from(riskAdhocRequests).where(eq(riskAdhocRequests.id, id));
+      if (!existing) return res.status(404).json({ error: "Not found" });
       const patch: any = { updatedAt: new Date() };
       if (status) patch.status = status;
       if (round !== undefined) patch.round = round || null;
       const [row] = await db.update(riskAdhocRequests).set(patch).where(eq(riskAdhocRequests.id, id)).returning();
-      if (!row) return res.status(404).json({ error: "Not found" });
+      // 대기 → 진행중으로 전환되며 회차가 부여되는 순간, 신고 내용을 그대로 평가 항목으로 자동 생성
+      if (status === "진행중" && round && existing.status !== "진행중") {
+        const method = row.team === "사무업무 4반" ? "checklist" : "freq_severity";
+        await db.insert(riskHazardItems).values({
+          method,
+          workCategory: method === "checklist" ? "사무" : "기타",
+          subWork: null,
+          content: row.content || row.reason,
+          discoveryPath: "수시평가신청",
+          fieldInfo: row.fieldInfo || null,
+          imageUrls: row.imageUrls && row.imageUrls.length > 0 ? row.imageUrls : null,
+          branchId: row.branchId,
+          registeredById: row.requestedById,
+          registeredByName: row.requestedByName,
+          team: row.team,
+          isTemplate: false,
+          isMandatory: true,
+          sourceRound: round,
+          targetMembers: row.targetMembers && row.targetMembers.length > 0 ? row.targetMembers : null,
+          referenceSafetyMeasure: row.currentSafetyMeasure || null,
+        } as any);
+        if (row.targetMembers && row.targetMembers.length > 0) {
+          sendPushToEmployees(
+            row.targetMembers,
+            "수시 위험성평가 평가 요청",
+            `수시 위험성평가가 시작되었습니다. 앱에서 평가를 완료해주세요: ${(row.content || row.reason || "").slice(0, 60)}`,
+            { type: "risk-adhoc-approved", requestId: String(row.id) }
+          );
+        }
+      }
       res.json(row);
     } catch (error) {
       res.status(500).json({ error: "Failed to update adhoc request", detail: String(error) });
@@ -1673,14 +1756,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // FCM 토큰 등록
   app.post("/api/push/register", async (req, res) => {
     try {
-      const { token, platform } = req.body;
+      const { token, platform, employeeId } = req.body;
       if (!token) return res.status(400).json({ error: "토큰 없음" });
       const { pool: pgPool } = await import("./db");
+      await pgPool.query(`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
       await pgPool.query(
-        `INSERT INTO push_tokens (token, platform, created_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (token) DO UPDATE SET platform = $2, updated_at = NOW()`,
-        [token, platform || "android"]
+        `INSERT INTO push_tokens (token, platform, employee_id, created_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (token) DO UPDATE SET platform = $2, employee_id = COALESCE($3, push_tokens.employee_id), updated_at = NOW()`,
+        [token, platform || "android", employeeId || null]
       );
       res.json({ ok: true });
     } catch (e) {
@@ -1862,14 +1946,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // FCM 토큰 등록
   app.post("/api/push/register", async (req, res) => {
     try {
-      const { token, platform } = req.body;
+      const { token, platform, employeeId } = req.body;
       if (!token) return res.status(400).json({ error: "토큰 없음" });
       const { pool: pgPool } = await import("./db");
+      await pgPool.query(`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
       await pgPool.query(
-        `INSERT INTO push_tokens (token, platform, created_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (token) DO UPDATE SET platform = $2, updated_at = NOW()`,
-        [token, platform || "android"]
+        `INSERT INTO push_tokens (token, platform, employee_id, created_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (token) DO UPDATE SET platform = $2, employee_id = COALESCE($3, push_tokens.employee_id), updated_at = NOW()`,
+        [token, platform || "android", employeeId || null]
       );
       res.json({ ok: true });
     } catch (e) {

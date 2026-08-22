@@ -480,6 +480,10 @@ export const riskHazardItems = pgTable("risk_hazard_items", {
   team: varchar("team", { length: 50 }),                  // 팀(반) — 관리자 예시/팀원 직접등록 시 지정. 기존 항목은 null(미분류)
   isTemplate: boolean("is_template").default(false).notNull(), // true=관리자가 등록한 예시(선택 전까지 평가 대상 아님)
   isMandatory: boolean("is_mandatory").default(false).notNull(), // true=특정 지사 필수항목. 1인1선택 대상에서 제외되고 팀원 전원이 별도로 평가해야 함
+  // 수시평가 신청이 승인되어 자동 생성된 항목인 경우에만 채워짐 — 해당 회차에서만 "필수 항목"으로 노출되도록 스코프
+  sourceRound: varchar("source_round", { length: 100 }),
+  // 수시평가 대상자를 신청 시 지정한 경우에만 채워짐 — null이면 팀 전원 대상(기존 필수항목과 동일)
+  targetMembers: text("target_members").array(),
   // 선택 단계에서 참고할 수 있는 현재 안전보건조치(관리자가 사전에 채워 넣는 참고자료 — 개인 평가 입력값과는 별개)
   referenceSafetyMeasure: text("reference_safety_measure"),
   // (사용 안 함 — 예전 "항목 단위 공동 감소대책" 모델의 잔여 컬럼. 개선대책은 riskAssessments.reductionPlan에
@@ -559,6 +563,12 @@ export const riskAdhocRequests = pgTable("risk_adhoc_requests", {
   requestedById: varchar("requested_by_id", { length: 20 }).notNull(),
   requestedByName: varchar("requested_by_name", { length: 50 }).notNull(),
   reason: text("reason").notNull(),
+  // 아래는 실제 유해위험요인 신고 내용 — 승인 시 이 값 그대로 평가 항목(riskHazardItems)이 자동 생성됨
+  content: text("content"),
+  currentSafetyMeasure: text("current_safety_measure"),
+  fieldInfo: text("field_info"), // 건물명(관리번호) 등
+  imageUrls: text("image_urls").array(),
+  targetMembers: text("target_members").array(), // 평가해야 할 대상 팀원(이름). 비어있으면 팀 전원
   status: varchar("status", { length: 10 }).notNull().default("대기"), // '대기' | '진행중' | '완료'
   round: varchar("round", { length: 100 }), // '진행중'으로 전환 시 관리자가 부여하는 회차명 (예: '2026년 수시평가-1')
   createdAt: timestamp("created_at").defaultNow().notNull(),
