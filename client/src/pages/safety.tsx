@@ -501,17 +501,38 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   });
   const cancelSelection = useMutation({
     mutationFn: async (selId: number) => {
-      await fetch(`/api/risk-item-selections/${selId}?employeeId=${encodeURIComponent(empId)}&admin=${isAdmin}`, { method: "DELETE" });
+      const r1 = await fetch(`/api/risk-item-selections/${selId}?employeeId=${encodeURIComponent(empId)}&admin=${isAdmin}`, { method: "DELETE" });
+      if (!r1.ok && r1.status !== 404) {
+        const d = await r1.json().catch(() => ({} as any));
+        throw new Error(d.error || "선택 취소에 실패했습니다.");
+      }
       // 선택 취소/처음으로 돌아가기 시, 강제로 열어둔 팀 게이트도 함께 잠가서 다시 "무시하고 평가하기"를 물어보도록 함
-      await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`, { method: "DELETE" });
+      // (이 요청이 실패하더라도 선택 취소 자체는 이미 반영된 것으로 처리 — 서버 게이트는 다음 폴링/재시도로 정리됨)
+      try { await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`, { method: "DELETE" }); } catch {}
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] });
-      qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] });
-      // 선택 화면의 임시 입력 상태(예/아니오 버튼, 평가 초안)를 모두 초기화 — 저장된 평가 데이터(DB)는 그대로 유지됨
+    // 서버 응답을 기다리지 않고 화면/입력 상태를 즉시 초기화 (낙관적 업데이트) — 네트워크 왕복 동안 "데이터가 남아있는 것처럼" 보이는 문제 방지
+    onMutate: async (selId: number) => {
+      await qc.cancelQueries({ queryKey: ["/api/risk-item-selections"] });
+      const prevTeam = qc.getQueryData<RiskItemSelection[]>(["/api/risk-item-selections", myTeam, activeRound]);
+      const prevAll = qc.getQueryData<RiskItemSelection[]>(["/api/risk-item-selections", "round", activeRound]);
+      qc.setQueryData<RiskItemSelection[]>(["/api/risk-item-selections", myTeam, activeRound], (old) => (old || []).filter(s => s.id !== selId));
+      qc.setQueryData<RiskItemSelection[]>(["/api/risk-item-selections", "round", activeRound], (old) => (old || []).filter(s => s.id !== selId));
       setTemplateExperienceDraft({});
       setTemplateExperienceAttempt({});
       setAssessForm({});
+      return { prevTeam, prevAll };
+    },
+    onError: (e: any, _selId, ctx) => {
+      // 실제로 취소에 실패했다면 화면 상태를 되돌리고 에러를 표시
+      if (ctx?.prevTeam) qc.setQueryData(["/api/risk-item-selections", myTeam, activeRound], ctx.prevTeam);
+      if (ctx?.prevAll) qc.setQueryData(["/api/risk-item-selections", "round", activeRound], ctx.prevAll);
+      toast({ title: "선택 취소 실패", description: e?.message || "잠시 후 다시 시도해주세요.", variant: "destructive" });
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] });
+      qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] });
+    },
+    onSuccess: () => {
       toast({ title: "선택이 취소되었습니다." });
     },
   });
