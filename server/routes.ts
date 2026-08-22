@@ -1221,22 +1221,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: one-time cleanup of a leftover test 강제열림 record (GET, since only GET is invokable from this session)
-  app.get("/api/debug/clear-round-override", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { riskRoundOverrides } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const id = req.query.id ? parseInt(req.query.id as string) : undefined;
-      if (!id) return res.status(400).json({ error: "id required" });
-      const deleted = await db.delete(riskRoundOverrides).where(eq(riskRoundOverrides.id, id)).returning();
-      res.json({ ok: true, deleted });
-    } catch (error: any) {
-      res.status(500).json({ error: String(error?.message || error) });
-    }
-  });
-
   app.delete("/api/risk-item-selections/:id", async (req, res) => {
     try {
       const { db } = await import("./db");
