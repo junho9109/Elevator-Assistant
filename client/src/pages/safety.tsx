@@ -293,6 +293,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-assessments", branchName, activeRound],
     queryFn: async () => { const r = await fetch(`/api/risk-assessments?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
     enabled: ready,
+    refetchInterval: 5000, // 다른 팀원의 평가 입력을 새로고침 없이 실시간에 가깝게 반영
   });
   // 팀별 예시/선택 구조 — 소속 팀이 있을 때만 조회 (예시 항목 자체는 회차와 무관한 재사용 라이브러리)
   const { data: teamItems = [] } = useQuery<RiskHazardItem[]>({
@@ -304,6 +305,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-item-selections", myTeam, activeRound],
     queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
     enabled: ready && !!myTeam,
+    refetchInterval: 5000, // 다른 팀원이 방금 선택한 항목을 새로고침 없이 실시간에 가깝게 반영 (선택 시도 시엔 서버가 항상 최종 검증함)
   });
   // 회차 목록(정기+수시, 과거 회차 포함) — 공유 아카이브가 매년 누적되도록 회차를 선택해서 열람
   const { data: riskRoundsRaw = [] } = useQuery<string[]>({
@@ -326,6 +328,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-round-overrides", myTeam, activeRound],
     queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
     enabled: ready && !!myTeam,
+    refetchInterval: 5000,
   });
   const roundForcedOpen = roundOverrides.length > 0;
   // 회차 전체(팀 무관) 선택 현황 — 결과 확인 화면에서 팀별 요약을 만들 때 사용
@@ -333,12 +336,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-item-selections", "round", activeRound],
     queryFn: async () => { const r = await fetch(`/api/risk-item-selections?round=${encodeURIComponent(activeRound)}`); return r.json(); },
     enabled: ready,
+    refetchInterval: 5000,
   });
   // 결과 확인 — 평가 종료 후 각 팀(본인 팀 포함) 결과를 열람하고 확인했는지 기록
   const { data: resultConfirmations = [] } = useQuery<RiskResultConfirmation[]>({
     queryKey: ["/api/risk-result-confirmations", branchName, activeRound],
     queryFn: async () => { const r = await fetch(`/api/risk-result-confirmations?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
     enabled: ready,
+    refetchInterval: 5000,
   });
   const myConfirmedTeams = useMemo(() => new Set(resultConfirmations.filter(c => c.employeeId === empId).map(c => c.team)), [resultConfirmations, empId]);
   const confirmTeamResult = useMutation({
@@ -353,6 +358,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-signatures", branchName, activeRound],
     queryFn: async () => { const r = await fetch(`/api/risk-signatures?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
     enabled: ready,
+    refetchInterval: 5000,
   });
   const mySignature = useMemo(() => roundSignatures.find(s => s.employeeId === empId), [roundSignatures, empId]);
   const saveSignature = useMutation({
