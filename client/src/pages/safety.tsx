@@ -236,6 +236,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 이미 평가가 종료된(허용 가능 도달) 항목을 다시 열려고 할 때 재평가 여부를 먼저 확인
   const [reEvaluateConfirm, setReEvaluateConfirm] = useState<{ item: RiskHazardItem; hadAccidentExperience: boolean }|null>(null);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  // 서명까지 마친 뒤 처음으로 돌아간 회차의 결과를 다시 열람하기 위한 모드 (선택 상태와 무관하게 결과 화면을 강제로 표시)
+  const [viewResultsMode, setViewResultsMode] = useState(false);
   const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
   const [isMandatoryForm, setIsMandatoryForm] = useState(false);
@@ -246,7 +248,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     setDirectExperienceAttempt(true);
     setTimeout(() => setDirectExperienceAttempt(false), 1500);
   }
-  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; postImprovementSeverity: number | undefined; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
+  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean | undefined; severity: number; postImprovementSeverity: number | undefined; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   // 선택 단계에서 함께 답하는 경험 여부(템플릿별 임시 답변) 및 회차/수시평가 관련 상태
   const [templateExperienceDraft, setTemplateExperienceDraft] = useState<Record<number, boolean | undefined>>({});
   // 경험여부를 답하지 않고 "선택"을 누르려 할 때만 잠깐 강조 표시(평상시엔 켜져있지 않음)
@@ -492,8 +494,20 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     onError: (e: any) => toast({ title: "선택 실패", description: e.message, variant: "destructive" }),
   });
   const cancelSelection = useMutation({
-    mutationFn: async (selId: number) => { await fetch(`/api/risk-item-selections/${selId}?employeeId=${encodeURIComponent(empId)}&admin=${isAdmin}`, { method: "DELETE" }); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] }); toast({ title: "선택이 취소되었습니다." }); },
+    mutationFn: async (selId: number) => {
+      await fetch(`/api/risk-item-selections/${selId}?employeeId=${encodeURIComponent(empId)}&admin=${isAdmin}`, { method: "DELETE" });
+      // 선택 취소/처음으로 돌아가기 시, 강제로 열어둔 팀 게이트도 함께 잠가서 다시 "무시하고 평가하기"를 물어보도록 함
+      await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/risk-item-selections"] });
+      qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] });
+      // 선택 화면의 임시 입력 상태(예/아니오 버튼, 평가 초안)를 모두 초기화 — 저장된 평가 데이터(DB)는 그대로 유지됨
+      setTemplateExperienceDraft({});
+      setTemplateExperienceAttempt({});
+      setAssessForm({});
+      toast({ title: "선택이 취소되었습니다." });
+    },
   });
 
   const handleNMImage = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -612,7 +626,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
 
   function getAssessForm(itemId: number) {
-    return assessForm[itemId] || { level: "중", hadAccidentExperience: false, severity: 2, postImprovementSeverity: undefined as number | undefined, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
+    return assessForm[itemId] || { level: "중", hadAccidentExperience: undefined as boolean | undefined, severity: 2, postImprovementSeverity: undefined as number | undefined, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
   }
   function setItemAssessForm(itemId: number, patch: Partial<ReturnType<typeof getAssessForm>>) {
     setAssessForm(p => ({ ...p, [itemId]: { ...getAssessForm(itemId), ...p[itemId], ...patch } }));
@@ -666,6 +680,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     // 본인이 직접 선택(제안)한 항목이면 선택 단계에서 이미 경험 여부를 답했으므로 다시 묻지 않고 그 값을 재사용
     const isMyProposedItem = !!mySelection && mySelection.hazardItemId === item.id;
     const myExperienceValue = isMyProposedItem ? (mySelection!.hadAccidentExperience ?? false) : f.hadAccidentExperience;
+    // 내 경험 여부(가능성)를 먼저 답해야 중대성 평가 입력이 열림 — 제안자는 선택 단계에서 이미 답했으므로 항상 열려있음
+    const hasAnsweredExperience = isMyProposedItem || f.hadAccidentExperience !== undefined;
     const liveAgg = item.method === "freq_severity"
       ? (() => {
           const list = assessmentsByItem.get(item.id) || [];
@@ -753,52 +769,59 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? (가능성 산정)</p>
+                    <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? (가능성 산정) — 먼저 답변해야 중대성 평가가 열립니다</p>
                     <div className="flex gap-2">
-                      <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
-                      <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:false})} className={`flex-1 text-sm py-2 rounded-lg border ${!f.hadAccidentExperience?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+                      <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience===true?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
+                      <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:false})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience===false?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
                     </div>
                   </>
                 )}
-                <p className="text-sm text-muted-foreground">중대성 (강도) — 1(소) ~ 4(최대) 중 선택하세요</p>
-                <div className="flex gap-2">
-                  {[1,2,3,4].map(s=>(
-                    <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">{SEVERITY_INFO[f.severity] ?? ""}</p>
-                {liveAgg && (
-                  <div className="flex items-baseline gap-2 text-xs flex-wrap">
-                    <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
-                    <span className={`font-semibold ${liveAgg.cls.allow==="허용 불가능"?"text-red-600":"text-green-700"}`}>{liveAgg.risk} · {liveAgg.cls.level}({liveAgg.cls.label}) · {liveAgg.cls.allow}</span>
-                  </div>
+                {!hasAnsweredExperience && (
+                  <p className="text-xs text-orange-600 font-medium">사고 경험 여부를 먼저 선택해주세요. 선택 후 중대성 평가가 열립니다.</p>
                 )}
-                <div className="bg-muted/40 rounded-lg p-2">
-                  <p className="text-xs font-medium text-muted-foreground mb-0.5">현재 안전보건조치</p>
-                  <p className="text-xs text-muted-foreground whitespace-pre-wrap">{item.referenceSafetyMeasure || "등록된 참고자료가 없습니다."}</p>
-                </div>
-                {liveAgg && liveAgg.cls.allow==="허용 불가능" && (
-                  <div className="space-y-2 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900 rounded-xl p-2.5">
-                    <p className="text-xs font-medium text-red-700">위험성 {liveAgg.risk}({liveAgg.cls.level}) — 허용 불가능. 개선 안전보건조치를 입력하고, 이행 후 재추정을 답해야 평가가 종료됩니다.</p>
-                    <textarea placeholder="개선 안전보건조치 *" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
-                    <p className="text-xs text-muted-foreground">개선 안전보건조치 이행 후 중대성(강도)을 다시 1(소) ~ 4(최대)로 평가하세요</p>
+                {hasAnsweredExperience && (
+                  <>
+                    <p className="text-sm text-muted-foreground">중대성 (강도) — 1(소) ~ 4(최대) 중 선택하세요</p>
                     <div className="flex gap-2">
                       {[1,2,3,4].map(s=>(
-                        <button key={s} onClick={()=>setItemAssessForm(item.id,{postImprovementSeverity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.postImprovementSeverity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
+                        <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
                       ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">{f.postImprovementSeverity!=null ? (SEVERITY_INFO[f.postImprovementSeverity] ?? "") : ""}</p>
-                    {liveAgg.postCls && (
-                      <div className="flex items-baseline gap-2 text-xs flex-wrap pt-1 border-t border-red-200 dark:border-red-900">
-                        <span className="text-muted-foreground">개선 후 재산정 위험성</span>
-                        <span className={`font-semibold ${liveAgg.postCls.allow==="허용 불가능"?"text-red-600":"text-green-700"}`}>{liveAgg.postRisk} · {liveAgg.postCls.level}({liveAgg.postCls.label}) · {liveAgg.postCls.allow}</span>
+                    <p className="text-xs text-muted-foreground">{SEVERITY_INFO[f.severity] ?? ""}</p>
+                    {liveAgg && (
+                      <div className="flex items-baseline gap-2 text-xs flex-wrap">
+                        <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
+                        <span className={`font-semibold ${liveAgg.cls.allow==="허용 불가능"?"text-red-600":"text-green-700"}`}>{liveAgg.risk} · {liveAgg.cls.level}({liveAgg.cls.label}) · {liveAgg.cls.allow}</span>
                       </div>
                     )}
-                  </div>
+                    <div className="bg-muted/40 rounded-lg p-2">
+                      <p className="text-xs font-medium text-muted-foreground mb-0.5">현재 안전보건조치</p>
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap">{item.referenceSafetyMeasure || "등록된 참고자료가 없습니다."}</p>
+                    </div>
+                    {liveAgg && liveAgg.cls.allow==="허용 불가능" && (
+                      <div className="space-y-2 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900 rounded-xl p-2.5">
+                        <p className="text-xs font-medium text-red-700">위험성 {liveAgg.risk}({liveAgg.cls.level}) — 허용 불가능. 개선 안전보건조치를 입력하고, 이행 후 재추정을 답해야 평가가 종료됩니다.</p>
+                        <textarea placeholder="개선 안전보건조치 *" value={f.reductionPlan} onChange={e=>setItemAssessForm(item.id,{reductionPlan:e.target.value})} className="w-full border border-orange-400 rounded-xl px-3 py-2 text-sm bg-card min-h-[60px]"/>
+                        <p className="text-xs text-muted-foreground">개선 안전보건조치 이행 후 중대성(강도)을 다시 1(소) ~ 4(최대)로 평가하세요</p>
+                        <div className="flex gap-2">
+                          {[1,2,3,4].map(s=>(
+                            <button key={s} onClick={()=>setItemAssessForm(item.id,{postImprovementSeverity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.postImprovementSeverity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{f.postImprovementSeverity!=null ? (SEVERITY_INFO[f.postImprovementSeverity] ?? "") : ""}</p>
+                        {liveAgg.postCls && (
+                          <div className="flex items-baseline gap-2 text-xs flex-wrap pt-1 border-t border-red-200 dark:border-red-900">
+                            <span className="text-muted-foreground">개선 후 재산정 위험성</span>
+                            <span className={`font-semibold ${liveAgg.postCls.allow==="허용 불가능"?"text-red-600":"text-green-700"}`}>{liveAgg.postRisk} · {liveAgg.postCls.level}({liveAgg.postCls.label}) · {liveAgg.postCls.allow}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
-            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item, isMyProposedItem ? myExperienceValue : undefined)} disabled={saveAssessment.isPending}>{saveAssessment.isPending?"저장 중...":"평가 저장"}</Button>
+            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item, isMyProposedItem ? myExperienceValue : undefined)} disabled={saveAssessment.isPending || (item.method!=="checklist" && !hasAnsweredExperience)}>{saveAssessment.isPending?"저장 중...":!hasAnsweredExperience && item.method!=="checklist" ?"경험 여부를 먼저 선택하세요":"평가 저장"}</Button>
 
             {sharedAssessments.length>0 && (
               <div className="pt-3 border-t border-border space-y-1.5">
@@ -1010,7 +1033,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
                   {TEAM_ROSTERS.map(t=>(
-                    <button key={t.name} onClick={()=>{ setTemplateManagerTeam(t.name); setRiskMethod(t.name==="사무업무 4반" ? "checklist" : "freq_severity"); }} className={`text-xs px-2.5 py-1.5 rounded-lg border ${templateManagerTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card text-muted-foreground border-border"}`}>{t.name}</button>
+                    <button key={t.name} onClick={()=>{ setTemplateManagerTeam(t.name); setRiskMethod(t.name==="사무업무 4반" ? "checklist" : "freq_severity"); }} className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium ${templateManagerTeam===t.name?"bg-primary text-primary-foreground border-primary":"bg-card text-gray-700 dark:text-gray-300 border-border"}`}>{t.name}</button>
                   ))}
                 </div>
                 <div className="bg-muted/30 rounded-xl p-3 space-y-2">
@@ -1045,7 +1068,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                       <div key={t.id} className="flex items-center justify-between gap-2 bg-muted/30 rounded-lg p-2.5">
                         <div className="min-w-0">
                           <p className="text-sm truncate">{t.content}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{sel ? `${sel.employeeName}님이 선택함` : "선택 대기 중"}</p>
+                          <p className={`text-xs mt-0.5 ${sel?"text-gray-700 dark:text-gray-300 font-medium":"text-muted-foreground"}`}>{sel ? `${sel.employeeName}님이 선택함` : "선택 대기 중"}</p>
                         </div>
                         <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
                       </div>
@@ -1086,12 +1109,17 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
             <div className="bg-card rounded-xl border border-border p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-muted-foreground">평가 회차</p>
-                  <select className="text-sm font-medium bg-transparent focus:outline-none mt-0.5" value={activeRound} onChange={e=>setActiveRound(e.target.value)}>
-                    {riskRounds.map(r=><option key={r} value={r}>{r}</option>)}
-                    {adhocRequests.filter(r=>r.status==="진행중" && r.round).map(r=><option key={r.round} value={r.round!}>{r.round} (수시)</option>)}
-                  </select>
+                <div className="min-w-0 flex items-center gap-1.5">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">평가 회차</p>
+                    <select className="text-sm font-medium bg-transparent focus:outline-none mt-0.5" value={activeRound} onChange={e=>{ setActiveRound(e.target.value); setViewResultsMode(false); }}>
+                      {riskRounds.map(r=><option key={r} value={r}>{r}</option>)}
+                      {adhocRequests.filter(r=>r.status==="진행중" && r.round).map(r=><option key={r.round} value={r.round!}>{r.round} (수시)</option>)}
+                    </select>
+                  </div>
+                  {mySignature && !myEvaluationComplete && (
+                    <Button size="sm" variant="outline" className="shrink-0" onClick={()=>setViewResultsMode(true)}>결과보기</Button>
+                  )}
                 </div>
                 <div className="flex gap-1.5 shrink-0">
                   {isAdmin && (
@@ -1165,7 +1193,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               )}
             </div>
 
-            {!myEvaluationComplete && (
+            {!myEvaluationComplete && !viewResultsMode && (
             <>
             {branchMandatoryItems.length>0 && (
               <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-900 p-3 space-y-3">
@@ -1203,7 +1231,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                         return (
                           <div key={memberName} className="flex items-center gap-2 py-1">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                            <span className={`text-sm flex-1 ${done?"":"text-muted-foreground"}`}>{memberName}</span>
+                            <span className="text-sm flex-1 font-medium">{memberName}</span>
                             <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"선택완료":"미선택"}</span>
                           </div>
                         );
@@ -1249,7 +1277,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 {teamItems.filter(t=>t.isTemplate && !t.isMandatory && selectionByItemId.has(t.id)).map(t=>(
                   <div key={t.id} className="bg-muted/30 rounded-xl border border-border p-3 opacity-60">
                     <p className="text-sm truncate">{t.content}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{selectionByItemId.get(t.id)?.employeeName}님이 선택함</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 font-medium mt-0.5">{selectionByItemId.get(t.id)?.employeeName}님이 선택함</p>
                   </div>
                 ))}
                 <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskMethod(myTeamMethod); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[myTeamMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setDirectExperienceForm(undefined); setShowAddRisk(true); }}>
@@ -1279,7 +1307,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                         return (
                           <div key={memberName} className="flex items-center gap-2 py-1">
                             <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                            <span className={`text-sm flex-1 ${done?"":"text-muted-foreground"}`}>{memberName}</span>
+                            <span className="text-sm flex-1 font-medium">{memberName}</span>
                             <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"선택완료":"미선택"}</span>
                           </div>
                         );
@@ -1311,8 +1339,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             </>
             )}
 
-            {myEvaluationComplete && (
+            {(myEvaluationComplete || viewResultsMode) && (
             <div className="space-y-3">
+              {viewResultsMode && !myEvaluationComplete && (
+                <Button size="sm" variant="outline" onClick={()=>setViewResultsMode(false)}>← 닫기</Button>
+              )}
               <div>
                 <p className="text-sm font-medium mb-1">결과 확인 및 서명</p>
                 <p className="text-xs text-muted-foreground">평가가 종료되었습니다. 우리 팀과 다른 팀의 선택·평가 결과, 개선된 안전보건조치를 모두 확인한 뒤 각 팀마다 확인 버튼을 눌러주세요. 전체 확인이 끝나면 서명 후 저장됩니다.</p>
@@ -1574,7 +1605,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             <p className="text-xs text-muted-foreground mb-4">현재 선택은 취소되어 다시 항목을 선택해야 합니다. 이미 저장된 평가 데이터는 삭제되지 않고 그대로 남습니다.</p>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={()=>setShowRestartConfirm(false)}>취소</Button>
-              <Button className="flex-1" disabled={cancelSelection.isPending} onClick={()=>{ setShowRestartConfirm(false); setExpandedRisk(null); setViewOtherTeam(""); if (mySelection) cancelSelection.mutate(mySelection.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{cancelSelection.isPending?"처리 중...":"처음으로"}</Button>
+              <Button className="flex-1" disabled={cancelSelection.isPending} onClick={()=>{ setShowRestartConfirm(false); setExpandedRisk(null); setViewOtherTeam(""); setViewResultsMode(false); if (mySelection) cancelSelection.mutate(mySelection.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{cancelSelection.isPending?"처리 중...":"처음으로"}</Button>
             </div>
           </div>
         </div>

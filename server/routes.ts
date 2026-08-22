@@ -1205,6 +1205,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 처음으로 돌아가기 / 선택 취소 시, 강제로 열어둔 팀 게이트를 다시 잠가 "무시하고 평가하기"를 다시 물어보도록 함
+  app.delete("/api/risk-round-overrides", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskRoundOverrides } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const team = req.query.team as string | undefined;
+      const round = req.query.round as string | undefined;
+      if (!team || !round) return res.status(400).json({ error: "team, round required" });
+      await db.delete(riskRoundOverrides).where(and(eq(riskRoundOverrides.team, team), eq(riskRoundOverrides.round, round)));
+      res.status(204).send();
+    } catch (error) {
+      handleError(res, error, "Failed to clear risk round override");
+    }
+  });
+
   app.delete("/api/risk-item-selections/:id", async (req, res) => {
     try {
       const { db } = await import("./db");
