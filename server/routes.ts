@@ -1035,18 +1035,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: migrate post_improvement_severity column
-  app.get("/api/debug/migrate-post-improvement-severity", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { pool } = await import("./db");
-      await pool.query(`ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS post_improvement_severity integer`);
-      res.json({ ok: true });
-    } catch (error: any) {
-      res.status(500).json({ error: String(error?.message || error) });
-    }
-  });
-
   // ── 위험성평가: 지사 목록 (등록된 항목/평가에서 사용된 지사명 취합) ──
   app.get("/api/risk-branches", async (req, res) => {
     try {
