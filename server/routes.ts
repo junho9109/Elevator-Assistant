@@ -1050,26 +1050,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: 수시평가 신청 확장 컬럼 1회성 마이그레이션 (사용 후 제거 예정)
-  app.get("/api/debug/migrate-adhoc-v2", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { sql: sqlOp } = await import("drizzle-orm");
-      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS source_round varchar(100)`);
-      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS target_members text[]`);
-      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS content text`);
-      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS current_safety_measure text`);
-      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS field_info text`);
-      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS image_urls text[]`);
-      await db.execute(sqlOp`ALTER TABLE risk_adhoc_requests ADD COLUMN IF NOT EXISTS target_members text[]`);
-      await db.execute(sqlOp`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
-      res.json({ ok: true, migrated: true });
-    } catch (error) {
-      res.status(500).json({ error: "failed", detail: String(error) });
-    }
-  });
-
   // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
   app.get("/api/risk-hazard-items", async (req, res) => {
     try {
