@@ -324,13 +324,21 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     enabled: ready && !!myTeam,
   });
   // 팀원 절반 이상이 선택을 완료하면 "무시하고 평가하기"로 전원 완료를 건너뛸 수 있음 — 한 명이라도 누르면 팀 전체에 즉시 반영됨
-  const { data: roundOverrides = [] } = useQuery<{ id: number; team: string; round: string }[]>({
+  const { data: roundOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string }[]>({
     queryKey: ["/api/risk-round-overrides", myTeam, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=selection`); return r.json(); },
     enabled: ready && !!myTeam,
     refetchInterval: 1000,
   });
   const roundForcedOpen = roundOverrides.length > 0;
+  // 경험 여부 단계에서도 팀원 절반 이상이 답변을 완료하면 "무시하고 평가하기"로 넘어갈 수 있음
+  const { data: experienceOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string }[]>({
+    queryKey: ["/api/risk-round-overrides", "experience", myTeam, activeRound],
+    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=experience`); return r.json(); },
+    enabled: ready && !!myTeam,
+    refetchInterval: 1000,
+  });
+  const experiencePhaseForcedOpen = experienceOverrides.length > 0;
   // 회차 전체(팀 무관) 선택 현황 — 결과 확인 화면에서 팀별 요약을 만들 때 사용
   const { data: allRoundSelections = [] } = useQuery<RiskItemSelection[]>({
     queryKey: ["/api/risk-item-selections", "round", activeRound],
@@ -371,10 +379,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [showForceOpenConfirm, setShowForceOpenConfirm] = useState(false);
   const forceOpenRound = useMutation({
     mutationFn: async () => {
-      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, forcedById: empId, forcedByName: empName }) });
+      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, phase: "selection", forcedById: empId, forcedByName: empName }) });
       if (!r.ok) throw new Error(); return r.json();
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] }); toast({ title: "선택을 완료한 팀원만으로 평가를 시작합니다." }); setShowForceOpenConfirm(false); },
+  });
+  const [showForceOpenExperienceConfirm, setShowForceOpenExperienceConfirm] = useState(false);
+  const forceOpenExperiencePhase = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, phase: "experience", forcedById: empId, forcedByName: empName }) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] }); toast({ title: "경험 여부를 답변한 팀원만으로 중대성 평가를 시작합니다." }); setShowForceOpenExperienceConfirm(false); },
   });
   const createAdhocRequest = useMutation({
     mutationFn: async () => {
@@ -648,6 +664,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [activeTeamItemsForMethod, assessmentsByItem, empId]);
+  // ── 빈도강도법 2단계 구조: 1단계(경험 여부, 가능성 산정) 팀 전원 완료 → 2단계(중대성) 오픈 ──
+  const memberExperienceDone = (memberName: string) => activeTeamItemsForMethod.every(item => (assessmentsByItem.get(item.id) || []).some(a => a.employeeName === memberName && a.hadAccidentExperience != null));
+  const membersExperienceDoneCount = useMemo(() => myTeamMembers.filter(memberExperienceDone).length, [myTeamMembers, activeTeamItemsForMethod, assessmentsByItem]);
+  const experiencePhaseComplete = useMemo(() => myTeamMethod === "freq_severity" && myTeamMembers.length > 0 && myTeamMembers.every(memberExperienceDone), [myTeamMethod, myTeamMembers, activeTeamItemsForMethod, assessmentsByItem]);
   const adminTemplates = useMemo(() => adminTeamItems.filter(t => t.isTemplate && !t.isMandatory), [adminTeamItems]);
   const adminMandatoryItems = useMemo(() => adminTeamItems.filter(t => t.isMandatory), [adminTeamItems]);
   // 본인의 필수+수시+선택 항목 평가를 모두 마쳐야 "공유"(다른 팀 결과 보기)가 열림
@@ -686,6 +706,54 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     saveAssessment.mutate(payload);
   }
 
+  // 1단계(경험 여부)만 저장 — 중대성(강도)은 아직 입력하지 않음. 이미 저장된 값이 있어도 그대로 덮어쓰지 않도록 severity 필드는 포함하지 않음
+  function submitExperienceOnly(item: RiskHazardItem) {
+    const isMine = !!mySelection && mySelection.hazardItemId === item.id;
+    const f = getAssessForm(item.id);
+    const experienceValue = isMine ? (mySelection!.hadAccidentExperience ?? false) : f.hadAccidentExperience;
+    if (experienceValue === undefined) { toast({ title: "경험 여부를 먼저 선택해주세요.", variant: "destructive" }); return; }
+    saveAssessment.mutate({ hazardItemId: item.id, branchId: branchName, employeeId: empId, employeeName: empName, round: activeRound, hadAccidentExperience: experienceValue, currentSafetyMeasure: item.referenceSafetyMeasure || null });
+  }
+
+  function renderExperiencePhaseCard(item: RiskHazardItem) {
+    const isMine = !!mySelection && mySelection.hazardItemId === item.id;
+    const mine = myAssessment(item.id);
+    const alreadyAnswered = mine?.hadAccidentExperience != null; // 실제 서버에 저장된 값만 "완료"로 인정
+    const f = getAssessForm(item.id);
+    const myValue = isMine ? (mySelection!.hadAccidentExperience ?? false) : f.hadAccidentExperience;
+    return (
+      <div key={item.id} className="bg-card rounded-xl shadow-sm border border-border p-3 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
+        </div>
+        <p className="text-sm font-medium">{item.content}</p>
+        {alreadyAnswered ? (
+          <div className="bg-muted/40 rounded-lg p-2">
+            <p className="text-xs font-medium text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함) 경험</p>
+            <p className="text-sm font-medium mt-0.5">{mine!.hadAccidentExperience ? "예" : "아니오"} <span className="text-xs text-muted-foreground font-normal">(저장됨)</span></p>
+          </div>
+        ) : isMine ? (
+          <>
+            <div className="bg-muted/40 rounded-lg p-2">
+              <p className="text-xs font-medium text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함) 경험</p>
+              <p className="text-sm font-medium mt-0.5">{myValue ? "예" : "아니오"} <span className="text-xs text-muted-foreground font-normal">(선택 단계에서 답변함)</span></p>
+            </div>
+            <Button size="sm" className="w-full" disabled={saveAssessment.isPending} onClick={()=>submitExperienceOnly(item)}>{saveAssessment.isPending?"저장 중...":"저장"}</Button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함)를 경험하셨나요? (가능성 산정)</p>
+            <div className="flex gap-2">
+              <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:true})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience===true?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>예</button>
+              <button onClick={()=>setItemAssessForm(item.id,{hadAccidentExperience:false})} className={`flex-1 text-sm py-2 rounded-lg border ${f.hadAccidentExperience===false?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>아니오</button>
+            </div>
+            <Button size="sm" className="w-full" disabled={saveAssessment.isPending} onClick={()=>submitExperienceOnly(item)}>{saveAssessment.isPending?"저장 중...":"저장"}</Button>
+          </>
+        )}
+      </div>
+    );
+  }
+
   function renderMandatoryItemBlock(item: RiskHazardItem) {
     const targets = mandatoryTargets(item);
     return (
@@ -716,9 +784,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     const f = getAssessForm(item.id);
     // 본인이 직접 선택(제안)한 항목이면 선택 단계에서 이미 경험 여부를 답했으므로 다시 묻지 않고 그 값을 재사용
     const isMyProposedItem = !!mySelection && mySelection.hazardItemId === item.id;
-    const myExperienceValue = isMyProposedItem ? (mySelection!.hadAccidentExperience ?? false) : f.hadAccidentExperience;
-    // 내 경험 여부(가능성)를 먼저 답해야 중대성 평가 입력이 열림 — 제안자는 선택 단계에서 이미 답했으므로 항상 열려있음
-    const hasAnsweredExperience = isMyProposedItem || f.hadAccidentExperience !== undefined;
+    // 1단계(경험 여부 단계)에서 이미 서버에 저장된 값이 있으면 그것을 우선 사용 (가장 신뢰할 수 있는 값)
+    const myExperienceSaved = mine?.hadAccidentExperience != null;
+    const myExperienceValue = myExperienceSaved ? mine!.hadAccidentExperience! : (isMyProposedItem ? (mySelection!.hadAccidentExperience ?? false) : f.hadAccidentExperience);
+    // 내 경험 여부(가능성)를 먼저 답해야 중대성 평가 입력이 열림 — 대부분은 1단계에서 이미 완료된 상태로 이 화면에 도달함 (무시하고 평가하기로 건너뛴 팀원만 여기서 답변)
+    const hasAnsweredExperience = myExperienceSaved || isMyProposedItem || f.hadAccidentExperience !== undefined;
     const liveAgg = item.method === "freq_severity"
       ? (() => {
           const list = assessmentsByItem.get(item.id) || [];
@@ -799,10 +869,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               </>
             ) : (
               <>
-                {isMyProposedItem ? (
+                {myExperienceSaved || isMyProposedItem ? (
                   <div className="bg-muted/40 rounded-lg p-2">
                     <p className="text-xs font-medium text-muted-foreground">최근 1년 내 이 위험요인으로 사고(아차사고 포함) 경험</p>
-                    <p className="text-sm font-medium mt-0.5">{myExperienceValue ? "예" : "아니오"} <span className="text-xs text-muted-foreground font-normal">(선택 단계에서 답변함)</span></p>
+                    <p className="text-sm font-medium mt-0.5">{myExperienceValue ? "예" : "아니오"} <span className="text-xs text-muted-foreground font-normal">{myExperienceSaved ? "(1단계에서 답변함)" : "(선택 단계에서 답변함)"}</span></p>
                   </div>
                 ) : (
                   <>
@@ -858,7 +928,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 )}
               </>
             )}
-            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item, isMyProposedItem ? myExperienceValue : undefined)} disabled={saveAssessment.isPending || (item.method!=="checklist" && !hasAnsweredExperience)}>{saveAssessment.isPending?"저장 중...":!hasAnsweredExperience && item.method!=="checklist" ?"경험 여부를 먼저 선택하세요":"평가 저장"}</Button>
+            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item, (myExperienceSaved || isMyProposedItem) ? myExperienceValue : undefined)} disabled={saveAssessment.isPending || (item.method!=="checklist" && !hasAnsweredExperience)}>{saveAssessment.isPending?"저장 중...":!hasAnsweredExperience && item.method!=="checklist" ?"경험 여부를 먼저 선택하세요":"평가 저장"}</Button>
 
             {sharedAssessments.length>0 && (
               <div className="pt-3 border-t border-border space-y-1.5">
@@ -1356,6 +1426,39 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   </div>
                 )}
               </div>
+            ) : myTeamMethod === "freq_severity" && !experiencePhaseComplete && !experiencePhaseForcedOpen ? (
+              <div className="space-y-3">
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">내가 선택한 항목</p>
+                    <p className="text-sm text-blue-800 dark:text-blue-300 truncate">{teamItems.find(t=>t.id===mySelection.hazardItemId)?.content}</p>
+                  </div>
+                  <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
+                </div>
+                <p className="text-sm text-gray-500">1단계: 경험 여부(가능성 산정) — 아래 모든 항목에 대해 사고 경험 여부를 답하고 저장해주세요. 팀 전원이 완료하면 2단계(중대성 평가)가 열립니다.</p>
+                {activeTeamItemsForMethod.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
+                {activeTeamItemsForMethod.map(item=>renderExperiencePhaseCard(item))}
+                {myTeamMembers.length>0 && (
+                  <div className="bg-card rounded-xl border border-border p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">팀원 경험 여부 제출 현황 · {membersExperienceDoneCount}/{myTeamMembers.length}명</p>
+                    <div className="space-y-1">
+                      {myTeamMembers.map(memberName=>{
+                        const done = memberExperienceDone(memberName);
+                        return (
+                          <div key={memberName} className="flex items-center gap-2 py-1">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                            <span className="text-sm flex-1 font-medium">{memberName}</span>
+                            <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"완료":"미완료"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {membersExperienceDoneCount / myTeamMembers.length >= 0.5 && (
+                      <Button size="sm" variant="outline" className="w-full mt-2" onClick={()=>setShowForceOpenExperienceConfirm(true)}>무시하고 평가하기</Button>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
               <>
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
@@ -1366,7 +1469,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
                 </div>
                 <div className="text-center py-2 px-3 rounded-lg text-xs font-medium border bg-muted/40 text-muted-foreground border-border">
-                  {myTeam} · {myTeamMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}으로 평가합니다
+                  {myTeam} · {myTeamMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}으로 평가합니다{myTeamMethod==="freq_severity" ? " (2단계: 중대성 평가)" : ""}
                 </div>
                 <p className="text-sm text-gray-500">평가 대상 {activeTeamItemsForMethod.length}건 · 미평가 {activeTeamItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
                 {sortedActiveTeamItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
@@ -1630,6 +1733,19 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={()=>setShowForceOpenConfirm(false)}>취소</Button>
               <Button className="flex-1" disabled={forceOpenRound.isPending} onClick={()=>forceOpenRound.mutate()}>{forceOpenRound.isPending?"처리 중...":"평가 시작"}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showForceOpenExperienceConfirm&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowForceOpenExperienceConfirm(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
+            <p className="text-sm font-medium mb-1">아직 경험 여부를 다 답하지 못한 팀원이 있습니다.</p>
+            <p className="text-xs text-muted-foreground mb-4">답변을 마친 팀원만으로 중대성 평가를 시작할까요? 아직 답하지 못한 팀원의 경험 여부는 이번 가능성 산정에서 제외되며, 이후 답하더라도 별도로 반영되지 않습니다.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={()=>setShowForceOpenExperienceConfirm(false)}>취소</Button>
+              <Button className="flex-1" disabled={forceOpenExperiencePhase.isPending} onClick={()=>forceOpenExperiencePhase.mutate()}>{forceOpenExperiencePhase.isPending?"처리 중...":"중대성 평가 시작"}</Button>
             </div>
           </div>
         </div>

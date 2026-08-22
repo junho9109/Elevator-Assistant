@@ -1035,6 +1035,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: migrate risk_round_overrides.phase column
+  app.get("/api/debug/migrate-override-phase", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { pool } = await import("./db");
+      await pool.query(`ALTER TABLE risk_round_overrides ADD COLUMN IF NOT EXISTS phase varchar(20) NOT NULL DEFAULT 'selection'`);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ error: String(error?.message || error) });
+    }
+  });
+
   // ── 위험성평가: 지사 목록 (등록된 항목/평가에서 사용된 지사명 취합) ──
   app.get("/api/risk-branches", async (req, res) => {
     try {
@@ -1181,8 +1193,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { eq, and } = await import("drizzle-orm");
       const team = req.query.team as string | undefined;
       const round = req.query.round as string | undefined;
-      const rows = team && round
-        ? await db.select().from(riskRoundOverrides).where(and(eq(riskRoundOverrides.team, team), eq(riskRoundOverrides.round, round)))
+      const phase = req.query.phase as string | undefined;
+      const conditions = [] as any[];
+      if (team) conditions.push(eq(riskRoundOverrides.team, team));
+      if (round) conditions.push(eq(riskRoundOverrides.round, round));
+      if (phase) conditions.push(eq(riskRoundOverrides.phase, phase));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskRoundOverrides).where(and(...conditions))
         : await db.select().from(riskRoundOverrides);
       res.json(rows);
     } catch (error) {
@@ -1196,9 +1213,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { riskRoundOverrides, insertRiskRoundOverrideSchema } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
       const validated = insertRiskRoundOverrideSchema.parse(req.body);
-      const [existing] = await db.select().from(riskRoundOverrides).where(and(eq(riskRoundOverrides.team, validated.team), eq(riskRoundOverrides.round, validated.round)));
+      const phase = validated.phase || "selection";
+      const [existing] = await db.select().from(riskRoundOverrides).where(and(eq(riskRoundOverrides.team, validated.team), eq(riskRoundOverrides.round, validated.round), eq(riskRoundOverrides.phase, phase)));
       if (existing) return res.json(existing);
-      const [row] = await db.insert(riskRoundOverrides).values(validated).returning();
+      const [row] = await db.insert(riskRoundOverrides).values({ ...validated, phase }).returning();
       res.status(201).json(row);
     } catch (error) {
       res.status(400).json({ error: "Invalid round override data", detail: String(error) });
@@ -1206,6 +1224,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 처음으로 돌아가기 / 선택 취소 시, 강제로 열어둔 팀 게이트를 다시 잠가 "무시하고 평가하기"를 다시 물어보도록 함
+  // phase를 지정하지 않으면 해당 team+round의 모든 단계(selection, experience) 게이트를 초기화함
   app.delete("/api/risk-round-overrides", async (req, res) => {
     try {
       const { db } = await import("./db");
@@ -1213,8 +1232,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { eq, and } = await import("drizzle-orm");
       const team = req.query.team as string | undefined;
       const round = req.query.round as string | undefined;
+      const phase = req.query.phase as string | undefined;
       if (!team || !round) return res.status(400).json({ error: "team, round required" });
-      await db.delete(riskRoundOverrides).where(and(eq(riskRoundOverrides.team, team), eq(riskRoundOverrides.round, round)));
+      const conditions = [eq(riskRoundOverrides.team, team), eq(riskRoundOverrides.round, round)];
+      if (phase) conditions.push(eq(riskRoundOverrides.phase, phase));
+      await db.delete(riskRoundOverrides).where(and(...conditions));
       res.status(204).send();
     } catch (error) {
       handleError(res, error, "Failed to clear risk round override");

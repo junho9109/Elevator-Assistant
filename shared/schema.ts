@@ -619,12 +619,14 @@ export const insertRiskAdhocRequestSchema = createInsertSchema(riskAdhocRequests
 export type InsertRiskAdhocRequest = z.infer<typeof insertRiskAdhocRequestSchema>;
 export type RiskAdhocRequest = typeof riskAdhocRequests.$inferSelect;
 
-// ── 위험성평가: 팀원 절반 이상이 선택을 완료했을 때 "무시하고 평가하기"로 전원 완료를 건너뛴 기록.
-// (team, round) 조합으로 한 번 기록되면 그 팀·회차의 모든 팀원에게 즉시 평가 단계가 열림 ──
+// ── 위험성평가: 팀원 절반 이상이 선택(또는 경험 여부 답변)을 완료했을 때 "무시하고 평가하기"로 전원 완료를 건너뛴 기록.
+// (team, round, phase) 조합으로 한 번 기록되면 그 팀·회차·단계의 모든 팀원에게 즉시 다음 단계가 열림
+// phase: 'selection'(항목 선택 단계) | 'experience'(경험 여부 단계) ──
 export const riskRoundOverrides = pgTable("risk_round_overrides", {
   id: serial("id").primaryKey(),
   team: varchar("team", { length: 50 }).notNull(),
   round: varchar("round", { length: 100 }).notNull(),
+  phase: varchar("phase", { length: 20 }).notNull().default("selection"),
   forcedById: varchar("forced_by_id", { length: 20 }).notNull(),
   forcedByName: varchar("forced_by_name", { length: 50 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
