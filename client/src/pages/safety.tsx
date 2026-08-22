@@ -15,6 +15,7 @@ type RiskHazardItem = {
   discoveryPath: string | null; fieldInfo: string | null; imageUrls: string[] | null; branchId: string;
   registeredById: string; registeredByName: string; team: string | null; isTemplate: boolean; isMandatory: boolean; createdAt: string;
   reductionPlan: string | null; reductionPlanUpdatedBy: string | null; reductionPlanUpdatedAt: string | null;
+  referenceSafetyMeasure: string | null;
 };
 type RiskItemSelection = { id: number; hazardItemId: number; employeeId: string; employeeName: string; createdAt: string; };
 type EmployeeTeamOverride = { id: number; employeeId: string; team: string; setBy: string | null; updatedAt: string; };
@@ -155,6 +156,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
   const [isMandatoryForm, setIsMandatoryForm] = useState(false);
+  const [referenceSafetyMeasureForm, setReferenceSafetyMeasureForm] = useState("");
   const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean; severity: number; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   const [selectedDef, setSelectedDef] = useState(PPE_DEFAULTS[0]);
   const [ppeForm, setPpeForm] = useState({ name: PPE_DEFAULTS[0].name, issuedDate: "", expiryDate: "", standard: PPE_DEFAULTS[0].standard, howToWear: PPE_DEFAULTS[0].howToWear });
@@ -448,6 +450,12 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         </div>
         {expandedRisk===item.id && (
           <div className="px-4 pb-4 border-t border-border pt-3 bg-muted/30 space-y-3">
+            {item.referenceSafetyMeasure && (
+              <div className="bg-muted/40 rounded-lg p-2">
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">현재 안전보건조치 (참고)</p>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap">{item.referenceSafetyMeasure}</p>
+              </div>
+            )}
             {item.fieldInfo && <p className="text-xs text-muted-foreground">현장정보: {item.fieldInfo}</p>}
             {item.imageUrls && item.imageUrls.length>0 && <div className="grid grid-cols-3 gap-2">{item.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>}
 
@@ -748,6 +756,12 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <div key={t.id} className="bg-card rounded-xl border border-border p-3 space-y-2">
                     <Badge variant="outline" className="text-xs">{t.workCategory}{t.subWork?` · ${t.subWork}`:""}</Badge>
                     <p className="text-sm font-medium whitespace-pre-wrap">{t.content}</p>
+                    {t.referenceSafetyMeasure && (
+                      <div className="bg-muted/40 rounded-lg p-2">
+                        <p className="text-xs font-medium text-muted-foreground mb-0.5">현재 안전보건조치</p>
+                        <p className="text-xs text-muted-foreground whitespace-pre-wrap">{t.referenceSafetyMeasure}</p>
+                      </div>
+                    )}
                     {t.fieldInfo && <p className="text-xs text-muted-foreground">현장정보: {t.fieldInfo}</p>}
                     {t.imageUrls && t.imageUrls.length>0 && (
                       <div className="grid grid-cols-3 gap-2">{t.imageUrls.map((img,i)=><img key={i} src={img} alt="" className="rounded-lg w-full h-20 object-cover border"/>)}</div>
@@ -761,7 +775,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     <p className="text-xs text-muted-foreground mt-0.5">{selectionByItemId.get(t.id)?.employeeName}님이 선택함</p>
                   </div>
                 ))}
-                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskMethod(myTeamMethod); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[myTeamMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setShowAddRisk(true); }}>
+                <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskMethod(myTeamMethod); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[myTeamMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setShowAddRisk(true); }}>
                   <Plus className="h-4 w-4 mr-1"/>목록에 없으면 직접 등록
                 </Button>
               </div>
@@ -827,7 +841,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             </div>
             <div className="flex justify-between items-center">
               <p className="text-sm text-gray-500">유해위험요인 {riskItemsForMethod.length}건 · 미평가 {riskItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
-              <Button size="sm" onClick={()=>{ setAddRiskMode("legacy"); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setShowAddRisk(true); }}><Plus className="h-4 w-4 mr-1"/>유해위험요인 등록</Button>
+              <Button size="sm" onClick={()=>{ setAddRiskMode("legacy"); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setShowAddRisk(true); }}><Plus className="h-4 w-4 mr-1"/>유해위험요인 등록</Button>
             </div>
             {sortedRiskItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>등록된 유해위험요인이 없습니다.</p></div>}
             {sortedRiskItems.map(item=>renderRiskItemCard(item))}
@@ -904,6 +918,12 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               </div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">현장 추가정보 (선택)</label><Input value={riskForm.fieldInfo} onChange={e=>setRiskForm(p=>({...p,fieldInfo:e.target.value}))} placeholder="예: 승강기 고유번호, 관리번호 등"/></div>
               {addRiskMode==="template" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">현재 안전보건조치 (선택 화면에 참고자료로 표시됨)</label>
+                  <textarea value={referenceSafetyMeasureForm} onChange={e=>setReferenceSafetyMeasureForm(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card min-h-[70px]" placeholder="예: 이동 시 주변 위험요인을 사전에 확인하고, 안전화 상태를 점검한다."/>
+                </div>
+              )}
+              {addRiskMode==="template" && (
                 <label className="flex items-start gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 rounded-xl p-3 cursor-pointer">
                   <input type="checkbox" className="mt-0.5" checked={isMandatoryForm} onChange={e=>setIsMandatoryForm(e.target.checked)} />
                   <span className="text-xs text-red-700 dark:text-red-400">
@@ -931,7 +951,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   registeredById: empId,
                   registeredByName: empName,
                   ...(addRiskMode !== "legacy" ? { team: addRiskTeam, isTemplate: addRiskMode === "template" } : {}),
-                  ...(addRiskMode === "template" ? { isMandatory: isMandatoryForm } : {}),
+                  ...(addRiskMode === "template" ? { isMandatory: isMandatoryForm, referenceSafetyMeasure: referenceSafetyMeasureForm || null } : {}),
                   ...(addRiskMode === "direct" ? { selectEmployeeId: empId, selectEmployeeName: empName } : {}),
                 })}>{createRiskItem.isPending?"저장 중...":"저장"}</Button>
               </div>
@@ -992,7 +1012,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
               <Button
                 className="w-full"
                 disabled={adminTemplates.length>=10}
-                onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setShowAddRisk(true); }}
+                onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setShowAddRisk(true); }}
               >
                 <Plus className="h-4 w-4 mr-1"/>{adminTemplates.length>=10 ? "최대 10개 등록됨" : "예시 추가"}
               </Button>
@@ -1013,7 +1033,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(true); setShowAddRisk(true); }}
+                  onClick={()=>{ setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[riskMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(true); setReferenceSafetyMeasureForm(""); setShowAddRisk(true); }}
                 >
                   <Plus className="h-4 w-4 mr-1"/>필수 항목 추가
                 </Button>

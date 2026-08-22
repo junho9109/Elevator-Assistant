@@ -1165,6 +1165,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: reference_safety_measure 컬럼 추가 + 기존 예시 10건 삭제 후 붙임4-1/4-3 실자료 기반 예시로 재시딩 (완료 후 제거 예정)
+  app.get("/api/debug/reseed-risk-items-with-safety-measures", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { db } = await import("./db");
+      const { sql: sqlOp } = await import("drizzle-orm");
+      await db.execute(sqlOp`ALTER TABLE risk_hazard_items ADD COLUMN IF NOT EXISTS reference_safety_measure text`);
+      if (req.query.reseed !== "1") return res.json({ ok: true, migrated: true, reseeded: false });
+
+      const { riskHazardItems, riskItemSelections, riskAssessments } = await import("@shared/schema");
+      const { inArray } = await import("drizzle-orm");
+      const oldIds = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+      await db.delete(riskAssessments).where(inArray(riskAssessments.hazardItemId, oldIds));
+      await db.delete(riskItemSelections).where(inArray(riskItemSelections.hazardItemId, oldIds));
+      await db.delete(riskHazardItems).where(inArray(riskHazardItems.id, oldIds));
+
+      const admin = { registeredById: "노준호", registeredByName: "노준호", branchId: "서울강서지사" as string, isTemplate: true, discoveryPath: "붙임4-1/4-3 (2026년도 정기 위험성평가 서식)" };
+      const elevatorItems = [
+        { subWork: "현장 이동", content: "이동 중 바닥 요철부·계단 등을 보지 못하고 걸려 넘어지면서 발목이 접질리는 위험", ref: "이동 시 주변 위험요인(바닥단차, 돌출물 등)을 사전에 철저히 확인한다. 이동 중 핸드폰, 스마트 단말기 등을 사용하지 않는다." },
+        { subWork: "현장 이동", content: "눈·비가 섞여있는 미끄러운 부분을 밟아 넘어지는 위험", ref: "눈비로 인해 바닥이 미끄러워진 경우 바닥 상태를 확인하고 각별히 주의한다. 개인 안전화 상태(기름오염 여부 등)를 사전에 철저히 확인한다." },
+        { subWork: "기계실 검사", content: "계단에서의 미끄러짐, 넘어짐, 추락 위험", ref: "이동 시 주변 위험상황을 사전에 확인한다. 안전화 바닥의 오염 여부를 확인하고 제거한다. 관리주체에게 미끄럼 방지조치를 하도록 권고한다." },
+        { subWork: "기계실 검사", content: "이동 경로 상 돌출물, 장애물 등에 의해 부딪힘·넘어지는 위험", ref: "이동 경로에 돌출물, 회전체 등의 장애물이 있는지 사전에 확인하고 이동한다. 관리주체에게 돌출된 부위에 주의 표지 부착을 권고한다." },
+        { subWork: "기계실 검사", content: "구동기가 제어반보다 1.5m 위에 설치되고 난간이 없어 발을 헛디뎌 떨어지는 위험", ref: "사다리의 고정상태 등 설치 상태를 사전에 확인 후 안전한 상태에서 사다리로 이동한다." },
+        { subWork: "기계실 검사", content: "부속 회전체에 옷이 말려들어가는 위험", ref: "검사 대상물 주위의 위험요소를 사전에 파악한다. 움직일 수 있는 부품은 촉수 검사를 자제하고, 필요 시 반드시 불시기동 방지조치 후 검사한다." },
+        { subWork: "카상부 검사", content: "(2:1 로핑) 카상부 로프홀커버와 인접한 주로프를 잡은 상태에서 동료가 카를 운행하여 손가락이 끼이는 위험", ref: "카상부 진입 전 승강기 제원·특이사항을 사전 확인하고, 동료 검사자와 복명복창 후 점검운전한다. 2:1 로핑의 경우 신체가 움직이는 도르래·로프에 닿지 않도록 주의한다." },
+        { subWork: "카상부 검사", content: "카 상부 진·출입 시 승강장문의 닫힘에 따른 끼임 사고 위험", ref: "검사 전후 파트너 검사자는 승강장문 닫힘을 방지하도록 역할을 분담하고, 정확한 구호로 복명복창한다." },
+        { subWork: "피트 검사", content: "사다리가 없는 피트에 진·출입 중 추락 위험", ref: "피트 진·출입 전 안전화 바닥이 오일 등으로 오염되어 미끄러지지 않는지 반드시 확인한다. 관리주체에게 사다리(이동식) 제공 또는 안전기준에 적합한 사다리 설치를 요구한다." },
+        { subWork: "피트 검사", content: "접이식 사다리를 접거나 펼칠 때 몸의 중심이 아래로 쏠려 피트로 추락하는 위험", ref: "피트 진입 전 제조사별 사다리 유형·작동방법을 확인한다. 미끄러지지 않는 장갑을 사용하고 안정된 자세로 검사한다." },
+      ].map(v => ({ ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: v.subWork, content: v.content, referenceSafetyMeasure: v.ref, team: "전기식 엘리베이터 1반", isMandatory: false }));
+
+      const hydraulicItems = [
+        { subWork: "카내(승강장) 검사", content: "하중시험 중 유압호스가 파손되어 떨어지는 카에 부딪히는 위험", ref: "피트 진입 전 검사에 필요한 하중(50%, 110% 등)을 적재해 시험운행하여 이상 여부를 사전에 확인한다." },
+        { subWork: "피트 검사", content: "피트 진·출입 시 추락 위험", ref: "손을 잡는 곳의 벽 마감상태를 사전에 확인하여 안전한(튼튼하고 미끄럽지 않고 날카롭지 않은) 곳을 잡고 진·출입한다." },
+        { subWork: "피트 검사", content: "2개 이상의 사다리를 이어붙인 경우 떨어지는 위험", ref: "피트 진입 전 각각의 사다리가 벽에 고정되어 있는지 확인한다." },
+        { subWork: "피트 검사", content: "날카로운 승강장 문에 베임 위험", ref: "진·출입 전 조명을 확보하고 위험요인을 사전에 확인한다. 반드시 장갑을 착용하고 긴소매 옷 등으로 피부 노출을 줄인다." },
+        { subWork: "피트 검사", content: "피트가 매우 낮은 경우 카 하부와 피트바닥 사이에 협착되는 위험", ref: "피트 진입 전 조명 확보 및 위험요인을 사전에 확인한다. 공간이 협소한 경우 대체 수단(수치 계산 등)을 활용해 안전이 확보된 상태에서만 검사한다." },
+        { subWork: "피트 검사", content: "돌출물 및 기타부품(시멘트, 전기배선 등)에 걸려 전도되는 위험", ref: "피트 진입 전 조명 확보 및 위험요인을 사전에 확인하고, 관리주체에게 돌출된 부분을 평탄화하도록 권고한다." },
+        { subWork: "피트 검사", content: "집수정 덮개 미설치로 인한 발 빠짐 위험", ref: "피트 진입 전 조명 확보 및 위험요인을 사전에 확인하고, 관리주체에게 집수정 덮개 설치를 권고한다." },
+        { subWork: "피트 검사", content: "피트 바닥 기름·누수로 인한 전도·화재·감전 위험", ref: "피트 바닥 상태를 사전에 확인하고, 관리주체에게 청결 유지와 누수 차단을 요청한다." },
+      ].map(v => ({ ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: v.subWork, content: v.content, referenceSafetyMeasure: v.ref, team: "유압식 엘리베이터 2반", isMandatory: false }));
+      const mandatoryItem = {
+        ...admin, method: "freq_severity", workCategory: "엘리베이터", subWork: "피트 검사",
+        content: "피트 스크린(균형추 방호벽) 미설치로 인한 협착·충돌 위험",
+        referenceSafetyMeasure: "피트 진입 전 조명을 확보하고 위험요인(균형추 이동 범위 등)을 사전에 확인한다. 공간이 협소한 경우 안전거리를 확보한 상태에서만 검사한다.",
+        fieldInfo: "서울강서지사 현장 6곳 이상(우장산롯데3차, 신정이펜하우스5단지, 목동월드메르디앙3차, 홍진빌딩, 코아상가, 삼성한사랑1차 등) 반복 지적됨",
+        team: "유압식 엘리베이터 2반", isMandatory: true,
+      };
+
+      const escLiftItems = [
+        { workCategory: "에스컬레이터", subWork: "상・하 승강장 및 디딤판", content: "콤스위치와 구조물 사이에 손 협착 위험", ref: "비상정지스위치를 사전에 확인하고 검사자 1인은 갑작스러운 가동에 대비한다. 각 스위치의 작동 방식·설치상태를 사전에 확인하고, 정지한 상태에서 제어반 신호로 작동을 확인한다." },
+        { workCategory: "에스컬레이터", subWork: "기계실", content: "갑작스러운 운행으로 인한 협착·끼임·말려들어감 위험", ref: "사전에 전원차단, 비상정지장치 작동 등 불시가동 방지조치 후 검사한다." },
+        { workCategory: "에스컬레이터", subWork: "기계실", content: "전동기 등 회전체로 인한 협착·끼임·말려들어감 위험", ref: "검사 전 복장을 단정히 하고 비상정지장치 작동상태를 확인한 뒤 충분한 안전거리를 확보하여 검사한다. 전원을 차단 후 협착·끼임·말림점을 사전에 파악한다." },
+        { workCategory: "에스컬레이터", subWork: "이동", content: "장애물에 걸려 넘어지거나 돌출물에 부딪히는 위험", ref: "충분한 조도를 확보하고, 이동공간 내 위험요소를 사전에 확인 후 이동한다." },
+        { workCategory: "에스컬레이터", subWork: "기계실", content: "기계실 바닥 기름으로 인해 미끄러져 넘어지는 위험", ref: "바닥상태를 확인하고 기름을 제거하도록 입회자에게 요청한다. 기계실 밖으로 나올 때는 안전화 바닥의 오염을 제거한다." },
+        { workCategory: "에스컬레이터", subWork: "핸드레일", content: "핸드레일 장력 측정 중 불안정한 자세와 무리한 힘으로 인한 손목염좌·요통 위험", ref: "검사 전 충분한 스트레칭을 실시하고 안정된 자세를 확보한다. 장력측정지그 사용 시 신체 능력에 맞게 점진적으로 힘을 가한다." },
+        { workCategory: "수직형 휠체어리프트", subWork: "피트 검사", content: "체인 처짐 스위치 확인 중 스위치와 부품 사이에 손이 끼이는 위험", ref: "스위치와 부품 사이에 지그(금속자 등)를 넣어서 확인하고, 손가락 등 신체를 직접 접촉하지 않는다." },
+        { workCategory: "경사형 휠체어리프트", subWork: "주행로", content: "노출된 유도로프와 인입구 사이에 끼이는 위험", ref: "움직일 수 있는 부품은 촉수 검사를 자제하고, 필요 시 반드시 불시기동 방지조치 후 검사한다. 인입구에 끼임 주의 표지를 부착한다." },
+      ].map(v => ({ ...admin, method: "freq_severity", workCategory: v.workCategory, subWork: v.subWork, content: v.content, referenceSafetyMeasure: v.ref, team: "에스컬레이터 및 휠체어리프트 3반", isMandatory: false }));
+
+      const officeItems = [
+        { subWork: "사무실 내 이동", content: "사무실·계단 이동 중 바닥 미끄러짐·단차로 인한 낙상 위험", ref: "사무실 바닥은 물기·전선 노출이 없도록 관리하고, 계단 이용 시 휴대전화 사용을 자제한다." },
+        { subWork: "출퇴근·현장 이동", content: "출장 및 출퇴근 차량 이동 중 교통사고 위험", ref: "출장 전 차량 타이어·제동상태를 점검하고, 출장업무 수행지침을 숙지한다." },
+        { subWork: "사무실 내 이동", content: "사무실 내 컴퓨터·가구 등 돌출된 모서리에 부딪힐 위험", ref: "모서리 보호조치(코너가드 부착 등)를 하고, 통로에 물건을 적재하지 않는다." },
+        { subWork: "사무기기 사용", content: "전자기기·세단기 등 전기 사무용품 사용 중 누전에 의한 감전 위험", ref: "사무기기 정기 점검을 실시하고, 손상된 전선·플러그는 즉시 교체한다." },
+      ].map((v, i) => ({ ...admin, method: "checklist", workCategory: i===1?"출장":"사무", subWork: v.subWork, content: v.content, referenceSafetyMeasure: v.ref, team: "사무업무 4반", isMandatory: false }));
+
+      const allItems = [...elevatorItems, ...hydraulicItems, mandatoryItem, ...escLiftItems, ...officeItems];
+      const inserted = await db.insert(riskHazardItems).values(allItems as any).returning({ id: riskHazardItems.id, team: riskHazardItems.team, isMandatory: riskHazardItems.isMandatory });
+      res.json({ ok: true, migrated: true, reseeded: true, deletedOldIds: oldIds, insertedCount: inserted.length, inserted });
+    } catch (error) {
+      res.status(500).json({ error: "failed", detail: String(error) });
+    }
+  });
+
   // ── 위험성평가: 감소대책(항목 단위 공동 작성) — 팀 집계 위험성이 9 이상인 항목에 한해
   // 특정 개인이 아니라 팀 누구나(관리자 포함) 작성·수정할 수 있음 ──
   app.put("/api/risk-hazard-items/:id/reduction-plan", async (req, res) => {
