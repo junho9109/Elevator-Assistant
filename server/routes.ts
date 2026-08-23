@@ -1459,6 +1459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return { level: "하", allow: "허용 가능" };
       }
 
+      // 중대성(강도)은 이제 평가자 개인별 값이라 위험성/허용여부도 평가자마다 다를 수 있음 — 항목당 한 행이 아니라 평가자당 한 행으로 출력
       for (const g of freqSheetGroups) {
         const groupItems = items.filter(it => it.workCategory === g.workCategory && it.isTemplate);
         if (groupItems.length === 0) continue;
@@ -1472,26 +1473,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let seq = 1;
         for (const item of groupItems) {
           const itemAssessments = assessments.filter(a => a.hazardItemId === item.id);
-          const total = itemAssessments.length;
-          if (total === 0) {
+          if (itemAssessments.length === 0) {
             sheet.addRow([seq++, item.subWork || "", item.content, "", "", "", "", item.referenceSafetyMeasure || "", "", "", ""]);
             continue;
           }
-          const expCount = itemAssessments.filter(a => a.hadAccidentExperience).length;
+          const withExp = itemAssessments.filter(a => a.hadAccidentExperience !== null);
+          const expCount = withExp.filter(a => a.hadAccidentExperience).length;
+          const possibility = withExp.length > 0 ? Math.round((expCount / withExp.length) * 5 * 10) / 10 : 0;
           const withSev = itemAssessments.filter(a => a.severity != null);
-          const possibility = Math.round((expCount / total) * 5 * 10) / 10;
-          const severity = withSev.length > 0 ? Math.round((withSev.reduce((s, a) => s + (a.severity || 0), 0) / withSev.length) * 10) / 10 : 0;
-          const risk = Math.round(possibility * severity * 10) / 10;
-          const { level, allow } = levelOfRisk(risk);
-          const plans = itemAssessments.filter(a => a.reductionPlan?.trim()).map(a => `[${a.employeeName}] ${a.reductionPlan}`).join("\n");
-          const evaluators = itemAssessments.map(a => a.employeeName).join(", ");
-          const latestDate = itemAssessments.reduce((max, a) => a.updatedAt > max ? a.updatedAt : max, itemAssessments[0].updatedAt);
-          sheet.addRow([
-            seq++, item.subWork || "", item.content,
-            possibility, severity, `${risk} (${level})`, allow,
-            item.referenceSafetyMeasure || "", plans, evaluators,
-            new Date(latestDate).toLocaleDateString("ko-KR"),
-          ]);
+          if (withSev.length === 0) {
+            sheet.addRow([seq++, item.subWork || "", item.content, possibility, "", "", "", item.referenceSafetyMeasure || "", "", withExp.map(a => a.employeeName).join(", "), ""]);
+            continue;
+          }
+          for (const a of withSev) {
+            const risk = Math.round(possibility * (a.severity as number) * 10) / 10;
+            const initial = levelOfRisk(risk);
+            let finalRisk = risk, finalLevel = initial.level, finalAllow = initial.allow;
+            if (initial.allow === "허용 불가능" && a.postImprovementSeverity != null) {
+              const postRisk = Math.round(possibility * a.postImprovementSeverity * 10) / 10;
+              const post = levelOfRisk(postRisk);
+              finalRisk = postRisk; finalLevel = post.level; finalAllow = post.allow;
+            }
+            sheet.addRow([
+              seq++, item.subWork || "", item.content,
+              possibility, a.severity, `${finalRisk} (${finalLevel})`, finalAllow,
+              item.referenceSafetyMeasure || "", a.reductionPlan || "", a.employeeName,
+              new Date(a.updatedAt).toLocaleDateString("ko-KR"),
+            ]);
+          }
         }
         sheet.columns.forEach(c => { c.width = 22; });
       }

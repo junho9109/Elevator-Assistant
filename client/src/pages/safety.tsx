@@ -248,7 +248,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     setDirectExperienceAttempt(true);
     setTimeout(() => setDirectExperienceAttempt(false), 1500);
   }
-  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean | undefined; severity: number; postImprovementSeverity: number | undefined; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
+  const [assessForm, setAssessForm] = useState<Record<number, { level: string; hadAccidentExperience: boolean | undefined; severity: number | undefined; postImprovementSeverity: number | undefined; currentSafetyMeasure: string; reductionPlan: string; implementStatus: string; implementDate: string; implementOwner: string }>>({});
   // 선택 단계에서 함께 답하는 경험 여부(템플릿별 임시 답변) 및 회차/수시평가 관련 상태
   const [templateExperienceDraft, setTemplateExperienceDraft] = useState<Record<number, boolean | undefined>>({});
   // 경험여부를 답하지 않고 "선택"을 누르려 할 때만 잠깐 강조 표시(평상시엔 켜져있지 않음)
@@ -588,9 +588,34 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
   const myAssessment = (itemId: number) => assessmentsByItem.get(itemId)?.find(a => a.employeeId === empId);
 
-  // 빈도강도법: 가능성(빈도)=경험자수/참여자수×5, 중대성(강도)=평가자들이 입력한 1~4 값의 평균, 위험성=가능성×중대성
-  // 위험성이 "허용 불가능"(9 이상)이면 개선 안전보건조치 이행 후 재산정한 중대성(1~4)으로 위험성을 다시 계산하여 "허용 가능"이 될 때까지 종료되지 않음
-  function computeAggregate(itemId: number, method: RiskMethod) {
+  // 빈도강도법: 가능성(빈도)=경험자수/참여자수×5(팀 공통), 중대성(강도)=평가자 각자가 입력한 1~4 값(개인별) — 위험성=가능성×중대성도 개인별로 산출
+  // 위험성이 "허용 불가능"(9 이상)이면 그 사람이 개선 안전보건조치를 입력하고, 이행 후 재산정한 중대성(1~4)으로 다시 계산해 "허용 가능"이 될 때까지 그 사람의 평가는 종료되지 않음
+  // 팀원마다 서로 다른 위험성/등급이 나올 수 있으며, 각자 본인의 결과에 대해서만 종료 여부가 결정됨(다른 팀원이 나중에 무엇을 입력해도 내 종료 상태는 흔들리지 않음)
+  function classifyFreqSeverityEntry(a: RiskAssessment, possibility: number) {
+    if (a.severity == null) return null;
+    const risk = Math.round(possibility * a.severity * 10) / 10;
+    const initial = riskLevelOf(risk);
+    let finalRisk = risk, finalLevel = initial.level, finalLabel = initial.label, finalAllow = initial.allow, resolved = initial.allow === "허용 가능";
+    if (initial.allow === "허용 불가능") {
+      if (a.postImprovementSeverity != null) {
+        const postRisk = Math.round(possibility * a.postImprovementSeverity * 10) / 10;
+        const postClass = riskLevelOf(postRisk);
+        finalRisk = postRisk; finalLevel = postClass.level; finalLabel = postClass.label; finalAllow = postClass.allow;
+        resolved = postClass.allow === "허용 가능";
+      } else {
+        resolved = false;
+      }
+      if (resolved && !a.reductionPlan?.trim()) resolved = false;
+    }
+    return {
+      employeeId: a.employeeId, employeeName: a.employeeName, severity: a.severity,
+      risk, level: initial.level, label: initial.label, allow: initial.allow,
+      finalRisk, finalLevel, finalLabel, finalAllow, resolved,
+      postImprovementSeverity: a.postImprovementSeverity, reductionPlan: a.reductionPlan,
+    };
+  }
+  // forEmployeeId를 주면 그 사람 관점(내 평가 카드/종료 게이트)의 단일 결과를, 생략하면 팀 전체 관점(결과확인 화면)의 개인별 목록(entries)을 반환
+  function computeAggregate(itemId: number, method: RiskMethod, forEmployeeId?: string) {
     const list = assessmentsByItem.get(itemId) || [];
     if (list.length === 0) return null;
     if (method === "checklist") {
@@ -603,41 +628,50 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       return { level, requiresPlan, resolved, participants: list.length };
     }
     const withExp = list.filter(a => a.hadAccidentExperience !== null);
-    const withSev = list.filter(a => a.severity != null);
-    if (withExp.length === 0 && withSev.length === 0) return null;
-    // 중대성이 아직 아무도 평가되지 않았다면(1단계만 끝난 상태) 위험성 자체를 산정할 수 없음 — "허용 가능(0점)"으로 오판해 2단계를 건너뛰지 않도록 별도 처리
-    const severityAssessed = withSev.length > 0;
+    if (withExp.length === 0) return null;
     const experienced = withExp.filter(a => a.hadAccidentExperience).length;
-    const possibility = withExp.length > 0 ? Math.round((experienced / withExp.length) * 5 * 10) / 10 : 0;
-    const avgSeverity = severityAssessed ? Math.round((withSev.reduce((s, a) => s + (a.severity || 0), 0) / withSev.length) * 10) / 10 : 0;
-    if (!severityAssessed) {
+    const possibility = Math.round((experienced / withExp.length) * 5 * 10) / 10;
+    const entries = list.map(a => classifyFreqSeverityEntry(a, possibility)).filter((e): e is NonNullable<typeof e> => e != null);
+    const participants = list.length;
+    if (forEmployeeId) {
+      const mine = entries.find(e => e.employeeId === forEmployeeId);
+      if (!mine) {
+        // 중대성이 아직 입력되지 않았다면(1단계만 끝난 상태) 위험성 자체를 산정할 수 없음 — "허용 가능(0점)"으로 오판해 2단계를 건너뛰지 않도록 별도 처리
+        return {
+          possibility, avgSeverity: null, risk: null, participants,
+          level: null, label: null, allow: null,
+          finalRisk: null, finalLevel: null, finalLabel: null, finalAllow: null, resolved: false, entries,
+        };
+      }
       return {
-        possibility, avgSeverity: null, risk: null, participants: list.length,
-        level: null, label: null, allow: null,
-        finalRisk: null, finalLevel: null, finalLabel: null, finalAllow: null, resolved: false,
+        possibility, avgSeverity: mine.severity, risk: mine.risk, participants,
+        level: mine.level, label: mine.label, allow: mine.allow,
+        finalRisk: mine.finalRisk, finalLevel: mine.finalLevel, finalLabel: mine.finalLabel, finalAllow: mine.finalAllow,
+        resolved: mine.resolved, entries,
       };
     }
-    const risk = Math.round(possibility * avgSeverity * 10) / 10;
-    const initial = riskLevelOf(risk);
-    let finalRisk = risk, finalLevel = initial.level, finalLabel = initial.label, finalAllow = initial.allow, resolved = initial.allow === "허용 가능";
-    if (initial.allow === "허용 불가능") {
-      const withPost = list.filter(a => a.postImprovementSeverity != null);
-      if (withPost.length > 0) {
-        const postSeverity = Math.round((withPost.reduce((s, a) => s + (a.postImprovementSeverity || 0), 0) / withPost.length) * 10) / 10;
-        const postRisk = Math.round(possibility * postSeverity * 10) / 10;
-        const postClass = riskLevelOf(postRisk);
-        finalRisk = postRisk; finalLevel = postClass.level; finalLabel = postClass.label; finalAllow = postClass.allow;
-        resolved = postClass.allow === "허용 가능";
-      } else {
-        resolved = false;
-      }
-    }
-    const hasPlan = list.some(a => a.reductionPlan?.trim());
-    return {
-      possibility, avgSeverity, risk, participants: list.length,
-      level: initial.level, label: initial.label, allow: initial.allow,
-      finalRisk, finalLevel, finalLabel, finalAllow, resolved: resolved && (initial.allow === "허용 가능" || hasPlan),
-    };
+    const allResolved = entries.length > 0 && entries.every(e => e.resolved);
+    return { possibility, participants, entries, resolved: allResolved, unresolvedCount: entries.filter(e => !e.resolved).length };
+  }
+
+  // 결과확인·서명 화면: 팀원별 평가 완료 여부(체크리스트=제출 여부, 빈도강도법=본인 위험성이 해소됐는지) — 이미 1초 간격으로 폴링 중인 데이터만으로 계산해 별도 조회 없이 실시간에 가깝게 반영됨
+  function memberItemDone(item: RiskHazardItem, memberName: string): boolean {
+    if (item.method === "checklist") return (assessmentsByItem.get(item.id) || []).some(a => a.employeeName === memberName);
+    const agg = computeAggregate(item.id, item.method) as any;
+    const entry = agg?.entries?.find((e: any) => e.employeeName === memberName);
+    return !!entry?.resolved;
+  }
+  function teamMemberEvaluationDone(teamName: string, memberName: string): boolean {
+    const items = teamSummaryItems(teamName);
+    if (items.length === 0) return true;
+    const teamMembersForTeam = membersOfTeam(teamName);
+    const relevant = items.filter(it => {
+      if (!it.isMandatory) return true; // 선택된(팀 공용) 항목은 팀 전원이 평가 대상
+      const targets = it.targetMembers && it.targetMembers.length > 0 ? it.targetMembers : teamMembersForTeam;
+      return targets.includes(memberName);
+    });
+    if (relevant.length === 0) return true;
+    return relevant.every(it => memberItemDone(it, memberName));
   }
 
   const sortedRiskItems = useMemo(() => {
@@ -694,7 +728,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const myEvaluationComplete = useMemo(() => {
     if (!mySelection) return false;
     const myMandatory = [...branchMandatoryItems, ...adhocMandatoryItems].filter(item => mandatoryTargets(item).includes(empName));
-    const isResolved = (item: RiskHazardItem) => !!myAssessment(item.id) && !!computeAggregate(item.id, item.method)?.resolved;
+    const isResolved = (item: RiskHazardItem) => !!myAssessment(item.id) && !!computeAggregate(item.id, item.method, empId)?.resolved;
     if (myMandatory.some(item => !isResolved(item))) return false;
     if (sortedActiveTeamItems.some(item => !isResolved(item))) return false;
     return true;
@@ -702,13 +736,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
 
   function getAssessForm(itemId: number) {
-    return assessForm[itemId] || { level: "중", hadAccidentExperience: undefined as boolean | undefined, severity: 2, postImprovementSeverity: undefined as number | undefined, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
+    return assessForm[itemId] || { level: "중", hadAccidentExperience: undefined as boolean | undefined, severity: undefined as number | undefined, postImprovementSeverity: undefined as number | undefined, currentSafetyMeasure: "", reductionPlan: "", implementStatus: "완료", implementDate: "", implementOwner: "" };
   }
   function setItemAssessForm(itemId: number, patch: Partial<ReturnType<typeof getAssessForm>>) {
     setAssessForm(p => ({ ...p, [itemId]: { ...getAssessForm(itemId), ...p[itemId], ...patch } }));
   }
   function submitAssessment(item: RiskHazardItem, myExperience?: boolean) {
     const f = getAssessForm(item.id);
+    if (item.method !== "checklist" && f.severity == null) { toast({ title: "중대성(강도)을 먼저 선택해주세요.", variant: "destructive" }); return; }
     // 현재 안전보건조치는 평가자가 입력하지 않음 — 관리자가 등록한 참고자료를 그대로 스냅샷 저장
     const payload: any = { hazardItemId: item.id, branchId: branchName, employeeId: empId, employeeName: empName, round: activeRound, currentSafetyMeasure: item.referenceSafetyMeasure || null, implementStatus: f.implementStatus, implementDate: f.implementDate || null, implementOwner: f.implementOwner || null };
     if (item.method === "checklist") {
@@ -796,7 +831,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
   function renderRiskItemCard(item: RiskHazardItem) {
     const mine = myAssessment(item.id);
-    const agg = computeAggregate(item.id, item.method) as any;
+    const agg = computeAggregate(item.id, item.method, empId) as any;
     const f = getAssessForm(item.id);
     // 본인이 직접 선택(제안)한 항목이면 선택 단계에서 이미 경험 여부를 답했으므로 다시 묻지 않고 그 값을 재사용
     const isMyProposedItem = !!mySelection && mySelection.hazardItemId === item.id;
@@ -805,30 +840,23 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     const myExperienceValue = myExperienceSaved ? mine!.hadAccidentExperience! : (isMyProposedItem ? (mySelection!.hadAccidentExperience ?? false) : f.hadAccidentExperience);
     // 내 경험 여부(가능성)를 먼저 답해야 중대성 평가 입력이 열림 — 대부분은 1단계에서 이미 완료된 상태로 이 화면에 도달함 (무시하고 평가하기로 건너뛴 팀원만 여기서 답변)
     const hasAnsweredExperience = myExperienceSaved || isMyProposedItem || f.hadAccidentExperience !== undefined;
-    const liveAgg = item.method === "freq_severity"
+    // 중대성은 이제 개인별 값이므로, 실시간 미리보기도 다른 팀원의 중대성과 무관하게 "가능성(팀 공통) × 내가 고른 중대성"만으로 계산함
+    const liveAgg = item.method === "freq_severity" && f.severity != null
       ? (() => {
           const list = assessmentsByItem.get(item.id) || [];
-          const others = list.filter(a => a.employeeId !== empId);
+          const withExp = list.filter(a => a.hadAccidentExperience !== null);
+          const others = withExp.filter(a => a.employeeId !== empId);
           const expCount = others.filter(a=>a.hadAccidentExperience).length + (myExperienceValue?1:0);
           const totalCount = others.length + 1;
           const possibility = Math.round((expCount/totalCount)*5*10)/10;
-          const othersSev = others.filter(a=>a.severity!=null);
-          const sevList = [...othersSev.map(a=>a.severity as number), f.severity];
-          const avgSeverity = Math.round((sevList.reduce((s,v)=>s+(v||0),0)/sevList.length)*10)/10;
-          const risk = Math.round(possibility*avgSeverity*10)/10;
+          const risk = Math.round(possibility*f.severity*10)/10;
           const cls = riskLevelOf(risk);
           let postRisk: number | null = null, postCls: ReturnType<typeof riskLevelOf> | null = null;
-          if (cls.allow === "허용 불가능") {
-            const othersPost = others.filter(a=>a.postImprovementSeverity!=null);
-            const postList = [...othersPost.map(a=>a.postImprovementSeverity as number)];
-            if (f.postImprovementSeverity !== undefined) postList.push(f.postImprovementSeverity);
-            if (postList.length > 0) {
-              const postSeverity = Math.round((postList.reduce((s,v)=>s+(v||0),0)/postList.length)*10)/10;
-              postRisk = Math.round(possibility*postSeverity*10)/10;
-              postCls = riskLevelOf(postRisk);
-            }
+          if (cls.allow === "허용 불가능" && f.postImprovementSeverity !== undefined) {
+            postRisk = Math.round(possibility*f.postImprovementSeverity*10)/10;
+            postCls = riskLevelOf(postRisk);
           }
-          return { possibility, avgSeverity, risk, cls, postRisk, postCls };
+          return { possibility, avgSeverity: f.severity, risk, cls, postRisk, postCls };
         })()
       : null;
     const sharedAssessments = (assessmentsByItem.get(item.id) || []).filter(a => a.employeeId !== empId);
@@ -912,7 +940,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                         <button key={s} onClick={()=>setItemAssessForm(item.id,{severity:s})} className={`flex-1 text-sm py-2 rounded-lg border ${f.severity===s?"bg-primary text-primary-foreground border-primary":"bg-card border-border"}`}>{s}</button>
                       ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">{SEVERITY_INFO[f.severity] ?? ""}</p>
+                    <p className="text-xs text-muted-foreground">{f.severity!=null ? (SEVERITY_INFO[f.severity] ?? "") : ""}</p>
                     {liveAgg && (
                       <div className="flex items-baseline gap-2 text-xs flex-wrap">
                         <span className="text-muted-foreground">지사 실시간 위험성(가능성{liveAgg.possibility}×중대성{liveAgg.avgSeverity})</span>
@@ -946,7 +974,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 )}
               </>
             )}
-            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item, (myExperienceSaved || isMyProposedItem) ? myExperienceValue : undefined)} disabled={saveAssessment.isPending || (item.method!=="checklist" && !hasAnsweredExperience)}>{saveAssessment.isPending?"저장 중...":!hasAnsweredExperience && item.method!=="checklist" ?"경험 여부를 먼저 선택하세요":"평가 저장"}</Button>
+            <Button className="w-full" size="sm" onClick={()=>submitAssessment(item, (myExperienceSaved || isMyProposedItem) ? myExperienceValue : undefined)} disabled={saveAssessment.isPending || (item.method!=="checklist" && (!hasAnsweredExperience || f.severity==null))}>{saveAssessment.isPending?"저장 중...":!hasAnsweredExperience && item.method!=="checklist" ?"경험 여부를 먼저 선택하세요":(item.method!=="checklist" && f.severity==null)?"중대성을 먼저 선택하세요":"평가 저장"}</Button>
 
             {sharedAssessments.length>0 && (
               <div className="pt-3 border-t border-border space-y-1.5">
@@ -1510,12 +1538,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 const items = teamSummaryItems(t.name);
                 const confirmed = myConfirmedTeams.has(t.name);
                 const expanded = viewOtherTeam === t.name;
+                const teamMembersForT = membersOfTeam(t.name);
+                const doneCount = teamMembersForT.filter(m=>teamMemberEvaluationDone(t.name, m)).length;
                 return (
                   <div key={t.name} className="bg-card rounded-xl border border-border overflow-hidden">
                     <button className="w-full flex items-center justify-between gap-2 p-3" onClick={()=>setViewOtherTeam(v=>v===t.name?"":t.name)}>
                       <div className="min-w-0 text-left">
                         <p className="text-sm font-medium">{t.name}{t.name===myTeam?" (우리 팀)":""}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{items.length}건</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{items.length}건 · 평가완료 {doneCount}/{teamMembersForT.length}명</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-md ${confirmed?"bg-green-100 text-green-700":"bg-orange-100 text-orange-700"}`}>{confirmed?"확인완료":"확인필요"}</span>
@@ -1524,27 +1554,57 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     </button>
                     {expanded && (
                       <div className="px-3 pb-3 space-y-2 border-t border-border pt-2">
+                        {teamMembersForT.length>0 && (
+                          <div className="bg-muted/40 rounded-lg p-2 flex flex-wrap gap-x-3 gap-y-1">
+                            {teamMembersForT.map(m=>{
+                              const done = teamMemberEvaluationDone(t.name, m);
+                              return (
+                                <span key={m} className="flex items-center gap-1.5 text-xs">
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                                  <span className={done?"text-muted-foreground":"font-medium"}>{m}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                         {items.length===0 && <p className="text-sm text-gray-400 text-center py-6">선택된 항목이 없습니다.</p>}
                         {items.map(item=>{
                           const agg = computeAggregate(item.id, item.method) as any;
                           const list = assessmentsByItem.get(item.id) || [];
-                          const plans = list.filter(a=>a.reductionPlan?.trim());
+                          // 체크리스트법은 기존과 동일하게 항목 전체 1개 등급, 빈도강도법은 중대성이 개인별이라 팀원마다 위험성이 다를 수 있어 한 명씩 나열
+                          const plans = item.method === "checklist" ? list.filter(a=>a.reductionPlan?.trim()) : [];
+                          const entries: any[] = item.method === "freq_severity" ? (agg?.entries || []) : [];
                           return (
                             <div key={item.id} className="bg-muted/30 rounded-xl border border-border p-3 space-y-1">
                               <p className="text-sm font-medium">{item.content}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {agg
-                                  ? (item.method==="checklist"
-                                      ? `위험도 ${agg.level ?? "-"} · ${agg.resolved?"허용 가능(종료)":"허용 불가능(재평가 필요)"}`
-                                      : agg.avgSeverity==null
-                                        ? `가능성 답변완료(${agg.possibility}) · 중대성 평가 대기 · ${agg.participants}명 평가`
-                                        : `위험성 ${agg.finalRisk ?? agg.risk}(${agg.finalLevel ?? agg.level}) · ${agg.finalAllow ?? agg.allow} · ${agg.participants}명 평가 · ${agg.resolved?"종료":"재평가 필요"}`)
-                                  : "아직 평가 없음"}
-                              </p>
+                              {item.method === "checklist" ? (
+                                <p className="text-xs text-muted-foreground">
+                                  {agg ? `위험도 ${agg.level ?? "-"} · ${agg.resolved?"허용 가능(종료)":"허용 불가능(재평가 필요)"}` : "아직 평가 없음"}
+                                </p>
+                              ) : !agg ? (
+                                <p className="text-xs text-muted-foreground">아직 평가 없음</p>
+                              ) : entries.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">가능성 답변완료({agg.possibility}) · 중대성 평가 대기 · {agg.participants}명 평가</p>
+                              ) : (
+                                <div className="space-y-0.5">
+                                  {entries.map(e=>(
+                                    <p key={e.employeeId} className="text-xs text-muted-foreground">
+                                      [{e.employeeName}] 위험성 {e.finalRisk}({e.finalLevel}) · {e.finalAllow} · {e.resolved?"종료":"재평가 필요"}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
                               {plans.length>0 && (
                                 <div className="pt-1 space-y-0.5">
                                   {plans.map(a=>(
                                     <p key={a.id} className="text-xs text-muted-foreground whitespace-pre-wrap">개선 안전보건조치 [{a.employeeName}]: {a.reductionPlan}</p>
+                                  ))}
+                                </div>
+                              )}
+                              {entries.filter(e=>e.reductionPlan?.trim()).length>0 && (
+                                <div className="pt-1 space-y-0.5">
+                                  {entries.filter(e=>e.reductionPlan?.trim()).map(e=>(
+                                    <p key={e.employeeId} className="text-xs text-muted-foreground whitespace-pre-wrap">개선 안전보건조치 [{e.employeeName}]: {e.reductionPlan}</p>
                                   ))}
                                 </div>
                               )}
