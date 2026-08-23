@@ -1035,18 +1035,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: risk_round_overrides에 excluded_members 컬럼 추가 마이그레이션 — 1회 실행 후 제거 예정
-  app.get("/api/debug/migrate-excluded-members", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { pool } = await import("./db");
-      await pool.query(`ALTER TABLE risk_round_overrides ADD COLUMN IF NOT EXISTS excluded_members text[]`);
-      res.json({ ok: true });
-    } catch (error: any) {
-      res.status(500).json({ error: String(error?.message || error) });
-    }
-  });
-
   // ── 위험성평가: 지사 목록 (등록된 항목/평가에서 사용된 지사명 취합) ──
   app.get("/api/risk-branches", async (req, res) => {
     try {
