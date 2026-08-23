@@ -3626,61 +3626,6 @@ ${answerRules}${contextText}${memoSection}`,
     } catch (e) { res.status(500).json({ error: String(e) }); }
   });
 
-  // TEMP DEBUG: 비현실적인 소음 질문 비활성화 — 1회 실행 후 제거 예정
-  app.get("/api/debug/deactivate-question", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { expertQuestions } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      const id = parseInt(req.query.id as string);
-      const [row] = await db.update(expertQuestions).set({ active: false }).where(eq(expertQuestions.id, id)).returning();
-      res.json({ ok: true, row });
-    } catch (error: any) {
-      res.status(500).json({ error: String(error?.message || error) });
-    }
-  });
-
-  // TEMP DEBUG: AI 질문 생성을 GET으로 트리거(web_fetch 검증용) — 1회 실행 후 제거 예정
-  app.get("/api/debug/generate-question", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { expertQuestions } = await import("@shared/schema");
-      const existing = await db.select().from(expertQuestions);
-      const existingList = existing.map(q => `- ${q.content}`).join("\n") || "(없음)";
-      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 600,
-        system: `너는 승강기(엘리베이터·에스컬레이터·휠체어리프트) 정밀·정기검사 분야의 베테랑 검사원이다.
-현직 검사원들에게 던질 질문 1개를 새로 만들어라. 목적은 법령·판정지침·매뉴얼에 명확한 답이 나와 있지 않아서 검사원 개인의 현장 경험과 판단이 꼭 필요한 주제를 찾아, 그 경험을 데이터로 모으는 것이다.
-
-규칙:
-1. 이미 문서화된 기준을 그대로 묻는 질문(예: "몇 mm 이하면 부적합인가요" 같은 단순 수치 확인)은 금지 — 판단 기준이 애매하거나 매뉴얼에 없는 상황을 다뤄야 한다.
-2. 비현실적이거나 실무에서 잘 마주치지 않는 상황은 피하고, 실제로 검사원이 종종 마주치는 애매한 판단 상황이어야 한다.
-3. 아래 "이미 등록된 질문"과 주제가 겹치지 않게 한다.
-4. 예상 답변 4개는 실제 검사원들이 낼 법한, 서로 구별되는 현실적인 대응 방식이어야 한다(비슷비슷한 답 4개 금지).
-5. category는 "판정기준" | "현장경험" | "위험성평가" 중 하나로 분류한다.
-
-이미 등록된 질문:
-${existingList}
-
-다른 설명 없이 아래 JSON 형식만 반환하라:
-{"content": "질문 내용", "presetAnswers": ["답변1","답변2","답변3","답변4"], "category": "판정기준"}`,
-        messages: [{ role: "user", content: "새 질문 1개를 만들어줘." }],
-      });
-      const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
-      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-      const [row] = await db.insert(expertQuestions).values({
-        content: parsed.content, presetAnswers: parsed.presetAnswers, category: parsed.category || null, active: true,
-      }).returning();
-      res.json({ ok: true, row });
-    } catch (error: any) {
-      res.status(500).json({ error: String(error?.message || error) });
-    }
-  });
-
   // ── 전문가 지식 수집 ──
   // 활성 질문 목록 — 앱 첫 접속 시 배너에서 랜덤으로 하나 골라 보여주는 데 사용
   app.get("/api/expert-questions", async (req, res) => {
