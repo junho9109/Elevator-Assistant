@@ -1035,6 +1035,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: 특정 회차의 테스트 데이터(선택/평가/결과확인/서명/게이트) 일괄 삭제 — 항목 정의(riskHazardItems)는 건드리지 않음
+  app.get("/api/debug/wipe-round-data", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const round = req.query.round as string | undefined;
+      if (!round) return res.status(400).json({ error: "round required" });
+      const { db } = await import("./db");
+      const { riskItemSelections, riskAssessments, riskResultConfirmations, riskSignatures, riskRoundOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const delSelections = await db.delete(riskItemSelections).where(eq(riskItemSelections.round, round)).returning();
+      const delAssessments = await db.delete(riskAssessments).where(eq(riskAssessments.round, round)).returning();
+      const delConfirmations = await db.delete(riskResultConfirmations).where(eq(riskResultConfirmations.round, round)).returning();
+      const delSignatures = await db.delete(riskSignatures).where(eq(riskSignatures.round, round)).returning();
+      const delOverrides = await db.delete(riskRoundOverrides).where(eq(riskRoundOverrides.round, round)).returning();
+      res.json({
+        ok: true,
+        deleted: {
+          selections: delSelections.length,
+          assessments: delAssessments.length,
+          confirmations: delConfirmations.length,
+          signatures: delSignatures.length,
+          overrides: delOverrides.length,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: String(error?.message || error) });
+    }
+  });
+
   // ── 위험성평가: 지사 목록 (등록된 항목/평가에서 사용된 지사명 취합) ──
   app.get("/api/risk-branches", async (req, res) => {
     try {
