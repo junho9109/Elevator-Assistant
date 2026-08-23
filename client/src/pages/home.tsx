@@ -1575,21 +1575,26 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     queryFn: async () => { const r = await fetch("/api/expert-questions"); return r.json(); },
     enabled: !!empIdentity.empId,
   });
-  const { data: myExpertAnswers = [] } = useQuery<{ id: number }[]>({
+  const { data: myExpertAnswers = [] } = useQuery<{ id: number; questionId: number }[]>({
     queryKey: ["/api/expert-answers", empIdentity.empId],
     queryFn: async () => { const r = await fetch(`/api/expert-answers?employeeId=${encodeURIComponent(empIdentity.empId)}`); return r.json(); },
     enabled: !!empIdentity.empId,
   });
   // 세션당 한 번만 무작위로 질문을 고정 — 재렌더링마다 질문이 바뀌지 않도록
   const [expertQuestionPick] = useState(() => Math.random());
+  // 이 사용자가 이미 답변했거나 건너뛴 질문은 제외 — 같은 질문을 같은 사람에게 두 번 묻지 않되, 다른 사람에게는 계속 물어볼 수 있음
+  const expertUnseenQuestions = useMemo(() => {
+    const answeredIds = new Set(myExpertAnswers.map(a => a.questionId));
+    return expertQuestionsData.filter(q => !answeredIds.has(q.id));
+  }, [expertQuestionsData, myExpertAnswers]);
   const expertQuestion = useMemo(() => {
-    if (expertQuestionsData.length === 0) return null;
-    const idx = Math.floor(expertQuestionPick * expertQuestionsData.length);
-    return expertQuestionsData[Math.min(idx, expertQuestionsData.length - 1)];
-  }, [expertQuestionsData, expertQuestionPick]);
+    if (expertUnseenQuestions.length === 0) return null;
+    const idx = Math.floor(expertQuestionPick * expertUnseenQuestions.length);
+    return expertUnseenQuestions[Math.min(idx, expertUnseenQuestions.length - 1)];
+  }, [expertUnseenQuestions, expertQuestionPick]);
   const [expertBannerDismissed, setExpertBannerDismissed] = useState(false);
-  // 이 직원이 지금까지 제출/건너뛰기한 기록이 전혀 없을 때만 배너 노출(=앱 첫 접속 시 1회)
-  const showExpertBanner = !!empIdentity.empId && !!expertQuestion && myExpertAnswers.length === 0 && !expertBannerDismissed;
+  // 앱을 열 때마다(세션당) 1회만 노출 — 이 사용자가 아직 답하지 않은 질문이 있을 때만
+  const showExpertBanner = !!empIdentity.empId && !!expertQuestion && !expertBannerDismissed;
   const [showExpertModal, setShowExpertModal] = useState(false);
   const [expertSelectedIdx, setExpertSelectedIdx] = useState<number | null>(null);
   const [expertCustomMode, setExpertCustomMode] = useState(false);
@@ -1647,6 +1652,49 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/expert-answers"] }); toast({ title: "처리되었습니다." }); },
   });
+
+  // ── 전문가 지식 수집: 질문 관리 (기본은 AI가 생성, 관리자가 보조로 직접 추가/비활성화 가능) ──
+  const [expertReviewView, setExpertReviewView] = useState<"답변"|"질문">("답변");
+  const { data: allExpertQuestions = [] } = useQuery<{ id: number; content: string; presetAnswers: string[]; category: string | null; active: boolean }[]>({
+    queryKey: ["/api/expert-questions", "all"],
+    queryFn: async () => { const r = await fetch("/api/expert-questions?active=false"); return r.json(); },
+    enabled: showExpertReview && expertReviewView === "질문",
+  });
+  const generateExpertQuestion = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/expert-questions/generate", { method: "POST" });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/expert-questions"] }); toast({ title: "AI가 새 질문을 만들었습니다." }); },
+    onError: () => toast({ title: "질문 생성에 실패했습니다.", variant: "destructive" }),
+  });
+  const toggleExpertQuestionActive = useMutation({
+    mutationFn: async ({ id, active }: { id: number; active: boolean }) => {
+      const r = await fetch(`/api/expert-questions/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active }) });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/expert-questions"] }),
+  });
+  const [showAddExpertQuestion, setShowAddExpertQuestion] = useState(false);
+  const [newExpertQuestion, setNewExpertQuestion] = useState({ content: "", category: "", a1: "", a2: "", a3: "", a4: "" });
+  const addExpertQuestion = useMutation({
+    mutationFn: async () => {
+      const { content, category, a1, a2, a3, a4 } = newExpertQuestion;
+      const r = await fetch("/api/expert-questions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, category: category || null, presetAnswers: [a1, a2, a3, a4] }) });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expert-questions"] });
+      toast({ title: "질문이 등록되었습니다." });
+      setShowAddExpertQuestion(false);
+      setNewExpertQuestion({ content: "", category: "", a1: "", a2: "", a3: "", a4: "" });
+    },
+    onError: () => toast({ title: "등록에 실패했습니다. 예상 답변 4개를 모두 입력했는지 확인해주세요.", variant: "destructive" }),
+  });
+
   const [structureImg, setStructureImg] = useState<string>(defaultStructureImg);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -2990,10 +3038,54 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       {showExpertReview && (
         <div className="border-b border-border bg-card shrink-0 overflow-y-auto" style={{maxHeight: "70vh"}}>
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-blue-50 dark:bg-blue-900/20">
-            <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">전문가 답변 검수</span>
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">전문가 지식 수집 관리</span>
             <button onClick={() => setShowExpertReview(false)} className="w-6 h-6 flex items-center justify-center rounded border border-blue-200 dark:border-blue-700"><X className="h-3 w-3" /></button>
           </div>
           <div className="p-3 space-y-3">
+            <div className="flex gap-2">
+              {(["답변","질문"] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setExpertReviewView(v)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border font-medium ${expertReviewView===v ? "bg-blue-600 text-white border-blue-600" : "border-border bg-card"}`}
+                >{v === "답변" ? "답변 검수" : "질문 관리"}</button>
+              ))}
+            </div>
+
+            {expertReviewView === "질문" ? (
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">기본은 AI가 질문과 예상 답변 4개를 생성합니다. 필요하면 직접 등록하거나, 부적절한 질문은 비활성화할 수 있습니다.</p>
+                <div className="flex gap-2">
+                  <Button size="sm" className="flex-1" disabled={generateExpertQuestion.isPending} onClick={() => generateExpertQuestion.mutate()}>{generateExpertQuestion.isPending ? "생성 중..." : "AI로 질문 생성"}</Button>
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => setShowAddExpertQuestion(s => !s)}>직접 추가</Button>
+                </div>
+                {showAddExpertQuestion && (
+                  <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-2">
+                    <textarea placeholder="질문 내용" value={newExpertQuestion.content} onChange={e => setNewExpertQuestion(p => ({...p, content: e.target.value}))} rows={2} className="w-full border border-border rounded-lg px-2.5 py-2 text-sm bg-card" />
+                    <input placeholder="분류(선택, 예: 판정기준)" value={newExpertQuestion.category} onChange={e => setNewExpertQuestion(p => ({...p, category: e.target.value}))} className="w-full border border-border rounded-lg px-2.5 py-1.5 text-xs bg-card" />
+                    {(["a1","a2","a3","a4"] as const).map((k, i) => (
+                      <input key={k} placeholder={`예상 답변 ${i+1}`} value={newExpertQuestion[k]} onChange={e => setNewExpertQuestion(p => ({...p, [k]: e.target.value}))} className="w-full border border-border rounded-lg px-2.5 py-1.5 text-sm bg-card" />
+                    ))}
+                    <Button size="sm" className="w-full" disabled={addExpertQuestion.isPending} onClick={() => addExpertQuestion.mutate()}>{addExpertQuestion.isPending ? "등록 중..." : "질문 등록"}</Button>
+                  </div>
+                )}
+                {allExpertQuestions.length === 0 && <p className="text-sm text-gray-400 text-center py-8">등록된 질문이 없습니다.</p>}
+                {allExpertQuestions.map(q => (
+                  <div key={q.id} className={`bg-muted/30 rounded-xl border p-3 space-y-1.5 ${q.active ? "border-border" : "border-border opacity-50"}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium flex-1">{q.content}</p>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-md font-medium shrink-0 ${q.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>{q.active ? "활성" : "비활성"}</span>
+                    </div>
+                    {q.category && <span className="text-[11px] text-muted-foreground">{q.category}</span>}
+                    <div className="space-y-0.5">
+                      {q.presetAnswers.map((a, i) => <p key={i} className="text-xs text-muted-foreground">{i+1}. {a}</p>)}
+                    </div>
+                    <Button size="sm" variant="outline" className="w-full" disabled={toggleExpertQuestionActive.isPending} onClick={() => toggleExpertQuestionActive.mutate({ id: q.id, active: !q.active })}>{q.active ? "비활성화" : "다시 활성화"}</Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
             <div className="flex gap-2">
               {(["대기","승인","반려"] as const).map(tab => (
                 <button
@@ -3056,6 +3148,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 </div>
               );
             })}
+              </>
+            )}
           </div>
         </div>
       )}
