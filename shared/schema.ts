@@ -657,3 +657,51 @@ export const insertEmployeeTeamOverrideSchema = createInsertSchema(employeeTeamO
 export type InsertEmployeeTeamOverride = z.infer<typeof insertEmployeeTeamOverrideSchema>;
 export type EmployeeTeamOverride = typeof employeeTeamOverrides.$inferSelect;
 
+// ── 전문가 지식 수집: 질문 뱅크 — 매뉴얼/별표 기준에 명확히 나와 있지 않아 현장 경험이 필요한 질문들.
+// AI가 예상 답변 4개를 미리 만들어 보여주고, 사용자는 그중 고르거나 직접 입력함 ──
+export const expertQuestions = pgTable("expert_questions", {
+  id: serial("id").primaryKey(),
+  content: text("content").notNull(),
+  presetAnswers: text("preset_answers").array().notNull(), // AI가 미리 예상해둔 답변 4개
+  category: varchar("category", { length: 50 }),           // 참고용 분류(선택)
+  active: boolean("active").notNull().default(true),        // false면 더 이상 사용자에게 노출되지 않음
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertExpertQuestionSchema = createInsertSchema(expertQuestions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertExpertQuestion = z.infer<typeof insertExpertQuestionSchema>;
+export type ExpertQuestion = typeof expertQuestions.$inferSelect;
+
+// ── 전문가 지식 수집: 제출된 답변 — 앱 첫 접속 시 1회 노출되는 질문에 대한 사용자 답변.
+// 관리자가 검수(수정 가능)한 뒤 승인해야 지식베이스로 반영됨. answerType: 'preset'(예상답변 선택) | 'custom'(직접 입력) | 'skip'(건너뜀 — 다시 묻지 않기 위한 기록용) ──
+export const expertAnswers = pgTable("expert_answers", {
+  id: serial("id").primaryKey(),
+  questionId: integer("question_id").notNull(),
+  questionContent: text("question_content").notNull(),      // 질문이 나중에 바뀌어도 제출 당시 문구를 보존
+  employeeId: varchar("employee_id", { length: 50 }).notNull(),
+  employeeName: varchar("employee_name", { length: 50 }).notNull(),
+  team: varchar("team", { length: 50 }),
+  answerType: varchar("answer_type", { length: 10 }).notNull(), // 'preset' | 'custom' | 'skip'
+  selectedPresetIndex: integer("selected_preset_index"),
+  answerText: text("answer_text"),                           // skip이면 null
+  status: varchar("status", { length: 10 }).notNull().default("대기"), // '대기' | '승인' | '반려'
+  tags: text("tags").array(),                                // 관리자가 승인 시 붙이는 연결 항목(자유 입력)
+  reviewedById: varchar("reviewed_by_id", { length: 20 }),
+  reviewedByName: varchar("reviewed_by_name", { length: 50 }),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export const insertExpertAnswerSchema = createInsertSchema(expertAnswers).omit({
+  id: true,
+  status: true,
+  tags: true,
+  reviewedById: true,
+  reviewedByName: true,
+  reviewedAt: true,
+  createdAt: true,
+});
+export type InsertExpertAnswer = z.infer<typeof insertExpertAnswerSchema>;
+export type ExpertAnswer = typeof expertAnswers.$inferSelect;
+

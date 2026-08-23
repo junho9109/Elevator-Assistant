@@ -3626,6 +3626,172 @@ ${answerRules}${contextText}${memoSection}`,
     } catch (e) { res.status(500).json({ error: String(e) }); }
   });
 
+  // TEMP DEBUG: expert_questions / expert_answers 테이블 생성 + 질문 4개 시딩 — 1회 실행 후 제거 예정
+  app.get("/api/debug/migrate-expert-knowledge", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const { pool } = await import("./db");
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS expert_questions (
+          id serial PRIMARY KEY,
+          content text NOT NULL,
+          preset_answers text[] NOT NULL,
+          category varchar(50),
+          active boolean NOT NULL DEFAULT true,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS expert_answers (
+          id serial PRIMARY KEY,
+          question_id integer NOT NULL,
+          question_content text NOT NULL,
+          employee_id varchar(50) NOT NULL,
+          employee_name varchar(50) NOT NULL,
+          team varchar(50),
+          answer_type varchar(10) NOT NULL,
+          selected_preset_index integer,
+          answer_text text,
+          status varchar(10) NOT NULL DEFAULT '대기',
+          tags text[],
+          reviewed_by_id varchar(20),
+          reviewed_by_name varchar(50),
+          reviewed_at timestamp,
+          created_at timestamp NOT NULL DEFAULT now()
+        )
+      `);
+      const { db } = await import("./db");
+      const { expertQuestions } = await import("@shared/schema");
+      const [{ count: existing }] = await pool.query(`SELECT count(*)::int AS count FROM expert_questions`).then(r => r.rows);
+      let seeded = 0;
+      if (Number(existing) === 0) {
+        const seeds = [
+          {
+            content: "노후 승강기에서 별표에 명시되지 않은 부품이 발견되면 어떤 기준으로 판정하시나요?",
+            category: "판정기준",
+            presetAnswers: [
+              "기능이 유사한 표준 부품의 판정기준을 준용해서 판단합니다",
+              "제작사 기술자료를 요청해 검토한 뒤 판정합니다",
+              "가장 근접한 별표 항목 기준을 적용하고 소견서에 특이사항을 기재합니다",
+              "판정을 보류하고 정밀안전검사로 전환을 요청합니다",
+            ],
+          },
+          {
+            content: "정밀검사 중 매뉴얼에 명시되지 않은 이상 소음이 발생하면 무엇을 기준으로 이상 유무를 판단하시나요?",
+            category: "현장경험",
+            presetAnswers: [
+              "소음의 주파수와 발생 부위를 기록해두고 다음 점검 때 변화가 있는지 비교합니다",
+              "동일 기종의 정상 소음과 직접 비교해서 이상 여부를 판단합니다",
+              "진동이나 발열 등 다른 이상 징후가 동반되는지 함께 확인합니다",
+              "판단이 어려우면 제작사나 유지관리업체에 확인을 요청합니다",
+            ],
+          },
+          {
+            content: "겨울철 저온 환경에서 유압식 승강기를 점검할 때 평소보다 더 신경 써서 확인하는 항목이 있나요?",
+            category: "현장경험",
+            presetAnswers: [
+              "작동유의 점도 변화로 인한 속도 저하 여부를 확인합니다",
+              "실린더와 배관 이음부의 결로·동결 여부를 확인합니다",
+              "저온에서 밸브류의 응답 속도가 느려지는지 확인합니다",
+              "평소와 큰 차이는 없고 동일한 절차로 점검합니다",
+            ],
+          },
+          {
+            content: "육안으로만 판단하기 애매한 마모 상태를 만나면 어떤 절차로 결론을 내리시나요?",
+            category: "판정기준",
+            presetAnswers: [
+              "측정기구로 실측해서 기준치와 비교합니다",
+              "이전 검사 기록과 비교해서 마모 진행 속도를 확인합니다",
+              "애매하면 안전 쪽으로 판단해 정밀점검이나 부품 교체를 권고합니다",
+              "동료 검사자에게 함께 확인을 요청합니다",
+            ],
+          },
+        ];
+        for (const s of seeds) {
+          await db.insert(expertQuestions).values(s);
+          seeded++;
+        }
+      }
+      res.json({ ok: true, seeded });
+    } catch (error: any) {
+      res.status(500).json({ error: String(error?.message || error) });
+    }
+  });
+
+  // ── 전문가 지식 수집 ──
+  // 활성 질문 목록 — 앱 첫 접속 시 배너에서 랜덤으로 하나 골라 보여주는 데 사용
+  app.get("/api/expert-questions", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertQuestions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const activeOnly = req.query.active !== "false";
+      const rows = activeOnly
+        ? await db.select().from(expertQuestions).where(eq(expertQuestions.active, true))
+        : await db.select().from(expertQuestions);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch expert questions");
+    }
+  });
+
+  // 제출된 답변 목록 — employeeId로 조회하면 "이미 첫 접속 질문에 응답(또는 건너뛰기)했는지" 확인용,
+  // status로 조회하면 관리자 검수 큐
+  app.get("/api/expert-answers", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertAnswers } = await import("@shared/schema");
+      const { eq, and, desc } = await import("drizzle-orm");
+      const employeeId = req.query.employeeId as string | undefined;
+      const status = req.query.status as string | undefined;
+      const conditions = [] as any[];
+      if (employeeId) conditions.push(eq(expertAnswers.employeeId, employeeId));
+      if (status) conditions.push(eq(expertAnswers.status, status));
+      const rows = conditions.length > 0
+        ? await db.select().from(expertAnswers).where(and(...conditions)).orderBy(desc(expertAnswers.createdAt))
+        : await db.select().from(expertAnswers).orderBy(desc(expertAnswers.createdAt));
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch expert answers");
+    }
+  });
+
+  app.post("/api/expert-answers", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertAnswers, insertExpertAnswerSchema } = await import("@shared/schema");
+      const validated = insertExpertAnswerSchema.parse(req.body);
+      const [row] = await db.insert(expertAnswers).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid expert answer data", detail: String(error) });
+    }
+  });
+
+  // 관리자 검수 — 승인/반려 전 답변 문구를 다듬고 연결 태그를 붙일 수 있음
+  app.put("/api/expert-answers/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertAnswers } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { status, answerText, tags, reviewedById, reviewedByName } = req.body as {
+        status?: string; answerText?: string; tags?: string[]; reviewedById?: string; reviewedByName?: string;
+      };
+      const patch: any = { reviewedAt: new Date() };
+      if (status) patch.status = status;
+      if (answerText !== undefined) patch.answerText = answerText;
+      if (tags !== undefined) patch.tags = tags;
+      if (reviewedById) patch.reviewedById = reviewedById;
+      if (reviewedByName) patch.reviewedByName = reviewedByName;
+      const [row] = await db.update(expertAnswers).set(patch).where(eq(expertAnswers.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Not found" });
+      res.json(row);
+    } catch (error) {
+      handleError(res, error, "Failed to update expert answer");
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

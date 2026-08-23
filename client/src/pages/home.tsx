@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
@@ -12,7 +12,7 @@ import { getGlobalAdminMode, setGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   useStandards, useHotspots, useCreateStandard, useUpdateStandard, useDeleteStandard, useCreateCategory,
   useCreateHotspot, useUpdateHotspot, useDeleteHotspot,
@@ -1562,6 +1562,91 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
     return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
   }, []);
+
+  // ── 전문가 지식 수집: 앱 첫 접속 시 1회, 현장 지식을 묻는 배너 ──
+  const [empIdentity] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+      return { empId: saved.empId || saved.name || "", empName: saved.name || "", team: saved.org || null as string | null };
+    } catch { return { empId: "", empName: "", team: null as string | null }; }
+  });
+  const { data: expertQuestionsData = [] } = useQuery<{ id: number; content: string; presetAnswers: string[]; category: string | null }[]>({
+    queryKey: ["/api/expert-questions"],
+    queryFn: async () => { const r = await fetch("/api/expert-questions"); return r.json(); },
+    enabled: !!empIdentity.empId,
+  });
+  const { data: myExpertAnswers = [] } = useQuery<{ id: number }[]>({
+    queryKey: ["/api/expert-answers", empIdentity.empId],
+    queryFn: async () => { const r = await fetch(`/api/expert-answers?employeeId=${encodeURIComponent(empIdentity.empId)}`); return r.json(); },
+    enabled: !!empIdentity.empId,
+  });
+  // 세션당 한 번만 무작위로 질문을 고정 — 재렌더링마다 질문이 바뀌지 않도록
+  const [expertQuestionPick] = useState(() => Math.random());
+  const expertQuestion = useMemo(() => {
+    if (expertQuestionsData.length === 0) return null;
+    const idx = Math.floor(expertQuestionPick * expertQuestionsData.length);
+    return expertQuestionsData[Math.min(idx, expertQuestionsData.length - 1)];
+  }, [expertQuestionsData, expertQuestionPick]);
+  const [expertBannerDismissed, setExpertBannerDismissed] = useState(false);
+  // 이 직원이 지금까지 제출/건너뛰기한 기록이 전혀 없을 때만 배너 노출(=앱 첫 접속 시 1회)
+  const showExpertBanner = !!empIdentity.empId && !!expertQuestion && myExpertAnswers.length === 0 && !expertBannerDismissed;
+  const [showExpertModal, setShowExpertModal] = useState(false);
+  const [expertSelectedIdx, setExpertSelectedIdx] = useState<number | null>(null);
+  const [expertCustomMode, setExpertCustomMode] = useState(false);
+  const [expertCustomText, setExpertCustomText] = useState("");
+  const [expertSubmitError, setExpertSubmitError] = useState(false);
+
+  const submitExpertAnswer = useMutation({
+    mutationFn: async (payload: any) => {
+      const r = await fetch("/api/expert-answers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/expert-answers"] });
+      setShowExpertModal(false);
+      setExpertBannerDismissed(true);
+    },
+  });
+  function submitExpertSkip() {
+    if (!expertQuestion) return;
+    submitExpertAnswer.mutate({ questionId: expertQuestion.id, questionContent: expertQuestion.content, employeeId: empIdentity.empId, employeeName: empIdentity.empName, team: empIdentity.team, answerType: "skip" });
+  }
+  function submitExpertResponse() {
+    if (!expertQuestion) return;
+    if (expertCustomMode) {
+      if (!expertCustomText.trim()) { setExpertSubmitError(true); return; }
+      submitExpertAnswer.mutate({ questionId: expertQuestion.id, questionContent: expertQuestion.content, employeeId: empIdentity.empId, employeeName: empIdentity.empName, team: empIdentity.team, answerType: "custom", answerText: expertCustomText.trim() });
+    } else {
+      if (expertSelectedIdx == null) { setExpertSubmitError(true); return; }
+      submitExpertAnswer.mutate({ questionId: expertQuestion.id, questionContent: expertQuestion.content, employeeId: empIdentity.empId, employeeName: empIdentity.empName, team: empIdentity.team, answerType: "preset", selectedPresetIndex: expertSelectedIdx, answerText: expertQuestion.presetAnswers[expertSelectedIdx] });
+    }
+  }
+
+  // ── 전문가 지식 수집: 관리자 검수 패널 ──
+  const [showExpertReview, setShowExpertReview] = useState(false);
+  const [expertReviewTab, setExpertReviewTab] = useState<"대기"|"승인"|"반려">("대기");
+  const { data: expertReviewData = [] } = useQuery<any[]>({
+    queryKey: ["/api/expert-answers", "review", expertReviewTab],
+    queryFn: async () => { const r = await fetch(`/api/expert-answers?status=${encodeURIComponent(expertReviewTab)}`); return r.json(); },
+    enabled: showExpertReview,
+  });
+  const [expertEdits, setExpertEdits] = useState<Record<number, { answerText: string; tags: string }>>({});
+  function getExpertEdit(row: any) {
+    return expertEdits[row.id] || { answerText: row.answerText || "", tags: (row.tags || []).join(", ") };
+  }
+  const reviewExpertAnswer = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: "승인" | "반려" }) => {
+      const edit = expertEdits[id];
+      const body: any = { status, reviewedById: empIdentity.empId, reviewedByName: empIdentity.empName };
+      if (edit?.answerText !== undefined) body.answerText = edit.answerText;
+      if (status === "승인") body.tags = (edit?.tags || "").split(",").map((t: string) => t.trim()).filter(Boolean);
+      const r = await fetch(`/api/expert-answers/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/expert-answers"] }); toast({ title: "처리되었습니다." }); },
+  });
   const [structureImg, setStructureImg] = useState<string>(defaultStructureImg);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -2819,6 +2904,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 <Settings className="h-3.5 w-3.5" />
                 {isAdminMode ? "관리자 모드 끄기" : "관리자 모드"}
               </button>
+              {isAdminMode && (
+                <button
+                  onClick={() => setShowExpertReview(s => !s)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
+                >
+                  지식 검수
+                </button>
+              )}
               <button
                 onClick={() => { if (onLogout) onLogout(); }}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted"
@@ -2829,6 +2922,143 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           )}
         </div>
       </div>
+
+      {/* 전문가 지식 수집: 앱 첫 접속 시 1회 노출되는 배너 */}
+      {showExpertBanner && expertQuestion && (
+        <div className="mx-3 mt-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
+          <div className="flex items-start gap-2">
+            <Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">지식을 공유해주세요</p>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{expertQuestion.content}</p>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-2.5">
+            <Button size="sm" variant="outline" className="flex-1" onClick={submitExpertSkip} disabled={submitExpertAnswer.isPending}>다음에</Button>
+            <Button size="sm" className="flex-1" onClick={() => setShowExpertModal(true)}>답변하기</Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2">답변하신 내용은 AI 학습에 활용됩니다.</p>
+        </div>
+      )}
+
+      {/* 전문가 지식 수집: 답변 입력 모달 */}
+      {showExpertModal && expertQuestion && (
+        <div style={{position:"fixed", inset:0, zIndex:10000, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:16}} onClick={() => setShowExpertModal(false)}>
+          <div className="bg-card rounded-2xl p-4 w-full max-w-sm max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <p className="text-sm font-medium mb-1">{expertQuestion.content}</p>
+            <p className="text-xs text-muted-foreground mb-3">현장 경험을 바탕으로 가장 가까운 답을 골라주세요.</p>
+            <div className="space-y-2">
+              {expertQuestion.presetAnswers.map((ans, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setExpertSelectedIdx(i); setExpertCustomMode(false); setExpertSubmitError(false); }}
+                  className={`w-full text-left flex items-start gap-2 px-3 py-2.5 rounded-xl border text-sm ${!expertCustomMode && expertSelectedIdx===i ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-border bg-card"}`}
+                >
+                  <span className={`w-4 h-4 rounded-full border shrink-0 mt-0.5 flex items-center justify-center ${!expertCustomMode && expertSelectedIdx===i ? "border-blue-500" : "border-muted-foreground"}`}>
+                    {!expertCustomMode && expertSelectedIdx===i && <Check className="h-2.5 w-2.5 text-blue-600" />}
+                  </span>
+                  <span>{ans}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => { setExpertCustomMode(m => !m); setExpertSubmitError(false); }}
+              className="w-full mt-2 flex items-center gap-1.5 text-xs text-muted-foreground py-1.5"
+            >
+              <Pencil className="h-3.5 w-3.5" />위 답변에 없어요, 직접 입력할게요
+            </button>
+            {expertCustomMode && (
+              <textarea
+                value={expertCustomText}
+                onChange={e => { setExpertCustomText(e.target.value); setExpertSubmitError(false); }}
+                rows={3}
+                placeholder="현장에서 실제로 판단하시는 기준을 적어주세요"
+                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card mt-1"
+              />
+            )}
+            {expertSubmitError && <p className="text-xs text-red-500 mt-2">답변을 선택하거나 직접 입력해주세요.</p>}
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" variant="outline" className="flex-1" onClick={() => setShowExpertModal(false)}>취소</Button>
+              <Button size="sm" className="flex-[2]" onClick={submitExpertResponse} disabled={submitExpertAnswer.isPending}>{submitExpertAnswer.isPending ? "제출 중..." : "답변 제출"}</Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2 text-center">제출한 답변은 관리자 검수 후 지식베이스에 반영됩니다.</p>
+          </div>
+        </div>
+      )}
+
+      {/* 전문가 지식 수집: 관리자 검수 패널 */}
+      {showExpertReview && (
+        <div className="border-b border-border bg-card shrink-0 overflow-y-auto" style={{maxHeight: "70vh"}}>
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-blue-50 dark:bg-blue-900/20">
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">전문가 답변 검수</span>
+            <button onClick={() => setShowExpertReview(false)} className="w-6 h-6 flex items-center justify-center rounded border border-blue-200 dark:border-blue-700"><X className="h-3 w-3" /></button>
+          </div>
+          <div className="p-3 space-y-3">
+            <div className="flex gap-2">
+              {(["대기","승인","반려"] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setExpertReviewTab(tab)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border font-medium ${expertReviewTab===tab ? "bg-primary text-primary-foreground border-primary" : "border-border bg-card"}`}
+                >{tab}</button>
+              ))}
+            </div>
+            {expertReviewData.length === 0 && <p className="text-sm text-gray-400 text-center py-8">해당 상태의 답변이 없습니다.</p>}
+            {expertReviewData.map((row: any) => {
+              const edit = getExpertEdit(row);
+              return (
+                <div key={row.id} className="bg-muted/30 rounded-xl border border-border p-3 space-y-2">
+                  <p className="text-sm font-medium">{row.questionContent}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {row.employeeName}{row.team ? ` · ${row.team}` : ""} · {new Date(row.createdAt).toLocaleDateString("ko-KR")}
+                  </p>
+                  <span className={`inline-block text-[11px] px-2 py-0.5 rounded-md font-medium ${row.answerType==="custom" ? "bg-orange-100 text-orange-700" : row.answerType==="skip" ? "bg-gray-100 text-gray-600" : "bg-blue-100 text-blue-700"}`}>
+                    {row.answerType==="custom" ? "직접 입력" : row.answerType==="skip" ? "건너뜀" : "선택형"}
+                  </span>
+                  {row.answerType !== "skip" && (
+                    <>
+                      {row.status === "대기" ? (
+                        <textarea
+                          value={edit.answerText}
+                          onChange={e => setExpertEdits(p => ({ ...p, [row.id]: { ...edit, answerText: e.target.value } }))}
+                          rows={3}
+                          className="w-full border border-border rounded-lg px-2.5 py-2 text-sm bg-card"
+                        />
+                      ) : (
+                        <p className="text-sm whitespace-pre-wrap">{row.answerText}</p>
+                      )}
+                      {row.status === "대기" ? (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">연결할 항목(콤마로 구분)</p>
+                          <input
+                            value={edit.tags}
+                            onChange={e => setExpertEdits(p => ({ ...p, [row.id]: { ...edit, tags: e.target.value } }))}
+                            placeholder="예: 별표2_전기식, 부품 판정"
+                            className="w-full border border-border rounded-lg px-2.5 py-1.5 text-xs bg-card"
+                          />
+                        </div>
+                      ) : row.tags && row.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {row.tags.map((t: string) => <span key={t} className="text-[11px] px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 dark:bg-blue-900/20">{t}</span>)}
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {row.status === "대기" && (
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" variant="outline" className="flex-1 text-red-600 border-red-200" disabled={reviewExpertAnswer.isPending} onClick={() => reviewExpertAnswer.mutate({ id: row.id, status: "반려" })}>반려</Button>
+                      <Button size="sm" className="flex-[2]" disabled={reviewExpertAnswer.isPending} onClick={() => reviewExpertAnswer.mutate({ id: row.id, status: "승인" })}>승인하고 반영</Button>
+                    </div>
+                  )}
+                  {row.status !== "대기" && row.reviewedByName && (
+                    <p className="text-[11px] text-muted-foreground">{row.status} · {row.reviewedByName}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 업데이트 내역 */}
       {showChangelog && (
