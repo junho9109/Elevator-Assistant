@@ -339,6 +339,19 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     refetchInterval: 1000,
   });
   const experiencePhaseForcedOpen = experienceOverrides.length > 0;
+  // 회차 전체(팀 무관) 무시하고 진행하기 기록 — 결과확인 화면에서 다른 팀의 "제외된 팀원"까지 계산하기 위해 팀 필터 없이 조회
+  const { data: allRoundOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string; excludedMembers: string[] | null }[]>({
+    queryKey: ["/api/risk-round-overrides", "round", activeRound],
+    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    enabled: ready,
+    refetchInterval: 1000,
+  });
+  // 팀명을 넣으면 "무시하고 진행하기" 시점에 아직 완료하지 않았던(=제외된) 팀원 이름 집합을 반환 — 여러 단계에서 각각 제외되었어도 합쳐서 반환
+  function excludedMembersFor(teamName: string): Set<string> {
+    const set = new Set<string>();
+    allRoundOverrides.filter(o => o.team === teamName).forEach(o => (o.excludedMembers || []).forEach(m => set.add(m)));
+    return set;
+  }
   // 회차 전체(팀 무관) 선택 현황 — 결과 확인 화면에서 팀별 요약을 만들 때 사용
   const { data: allRoundSelections = [] } = useQuery<RiskItemSelection[]>({
     queryKey: ["/api/risk-item-selections", "round", activeRound],
@@ -379,7 +392,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [showForceOpenConfirm, setShowForceOpenConfirm] = useState(false);
   const forceOpenRound = useMutation({
     mutationFn: async () => {
-      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, phase: "selection", forcedById: empId, forcedByName: empName }) });
+      // 이 시점에 아직 선택을 완료하지 않은 팀원은 "제외" 처리 — 이후 결과확인 화면의 완료 현황에서 이들을 기다리지 않고 마무리할 수 있고, 나중에 돌아와 답변하면 자동으로 다시 포함됨
+      const excludedMembers = myTeamMembers.filter(m => !teamSelections.some(s => s.employeeName === m));
+      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, phase: "selection", forcedById: empId, forcedByName: empName, excludedMembers }) });
       if (!r.ok) throw new Error(); return r.json();
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] }); toast({ title: "선택을 완료한 팀원만으로 평가를 시작합니다." }); setShowForceOpenConfirm(false); },
@@ -387,7 +402,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   const [showForceOpenExperienceConfirm, setShowForceOpenExperienceConfirm] = useState(false);
   const forceOpenExperiencePhase = useMutation({
     mutationFn: async () => {
-      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, phase: "experience", forcedById: empId, forcedByName: empName }) });
+      const excludedMembers = myTeamMembers.filter(m => !memberExperienceDone(m));
+      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, phase: "experience", forcedById: empId, forcedByName: empName, excludedMembers }) });
       if (!r.ok) throw new Error(); return r.json();
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] }); toast({ title: "경험 여부를 답변한 팀원만으로 중대성 평가를 시작합니다." }); setShowForceOpenExperienceConfirm(false); },
@@ -1539,13 +1555,17 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 const confirmed = myConfirmedTeams.has(t.name);
                 const expanded = viewOtherTeam === t.name;
                 const teamMembersForT = membersOfTeam(t.name);
-                const doneCount = teamMembersForT.filter(m=>teamMemberEvaluationDone(t.name, m)).length;
+                const excludedForT = excludedMembersFor(t.name);
+                // "무시하고 진행하기"로 제외된 사람 중 아직 돌아오지 않은(=미완료) 사람은 분모에서도 빼서, 팀이 그 사람을 기다리지 않고 마무리할 수 있게 함
+                // 제외됐던 사람이 나중에 답변을 완료하면 아래 done 조건이 true가 되어 자동으로 다시 인원수에 포함됨
+                const requiredMembersForT = teamMembersForT.filter(m => teamMemberEvaluationDone(t.name, m) || !excludedForT.has(m));
+                const doneCount = requiredMembersForT.filter(m=>teamMemberEvaluationDone(t.name, m)).length;
                 return (
                   <div key={t.name} className="bg-card rounded-xl border border-border overflow-hidden">
                     <button className="w-full flex items-center justify-between gap-2 p-3" onClick={()=>setViewOtherTeam(v=>v===t.name?"":t.name)}>
                       <div className="min-w-0 text-left">
                         <p className="text-sm font-medium">{t.name}{t.name===myTeam?" (우리 팀)":""}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{items.length}건 · 평가완료 {doneCount}/{teamMembersForT.length}명</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{items.length}건 · 평가완료 {doneCount}/{requiredMembersForT.length}명</p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`text-xs px-2 py-0.5 rounded-md ${confirmed?"bg-green-100 text-green-700":"bg-orange-100 text-orange-700"}`}>{confirmed?"확인완료":"확인필요"}</span>
@@ -1558,10 +1578,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                           <div className="bg-muted/40 rounded-lg p-2 flex flex-wrap gap-x-3 gap-y-1">
                             {teamMembersForT.map(m=>{
                               const done = teamMemberEvaluationDone(t.name, m);
+                              const excludedAbsent = !done && excludedForT.has(m);
                               return (
                                 <span key={m} className="flex items-center gap-1.5 text-xs">
-                                  <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                                  <span className={done?"text-muted-foreground":"font-medium"}>{m}</span>
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":excludedAbsent?"bg-gray-400":"bg-red-500"}`}/>
+                                  <span className={done?"text-muted-foreground":excludedAbsent?"text-muted-foreground":"font-medium"}>{m}{excludedAbsent?" (제외됨)":""}</span>
                                 </span>
                               );
                             })}

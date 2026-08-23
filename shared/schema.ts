@@ -629,6 +629,9 @@ export const riskRoundOverrides = pgTable("risk_round_overrides", {
   phase: varchar("phase", { length: 20 }).notNull().default("selection"),
   forcedById: varchar("forced_by_id", { length: 20 }).notNull(),
   forcedByName: varchar("forced_by_name", { length: 50 }).notNull(),
+  // 무시하고 진행하기를 누른 시점에 아직 완료하지 않았던 팀원 이름 목록 — 이 사람들은 "평가 완료 현황"에서 제외되어 팀이 이들을 기다리지 않고 마무리할 수 있음.
+  // 제외된 사람이 나중에 돌아와 스스로 답변을 마치면(assessmentsByItem 등에 데이터가 쌓이면) 자동으로 완료 처리되어 다시 명단에 포함됨
+  excludedMembers: text("excluded_members").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 export const insertRiskRoundOverrideSchema = createInsertSchema(riskRoundOverrides).omit({
