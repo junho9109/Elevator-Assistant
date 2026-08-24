@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Calendar, ChevronDown, ChevronUp, Shield, AlertTriangle, ClipboardCheck, Trash2 } from "lucide-react";
+import { Plus, X, Calendar, ChevronDown, ChevronUp, Shield, AlertTriangle, ClipboardCheck, Trash2, Pencil } from "lucide-react";
 import { getTeamsForName, TEAM_ROSTERS } from "@/lib/teams";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 
@@ -239,6 +239,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 서명까지 마친 뒤 처음으로 돌아간 회차의 결과를 다시 열람하기 위한 모드 (선택 상태와 무관하게 결과 화면을 강제로 표시)
   const [viewResultsMode, setViewResultsMode] = useState(false);
   const [riskDeleteConfirm, setRiskDeleteConfirm] = useState<number|null>(null);
+  // null=새로 등록, 숫자=해당 id의 기존 위험요인(예시/필수)을 수정하는 중
+  const [editRiskId, setEditRiskId] = useState<number|null>(null);
   const [riskForm, setRiskForm] = useState({ workCategory: RISK_WORK_CATEGORIES.checklist[0], subWork: "", content: "", discoveryPath: DISCOVERY_PATHS[0], fieldInfo: "", images: [] as string[] });
   const [isMandatoryForm, setIsMandatoryForm] = useState(false);
   const [referenceSafetyMeasureForm, setReferenceSafetyMeasureForm] = useState("");
@@ -504,6 +506,19 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       setShowAddRisk(false);
     },
     onError: (e: any) => toast({ title: "등록 실패", description: e.message, variant: "destructive" }),
+  });
+  const updateRiskItem = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const r = await fetch(`/api/risk-hazard-items/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/risk-hazard-items"] });
+      toast({ title: "수정되었습니다." });
+      setShowAddRisk(false);
+      setEditRiskId(null);
+    },
+    onError: (e: any) => toast({ title: "수정 실패", description: e.message, variant: "destructive" }),
   });
   const deleteRiskItem = useMutation({
     mutationFn: async (id: number) => { await fetch(`/api/risk-hazard-items/${id}?employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}&admin=${isAdmin}`, { method: "DELETE" }); },
@@ -1182,10 +1197,13 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         {activeTab==="risk" && ready && myTeam && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <p className="text-sm text-gray-500">
-                {myTeam} · {empName}님
-                <button onClick={()=>setShowTeamPicker(true)} className="ml-2 text-xs text-primary underline">변경</button>
-              </p>
+              {/* 첫 화면(아직 항목을 선택하지 않은 상태)에서는 이 줄을 위험요인 목록 아래, 팀원 선택 현황 바로 위로 옮겨서 표시한다 */}
+              {!(!myEvaluationComplete && !viewResultsMode && !mySelection) ? (
+                <p className="text-sm text-gray-500">
+                  {myTeam} · {empName}님
+                  <button onClick={()=>setShowTeamPicker(true)} className="ml-2 text-xs text-primary underline">변경</button>
+                </p>
+              ) : <div />}
               {isAdmin && (
                 <Button size="sm" variant="outline" onClick={()=>{
                   if (showTemplateManager) { setShowTemplateManager(false); return; }
@@ -1239,7 +1257,16 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                           <p className="text-sm truncate">{t.content}</p>
                           <p className={`text-xs mt-0.5 ${sel?"text-gray-700 dark:text-gray-300 font-medium":"text-muted-foreground"}`}>{sel ? `${sel.employeeName}님이 선택함` : "선택 대기 중"}</p>
                         </div>
-                        <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={()=>{
+                            setEditRiskId(t.id);
+                            setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskMethod(t.method as RiskMethod);
+                            setRiskForm({ workCategory: t.workCategory, subWork: t.subWork||"", content: t.content, discoveryPath: t.discoveryPath||DISCOVERY_PATHS[0], fieldInfo: t.fieldInfo||"", images: t.imageUrls||[] });
+                            setIsMandatoryForm(t.isMandatory); setReferenceSafetyMeasureForm(t.referenceSafetyMeasure||"");
+                            setShowAddRisk(true);
+                          }} className="text-primary hover:opacity-70 p-1"><Pencil className="h-4 w-4"/></button>
+                          <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="h-4 w-4"/></button>
+                        </div>
                       </div>
                     );
                   })}
@@ -1262,7 +1289,16 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                         <p className="text-sm truncate">{t.content}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">{t.branchId}</p>
                       </div>
-                      <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><Trash2 className="h-4 w-4"/></button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={()=>{
+                          setEditRiskId(t.id);
+                          setAddRiskMode("template"); setAddRiskTeam(templateManagerTeam); setRiskMethod(t.method as RiskMethod);
+                          setRiskForm({ workCategory: t.workCategory, subWork: t.subWork||"", content: t.content, discoveryPath: t.discoveryPath||DISCOVERY_PATHS[0], fieldInfo: t.fieldInfo||"", images: t.imageUrls||[] });
+                          setIsMandatoryForm(t.isMandatory); setReferenceSafetyMeasureForm(t.referenceSafetyMeasure||"");
+                          setShowAddRisk(true);
+                        }} className="text-primary hover:opacity-70 p-1"><Pencil className="h-4 w-4"/></button>
+                        <button onClick={()=>setRiskDeleteConfirm(t.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="h-4 w-4"/></button>
+                      </div>
                     </div>
                   ))}
                   <Button
@@ -1364,6 +1400,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
             {!myEvaluationComplete && !viewResultsMode && (
             <>
+            {!mySelection && (
+              <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요. {myTeamMethod==="freq_severity" ? "선택과 동시에 경험 여부도 함께 답해주세요. " : ""}목록에 없으면 직접 등록할 수 있습니다.</p>
+            )}
+
             {branchMandatoryItems.length>0 && (
               <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-900 p-3 space-y-3">
                 <div>
@@ -1390,24 +1430,6 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
 
             {!mySelection ? (
               <div className="space-y-3">
-                <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요. {myTeamMethod==="freq_severity" ? "선택과 동시에 경험 여부도 함께 답해주세요. " : ""}목록에 없으면 직접 등록할 수 있습니다.</p>
-                {myTeamMembers.length>0 && (
-                  <div className="bg-card rounded-xl border border-border p-3">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">팀원 선택 현황 · {teamSelections.length}/{myTeamMembers.length}명</p>
-                    <div className="space-y-1">
-                      {myTeamMembers.map(memberName=>{
-                        const done = teamSelections.some(s=>s.employeeName===memberName);
-                        return (
-                          <div key={memberName} className="flex items-center gap-2 py-1">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                            <span className="text-sm flex-1 font-medium">{memberName}</span>
-                            <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"선택완료":"미선택"}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
                 {availableTemplates.length===0 && teamItems.filter(t=>t.isTemplate && !t.isMandatory).length===0 && (
                   <div className="text-center py-8 text-gray-400"><ClipboardCheck className="h-10 w-10 mx-auto mb-2 opacity-30"/><p className="text-sm">등록된 예시가 없습니다. 관리자에게 문의하거나 직접 등록해주세요.</p></div>
                 )}
@@ -1452,6 +1474,29 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 <Button variant="outline" className="w-full" onClick={()=>{ setAddRiskMode("direct"); setAddRiskTeam(myTeam); setRiskMethod(myTeamMethod); setRiskForm({ workCategory: RISK_WORK_CATEGORIES[myTeamMethod][0], subWork:"", content:"", discoveryPath: DISCOVERY_PATHS[0], fieldInfo:"", images:[] }); setIsMandatoryForm(false); setReferenceSafetyMeasureForm(""); setDirectExperienceForm(undefined); setShowAddRisk(true); }}>
                   <Plus className="h-4 w-4 mr-1"/>목록에 없으면 직접 등록
                 </Button>
+
+                <p className="text-sm text-gray-500">
+                  {myTeam} · {empName}님
+                  <button onClick={()=>setShowTeamPicker(true)} className="ml-2 text-xs text-primary underline">변경</button>
+                </p>
+
+                {myTeamMembers.length>0 && (
+                  <div className="bg-card rounded-xl border border-border p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">팀원 선택 현황 · {teamSelections.length}/{myTeamMembers.length}명</p>
+                    <div className="space-y-1">
+                      {myTeamMembers.map(memberName=>{
+                        const done = teamSelections.some(s=>s.employeeName===memberName);
+                        return (
+                          <div key={memberName} className="flex items-center gap-2 py-1">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                            <span className="text-sm flex-1 font-medium">{memberName}</span>
+                            <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"선택완료":"미선택"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : !allTeamSelected && !roundForcedOpen ? (
               <div className="space-y-3">
@@ -1727,9 +1772,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       )}
 
       {showAddRisk&&(
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowAddRisk(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>{ setShowAddRisk(false); setEditRiskId(null); }}>
           <div className="bg-card rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-border" onClick={e=>e.stopPropagation()}>
-            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">{addRiskMode==="template" ? `예시 등록 (${addRiskTeam})` : "유해위험요인 등록"}</h2><button onClick={()=>setShowAddRisk(false)} className="text-gray-400"><X className="h-5 w-5"/></button></div>
+            <div className="flex justify-between items-center p-5 border-b border-border"><h2 className="text-xl font-bold">{editRiskId!=null ? `${isMandatoryForm ? "필수 항목" : "예시"} 수정 (${addRiskTeam})` : addRiskMode==="template" ? `예시 등록 (${addRiskTeam})` : "유해위험요인 등록"}</h2><button onClick={()=>{ setShowAddRisk(false); setEditRiskId(null); }} className="text-gray-400"><X className="h-5 w-5"/></button></div>
             <div className="p-5 space-y-4">
               <p className="text-xs text-muted-foreground -mt-2">{riskMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}에 등록됩니다.</p>
               <div>
@@ -1777,8 +1822,24 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 {riskForm.images.length>0&&<div className="grid grid-cols-3 gap-2 mt-3">{riskForm.images.map((img,i)=><div key={i} className="relative"><img src={img} alt="" className="w-full h-20 object-cover rounded-lg border"/><button className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs" onClick={()=>setRiskForm(p=>({...p,images:p.images.filter((_,idx)=>idx!==i)}))}>×</button></div>)}</div>}
               </div>
               <div className="flex gap-3 pt-2">
-                <Button variant="outline" className="flex-1" onClick={()=>setShowAddRisk(false)}>취소</Button>
-                <Button className="flex-1" disabled={!riskForm.content.trim()||createRiskItem.isPending} onClick={()=>{
+                <Button variant="outline" className="flex-1" onClick={()=>{ setShowAddRisk(false); setEditRiskId(null); }}>취소</Button>
+                <Button className="flex-1" disabled={!riskForm.content.trim()||createRiskItem.isPending||updateRiskItem.isPending} onClick={()=>{
+                  if (editRiskId!=null) {
+                    updateRiskItem.mutate({
+                      id: editRiskId,
+                      data: {
+                        workCategory: riskForm.workCategory,
+                        subWork: riskForm.subWork || null,
+                        content: riskForm.content,
+                        discoveryPath: riskForm.discoveryPath,
+                        fieldInfo: riskForm.fieldInfo || null,
+                        imageUrls: riskForm.images.length>0 ? riskForm.images : null,
+                        isMandatory: isMandatoryForm,
+                        referenceSafetyMeasure: referenceSafetyMeasureForm || null,
+                      },
+                    });
+                    return;
+                  }
                   if (addRiskMode==="direct" && riskMethod==="freq_severity" && directExperienceForm===undefined) { flashDirectExperience(); return; }
                   createRiskItem.mutate({
                     method: riskMethod,
@@ -1795,7 +1856,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                     ...(addRiskMode === "template" ? { isMandatory: isMandatoryForm, referenceSafetyMeasure: referenceSafetyMeasureForm || null } : {}),
                     ...(addRiskMode === "direct" ? { selectEmployeeId: empId, selectEmployeeName: empName, selectRound: activeRound, selectHadAccidentExperience: riskMethod==="freq_severity" ? directExperienceForm : null } : {}),
                   });
-                }}>{createRiskItem.isPending?"저장 중...":"저장"}</Button>
+                }}>{editRiskId!=null ? (updateRiskItem.isPending?"수정 중...":"수정 저장") : (createRiskItem.isPending?"저장 중...":"저장")}</Button>
               </div>
             </div>
           </div>

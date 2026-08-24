@@ -1098,6 +1098,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 팀별 위험요인(예시/필수 항목) 수정 — 내용, 사진, 현재 안전보건조치, 필수 여부 등을 수정
+  app.put("/api/risk-hazard-items/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const allowedFields = ["workCategory", "subWork", "content", "discoveryPath", "fieldInfo", "imageUrls", "referenceSafetyMeasure", "isMandatory"] as const;
+      const updates: Record<string, any> = {};
+      for (const f of allowedFields) {
+        if (f in req.body) updates[f] = req.body[f];
+      }
+      if (Object.keys(updates).length === 0) return res.status(400).json({ error: "수정할 내용이 없습니다." });
+      const [row] = await db.update(riskHazardItems).set(updates).where(eq(riskHazardItems.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "항목을 찾을 수 없습니다." });
+      res.json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid risk hazard item update", detail: String(error) });
+    }
+  });
+
   // ── 위험성평가: 항목 선택(예시 선택) — 항목 1개당 1명만 선택 가능, 팀당 1인 1항목 (회차별) ──
   app.get("/api/risk-item-selections", async (req, res) => {
     try {
