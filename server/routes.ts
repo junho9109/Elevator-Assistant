@@ -1429,6 +1429,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── 위험성평가: 붙임4-1/4-3 양식 엑셀 내보내기 (관리자용) ──
+  // TEMP DEBUG: export 로직에서 발생하는 실제 오류를 확인하기 위한 진단용 — 1회 사용 후 제거 예정
+  app.get("/api/debug/export-diag", async (req, res) => {
+    try {
+      const branchId = (req.query.branchId as string) || "";
+      const round = (req.query.round as string) || "";
+      if (!branchId || !round) return res.status(400).json({ error: "branchId, round는 필수입니다." });
+      const { db } = await import("./db");
+      const { riskHazardItems, riskAssessments, riskItemSelections } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const items = await db.select().from(riskHazardItems).where(eq(riskHazardItems.branchId, branchId));
+      const assessments = await db.select().from(riskAssessments).where(and(eq(riskAssessments.branchId, branchId), eq(riskAssessments.round, round)));
+      const selections = await db.select().from(riskItemSelections).where(and(eq(riskItemSelections.round, round)));
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      const freqSheetGroups = [
+        { sheetName: "엘리베이터", workCategory: "엘리베이터" },
+        { sheetName: "에스컬레이터", workCategory: "에스컬레이터" },
+        { sheetName: "수직형 휠체어리프트", workCategory: "수직형 휠체어리프트" },
+        { sheetName: "경사형 휠체어리프트", workCategory: "경사형 휠체어리프트" },
+      ];
+      function levelOfRisk(risk: number) {
+        if (risk >= 15) return { level: "상", allow: "허용 불가능" };
+        if (risk >= 9) return { level: "중", allow: "허용 불가능" };
+        return { level: "하", allow: "허용 가능" };
+      }
+      let sheetsCreated: string[] = [];
+      for (const g of freqSheetGroups) {
+        const groupItems = items.filter((it: any) => it.workCategory === g.workCategory && it.isTemplate);
+        if (groupItems.length === 0) continue;
+        const sheet = wb.addWorksheet(g.sheetName);
+        sheetsCreated.push(g.sheetName);
+        sheet.addRow(["평가업무", "승강기 검사"]);
+        let seq = 1;
+        for (const item of groupItems) {
+          const itemAssessments = assessments.filter((a: any) => a.hazardItemId === item.id);
+          if (itemAssessments.length === 0) { sheet.addRow([seq++, item.subWork || "", item.content, "", "", "", "", item.referenceSafetyMeasure || "", "", "", ""]); continue; }
+          const withExp = itemAssessments.filter((a: any) => a.hadAccidentExperience !== null);
+          const expCount = withExp.filter((a: any) => a.hadAccidentExperience).length;
+          const possibility = withExp.length > 0 ? Math.round((expCount / withExp.length) * 5 * 10) / 10 : 0;
+          const withSev = itemAssessments.filter((a: any) => a.severity != null);
+          if (withSev.length === 0) { sheet.addRow([seq++, item.subWork || "", item.content, possibility, "", "", "", item.referenceSafetyMeasure || "", "", withExp.map((a: any) => a.employeeName).join(", "), ""]); continue; }
+          for (const a of withSev) {
+            const risk = Math.round(possibility * (a.severity as number) * 10) / 10;
+            const initial = levelOfRisk(risk);
+            let finalRisk = risk, finalLevel = initial.level, finalAllow = initial.allow;
+            if (initial.allow === "허용 불가능" && a.postImprovementSeverity != null) {
+              const postRisk = Math.round(possibility * a.postImprovementSeverity * 10) / 10;
+              const post = levelOfRisk(postRisk);
+              finalRisk = postRisk; finalLevel = post.level; finalAllow = post.allow;
+            }
+            sheet.addRow([seq++, item.subWork || "", item.content, possibility, a.severity, `${finalRisk} (${finalLevel})`, finalAllow, item.referenceSafetyMeasure || "", a.reductionPlan || "", a.employeeName, new Date(a.updatedAt).toLocaleDateString("ko-KR")]);
+          }
+        }
+      }
+      const checklistItems = items.filter((it: any) => it.workCategory === "사무" || it.method === "checklist");
+      if (checklistItems.filter((it: any) => it.isTemplate).length > 0) {
+        const sheet = wb.addWorksheet("사무");
+        sheetsCreated.push("사무");
+        let seq = 1;
+        for (const item of checklistItems.filter((it: any) => it.isTemplate)) {
+          const itemAssessments = assessments.filter((a: any) => a.hazardItemId === item.id);
+          if (itemAssessments.length === 0) { sheet.addRow([seq++, item.content, "", item.referenceSafetyMeasure || "", "", "", ""]); continue; }
+          const counts: Record<string, number> = {};
+          itemAssessments.forEach((a: any) => { if (a.level) counts[a.level] = (counts[a.level] || 0) + 1; });
+          const top = Object.entries(counts).sort((a, b) => (b[1] as number) - (a[1] as number))[0];
+          const level = top ? top[0] : "";
+          const plans = itemAssessments.filter((a: any) => a.reductionPlan?.trim()).map((a: any) => `[${a.employeeName}] ${a.reductionPlan}`).join("\n");
+          const evaluators = itemAssessments.map((a: any) => a.employeeName).join(", ");
+          const latestDate = itemAssessments.reduce((max: any, a: any) => a.updatedAt > max ? a.updatedAt : max, itemAssessments[0].updatedAt);
+          sheet.addRow([seq++, item.content, level, item.referenceSafetyMeasure || "", plans, evaluators, new Date(latestDate).toLocaleDateString("ko-KR")]);
+        }
+      }
+      if (wb.worksheets.length === 0) wb.addWorksheet("결과없음");
+      const buffer = await wb.xlsx.writeBuffer();
+      res.json({ ok: true, itemsCount: items.length, assessmentsCount: assessments.length, selectionsCount: selections.length, sheetsCreated, bufferSize: buffer.byteLength });
+    } catch (error: any) {
+      res.status(500).json({ ok: false, error: String(error?.message || error), stack: String(error?.stack || "").split("\n").slice(0,5) });
+    }
+  });
+
   app.get("/api/risk-assessments/export", async (req, res) => {
     try {
       const branchId = (req.query.branchId as string) || "";
