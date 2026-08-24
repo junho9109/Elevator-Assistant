@@ -1573,12 +1573,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const { data: expertQuestionsData = [] } = useQuery<{ id: number; content: string; presetAnswers: string[]; category: string | null }[]>({
     queryKey: ["/api/expert-questions"],
     queryFn: async () => { const r = await fetch("/api/expert-questions"); return r.json(); },
-    enabled: !!empIdentity.empId,
+    enabled: !!empIdentity.empId && defaultTab === "chat",
   });
   const { data: myExpertAnswers = [] } = useQuery<{ id: number; questionId: number }[]>({
     queryKey: ["/api/expert-answers", empIdentity.empId],
     queryFn: async () => { const r = await fetch(`/api/expert-answers?employeeId=${encodeURIComponent(empIdentity.empId)}`); return r.json(); },
-    enabled: !!empIdentity.empId,
+    enabled: !!empIdentity.empId && defaultTab === "chat",
   });
   // 세션당 한 번만 무작위로 질문을 고정 — 재렌더링마다 질문이 바뀌지 않도록
   const [expertQuestionPick] = useState(() => Math.random());
@@ -2971,8 +2971,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         </div>
       </div>
 
-      {/* 전문가 지식 수집: 앱 첫 접속 시 1회 노출되는 배너 */}
-      {showExpertBanner && expertQuestion && (
+      {/* 전문가 지식 수집: 앱 첫 접속 시 1회 노출되는 배너 — home.tsx는 AI검색(chat)과 기술자료(map) 두 탭에서 재사용되므로 AI검색 탭에서만 노출 */}
+      {defaultTab === "chat" && showExpertBanner && expertQuestion && (
         <div className="mx-3 mt-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
           <div className="flex items-start gap-2">
             <Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
@@ -2990,7 +2990,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       )}
 
       {/* 전문가 지식 수집: 답변 입력 모달 */}
-      {showExpertModal && expertQuestion && (
+      {defaultTab === "chat" && showExpertModal && expertQuestion && (
         <div style={{position:"fixed", inset:0, zIndex:10000, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", padding:16}} onClick={() => setShowExpertModal(false)}>
           <div className="bg-card rounded-2xl p-4 w-full max-w-sm max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <p className="text-sm font-medium mb-1">{expertQuestion.content}</p>
@@ -3035,7 +3035,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       )}
 
       {/* 전문가 지식 수집: 관리자 검수 패널 */}
-      {showExpertReview && (
+      {defaultTab === "chat" && showExpertReview && (
         <div className="border-b border-border bg-card shrink-0 overflow-y-auto" style={{maxHeight: "70vh"}}>
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-blue-50 dark:bg-blue-900/20">
             <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">전문가 지식 수집 관리</span>
