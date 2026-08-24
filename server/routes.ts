@@ -1119,53 +1119,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP DEBUG: 순회점검 필수 위험요소 20종 일괄 등록 — 1회 사용 후 제거 예정
-  app.get("/api/debug/seed-patrol-mandatory", async (req, res) => {
-    try {
-      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const { db } = await import("./db");
-      const { riskHazardItems } = await import("@shared/schema");
-      const base = {
-        method: "freq_severity",
-        workCategory: "엘리베이터",
-        discoveryPath: "순회점검",
-        fieldInfo: "2026년도 검사현장 순회점검 결과 반영(부록1-3)",
-        branchId: "서울강서지사",
-        registeredById: "910919",
-        registeredByName: "노준호",
-        isTemplate: true,
-        isMandatory: true,
-      };
-      const office4 = ["서지명", "정정주", "배병찬", "양성우"];
-      const items = [
-        { team: "전기식 엘리베이터 1반", subWork: "피트 검사", content: "피트 바닥 기름 오염·누수 및 청소상태 불량으로 화재·전도·감전 사고 위험", referenceSafetyMeasure: "피트 바닥 청결상태를 사전에 확인하고, 기름 오염이나 누수가 있으면 제거 후 진입한다. 화재 위험이 있는 경우 관리주체에게 청소를 요청한다." },
-        { team: "전기식 엘리베이터 1반", subWork: "피트 검사", content: "피트 사다리 규격 미달·설치불량으로 인한 전도·실족 위험", referenceSafetyMeasure: "피트 사다리 규격 및 고정상태를 사전에 확인하고, 미끄러지지 않는 장갑을 착용하며 안정된 자세로 진·출입한다." },
-        { team: "전기식 엘리베이터 1반", subWork: "피트 검사", content: "피트 집수정 덮개 미설치로 인한 실족·전도 위험", referenceSafetyMeasure: "피트 진입 전 집수정 위치와 덮개 설치 여부를 확인하고, 덮개가 없는 경우 관리주체에게 설치를 요청하며 주의하여 이동한다." },
-        { team: "전기식 엘리베이터 1반", subWork: "피트 검사", content: "피트 스크린(균형추 방호벽) 미설치로 인한 협착·추돌 위험", referenceSafetyMeasure: "균형추 이동 범위를 사전에 확인하고, 몸이 과도하게 방호벽 밖으로 나가지 않도록 하며 정지 상태에서 검사한다." },
-        { team: "전기식 엘리베이터 1반", subWork: "기계실 검사", content: "과속조절기 보호커버·보호망 미설치로 인한 협착(끼임) 위험", referenceSafetyMeasure: "과속조절기 보호망 탈거 시 결속부와 전기적 부품 간섭 여부를 확인하고, 사전에 전원차단·비상정지장치 작동 등 불시가동 방지조치 후 검사한다." },
-        { team: "유압식 엘리베이터 2반", subWork: "기계실 검사", content: "권상기 도르래·로프 및 회전체(엔코더 등)에 신체가 끼이는 협착 위험", referenceSafetyMeasure: "회전체 회전 시 최대한의 안전거리를 유지하고, 정지된 상태에서 회전체 주변으로 이동하며 촉수 검사를 자제한다. 필요 시 불시기동 방지조치 후 검사한다." },
-        { team: "유압식 엘리베이터 2반", subWork: "기계실 검사", content: "제어반 접촉으로 인한 감전 위험", referenceSafetyMeasure: "절연공구 및 절연장갑을 착용하여 확인하고, 손이나 팔에 땀 등 물기가 있는지 확인 및 제거한 후 검사한다." },
-        { team: "유압식 엘리베이터 2반", subWork: "기계실 검사", content: "제어반 회생저항 고온 접촉으로 인한 화상·감전 위험", referenceSafetyMeasure: "회생저항 등 발열부품은 제조사별 확인조치에 따라 확인하며, 가급적 육안 검사를 지향하고 직접 접촉하지 않는다." },
-        { team: "유압식 엘리베이터 2반", subWork: "카상부 검사", content: "카 상부 난간·보호대 미설치로 인한 추락·협착 위험", referenceSafetyMeasure: "카 상부 이동 시 안정된 자세를 확보하고 몸의 무게중심이 난간 밖으로 나가지 않도록 하며, 작업공간이 협소한 경우 대체 수단을 활용해 안전이 확보된 상태에서만 검사한다." },
-        { team: "유압식 엘리베이터 2반", subWork: "기계실 검사", content: "승강로 개구부(하양구) 마감 불량으로 인한 낙하물·추락 위험", referenceSafetyMeasure: "승강로 내 돌출물 및 낙하물을 사전에 확인·제거 후 진입하고, 기계실·승강로 상부에서 동시에 작업하지 않는다." },
-        { team: "에스컬레이터 및 휠체어리프트 3반", subWork: "카내(승강장) 검사", content: "개문출발방지장치 검사 시 승강장문 닫힘 과정에서 손 끼임 위험", referenceSafetyMeasure: "승강장문을 무리한 힘을 가해서 닫지 않고, 문이 한번에 완전히 닫히지 않도록 하며 닫는 행위 전 지지대 등을 이용해 끼임을 방지한다." },
-        { team: "에스컬레이터 및 휠체어리프트 3반", subWork: "상・하 승강장 및 디딤판", content: "핸드레일 인입구 안전스위치 검사 중 손가락 끼임 위험", referenceSafetyMeasure: "핸드레일 인입구 검사 시 누름판을 작동 상태에서 확인하고, 인입구에 손가락 등 신체를 직접 넣지 않도록 주의한다." },
-        { team: "에스컬레이터 및 휠체어리프트 3반", subWork: "카내(승강장) 검사", content: "분동(하중시험용 추) 준비·운반 중 전도·협착 위험", referenceSafetyMeasure: "분동 준비 및 이동은 반드시 분동업체에 요구하고, 검사자는 검사 외 업무(분동 이동 등)를 직접 하지 않는다." },
-        { team: "에스컬레이터 및 휠체어리프트 3반", subWork: "기계실 검사", content: "기계실 돌출물·권상기 지지대 등에 걸려 넘어지는 전도 위험", referenceSafetyMeasure: "이동 경로에 돌출물, 지지대 등 장애물이 있는지 사전에 확인하고 이동하며, 관리주체에게 주의 표지 부착을 권고한다." },
-        { team: "에스컬레이터 및 휠체어리프트 3반", subWork: "기계실 검사", content: "기계실 분전반 돌출로 인한 추돌 위험", referenceSafetyMeasure: "기계실 내 분전반 등 돌출된 구조물의 위치를 사전에 확인하고, 이동·작업 시 부딪히지 않도록 주의한다." },
-        { team: "사무업무 4반", subWork: "카상부 검사", content: "카 칸막이 부재로 인한 추락물 위험", referenceSafetyMeasure: "카/균형추 주행구간 이동 시 최상층·최하층에서 2개층씩 이동 후 정지하고, 복명복창 후 목적층으로 이동한다.", targetMembers: office4 },
-        { team: "사무업무 4반", subWork: "기계실 검사", content: "양중고리 형태 불량·사용 관련 위험", referenceSafetyMeasure: "양중고리 등 중량물 취급 기구는 사용 전 손상·변형 여부를 확인하고, 정격하중을 준수하여 사용한다.", targetMembers: office4 },
-        { team: "사무업무 4반", subWork: "기계실 검사", content: "제어반 부품 정리불량으로 인한 위험", referenceSafetyMeasure: "제어반 내부 부품 정리상태를 확인하고, 정리되지 않은 부품이나 배선은 관리주체에게 정비를 요청한다.", targetMembers: office4 },
-        { team: "사무업무 4반", subWork: "카내(승강장) 검사", content: "정밀안전검사 시 중량물 취급으로 인한 근골격계 위험", referenceSafetyMeasure: "중량물을 직접 취급하지 않고, 무리한 자세를 피하며 필요 시 보조인력이나 도구를 활용한다.", targetMembers: office4 },
-        { team: "사무업무 4반", subWork: "기계실 검사", content: "보양재(작업발판 등) 미끄러짐으로 인한 전도 위험", referenceSafetyMeasure: "보양재 설치상태 및 미끄럼 여부를 사전에 확인하고, 필요 시 미끄럼 방지 조치 후 이동한다.", targetMembers: office4 },
-      ];
-      const rows = await db.insert(riskHazardItems).values(items.map(it => ({ ...base, ...it, targetMembers: (it as any).targetMembers || null }))).returning({ id: riskHazardItems.id, team: riskHazardItems.team, content: riskHazardItems.content });
-      res.json({ ok: true, count: rows.length, rows });
-    } catch (error: any) {
-      res.status(500).json({ ok: false, error: String(error?.message || error), stack: String(error?.stack || "").split("\n").slice(0, 5) });
-    }
-  });
-
   // ── 위험성평가: 항목 선택(예시 선택) — 항목 1개당 1명만 선택 가능, 팀당 1인 1항목 (회차별) ──
   app.get("/api/risk-item-selections", async (req, res) => {
     try {
