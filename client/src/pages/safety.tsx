@@ -837,24 +837,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   }
 
   function renderMandatoryItemBlock(item: RiskHazardItem) {
-    const targets = mandatoryTargets(item);
+    // 팀원별 완료 현황은 항목마다 반복 표시하지 않고, 화면 맨 아래 "팀원 평가 현황"에서 필수+선택 항목을 합쳐 한 번만 보여준다.
     return (
       <div key={item.id} className="space-y-2">
         {item.sourceRound && <p className="text-xs font-medium text-blue-600">{item.sourceRound}</p>}
-        {targets.length>0 && (
-          <div className="bg-card rounded-lg p-2.5 space-y-1">
-            {targets.map(memberName=>{
-              const done = (assessmentsByItem.get(item.id)||[]).some(a=>a.employeeName===memberName);
-              return (
-                <div key={memberName} className="flex items-center gap-2 py-0.5">
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                  <span className="text-sm flex-1">{memberName}</span>
-                  <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"평가완료":"미평가"}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
         {renderRiskItemCard(item)}
       </div>
     );
@@ -1582,6 +1568,24 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 {sortedActiveTeamItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
                 {sortedActiveTeamItems.map(item=>renderRiskItemCard(item))}
               </>
+            )}
+
+            {myTeamMembers.length>0 && (branchMandatoryItems.length>0 || adhocMandatoryItems.length>0 || !!mySelection) && (
+              <div className="bg-card rounded-xl border border-border p-3">
+                <p className="text-xs font-medium text-muted-foreground mb-2">팀원 평가 현황 (필수+선택) · {myTeamMembers.filter(m=>teamMemberEvaluationDone(myTeam,m)).length}/{myTeamMembers.length}명</p>
+                <div className="space-y-1">
+                  {myTeamMembers.map(memberName=>{
+                    const done = teamMemberEvaluationDone(myTeam, memberName);
+                    return (
+                      <div key={memberName} className="flex items-center gap-2 py-1">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                        <span className="text-sm flex-1 font-medium">{memberName}</span>
+                        <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"평가완료":"미완료"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
             </>
             )}
