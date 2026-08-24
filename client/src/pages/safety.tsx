@@ -705,6 +705,33 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     return relevant.every(it => memberItemDone(it, memberName));
   }
 
+  // 선택 현황 + 평가 현황(필수+선택 항목)을 하나로 합친 팀원 현황판 — 선택 화면부터 평가 화면까지 공통으로 사용
+  function renderTeamStatusPanel() {
+    if (myTeamMembers.length === 0) return null;
+    const evaluatedCount = myTeamMembers.filter(m => teamMemberEvaluationDone(myTeam, m)).length;
+    return (
+      <div className="bg-card rounded-xl border border-border p-3">
+        <p className="text-xs font-medium text-muted-foreground mb-2">팀원 현황 · 평가완료 {evaluatedCount}/{myTeamMembers.length}명</p>
+        <div className="space-y-1">
+          {myTeamMembers.map(memberName=>{
+            const evaluated = teamMemberEvaluationDone(myTeam, memberName);
+            const selected = teamSelections.some(s=>s.employeeName===memberName);
+            const label = evaluated ? "평가완료" : selected ? "선택완료" : "미선택";
+            const dotColor = evaluated ? "bg-green-600" : selected ? "bg-yellow-500" : "bg-red-500";
+            const textColor = evaluated ? "text-green-600" : selected ? "text-yellow-600" : "text-red-500";
+            return (
+              <div key={memberName} className="flex items-center gap-2 py-1">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`}/>
+                <span className="text-sm flex-1 font-medium">{memberName}</span>
+                <span className={`text-xs ${textColor}`}>{label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   const sortedRiskItems = useMemo(() => {
     return [...riskItemsForMethod].sort((a, b) => {
       const aMine = myAssessment(a.id) ? 1 : 0;
@@ -1466,23 +1493,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <button onClick={()=>setShowTeamPicker(true)} className="ml-2 text-xs text-primary underline">변경</button>
                 </p>
 
-                {myTeamMembers.length>0 && (
-                  <div className="bg-card rounded-xl border border-border p-3">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">팀원 선택 현황 · {teamSelections.length}/{myTeamMembers.length}명</p>
-                    <div className="space-y-1">
-                      {myTeamMembers.map(memberName=>{
-                        const done = teamSelections.some(s=>s.employeeName===memberName);
-                        return (
-                          <div key={memberName} className="flex items-center gap-2 py-1">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                            <span className="text-sm flex-1 font-medium">{memberName}</span>
-                            <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"선택완료":"미선택"}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                {renderTeamStatusPanel()}
               </div>
             ) : !allTeamSelected && !roundForcedOpen ? (
               <div className="space-y-3">
@@ -1498,25 +1509,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <p className="text-sm">다른 팀원의 선택을 기다리는 중입니다.</p>
                   <p className="text-xs mt-0.5">전원이 선택을 완료하면 평가 단계가 열립니다.</p>
                 </div>
-                {myTeamMembers.length>0 && (
-                  <div className="bg-card rounded-xl border border-border p-3">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">팀원 선택 현황 · {teamSelections.length}/{myTeamMembers.length}명</p>
-                    <div className="space-y-1">
-                      {myTeamMembers.map(memberName=>{
-                        const done = teamSelections.some(s=>s.employeeName===memberName);
-                        return (
-                          <div key={memberName} className="flex items-center gap-2 py-1">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                            <span className="text-sm flex-1 font-medium">{memberName}</span>
-                            <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"선택완료":"미선택"}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {teamSelections.length / myTeamMembers.length >= 0.5 && (
-                      <Button size="sm" variant="outline" className="w-full mt-2" onClick={()=>setShowForceOpenConfirm(true)}>무시하고 평가하기</Button>
-                    )}
-                  </div>
+                {renderTeamStatusPanel()}
+                {myTeamMembers.length>0 && teamSelections.length / myTeamMembers.length >= 0.5 && (
+                  <Button size="sm" variant="outline" className="w-full" onClick={()=>setShowForceOpenConfirm(true)}>무시하고 평가하기</Button>
                 )}
               </div>
             ) : myTeamMethod === "freq_severity" && !experiencePhaseComplete && !experiencePhaseForcedOpen ? (
@@ -1567,25 +1562,8 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 <p className="text-sm text-gray-500">평가 대상 {activeTeamItemsForMethod.length}건 · 미평가 {activeTeamItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
                 {sortedActiveTeamItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
                 {sortedActiveTeamItems.map(item=>renderRiskItemCard(item))}
+                {renderTeamStatusPanel()}
               </>
-            )}
-
-            {myTeamMembers.length>0 && (branchMandatoryItems.length>0 || adhocMandatoryItems.length>0 || !!mySelection) && (
-              <div className="bg-card rounded-xl border border-border p-3">
-                <p className="text-xs font-medium text-muted-foreground mb-2">팀원 평가 현황 (필수+선택) · {myTeamMembers.filter(m=>teamMemberEvaluationDone(myTeam,m)).length}/{myTeamMembers.length}명</p>
-                <div className="space-y-1">
-                  {myTeamMembers.map(memberName=>{
-                    const done = teamMemberEvaluationDone(myTeam, memberName);
-                    return (
-                      <div key={memberName} className="flex items-center gap-2 py-1">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                        <span className="text-sm flex-1 font-medium">{memberName}</span>
-                        <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"평가완료":"미완료"}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
             )}
             </>
             )}
