@@ -817,13 +817,21 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     });
   }, [activeTeamItems, assessmentsByItem, empId]);
   // ── 빈도강도법 2단계 구조: 1단계(경험 여부, 가능성 산정) 대상자 전원 완료 → 2단계(중대성) 오픈. 필수 항목은 지정 대상자만, 선택 항목은 팀 전원 기준으로 판정 ──
-  const memberExperienceDone = (memberName: string) => activeTeamItemsForMethod.every(item => {
-    if (item.isMandatory) {
-      const targets = mandatoryTargets(item);
-      if (!targets.includes(memberName)) return true; // 대상자가 아니면 이 항목은 건너뜀
-    }
-    return (assessmentsByItem.get(item.id) || []).some(a => a.employeeName === memberName && a.hadAccidentExperience != null);
-  });
+  const memberExperienceDone = (memberName: string) => {
+    // 이 사람에게 실제로 해당되는(건너뛰지 않은) 항목이 하나라도 있었는지 추적 — 필수 항목 대상에서 전부 제외되고
+    // 본인 선택도 아직 없는 사람은 "해당 항목 0개"가 되어 every()가 공허하게 true를 반환하는 문제를 방지
+    let hadRelevant = false;
+    const allDone = activeTeamItemsForMethod.every(item => {
+      if (item.isMandatory) {
+        const targets = mandatoryTargets(item);
+        if (!targets.includes(memberName)) return true; // 대상자가 아니면 이 항목은 건너뜀
+      }
+      hadRelevant = true;
+      return (assessmentsByItem.get(item.id) || []).some(a => a.employeeName === memberName && a.hadAccidentExperience != null);
+    });
+    if (!hadRelevant) return false;
+    return allDone;
+  };
   const membersExperienceDoneCount = useMemo(() => myTeamMembers.filter(memberExperienceDone).length, [myTeamMembers, activeTeamItemsForMethod, assessmentsByItem]);
   const experiencePhaseComplete = useMemo(() => activeTeamItemsForMethod.length === 0 || (myTeamMembers.length > 0 && myTeamMembers.every(memberExperienceDone)), [activeTeamItemsForMethod, myTeamMembers, assessmentsByItem]);
   // 내가 제안한 항목의 경험 여부는 이미 선택 단계에서 답했으므로, 1단계 화면에서 별도 클릭 없이 자동으로 저장
