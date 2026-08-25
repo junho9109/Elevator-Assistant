@@ -710,6 +710,10 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     return !!entry?.resolved;
   }
   function teamMemberEvaluationDone(teamName: string, memberName: string): boolean {
+    // 본인 항목을 아직 선택하지 않았으면 무조건 미완료 — 필수 항목 대상에서 제외된 사람(예: 사무직원)이
+    // 그 팀에 아무도 선택한 항목이 없는 시점에 "해당 사항 없음"으로 잘못 완료 처리되는 것을 방지
+    const hasOwnSelection = allRoundSelections.some(s => s.employeeName === memberName);
+    if (!hasOwnSelection) return false;
     const items = teamSummaryItems(teamName);
     if (items.length === 0) return true;
     const teamMembersForTeam = membersOfTeam(teamName);
