@@ -1194,6 +1194,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP DEBUG: 특정 회차의 선택/평가/확인/서명/게이트 기록 일괄 초기화 — 실사용 시작 전 테스트 데이터 정리용, 1회 사용 후 제거 예정
+  app.get("/api/debug/reset-round", async (req, res) => {
+    try {
+      if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+      const branchId = req.query.branchId as string;
+      const round = req.query.round as string;
+      if (!branchId || !round) return res.status(400).json({ error: "branchId, round required" });
+      const { db } = await import("./db");
+      const { riskItemSelections, riskAssessments, riskResultConfirmations, riskSignatures, riskRoundOverrides } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const delSelections = await db.delete(riskItemSelections).where(eq(riskItemSelections.round, round)).returning({ id: riskItemSelections.id });
+      const delAssessments = await db.delete(riskAssessments).where(and(eq(riskAssessments.branchId, branchId), eq(riskAssessments.round, round))).returning({ id: riskAssessments.id });
+      const delConfirmations = await db.delete(riskResultConfirmations).where(and(eq(riskResultConfirmations.branchId, branchId), eq(riskResultConfirmations.round, round))).returning({ id: riskResultConfirmations.id });
+      const delSignatures = await db.delete(riskSignatures).where(and(eq(riskSignatures.branchId, branchId), eq(riskSignatures.round, round))).returning({ id: riskSignatures.id });
+      const delOverrides = await db.delete(riskRoundOverrides).where(eq(riskRoundOverrides.round, round)).returning({ id: riskRoundOverrides.id });
+      res.json({
+        ok: true,
+        deleted: {
+          selections: delSelections.length,
+          assessments: delAssessments.length,
+          confirmations: delConfirmations.length,
+          signatures: delSignatures.length,
+          overrides: delOverrides.length,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   // ── 위험성평가: 팀원 절반 이상 선택 완료 시 "무시하고 평가하기"로 전원 완료를 건너뛴 기록 ──
   app.get("/api/risk-round-overrides", async (req, res) => {
     try {
