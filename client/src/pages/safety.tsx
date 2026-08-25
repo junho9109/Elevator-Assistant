@@ -744,10 +744,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // ── 팀별 예시/선택 구조 (myTeam이 있을 때만 사용) ──
   const selectionByItemId = useMemo(() => new Map(teamSelections.map(s => [s.hazardItemId, s])), [teamSelections]);
   const availableTemplates = useMemo(() => teamItems.filter(t => t.isTemplate && !t.isMandatory && !selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
-  // 서울강서지사 등 특정 지사 필수 항목 — 1인 1선택 대상에서 제외되고, 팀원 전원이 본인 선택과 별개로 반드시 평가해야 함
+  // 서울강서지사 등 특정 지사 필수 항목 — 1인 1선택 대상에서 제외되고, 팀원 전원(또는 지정 대상자)이 반드시 평가해야 함
   const branchMandatoryItems = useMemo(() => teamItems.filter(t => t.isMandatory && !t.sourceRound), [teamItems]);
   // 수시평가신청이 승인되어 자동 생성된 항목 — "필수 평가 항목"과는 별개로 "수시 평가 항목"으로 노출되고, 그 회차를 보고 있을 때만 나타남
   const adhocMandatoryItems = useMemo(() => teamItems.filter(t => t.isMandatory && t.sourceRound && t.sourceRound === activeRound), [teamItems, activeRound]);
+  const mandatoryItemsAll = useMemo(() => [...branchMandatoryItems, ...adhocMandatoryItems], [branchMandatoryItems, adhocMandatoryItems]);
   // 수시평가 항목은 targetMembers로 지정된 사람만 대상 — 지정이 없으면(null) 팀 전원 대상
   function mandatoryTargets(item: RiskHazardItem): string[] {
     return item.targetMembers && item.targetMembers.length > 0 ? item.targetMembers : myTeamMembers;
@@ -756,41 +757,63 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 팀 전원이 "선택+경험여부" 단계를 완료해야 다음 단계(평가)가 열림
   const allTeamSelected = useMemo(() => myTeamMembers.length > 0 && myTeamMembers.every(m => teamSelections.some(s => s.employeeName === m)), [myTeamMembers, teamSelections]);
   const activeTeamItems = useMemo(() => teamItems.filter(t => selectionByItemId.has(t.id)), [teamItems, selectionByItemId]);
-  const activeTeamItemsForMethod = useMemo(() => activeTeamItems.filter(i => i.method === myTeamMethod), [activeTeamItems, myTeamMethod]);
+  // 빈도강도법(경험여부→중대성) 2단계 게이트 대상 풀 — 필수 항목(방식이 빈도강도법)과 팀원들이 선택한 빈도강도법 항목을 하나로 합쳐서, 필수+선택을 동일한 게이트로 취급한다.
+  // (예: 사무업무 4반은 본인 선택 항목은 체크리스트법이지만, 순회점검 필수 항목은 빈도강도법으로 등록돼 있어 이 풀에 포함됨)
+  const activeTeamItemsForMethod = useMemo(() => {
+    const mandatoryFreq = mandatoryItemsAll.filter(i => i.method === "freq_severity");
+    const selectedFreq = activeTeamItems.filter(i => i.method === "freq_severity");
+    const seen = new Set<number>();
+    return [...mandatoryFreq, ...selectedFreq].filter(i => (seen.has(i.id) ? false : (seen.add(i.id), true)));
+  }, [activeTeamItems, mandatoryItemsAll]);
+  // 필수 항목은 지정된 대상자에게만, 선택 항목은 선택한 팀원 전원에게 해당 — "나"에게 해당하는 항목만 추려서 화면에 렌더링할 때 사용
+  function itemAppliesToMe(item: RiskHazardItem): boolean {
+    return !item.isMandatory || mandatoryTargets(item).includes(empName);
+  }
+  // 1단계(경험 여부) 화면에서 "나"에게 보여줄 항목만 — 대상자가 아닌 필수 항목은 숨김
+  const myExperienceItems = useMemo(() => activeTeamItemsForMethod.filter(itemAppliesToMe), [activeTeamItemsForMethod, empName]);
+  const myStagedItems = useMemo(() => {
+    const combined = [...mandatoryItemsAll.filter(itemAppliesToMe), ...activeTeamItems];
+    const seen = new Set<number>();
+    return combined.filter(i => (seen.has(i.id) ? false : (seen.add(i.id), true)));
+  }, [mandatoryItemsAll, activeTeamItems, empName]);
   const sortedActiveTeamItems = useMemo(() => {
-    return [...activeTeamItemsForMethod].sort((a, b) => {
+    return [...myStagedItems].sort((a, b) => {
       const aMine = myAssessment(a.id) ? 1 : 0;
       const bMine = myAssessment(b.id) ? 1 : 0;
       if (aMine !== bMine) return aMine - bMine;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [activeTeamItemsForMethod, assessmentsByItem, empId]);
-  // ── 빈도강도법 2단계 구조: 1단계(경험 여부, 가능성 산정) 팀 전원 완료 → 2단계(중대성) 오픈 ──
-  const memberExperienceDone = (memberName: string) => activeTeamItemsForMethod.every(item => (assessmentsByItem.get(item.id) || []).some(a => a.employeeName === memberName && a.hadAccidentExperience != null));
+  }, [myStagedItems, assessmentsByItem, empId]);
+  // ── 빈도강도법 2단계 구조: 1단계(경험 여부, 가능성 산정) 대상자 전원 완료 → 2단계(중대성) 오픈. 필수 항목은 지정 대상자만, 선택 항목은 팀 전원 기준으로 판정 ──
+  const memberExperienceDone = (memberName: string) => activeTeamItemsForMethod.every(item => {
+    if (item.isMandatory) {
+      const targets = mandatoryTargets(item);
+      if (!targets.includes(memberName)) return true; // 대상자가 아니면 이 항목은 건너뜀
+    }
+    return (assessmentsByItem.get(item.id) || []).some(a => a.employeeName === memberName && a.hadAccidentExperience != null);
+  });
   const membersExperienceDoneCount = useMemo(() => myTeamMembers.filter(memberExperienceDone).length, [myTeamMembers, activeTeamItemsForMethod, assessmentsByItem]);
-  const experiencePhaseComplete = useMemo(() => myTeamMethod === "freq_severity" && myTeamMembers.length > 0 && myTeamMembers.every(memberExperienceDone), [myTeamMethod, myTeamMembers, activeTeamItemsForMethod, assessmentsByItem]);
+  const experiencePhaseComplete = useMemo(() => activeTeamItemsForMethod.length === 0 || (myTeamMembers.length > 0 && myTeamMembers.every(memberExperienceDone)), [activeTeamItemsForMethod, myTeamMembers, assessmentsByItem]);
   // 내가 제안한 항목의 경험 여부는 이미 선택 단계에서 답했으므로, 1단계 화면에서 별도 클릭 없이 자동으로 저장
   useEffect(() => {
-    if (!mySelection || myTeamMethod !== "freq_severity" || experiencePhaseComplete || experiencePhaseForcedOpen) return;
+    if (!mySelection || experiencePhaseComplete || experiencePhaseForcedOpen) return;
     const myItem = activeTeamItemsForMethod.find(i => i.id === mySelection.hazardItemId);
     if (!myItem) return;
     const mine = assessmentsByItem.get(myItem.id)?.find(a => a.employeeId === empId);
     if (mine?.hadAccidentExperience != null) return;
     if (saveAssessment.isPending) return;
     saveAssessment.mutate({ hazardItemId: myItem.id, branchId: branchName, employeeId: empId, employeeName: empName, round: activeRound, hadAccidentExperience: mySelection.hadAccidentExperience ?? false, currentSafetyMeasure: myItem.referenceSafetyMeasure || null });
-  }, [mySelection?.id, mySelection?.hazardItemId, myTeamMethod, experiencePhaseComplete, experiencePhaseForcedOpen, activeTeamItemsForMethod, assessmentsByItem]);
+  }, [mySelection?.id, mySelection?.hazardItemId, experiencePhaseComplete, experiencePhaseForcedOpen, activeTeamItemsForMethod, assessmentsByItem]);
   const adminTemplates = useMemo(() => adminTeamItems.filter(t => t.isTemplate && !t.isMandatory), [adminTeamItems]);
   const adminMandatoryItems = useMemo(() => adminTeamItems.filter(t => t.isMandatory), [adminTeamItems]);
   // 본인의 필수+수시+선택 항목 평가를 모두 마쳐야 "공유"(다른 팀 결과 보기)가 열림
   // 평가 종료 = 본인이 평가를 제출했을 뿐 아니라, 위험성이 "허용 가능" 수준까지 도달(팀 집계 기준)해야 함
   const myEvaluationComplete = useMemo(() => {
     if (!mySelection) return false;
-    const myMandatory = [...branchMandatoryItems, ...adhocMandatoryItems].filter(item => mandatoryTargets(item).includes(empName));
     const isResolved = (item: RiskHazardItem) => !!myAssessment(item.id) && !!computeAggregate(item.id, item.method, empId)?.resolved;
-    if (myMandatory.some(item => !isResolved(item))) return false;
     if (sortedActiveTeamItems.some(item => !isResolved(item))) return false;
     return true;
-  }, [mySelection, branchMandatoryItems, adhocMandatoryItems, sortedActiveTeamItems, assessmentsByItem, empName]);
+  }, [mySelection, sortedActiveTeamItems, assessmentsByItem]);
   const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
 
   function getAssessForm(itemId: number) {
@@ -836,6 +859,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     return (
       <div key={item.id} className="bg-card rounded-xl shadow-sm border border-border p-3 space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
+          {item.isMandatory && <Badge className="text-xs bg-red-100 text-red-700 hover:bg-red-100">필수</Badge>}
           <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
         </div>
         <p className="text-sm font-medium">{item.content}</p>
@@ -859,16 +883,6 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             <Button size="sm" className="w-full" disabled={saveAssessment.isPending} onClick={()=>submitExperienceOnly(item)}>{saveAssessment.isPending?"저장 중...":"저장"}</Button>
           </>
         )}
-      </div>
-    );
-  }
-
-  function renderMandatoryItemBlock(item: RiskHazardItem) {
-    // 팀원별 완료 현황은 항목마다 반복 표시하지 않고, 화면 맨 아래 "팀원 평가 현황"에서 필수+선택 항목을 합쳐 한 번만 보여준다.
-    return (
-      <div key={item.id} className="space-y-2">
-        {item.sourceRound && <p className="text-xs font-medium text-blue-600">{item.sourceRound}</p>}
-        {renderRiskItemCard(item)}
       </div>
     );
   }
@@ -916,6 +930,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
         <div className="flex items-center justify-between p-4 cursor-pointer" onClick={()=>setExpandedRisk(expandedRisk===item.id?null:item.id)}>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
+              {item.isMandatory && <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">필수{item.sourceRound?" · 수시":""}</span>}
               <Badge variant="outline" className="text-xs">{item.workCategory}{item.subWork?` · ${item.subWork}`:""}</Badge>
               <span className={`text-xs px-2 py-0.5 rounded-md ${badge.cls}`}>{badge.text}</span>
             </div>
@@ -1414,31 +1429,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             {!myEvaluationComplete && !viewResultsMode && (
             <>
             {!mySelection && (
-              <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요. {myTeamMethod==="freq_severity" ? "선택과 동시에 경험 여부도 함께 답해주세요. " : ""}목록에 없으면 직접 등록할 수 있습니다.</p>
-            )}
-
-            {branchMandatoryItems.length>0 && (
-              <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-900 p-3 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold text-red-700 dark:text-red-400 flex items-center gap-1">
-                    <AlertTriangle className="h-4 w-4 shrink-0"/>필수 평가 항목
-                  </p>
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">본인 선택 항목(1인 1선택)과 별개로, 팀원 전원이 반드시 평가해야 합니다.</p>
-                </div>
-                {branchMandatoryItems.map(item=>renderMandatoryItemBlock(item))}
-              </div>
-            )}
-
-            {adhocMandatoryItems.length>0 && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-900 p-3 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                    <AlertTriangle className="h-4 w-4 shrink-0"/>수시 평가 항목
-                  </p>
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">수시 평가 신청이 승인되어 생성된 항목입니다. 지정된 팀원이 평가해야 합니다.</p>
-                </div>
-                {adhocMandatoryItems.map(item=>renderMandatoryItemBlock(item))}
-              </div>
+              <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요. {myTeamMethod==="freq_severity" ? "선택과 동시에 경험 여부도 함께 답해주세요. " : ""}목록에 없으면 직접 등록할 수 있습니다.{mandatoryItemsAll.length>0 ? ` (필수 평가 항목 ${mandatoryItemsAll.length}건은 팀 전원 선택이 끝나면 이어서 평가합니다.)` : ""}</p>
             )}
 
             {!mySelection ? (
@@ -1514,7 +1505,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   <Button size="sm" variant="outline" className="w-full" onClick={()=>setShowForceOpenConfirm(true)}>무시하고 평가하기</Button>
                 )}
               </div>
-            ) : myTeamMethod === "freq_severity" && !experiencePhaseComplete && !experiencePhaseForcedOpen ? (
+            ) : activeTeamItemsForMethod.length > 0 && !experiencePhaseComplete && !experiencePhaseForcedOpen ? (
               <div className="space-y-3">
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -1523,9 +1514,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   </div>
                   <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
                 </div>
-                <p className="text-sm text-gray-500">1단계: 경험 여부(가능성 산정) — 아래 모든 항목에 대해 사고 경험 여부를 답하고 저장해주세요. 팀 전원이 완료하면 2단계(중대성 평가)가 열립니다.</p>
-                {activeTeamItemsForMethod.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
-                {activeTeamItemsForMethod.map(item=>renderExperiencePhaseCard(item))}
+                <p className="text-sm text-gray-500">1단계: 경험 여부(가능성 산정) — 필수 평가 항목과 선택 항목 모두에 대해 사고 경험 여부를 답하고 저장해주세요. 대상자 전원이 완료하면 2단계(중대성 평가)가 필수+선택 항목 모두 열립니다.</p>
+                {myExperienceItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
+                {myExperienceItems.map(item=>renderExperiencePhaseCard(item))}
                 {myTeamMembers.length>0 && (
                   <div className="bg-card rounded-xl border border-border p-3">
                     <p className="text-xs font-medium text-muted-foreground mb-2">팀원 경험 여부 제출 현황 · {membersExperienceDoneCount}/{myTeamMembers.length}명</p>
@@ -1559,7 +1550,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 <div className="text-center py-2 px-3 rounded-lg text-xs font-medium border bg-muted/40 text-muted-foreground border-border">
                   {myTeam} · {myTeamMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}으로 평가합니다{myTeamMethod==="freq_severity" ? " (2단계: 중대성 평가)" : ""}
                 </div>
-                <p className="text-sm text-gray-500">평가 대상 {activeTeamItemsForMethod.length}건 · 미평가 {activeTeamItemsForMethod.filter(i=>!myAssessment(i.id)).length}건</p>
+                <p className="text-sm text-gray-500">평가 대상 {sortedActiveTeamItems.length}건(필수 {sortedActiveTeamItems.filter(i=>i.isMandatory).length}건 포함) · 미평가 {sortedActiveTeamItems.filter(i=>!myAssessment(i.id)).length}건</p>
                 {sortedActiveTeamItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
                 {sortedActiveTeamItems.map(item=>renderRiskItemCard(item))}
                 {renderTeamStatusPanel()}
