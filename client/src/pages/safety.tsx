@@ -1460,63 +1460,11 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             {!myEvaluationComplete && !viewResultsMode && (
             <>
             {!mySelection && (
-              <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요. {myTeamMethod==="freq_severity" ? "선택과 동시에 경험 여부도 함께 답해주세요. " : ""}목록에 없으면 직접 등록할 수 있습니다.</p>
+              <p className="text-sm text-gray-500">이번 회차에 평가할 항목을 하나 선택하세요(이미 다른 팀원이 선택한 예시는 중복 선택할 수 없습니다). {myTeamMethod==="freq_severity" ? "선택과 동시에 경험 여부도 함께 답해주세요. " : ""}목록에 없으면 직접 등록할 수 있습니다.</p>
             )}
 
-            {branchMandatoryItems.filter(itemAppliesToMe).length>0 && (
-              <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-900 p-3 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold text-red-700 dark:text-red-400 flex items-center gap-1">
-                    <AlertTriangle className="h-4 w-4 shrink-0"/>필수 평가 항목
-                  </p>
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">본인 선택 항목(1인 1선택)과 별개로, 대상자는 반드시 평가해야 합니다. 경험 여부를 먼저 답하고, 대상자 전원이 완료하면(또는 무시하고 진행하면) 중대성 평가가 열립니다.</p>
-                </div>
-                {branchMandatoryItems.filter(itemAppliesToMe).map(item =>
-                  (item.method==="freq_severity" && !experiencePhaseComplete && !experiencePhaseForcedOpen)
-                    ? renderExperiencePhaseCard(item)
-                    : renderRiskItemCard(item)
-                )}
-              </div>
-            )}
-
-            {adhocMandatoryItems.filter(itemAppliesToMe).length>0 && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-900 p-3 space-y-3">
-                <div>
-                  <p className="text-sm font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-1">
-                    <AlertTriangle className="h-4 w-4 shrink-0"/>수시 평가 항목
-                  </p>
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">수시 평가 신청이 승인되어 생성된 항목입니다. 지정된 팀원이 평가해야 합니다.</p>
-                </div>
-                {adhocMandatoryItems.filter(itemAppliesToMe).map(item =>
-                  (item.method==="freq_severity" && !experiencePhaseComplete && !experiencePhaseForcedOpen)
-                    ? renderExperiencePhaseCard(item)
-                    : renderRiskItemCard(item)
-                )}
-              </div>
-            )}
-
-            {activeTeamItemsForMethod.length>0 && !experiencePhaseComplete && !experiencePhaseForcedOpen && myMandatoryItems.some(i=>i.method==="freq_severity") && !mySelection && (
-              <div className="bg-card rounded-xl border border-border p-3">
-                <p className="text-xs font-medium text-muted-foreground mb-2">경험 여부 제출 현황(필수+선택) · {membersExperienceDoneCount}/{myTeamMembers.length}명</p>
-                <div className="space-y-1">
-                  {myTeamMembers.map(memberName=>{
-                    const done = memberExperienceDone(memberName);
-                    return (
-                      <div key={memberName} className="flex items-center gap-2 py-1">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                        <span className="text-sm flex-1 font-medium">{memberName}</span>
-                        <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"완료":"미완료"}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                {myTeamMembers.length>0 && membersExperienceDoneCount / myTeamMembers.length >= 0.5 && (
-                  <Button size="sm" variant="outline" className="w-full mt-2" onClick={()=>setShowForceOpenExperienceConfirm(true)}>무시하고 넘어가기</Button>
-                )}
-              </div>
-            )}
-
-            {!mySelection ? (
+            {/* 항목 선택 UI — 아직 본인 항목을 선택하지 않았을 때만. 필수 항목 평가와는 완전히 별개로 언제든 진행 가능 */}
+            {!mySelection && (
               <div className="space-y-3">
                 {availableTemplates.length===0 && teamItems.filter(t=>t.isTemplate && !t.isMandatory).length===0 && (
                   <div className="text-center py-8 text-gray-400"><ClipboardCheck className="h-10 w-10 mx-auto mb-2 opacity-30"/><p className="text-sm">등록된 예시가 없습니다. 관리자에게 문의하거나 직접 등록해주세요.</p></div>
@@ -1567,86 +1515,74 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   {myTeam} · {empName}님
                   <button onClick={()=>setShowTeamPicker(true)} className="ml-2 text-xs text-primary underline">변경</button>
                 </p>
+              </div>
+            )}
 
-                {renderTeamStatusPanel()}
+            {/* 내가 선택한 항목 안내 — 선택 후에는 항상 상단에 노출, 선택 취소 가능 */}
+            {mySelection && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">내가 선택한 항목</p>
+                  <p className="text-sm text-blue-800 dark:text-blue-300 truncate">{teamItems.find(t=>t.id===mySelection.hazardItemId)?.content}</p>
+                </div>
+                <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
               </div>
-            ) : !allTeamSelected && !roundForcedOpen ? (
+            )}
+
+            {/* 체크리스트법 항목(필수+선택) — 경험여부/중대성 개념이 없어 게이트 없이 바로 평가 */}
+            {myStagedItems.filter(i=>i.method==="checklist").length>0 && (
               <div className="space-y-3">
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">내가 선택한 항목</p>
-                    <p className="text-sm text-blue-800 dark:text-blue-300 truncate">{teamItems.find(t=>t.id===mySelection.hazardItemId)?.content}</p>
-                  </div>
-                  <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
-                </div>
-                <div className="text-center py-8 text-gray-400 bg-card rounded-xl border border-border">
-                  <ClipboardCheck className="h-10 w-10 mx-auto mb-2 opacity-30"/>
-                  <p className="text-sm">다른 팀원의 선택을 기다리는 중입니다.</p>
-                  <p className="text-xs mt-0.5">전원이 선택을 완료하면 평가 단계가 열립니다.</p>
-                </div>
-                {renderTeamStatusPanel()}
-                {myTeamMembers.length>0 && teamSelections.length / myTeamMembers.length >= 0.5 && (
-                  <Button size="sm" variant="outline" className="w-full" onClick={()=>setShowForceOpenConfirm(true)}>무시하고 평가하기</Button>
-                )}
+                {myStagedItems.filter(i=>i.method==="checklist").map(item=>renderRiskItemCard(item))}
               </div>
-            ) : activeTeamItemsForMethod.length > 0 && !experiencePhaseComplete && !experiencePhaseForcedOpen ? (
-              <div className="space-y-3">
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">내가 선택한 항목</p>
-                    <p className="text-sm text-blue-800 dark:text-blue-300 truncate">{teamItems.find(t=>t.id===mySelection.hazardItemId)?.content}</p>
-                  </div>
-                  <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
-                </div>
-                <p className="text-sm text-gray-500">1단계: 경험 여부(가능성 산정) — 위 필수 평가 항목과 아래 선택 항목 모두에 대해 사고 경험 여부를 답하고 저장해주세요. 대상자 전원이 완료하면 2단계(중대성 평가)가 필수+선택 항목 모두 열립니다.</p>
-                {mySelectedFreqItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
-                {mySelectedFreqItems.map(item=>renderExperiencePhaseCard(item))}
-                {myTeamMembers.length>0 && (
-                  <div className="bg-card rounded-xl border border-border p-3">
-                    <p className="text-xs font-medium text-muted-foreground mb-2">팀원 경험 여부 제출 현황 · {membersExperienceDoneCount}/{myTeamMembers.length}명</p>
-                    <div className="space-y-1">
-                      {myTeamMembers.map(memberName=>{
-                        const done = memberExperienceDone(memberName);
-                        return (
-                          <div key={memberName} className="flex items-center gap-2 py-1">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
-                            <span className="text-sm flex-1 font-medium">{memberName}</span>
-                            <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"완료":"미완료"}</span>
-                          </div>
-                        );
-                      })}
+            )}
+
+            {/* 빈도강도법 항목(필수+선택) 2단계 흐름 — 본인 선택 완료 여부와 무관하게, 대상자 전원이 경험 여부를 답할 때까지는 1단계만, 이후 중대성까지 함께 열림 */}
+            {activeTeamItemsForMethod.length>0 && (
+              !experiencePhaseComplete && !experiencePhaseForcedOpen ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-500">1단계: 경험 여부(가능성 산정) — 필수 평가 항목과 선택된 항목 모두에 대해 사고 경험 여부를 답하고 저장해주세요. 대상자 전원이 완료하면 2단계(중대성 평가)가 필수+선택 항목 모두 함께 열립니다.</p>
+                  {activeTeamItemsForMethod.filter(itemAppliesToMe).map(item=>renderExperiencePhaseCard(item))}
+                  {renderTeamStatusPanel()}
+                  {myTeamMembers.length>0 && (
+                    <div className="bg-card rounded-xl border border-border p-3">
+                      <p className="text-xs font-medium text-muted-foreground mb-2">경험 여부 제출 현황(필수+선택) · {membersExperienceDoneCount}/{myTeamMembers.length}명</p>
+                      <div className="space-y-1">
+                        {myTeamMembers.map(memberName=>{
+                          const done = memberExperienceDone(memberName);
+                          return (
+                            <div key={memberName} className="flex items-center gap-2 py-1">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${done?"bg-green-600":"bg-red-500"}`}/>
+                              <span className="text-sm flex-1 font-medium">{memberName}</span>
+                              <span className={`text-xs ${done?"text-green-600":"text-red-500"}`}>{done?"완료":"미완료"}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {membersExperienceDoneCount / myTeamMembers.length >= 0.5 && (
+                        <Button size="sm" variant="outline" className="w-full mt-2" onClick={()=>setShowForceOpenExperienceConfirm(true)}>무시하고 넘어가기</Button>
+                      )}
                     </div>
-                    {membersExperienceDoneCount / myTeamMembers.length >= 0.5 && (
-                      <Button size="sm" variant="outline" className="w-full mt-2" onClick={()=>setShowForceOpenExperienceConfirm(true)}>무시하고 평가하기</Button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">내가 선택한 항목</p>
-                    <p className="text-sm text-blue-800 dark:text-blue-300 truncate">{teamItems.find(t=>t.id===mySelection.hazardItemId)?.content}</p>
-                  </div>
-                  <button onClick={()=>cancelSelection.mutate({ selId: mySelection.id })} className="text-xs text-blue-600 dark:text-blue-400 underline shrink-0">선택 취소</button>
+                  )}
                 </div>
-                <div className="text-center py-2 px-3 rounded-lg text-xs font-medium border bg-muted/40 text-muted-foreground border-border">
-                  {myTeam} · {myTeamMethod==="checklist" ? "사무 · 체크리스트법" : "승강기검사 · 빈도강도법"}으로 평가합니다{myTeamMethod==="freq_severity" ? " (2단계: 중대성 평가)" : ""}
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-500">2단계: 중대성 평가 — 필수 평가 항목과 선택된 항목 모두, 가능성×중대성으로 위험성을 산정합니다. 위험성 9 이상이면 개선 안전보건조치를 입력해야 합니다.</p>
+                  {activeTeamItemsForMethod.filter(itemAppliesToMe).map(item=>renderRiskItemCard(item))}
+                  {renderTeamStatusPanel()}
+                  {myEvaluationComplete && !severityPhaseComplete && !severityPhaseForcedOpen && (
+                    <div className="bg-card rounded-xl border border-border p-3 space-y-2">
+                      <p className="text-sm font-medium">본인 평가는 완료했습니다. 팀원 전원이 중대성 평가(필수+선택)를 마치면 결과 확인 단계로 넘어갑니다.</p>
+                      {myTeamMembers.length>0 && myTeamMembers.filter(m=>teamMemberEvaluationDone(myTeam,m)).length / myTeamMembers.length >= 0.5 && (
+                        <Button size="sm" variant="outline" className="w-full" onClick={()=>setShowForceOpenSeverityConfirm(true)}>무시하고 진행하기</Button>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm text-gray-500">선택 항목 평가 대상 {sortedMySelectedItems.length}건 · 미평가 {sortedMySelectedItems.filter(i=>!myAssessment(i.id)).length}건{myMandatoryItems.length>0 ? ` (위 필수 항목 ${myMandatoryItems.length}건 별도)` : ""}</p>
-                {sortedMySelectedItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
-                {sortedMySelectedItems.map(item=>renderRiskItemCard(item))}
-                {renderTeamStatusPanel()}
-                {myEvaluationComplete && !severityPhaseComplete && !severityPhaseForcedOpen && (
-                  <div className="bg-card rounded-xl border border-border p-3 space-y-2">
-                    <p className="text-sm font-medium">본인 평가는 완료했습니다. 팀원 전원이 중대성 평가(필수+선택)를 마치면 결과 확인 단계로 넘어갑니다.</p>
-                    {myTeamMembers.length>0 && myTeamMembers.filter(m=>teamMemberEvaluationDone(myTeam,m)).length / myTeamMembers.length >= 0.5 && (
-                      <Button size="sm" variant="outline" className="w-full" onClick={()=>setShowForceOpenSeverityConfirm(true)}>무시하고 진행하기</Button>
-                    )}
-                  </div>
-                )}
-              </>
+              )
+            )}
+
+            {activeTeamItemsForMethod.length===0 && myStagedItems.filter(i=>i.method==="checklist").length===0 && mySelection && (
+              <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p>{renderTeamStatusPanel()}</div>
             )}
             </>
             )}
