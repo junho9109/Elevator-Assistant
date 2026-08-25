@@ -18,6 +18,97 @@ function handleError(res: any, error: any, message: string) {
   res.status(500).json({ error: message });
 }
 
+// ── 전문가 지식 수집: AI 질문 자동 생성/정리 ──
+// 재고(활성 질문 수)가 EXPERT_QUESTION_LOW_WATERMARK 미만이면 자동으로 채우고,
+// EXPERT_QUESTION_CAP을 넘으면 오래된 것부터 삭제, 무응답(건너뜀)이 EXPERT_QUESTION_SKIP_LIMIT회 이상 쌓인
+// 질문은 삭제한다. 관리자 수동 생성 버튼과 30분 주기 백그라운드 점검이 이 로직을 공유한다.
+const EXPERT_QUESTION_LOW_WATERMARK = 5;
+const EXPERT_QUESTION_CAP = 10;
+const EXPERT_QUESTION_SKIP_LIMIT = 10;
+
+// AI가 새 질문 + 예상 답변 4개를 생성해 DB에 저장 — 기존 질문과 겹치지 않도록 등록된 질문 목록을 함께 전달함
+async function generateOneExpertQuestion() {
+  const { db } = await import("./db");
+  const { expertQuestions } = await import("@shared/schema");
+  const existing = await db.select().from(expertQuestions);
+  const existingList = existing.map(q => `- ${q.content}`).join("\n") || "(없음)";
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 600,
+    system: `너는 승강기(엘리베이터·에스컬레이터·휠체어리프트) 정밀·정기검사 분야의 베테랑 검사원이다.
+현직 검사원들에게 던질 질문 1개를 새로 만들어라. 목적은 법령·판정지침·매뉴얼에 명확한 답이 나와 있지 않아서 검사원 개인의 현장 경험과 판단이 꼭 필요한 주제를 찾아, 그 경험을 데이터로 모으는 것이다.
+
+규칙:
+1. 이미 문서화된 기준을 그대로 묻는 질문(예: "몇 mm 이하면 부적합인가요" 같은 단순 수치 확인)은 금지 — 판단 기준이 애매하거나 매뉴얼에 없는 상황을 다뤄야 한다.
+2. 비현실적이거나 실무에서 잘 마주치지 않는 상황은 피하고, 실제로 검사원이 종종 마주치는 애매한 판단 상황이어야 한다.
+3. 아래 "이미 등록된 질문"과 주제가 겹치지 않게 한다.
+4. 예상 답변 4개는 실제 검사원들이 낼 법한, 서로 구별되는 현실적인 대응 방식이어야 한다(비슷비슷한 답 4개 금지).
+5. category는 "판정기준" | "현장경험" | "위험성평가" 중 하나로 분류한다.
+
+이미 등록된 질문:
+${existingList}
+
+다른 설명 없이 아래 JSON 형식만 반환하라:
+{"content": "질문 내용", "presetAnswers": ["답변1","답변2","답변3","답변4"], "category": "판정기준"}`,
+    messages: [{ role: "user", content: "새 질문 1개를 만들어줘." }],
+  });
+
+  const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+  const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+  if (!parsed.content || !Array.isArray(parsed.presetAnswers) || parsed.presetAnswers.length !== 4) {
+    throw new Error("AI 응답 형식이 올바르지 않습니다.");
+  }
+  const [row] = await db.insert(expertQuestions).values({
+    content: parsed.content,
+    presetAnswers: parsed.presetAnswers,
+    category: parsed.category || null,
+    active: true,
+  }).returning();
+  return row;
+}
+
+// 30분마다(+서버 기동 시 1회) 호출되는 풀 유지 관리 — 사용자가 배너를 열 때 AI 호출을 기다리지 않도록
+// 미리 재고를 채워두고, 오래되거나 다들 건너뛰는 질문은 자동으로 정리한다.
+async function maintainExpertQuestionPool(): Promise<void> {
+  const { db } = await import("./db");
+  const { expertQuestions, expertAnswers } = await import("@shared/schema");
+  const { eq, inArray } = await import("drizzle-orm");
+
+  // 1) 무응답(건너뜀) 10회 이상 누적된 질문은 삭제
+  const skipAnswers = await db.select({ questionId: expertAnswers.questionId }).from(expertAnswers).where(eq(expertAnswers.answerType, "skip"));
+  const skipCountByQuestion = new Map<number, number>();
+  for (const a of skipAnswers) skipCountByQuestion.set(a.questionId, (skipCountByQuestion.get(a.questionId) || 0) + 1);
+  const overSkippedIds = Array.from(skipCountByQuestion.entries()).filter(([, count]) => count >= EXPERT_QUESTION_SKIP_LIMIT).map(([id]) => id);
+  if (overSkippedIds.length > 0) {
+    await db.delete(expertQuestions).where(inArray(expertQuestions.id, overSkippedIds));
+    console.log(`[전문가질문풀] 무응답 ${EXPERT_QUESTION_SKIP_LIMIT}회 이상 질문 ${overSkippedIds.length}개 삭제`);
+  }
+
+  // 2) 활성 질문이 상한(10개)을 넘으면 오래된 것부터 삭제
+  let active = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true)).orderBy(expertQuestions.createdAt);
+  if (active.length > EXPERT_QUESTION_CAP) {
+    const excess = active.length - EXPERT_QUESTION_CAP;
+    const toDeleteIds = active.slice(0, excess).map(q => q.id);
+    await db.delete(expertQuestions).where(inArray(expertQuestions.id, toDeleteIds));
+    console.log(`[전문가질문풀] 상한(${EXPERT_QUESTION_CAP}개) 초과로 오래된 질문 ${toDeleteIds.length}개 삭제`);
+    active = active.slice(excess);
+  }
+
+  // 3) 활성 질문이 재고 기준(5개) 미만이면 AI로 채워넣음 — 실패하면 이번 점검은 중단하고 다음 30분 주기에 재시도
+  const needed = EXPERT_QUESTION_LOW_WATERMARK - active.length;
+  for (let i = 0; i < needed; i++) {
+    try {
+      await generateOneExpertQuestion();
+      console.log(`[전문가질문풀] 새 질문 자동 생성 (${i + 1}/${needed})`);
+    } catch (e) {
+      console.error("[전문가질문풀] 자동 생성 실패, 다음 점검에서 재시도:", e);
+      break;
+    }
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Category routes
   app.get("/api/categories", async (req, res) => {
@@ -3707,48 +3798,11 @@ ${answerRules}${contextText}${memoSection}`,
     }
   });
 
-  // AI가 새 질문 + 예상 답변 4개를 생성 — 기본 질문 생성 경로. 매뉴얼/별표에 명확히 없어 현장 판단이 필요한 주제를 노림.
-  // 이미 등록된 질문과 겹치지 않도록 기존 질문 목록을 함께 전달함
+  // AI가 새 질문 + 예상 답변 4개를 생성 — 관리자가 수동으로 즉시 1개 추가할 때 쓰는 경로.
+  // 실제 로직은 generateOneExpertQuestion()을 공유하며, 30분 주기 자동 보충도 동일 함수를 사용한다.
   app.post("/api/expert-questions/generate", async (req, res) => {
     try {
-      const { db } = await import("./db");
-      const { expertQuestions } = await import("@shared/schema");
-      const existing = await db.select().from(expertQuestions);
-      const existingList = existing.map(q => `- ${q.content}`).join("\n") || "(없음)";
-
-      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 600,
-        system: `너는 승강기(엘리베이터·에스컬레이터·휠체어리프트) 정밀·정기검사 분야의 베테랑 검사원이다.
-현직 검사원들에게 던질 질문 1개를 새로 만들어라. 목적은 법령·판정지침·매뉴얼에 명확한 답이 나와 있지 않아서 검사원 개인의 현장 경험과 판단이 꼭 필요한 주제를 찾아, 그 경험을 데이터로 모으는 것이다.
-
-규칙:
-1. 이미 문서화된 기준을 그대로 묻는 질문(예: "몇 mm 이하면 부적합인가요" 같은 단순 수치 확인)은 금지 — 판단 기준이 애매하거나 매뉴얼에 없는 상황을 다뤄야 한다.
-2. 비현실적이거나 실무에서 잘 마주치지 않는 상황은 피하고, 실제로 검사원이 종종 마주치는 애매한 판단 상황이어야 한다.
-3. 아래 "이미 등록된 질문"과 주제가 겹치지 않게 한다.
-4. 예상 답변 4개는 실제 검사원들이 낼 법한, 서로 구별되는 현실적인 대응 방식이어야 한다(비슷비슷한 답 4개 금지).
-5. category는 "판정기준" | "현장경험" | "위험성평가" 중 하나로 분류한다.
-
-이미 등록된 질문:
-${existingList}
-
-다른 설명 없이 아래 JSON 형식만 반환하라:
-{"content": "질문 내용", "presetAnswers": ["답변1","답변2","답변3","답변4"], "category": "판정기준"}`,
-        messages: [{ role: "user", content: "새 질문 1개를 만들어줘." }],
-      });
-
-      const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
-      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
-      if (!parsed.content || !Array.isArray(parsed.presetAnswers) || parsed.presetAnswers.length !== 4) {
-        return res.status(502).json({ error: "AI 응답 형식이 올바르지 않습니다." });
-      }
-      const [row] = await db.insert(expertQuestions).values({
-        content: parsed.content,
-        presetAnswers: parsed.presetAnswers,
-        category: parsed.category || null,
-        active: true,
-      }).returning();
+      const row = await generateOneExpertQuestion();
       res.status(201).json(row);
     } catch (error) {
       res.status(500).json({ error: "질문 생성에 실패했습니다.", detail: String(error) });
@@ -3811,6 +3865,13 @@ ${existingList}
       handleError(res, error, "Failed to update expert answer");
     }
   });
+
+  // 전문가 질문 풀 자동 유지 관리 — 서버 기동 시 1회 즉시 점검 + 이후 30분마다 반복.
+  // 사용자가 배너를 열 때마다 AI를 호출하지 않고, 항상 미리 채워진 재고에서 바로 보여주기 위함.
+  maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 초기 점검 실패:", e));
+  setInterval(() => {
+    maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
+  }, 30 * 60 * 1000);
 
   const httpServer = createServer(app);
 
