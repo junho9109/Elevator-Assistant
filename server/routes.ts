@@ -1198,9 +1198,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/debug/reset-round", async (req, res) => {
     try {
       if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-      const branchId = req.query.branchId as string;
-      const round = req.query.round as string;
-      if (!branchId || !round) return res.status(400).json({ error: "branchId, round required" });
+      const branchId = (req.query.branchId as string) || "서울강서지사";
+      const round = (req.query.round as string) || "2026년도 정기 위험성평가";
       const { db } = await import("./db");
       const { riskItemSelections, riskAssessments, riskResultConfirmations, riskSignatures, riskRoundOverrides } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
