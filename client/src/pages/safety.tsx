@@ -341,6 +341,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     refetchInterval: 1000,
   });
   const experiencePhaseForcedOpen = experienceOverrides.length > 0;
+  // 중대성 평가 단계에서도 팀원 절반 이상이 완료하면 "무시하고 진행하기"로 결과 확인 단계로 넘어갈 수 있음 (휴가 등 미참석자 대응)
+  const { data: severityOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string }[]>({
+    queryKey: ["/api/risk-round-overrides", "severity", myTeam, activeRound],
+    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=severity`); return r.json(); },
+    enabled: ready && !!myTeam,
+    refetchInterval: 1000,
+  });
+  const severityPhaseForcedOpen = severityOverrides.length > 0;
   // 회차 전체(팀 무관) 무시하고 진행하기 기록 — 결과확인 화면에서 다른 팀의 "제외된 팀원"까지 계산하기 위해 팀 필터 없이 조회
   const { data: allRoundOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string; excludedMembers: string[] | null }[]>({
     queryKey: ["/api/risk-round-overrides", "round", activeRound],
@@ -409,6 +417,15 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
       if (!r.ok) throw new Error(); return r.json();
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] }); toast({ title: "경험 여부를 답변한 팀원만으로 중대성 평가를 시작합니다." }); setShowForceOpenExperienceConfirm(false); },
+  });
+  const [showForceOpenSeverityConfirm, setShowForceOpenSeverityConfirm] = useState(false);
+  const forceOpenSeverityPhase = useMutation({
+    mutationFn: async () => {
+      const excludedMembers = myTeamMembers.filter(m => !teamMemberEvaluationDone(myTeam, m));
+      const r = await fetch("/api/risk-round-overrides", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team: myTeam, round: activeRound, phase: "severity", forcedById: empId, forcedByName: empName, excludedMembers }) });
+      if (!r.ok) throw new Error(); return r.json();
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/risk-round-overrides"] }); toast({ title: "중대성 평가를 완료한 팀원만으로 결과 확인을 시작합니다." }); setShowForceOpenSeverityConfirm(false); },
   });
   const createAdhocRequest = useMutation({
     mutationFn: async () => {
@@ -814,6 +831,9 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     if (sortedActiveTeamItems.some(item => !isResolved(item))) return false;
     return true;
   }, [mySelection, sortedActiveTeamItems, assessmentsByItem]);
+  // 3단계 게이트: 팀원 전원이 중대성 평가(필수+선택)를 마쳐야 결과 확인 단계로 넘어감 — 휴가 등 미참석자는 "무시하고 진행하기"로 건너뜀
+  const severityPhaseComplete = useMemo(() => myTeamMembers.length > 0 && myTeamMembers.every(m => teamMemberEvaluationDone(myTeam, m)), [myTeamMembers, myTeam, assessmentsByItem, allRoundSelections, riskItems]);
+  const readyForResults = myEvaluationComplete && (severityPhaseComplete || severityPhaseForcedOpen);
   const adminSelectionByItemId = useMemo(() => new Map(adminTeamSelections.map(s => [s.hazardItemId, s])), [adminTeamSelections]);
 
   function getAssessForm(itemId: number) {
@@ -1554,14 +1574,22 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                 {sortedActiveTeamItems.length===0 && <div className="text-center py-12 text-gray-400"><ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30"/><p>이 분류에 평가 대상 항목이 없습니다.</p></div>}
                 {sortedActiveTeamItems.map(item=>renderRiskItemCard(item))}
                 {renderTeamStatusPanel()}
+                {myEvaluationComplete && !severityPhaseComplete && !severityPhaseForcedOpen && (
+                  <div className="bg-card rounded-xl border border-border p-3 space-y-2">
+                    <p className="text-sm font-medium">본인 평가는 완료했습니다. 팀원 전원이 중대성 평가(필수+선택)를 마치면 결과 확인 단계로 넘어갑니다.</p>
+                    {myTeamMembers.length>0 && myTeamMembers.filter(m=>teamMemberEvaluationDone(myTeam,m)).length / myTeamMembers.length >= 0.5 && (
+                      <Button size="sm" variant="outline" className="w-full" onClick={()=>setShowForceOpenSeverityConfirm(true)}>무시하고 진행하기</Button>
+                    )}
+                  </div>
+                )}
               </>
             )}
             </>
             )}
 
-            {(myEvaluationComplete || viewResultsMode) && (
+            {(readyForResults || viewResultsMode) && (
             <div className="space-y-3">
-              {viewResultsMode && !myEvaluationComplete && (
+              {viewResultsMode && !readyForResults && (
                 <Button size="sm" variant="outline" onClick={()=>setViewResultsMode(false)}>← 닫기</Button>
               )}
               <div>
@@ -1881,6 +1909,19 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={()=>setShowForceOpenExperienceConfirm(false)}>취소</Button>
               <Button className="flex-1" disabled={forceOpenExperiencePhase.isPending} onClick={()=>forceOpenExperiencePhase.mutate()}>{forceOpenExperiencePhase.isPending?"처리 중...":"중대성 평가 시작"}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showForceOpenSeverityConfirm&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={()=>setShowForceOpenSeverityConfirm(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full border border-border p-5" onClick={e=>e.stopPropagation()}>
+            <p className="text-sm font-medium mb-1">아직 중대성 평가를 다 마치지 못한 팀원이 있습니다.</p>
+            <p className="text-xs text-muted-foreground mb-4">평가를 마친 팀원만으로 결과 확인 단계를 시작할까요? 아직 마치지 못한 팀원은 이번 결과 확인에서 제외되며, 이후 완료하더라도 별도로 반영되지 않습니다.</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={()=>setShowForceOpenSeverityConfirm(false)}>취소</Button>
+              <Button className="flex-1" disabled={forceOpenSeverityPhase.isPending} onClick={()=>forceOpenSeverityPhase.mutate()}>{forceOpenSeverityPhase.isPending?"처리 중...":"결과 확인 시작"}</Button>
             </div>
           </div>
         </div>
