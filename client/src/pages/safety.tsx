@@ -1557,7 +1557,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
                   {renderTeamStatusPanel()}
                   {myTeamMembers.length>0 && (
                     <div className="bg-card rounded-xl border border-border p-3">
-                      <p className="text-xs font-medium text-muted-foreground mb-2">경험 여부 제출 현황(필수+선택) · {membersExperienceDoneCount}/{myTeamMembers.length}명</p>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">(필수+선택) 경험 여부 제출 현황 · {membersExperienceDoneCount}/{myTeamMembers.length}명</p>
                       <div className="space-y-1">
                         {myTeamMembers.map(memberName=>{
                           const done = memberExperienceDone(memberName);
