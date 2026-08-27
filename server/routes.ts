@@ -3742,6 +3742,22 @@ ${answerRules}${contextText}${memoSection}`,
     } catch (e) { res.status(500).json({ error: String(e) }); }
   });
 
+  // [TEMP DEBUG] 자동 보충 로직이 실제로 도는지, 실패한다면 왜 실패하는지 확인용 — 확인 후 제거 예정
+  app.get("/api/debug/run-expert-maintenance", async (req, res) => {
+    if (req.query.secret !== "elev2026fix") return res.status(404).json({});
+    try {
+      const { db } = await import("./db");
+      const { expertQuestions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const before = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true));
+      await maintainExpertQuestionPool();
+      const after = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true));
+      res.json({ ok: true, beforeCount: before.length, afterCount: after.length, hasApiKey: !!process.env.ANTHROPIC_API_KEY });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error), stack: (error as any)?.stack });
+    }
+  });
+
   // ── 전문가 지식 수집 ──
   // 활성 질문 목록 — 앱 첫 접속 시 배너에서 랜덤으로 하나 골라 보여주는 데 사용
   app.get("/api/expert-questions", async (req, res) => {
