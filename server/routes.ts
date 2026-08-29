@@ -20,11 +20,13 @@ function handleError(res: any, error: any, message: string) {
 
 // ── 전문가 지식 수집: AI 질문 자동 생성/정리 ──
 // 재고(활성 질문 수)가 EXPERT_QUESTION_LOW_WATERMARK 미만이면 자동으로 채우고,
+// 재고가 충분해도 가장 최근 질문이 EXPERT_QUESTION_DAILY_MS(하루)보다 오래됐으면 신선도 유지를 위해 1개를 추가로 채운다.
 // EXPERT_QUESTION_CAP을 넘으면 오래된 것부터 삭제, 무응답(건너뜀)이 EXPERT_QUESTION_SKIP_LIMIT회 이상 쌓인
 // 질문은 삭제한다. 관리자 수동 생성 버튼과 30분 주기 백그라운드 점검이 이 로직을 공유한다.
 const EXPERT_QUESTION_LOW_WATERMARK = 5;
 const EXPERT_QUESTION_CAP = 10;
 const EXPERT_QUESTION_SKIP_LIMIT = 10;
+const EXPERT_QUESTION_DAILY_MS = 24 * 60 * 60 * 1000;
 
 // AI가 새 질문 + 예상 답변 4개를 생성해 DB에 저장 — 기존 질문과 겹치지 않도록 등록된 질문 목록을 함께 전달함
 async function generateOneExpertQuestion() {
@@ -86,18 +88,18 @@ async function maintainExpertQuestionPool(): Promise<void> {
     console.log(`[전문가질문풀] 무응답 ${EXPERT_QUESTION_SKIP_LIMIT}회 이상 질문 ${overSkippedIds.length}개 삭제`);
   }
 
-  // 2) 활성 질문이 상한(10개)을 넘으면 오래된 것부터 삭제
+  // 2) 재고 기준(5개) 미만이면 그만큼 채우고, 재고가 충분해도 가장 최근 질문이 하루 넘게 그대로면
+  // 신선도 유지를 위해 1개를 추가로 채운다 — 사람 수는 많은데 질문 풀이 며칠째 그대로라 다들 같은 질문만
+  // 보는 상황(예: 재고가 상한까지 다 찬 채로 오래 방치되는 경우)을 막기 위함
   let active = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true)).orderBy(expertQuestions.createdAt);
-  if (active.length > EXPERT_QUESTION_CAP) {
-    const excess = active.length - EXPERT_QUESTION_CAP;
-    const toDeleteIds = active.slice(0, excess).map(q => q.id);
-    await db.delete(expertQuestions).where(inArray(expertQuestions.id, toDeleteIds));
-    console.log(`[전문가질문풀] 상한(${EXPERT_QUESTION_CAP}개) 초과로 오래된 질문 ${toDeleteIds.length}개 삭제`);
-    active = active.slice(excess);
+  let needed = Math.max(0, EXPERT_QUESTION_LOW_WATERMARK - active.length);
+  if (needed === 0) {
+    const newest = active[active.length - 1]?.createdAt;
+    if (newest && Date.now() - new Date(newest).getTime() >= EXPERT_QUESTION_DAILY_MS) {
+      needed = 1;
+      console.log("[전문가질문풀] 재고는 충분하지만 최근 질문이 하루 이상 지나 신선도 보충 1개 실행");
+    }
   }
-
-  // 3) 활성 질문이 재고 기준(5개) 미만이면 AI로 채워넣음 — 실패하면 이번 점검은 중단하고 다음 30분 주기에 재시도
-  const needed = EXPERT_QUESTION_LOW_WATERMARK - active.length;
   for (let i = 0; i < needed; i++) {
     try {
       await generateOneExpertQuestion();
@@ -106,6 +108,15 @@ async function maintainExpertQuestionPool(): Promise<void> {
       console.error("[전문가질문풀] 자동 생성 실패, 다음 점검에서 재시도:", e);
       break;
     }
+  }
+
+  // 3) 방금 채운 것까지 포함해 활성 질문이 상한(10개)을 넘으면 오래된 것부터 삭제
+  active = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true)).orderBy(expertQuestions.createdAt);
+  if (active.length > EXPERT_QUESTION_CAP) {
+    const excess = active.length - EXPERT_QUESTION_CAP;
+    const toDeleteIds = active.slice(0, excess).map(q => q.id);
+    await db.delete(expertQuestions).where(inArray(expertQuestions.id, toDeleteIds));
+    console.log(`[전문가질문풀] 상한(${EXPERT_QUESTION_CAP}개) 초과로 오래된 질문 ${toDeleteIds.length}개 삭제`);
   }
 }
 
