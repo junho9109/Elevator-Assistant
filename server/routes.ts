@@ -3884,6 +3884,20 @@ ${answerRules}${contextText}${memoSection}`,
     maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
   }, 30 * 60 * 1000);
 
+  // TEMP DEBUG (secret=elev2026fix) — equipment_type 컬럼 마이그레이션, 1회 실행 후 제거
+  app.get("/api/debug/migrate-equip-type", async (req, res) => {
+    if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
+    try {
+      const { pool: pgPool } = await import("./db");
+      await pgPool.query(`ALTER TABLE inspection_item_revisions ADD COLUMN IF NOT EXISTS equipment_type VARCHAR(20) NOT NULL DEFAULT '엘리베이터'`);
+      const after = await pgPool.query(`SELECT column_name, column_default FROM information_schema.columns WHERE table_name='inspection_item_revisions'`);
+      const counts = await pgPool.query(`SELECT equipment_type, COUNT(*) FROM inspection_item_revisions GROUP BY equipment_type`);
+      res.json({ ok: true, columns: after.rows, counts: counts.rows });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e?.message || e) });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

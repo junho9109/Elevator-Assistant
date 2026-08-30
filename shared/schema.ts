@@ -357,6 +357,10 @@ export type AppSetting = typeof appSettings.$inferSelect;
 export const inspectionItemRevisions = pgTable("inspection_item_revisions", {
   id: serial("id").primaryKey(),
   itemId: varchar("item_id", { length: 50 }).notNull(),
+  // 조문번호(item_id)는 승강기 종류마다 별도 안전기준 문서를 참조하므로 번호만으로는
+  // 구분이 안 된다(예: 엘리베이터 안전기준 6.1과 에스컬레이터 안전기준 6.1은 다른 조문).
+  // 어느 안전기준 소속인지 명시해 매칭 시 혼동을 막는다. 기존 데이터는 전부 엘리베이터.
+  equipmentType: varchar("equipment_type", { length: 20 }).notNull().default("엘리베이터"),
   revisionDate: varchar("revision_date", { length: 20 }),
   description: text("description"),
   effectiveDate: varchar("effective_date", { length: 20 }),
