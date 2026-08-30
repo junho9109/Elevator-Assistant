@@ -36,20 +36,6 @@ import {
   judgmentResults,
   appSettings,
   inspectionItemRevisions,
-  type PpeItem,
-  type InsertPpeItem,
-  type NearMiss as NearMissType,
-  type InsertNearMiss,
-  type JudgmentResult,
-  type InsertJudgmentResult,
-  type AppSetting,
-  type InspectionItemRevision,
-  type InsertInspectionItemRevision,
-  ppeItems,
-  nearMisses,
-  judgmentResults,
-  appSettings,
-  inspectionItemRevisions,
   type InsertCustomInspectionItem,
   users,
   categories,
@@ -69,7 +55,7 @@ import {
   inspectionBaseItems
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, ilike, like, or, asc, sql } from "drizzle-orm";
+import { eq, ilike, like, or, and, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -497,7 +483,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
   // Inspection item revisions
-  async getItemRevisions(itemId: string): Promise<InspectionItemRevision[]> {
+  async getItemRevisions(itemId: string, equipmentType?: string): Promise<InspectionItemRevision[]> {
     // effective_date가 NULL인 항목은 "최초 이전(가장 오래된) 기준"이므로 맨 앞에 오도록 NULLS FIRST 명시.
     // 기본 ASC 정렬은 Postgres에서 NULL을 맨 뒤로 보내 순서가 뒤섞이는 문제가 있었음.
     // introduction_type = 'additional'(추가 종전 기준)은 본 연혁 계보와 무관한 보충 참고 조문이므로
@@ -506,11 +492,15 @@ export class DatabaseStorage implements IStorage {
     // (예: "9.7" 조회 시 "9.7.1", "9.7.2" 등 하위 조문도 함께 포함 — 대분류만 인용된 체크리스트
     // 항목에서도 실제 이력이 담긴 소분류 내용이 참조 조문 연혁에 표시되도록 하기 위함)
     // item_id 자체로 먼저 정렬해 같은 조문끼리 묶이도록 한 뒤, 그 안에서 기존 시간순 정렬을 적용한다.
+    // equipmentType이 주어지면 해당 승강기 종류의 안전기준 조문만 반환한다 — 조문번호가
+    // 종류마다 다른 문서를 가리키므로(예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문) 반드시 함께 필터링해야
+    // 서로 다른 종류의 연혁이 섞여 표시되는 것을 막을 수 있다.
+    const idMatch = or(
+      eq(inspectionItemRevisions.itemId, itemId),
+      like(inspectionItemRevisions.itemId, `${itemId}.%`)
+    );
     return await db.select().from(inspectionItemRevisions)
-      .where(or(
-        eq(inspectionItemRevisions.itemId, itemId),
-        like(inspectionItemRevisions.itemId, `${itemId}.%`)
-      ))
+      .where(equipmentType ? and(idMatch, eq(inspectionItemRevisions.equipmentType, equipmentType)) : idMatch)
       .orderBy(
         inspectionItemRevisions.itemId,
         sql`(${inspectionItemRevisions.introductionType} = 'additional') ASC, ${inspectionItemRevisions.effectiveDate} ASC NULLS FIRST`
@@ -705,8 +695,11 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async deleteAllItemRevisions(itemId: string): Promise<void> {
-    await db.delete(inspectionItemRevisions).where(eq(inspectionItemRevisions.itemId, itemId));
+  async deleteAllItemRevisions(itemId: string, equipmentType?: string): Promise<void> {
+    const idMatch = eq(inspectionItemRevisions.itemId, itemId);
+    await db.delete(inspectionItemRevisions).where(
+      equipmentType ? and(idMatch, eq(inspectionItemRevisions.equipmentType, equipmentType)) : idMatch
+    );
   }
 
   // inspection_item_edits의 standard_dates, permit_effective_date를 null로 초기화

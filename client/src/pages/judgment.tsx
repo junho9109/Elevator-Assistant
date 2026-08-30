@@ -536,8 +536,11 @@ export default function JudgmentPage() {
   const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
   const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
-  const [revisionCounts, setRevisionCounts] = useState<Record<string, number>>({});
-  const [previousRanges, setPreviousRanges] = useState<Record<string, { minDate: string; maxExpiry: string }>>({});
+  // 서버 응답은 { [equipmentType]: { [itemId]: count/range } } 형태로 승강기 종류별로 스코핑되어 있다.
+  // 조문번호가 종류마다 다른 안전기준 문서를 가리키므로(예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문)
+  // 반드시 현재 선택된 equipmentType으로 걸러서 사용해야 한다.
+  const [revisionCountsByType, setRevisionCountsByType] = useState<Record<string, Record<string, number>>>({});
+  const [previousRangesByType, setPreviousRangesByType] = useState<Record<string, Record<string, { minDate: string; maxExpiry: string }>>>({});
   const [refRevisions, setRefRevisions] = useState<{refId: string; versions: any[]}[]>([]);
   const [detailRevisionOpen, setDetailRevisionOpen] = useState(true);
   const [detailMediaOpen, setDetailMediaOpen] = useState(true);
@@ -764,17 +767,27 @@ export default function JudgmentPage() {
     return map;
   }, [inspectionBaseItems]);
 
-  // 연혁집 데이터 보유 항목 목록 로드
+  // 연혁집 데이터 보유 항목 목록 로드 (승강기 종류별로 스코핑된 형태로 반환됨)
   useEffect(() => {
     fetch("/api/inspection-items/revision-counts")
       .then(r => r.json())
-      .then(data => setRevisionCounts(data))
+      .then(data => setRevisionCountsByType(data))
       .catch(() => {});
     fetch("/api/inspection-items/previous-ranges")
       .then(r => r.json())
-      .then(data => setPreviousRanges(data))
+      .then(data => setPreviousRangesByType(data))
       .catch(() => {});
   }, []);
+
+  // 현재 선택된 승강기 종류(equipmentType)로 스코핑된 flat 맵 — 기존 코드와의 호환을 위해 유지
+  const revisionCounts = useMemo(
+    () => revisionCountsByType[equipmentType] || {},
+    [revisionCountsByType, equipmentType]
+  );
+  const previousRanges = useMemo(
+    () => previousRangesByType[equipmentType] || {},
+    [previousRangesByType, equipmentType]
+  );
 
   // DB에서 서버 편집값 fetch → 재접속 시 자동 최신화
   const { data: serverEdits } = useQuery<any[]>({
@@ -1083,7 +1096,7 @@ export default function JudgmentPage() {
       const refResults = await Promise.all(
         uniqueRefs.map(async (refId) => {
           try {
-            const r = await fetch(`/api/inspection-revisions/${encodeURIComponent(refId)}`);
+            const r = await fetch(`/api/inspection-revisions/${encodeURIComponent(refId)}?equipmentType=${encodeURIComponent(equipmentType)}`);
             const data = r.ok ? await r.json() : [];
             return { refId, data };
           } catch { return { refId, data: [] as any[] }; }
@@ -1128,7 +1141,7 @@ export default function JudgmentPage() {
 
     // 2) DB 연혁집 데이터 조회
     try {
-      const dbRevRes = await fetch(`/api/inspection-revisions/${encodeURIComponent(item.id)}`);
+      const dbRevRes = await fetch(`/api/inspection-revisions/${encodeURIComponent(item.id)}?equipmentType=${encodeURIComponent(equipmentType)}`);
       const dbRevRaw = dbRevRes.ok ? await dbRevRes.json() : [];
       // DB snake_case → camelCase 변환
       const dbRevData = dbRevRaw.map((r: any) => ({

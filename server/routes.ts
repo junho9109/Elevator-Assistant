@@ -1909,9 +1909,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Inspection item revisions routes
+  // equipmentType으로 스코핑: 조문번호(item_id)는 승강기 종류마다 별도 안전기준을 참조하므로
+  // 번호만으로는 구분이 안 된다 (예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문).
   app.get("/api/inspection-revisions/:itemId", async (req, res) => {
     try {
-      const revisions = await storage.getItemRevisions(req.params.itemId);
+      const equipmentType = (req.query.equipmentType as string) || undefined;
+      const revisions = await storage.getItemRevisions(req.params.itemId, equipmentType);
       res.json(revisions);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch revisions" });
@@ -1919,7 +1922,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.post("/api/inspection-revisions", async (req, res) => {
     try {
-      const revision = await storage.createItemRevision(req.body);
+      const body = { ...req.body, equipmentType: req.body.equipmentType || "엘리베이터" };
+      const revision = await storage.createItemRevision(body);
       res.status(201).json(revision);
     } catch (error) {
       res.status(400).json({ error: "Failed to create revision" });
@@ -1944,7 +1948,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.delete("/api/inspection-revisions/item/:itemId", async (req, res) => {
     try {
-      await storage.deleteAllItemRevisions(req.params.itemId);
+      const equipmentType = (req.query.equipmentType as string) || undefined;
+      await storage.deleteAllItemRevisions(req.params.itemId, equipmentType);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete revisions" });
@@ -2103,16 +2108,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // 항목별 댓글 수 일괄 조회
   // 연혁집 데이터 보유 항목 목록 (revision이 1개 이상인 item_id 목록)
+  // equipmentType별로 중첩된 형태로 반환한다 — 조문번호가 승강기 종류마다 다른 안전기준
+  // 문서를 가리키므로(예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문), 종류를 구분하지 않고
+  // 평면(flat) 맵으로 반환하면 서로 다른 종류의 항목이 번호만 같아도 연혁이 있는 것처럼
+  // 오판정되는 문제가 있었다. 응답 형태: { [equipmentType]: { [itemId]: count } }
   app.get("/api/inspection-items/revision-counts", async (req, res) => {
     try {
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const rows = await db.execute(
-        sql`SELECT item_id, COUNT(*) as cnt FROM inspection_item_revisions GROUP BY item_id HAVING COUNT(*) > 0`
+        sql`SELECT equipment_type, item_id, COUNT(*) as cnt FROM inspection_item_revisions GROUP BY equipment_type, item_id HAVING COUNT(*) > 0`
       );
-      const result: Record<string, number> = {};
+      const result: Record<string, Record<string, number>> = {};
       (rows.rows || rows).forEach((r: any) => {
-        result[r.item_id] = Number(r.cnt);
+        const eqType = r.equipment_type || "엘리베이터";
+        if (!result[eqType]) result[eqType] = {};
+        result[eqType][r.item_id] = Number(r.cnt);
       });
       res.json(result);
     } catch (e) {
@@ -2258,20 +2269,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // equipmentType별로 중첩된 형태로 반환한다 (동일 사유: 조문번호가 종류마다 다른 문서를 가리킴)
   app.get("/api/inspection-items/previous-ranges", async (req, res) => {
     try {
       const { db } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const rows = await db.execute(
-        sql`SELECT item_id, MIN(effective_date) as min_date, MAX(expiry_date) as max_expiry
+        sql`SELECT equipment_type, item_id, MIN(effective_date) as min_date, MAX(expiry_date) as max_expiry
             FROM inspection_item_revisions
             WHERE introduction_type = 'old'
             AND effective_date IS NOT NULL
-            GROUP BY item_id`
+            GROUP BY equipment_type, item_id`
       );
-      const result: Record<string, { minDate: string; maxExpiry: string }> = {};
+      const result: Record<string, Record<string, { minDate: string; maxExpiry: string }>> = {};
       (rows.rows || rows).forEach((r: any) => {
-        result[r.item_id] = {
+        const eqType = r.equipment_type || "엘리베이터";
+        if (!result[eqType]) result[eqType] = {};
+        result[eqType][r.item_id] = {
           minDate: r.min_date,
           maxExpiry: r.max_expiry,
         };
@@ -2288,25 +2302,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(counts);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch comment counts" });
-    }
-  });
-
-  // 항목별 댓글 수 일괄 조회
-  // 연혁집 데이터 보유 항목 목록 (revision이 1개 이상인 item_id 목록)
-  app.get("/api/inspection-items/revision-counts", async (req, res) => {
-    try {
-      const { db } = await import("./db");
-      const { sql } = await import("drizzle-orm");
-      const rows = await db.execute(
-        sql`SELECT item_id, COUNT(*) as cnt FROM inspection_item_revisions GROUP BY item_id HAVING COUNT(*) > 0`
-      );
-      const result: Record<string, number> = {};
-      (rows.rows || rows).forEach((r: any) => {
-        result[r.item_id] = Number(r.cnt);
-      });
-      res.json(result);
-    } catch (e) {
-      res.status(500).json({});
     }
   });
 
@@ -2445,39 +2440,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (e) {
       res.status(500).json({ error: "API 조회 실패" });
-    }
-  });
-
-  app.get("/api/inspection-items/previous-ranges", async (req, res) => {
-    try {
-      const { db } = await import("./db");
-      const { sql } = await import("drizzle-orm");
-      const rows = await db.execute(
-        sql`SELECT item_id, MIN(effective_date) as min_date, MAX(expiry_date) as max_expiry
-            FROM inspection_item_revisions
-            WHERE introduction_type = 'old'
-            AND effective_date IS NOT NULL
-            GROUP BY item_id`
-      );
-      const result: Record<string, { minDate: string; maxExpiry: string }> = {};
-      (rows.rows || rows).forEach((r: any) => {
-        result[r.item_id] = {
-          minDate: r.min_date,
-          maxExpiry: r.max_expiry,
-        };
-      });
-      res.json(result);
-    } catch (e) {
-      res.status(500).json({});
-    }
-  });
-
-  app.get("/api/judgment-items/comment-counts", async (req, res) => {
-    try {
-      const counts = await storage.getItemCommentCounts();
-      res.json(counts);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch comment counts" });
     }
   });
 
@@ -3731,10 +3693,12 @@ ${answerRules}${contextText}${memoSection}`,
       const { eq, and } = await import("drizzle-orm");
       let added = 0, skipped = 0;
       for (const rev of revisions) {
-        // 동일 itemId + expiryDate + description 앞 20자 중복 방지
+        const equipmentType = rev.equipmentType || "엘리베이터";
+        // 동일 itemId + equipmentType + expiryDate + description 앞 20자 중복 방지
         const existing = await db2.select().from(inspectionItemRevisions)
           .where(and(
             eq(inspectionItemRevisions.itemId, rev.itemId),
+            eq(inspectionItemRevisions.equipmentType, equipmentType),
             eq(inspectionItemRevisions.expiryDate, rev.expiryDate || "")
           ));
         const descKey = (rev.description || "").slice(0, 20);
@@ -3742,6 +3706,7 @@ ${answerRules}${contextText}${memoSection}`,
         if (dup) { skipped++; continue; }
         await db2.insert(inspectionItemRevisions).values({
           itemId: rev.itemId,
+          equipmentType,
           effectiveDate: rev.effectiveDate || null,
           expiryDate: rev.expiryDate || null,
           introductionType: rev.introductionType || "revision",
@@ -3883,20 +3848,6 @@ ${answerRules}${contextText}${memoSection}`,
   setInterval(() => {
     maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
   }, 30 * 60 * 1000);
-
-  // TEMP DEBUG (secret=elev2026fix) — equipment_type 컬럼 마이그레이션, 1회 실행 후 제거
-  app.get("/api/debug/migrate-equip-type", async (req, res) => {
-    if (req.query.secret !== "elev2026fix") return res.status(403).json({ error: "forbidden" });
-    try {
-      const { pool: pgPool } = await import("./db");
-      await pgPool.query(`ALTER TABLE inspection_item_revisions ADD COLUMN IF NOT EXISTS equipment_type VARCHAR(20) NOT NULL DEFAULT '엘리베이터'`);
-      const after = await pgPool.query(`SELECT column_name, column_default FROM information_schema.columns WHERE table_name='inspection_item_revisions'`);
-      const counts = await pgPool.query(`SELECT equipment_type, COUNT(*) FROM inspection_item_revisions GROUP BY equipment_type`);
-      res.json({ ok: true, columns: after.rows, counts: counts.rows });
-    } catch (e: any) {
-      res.status(500).json({ error: String(e?.message || e) });
-    }
-  });
 
   const httpServer = createServer(app);
 
