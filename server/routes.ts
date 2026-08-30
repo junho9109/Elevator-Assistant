@@ -3060,7 +3060,7 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
         // Claude 왕복을 거쳐 20초+ 걸렸다. 정밀 답변 모드가 따로 있으니, 빠른 답변은
         // 이름 그대로 검증 단계 없이 단일 호출로 바로 답한다.
         agent1 = await anthropic.messages.create({
-          model: "claude-sonnet-4-6",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 1200,
           system: `당신은 승강기 안전검사 현장 전문가다. 제공된 어플 내부 자료만 근거로 답한다.
 
@@ -3070,7 +3070,7 @@ ${answerRules}${contextText}${memoSection}`,
         reply = getText(agent1);
       } else {
         // ── 정밀 답변: 에이전트1 초안 + 에이전트2 독립 재검증(병렬) → 불일치 시에만 에이전트3 중재 ──
-        const MODEL = { agent1: "claude-opus-4-8", agent2: "claude-opus-4-8", compare: "claude-sonnet-4-6", agent3: "claude-opus-4-8" };
+        const MODEL = { agent1: "claude-sonnet-4-6", agent2: "claude-sonnet-4-6", compare: "claude-sonnet-4-6", agent3: "claude-sonnet-4-6" };
         // thinking 사용 시 사고 토큰도 max_tokens에 포함되므로 여유를 둔다
         const agentMaxTokens = 3000;
         const thinkingParam = { thinking: { type: "adaptive" as const } };
@@ -3167,9 +3167,9 @@ ${answerRules}${contextText}${memoSection}`,
         const { aiUsage } = await import("@shared/schema");
         // 1M 토큰당 가격(달러)
         const PRICE: Record<string, { in: number; out: number }> = {
-          "claude-opus-4-8": { in: 15, out: 75 },
+          "claude-opus-4-8": { in: 5, out: 25 },
           "claude-sonnet-4-6": { in: 3, out: 15 },
-          "claude-haiku-4-5-20251001": { in: 0.25, out: 1.25 },
+          "claude-haiku-4-5-20251001": { in: 1, out: 5 },
         };
         const calls = [agent1, agent2, compare, agent3].filter(Boolean) as any[];
         let inputTok = 0, outputTok = 0, cost = 0;
