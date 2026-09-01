@@ -3856,6 +3856,26 @@ ${answerRules}${contextText}${memoSection}`,
     maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
   }, 30 * 60 * 1000);
 
+  // TEMP DEBUG (secret=std2022front) — 에스컬레이터 1~4장(적용범위/인용표준/용어정의/단위기호)
+  // 별표22와 동일한 방식으로 원문 추가 삽입. GET 트리거, 1회 실행 후 라우트+데이터 파일 제거 예정.
+  app.get("/api/debug/add-escalator-front-matter", async (req, res) => {
+    if (req.query.secret !== "std2022front") return res.status(403).json({ error: "forbidden" });
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const fp = path.join(process.cwd(), "server", "temp-migration-front-matter.json");
+      if (!fs.existsSync(fp)) return res.status(404).json({ error: "file not found" });
+      const raw = JSON.parse(fs.readFileSync(fp, "utf-8"));
+      const items = raw.items || [];
+      const result = await storage.bulkUpsertInspectionBaseItems(items, raw.standardEquipmentType || "에스컬레이터");
+      const { pool: pgPool } = await import("./db");
+      const counts = await pgPool.query(`SELECT standard_equipment_type, COUNT(*) FROM inspection_base_items GROUP BY standard_equipment_type`);
+      res.json({ ok: true, count: items.length, ...result, counts: counts.rows });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e?.message || e), stack: e?.stack });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
