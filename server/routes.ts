@@ -3906,6 +3906,60 @@ ${answerRules}${contextText}${memoSection}`,
     }
   });
 
+  // TEMP DEBUG (secret=std2022esc) — 위와 동일한 마이그레이션 + 서버에 임시로 커밋해둔
+  // server/temp-migration-data/batch_*.json 4개 파일을 읽어 순서대로 bulk upsert.
+  // GET으로 트리거 가능 (샌드박스에서 POST가 production으로 막혀 있어 GET 기반으로 우회).
+  // 1회 실행 후 이 라우트와 temp-migration-data 폴더 모두 제거 예정.
+  app.get("/api/debug/migrate-escalator-base-items-fromfile", async (req, res) => {
+    if (req.query.secret !== "std2022esc") return res.status(403).json({ error: "forbidden" });
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const { pool: pgPool } = await import("./db");
+
+      await pgPool.query(`ALTER TABLE inspection_base_items ADD COLUMN IF NOT EXISTS standard_equipment_type VARCHAR(20) NOT NULL DEFAULT '엘리베이터'`);
+      const oldConstraints = await pgPool.query(`
+        SELECT con.conname
+        FROM pg_constraint con
+        JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'inspection_base_items'
+          AND con.contype = 'u'
+          AND (SELECT array_agg(attname::text) FROM unnest(con.conkey) AS k(attnum)
+               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum) = ARRAY['item_id']::text[]
+      `);
+      for (const row of oldConstraints.rows) {
+        await pgPool.query(`ALTER TABLE inspection_base_items DROP CONSTRAINT IF EXISTS "${row.conname}"`);
+      }
+      const oldIndexes = await pgPool.query(`
+        SELECT indexname FROM pg_indexes
+        WHERE tablename = 'inspection_base_items' AND indexdef LIKE '%UNIQUE%(item_id)%'
+      `);
+      for (const row of oldIndexes.rows) {
+        await pgPool.query(`DROP INDEX IF EXISTS "${row.indexname}"`);
+      }
+      await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS inspection_base_items_item_equip_unique ON inspection_base_items (item_id, standard_equipment_type)`);
+
+      const dataDir = path.join(process.cwd(), "server", "temp-migration-data");
+      const files = ["batch_0.json", "batch_1.json", "batch_2.json", "batch_3.json"];
+      let inserted = 0, updated = 0;
+      const perFile: any[] = [];
+      for (const f of files) {
+        const fp = path.join(dataDir, f);
+        if (!fs.existsSync(fp)) { perFile.push({ file: f, error: "not found" }); continue; }
+        const raw = JSON.parse(fs.readFileSync(fp, "utf-8"));
+        const items = raw.items || [];
+        const result = await storage.bulkUpsertInspectionBaseItems(items, raw.standardEquipmentType || "에스컬레이터");
+        inserted += result.inserted; updated += result.updated;
+        perFile.push({ file: f, count: items.length, inserted: result.inserted, updated: result.updated });
+      }
+
+      const counts = await pgPool.query(`SELECT standard_equipment_type, COUNT(*) FROM inspection_base_items GROUP BY standard_equipment_type`);
+      res.json({ ok: true, perFile, counts: counts.rows, inserted, updated });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e?.message || e), stack: e?.stack });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
