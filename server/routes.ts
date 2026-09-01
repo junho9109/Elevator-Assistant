@@ -3856,34 +3856,6 @@ ${answerRules}${contextText}${memoSection}`,
     maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
   }, 30 * 60 * 1000);
 
-  // TEMP DEBUG (secret=std2022fix) — 에스컬레이터 5장 최상위 13개 항목의 sectionTitle/text 오염 수정
-  // (4장 기호표 잔여내용이 "5 일반사항" 제목/본문과 PDF 변환 과정에서 뒤섞인 문제 patch)
-  // GET으로 트리거, 1회 실행 후 이 라우트와 temp-migration-data-fix.json 제거 예정.
-  app.get("/api/debug/fix-escalator-item5", async (req, res) => {
-    if (req.query.secret !== "std2022fix") return res.status(403).json({ error: "forbidden" });
-    try {
-      const fs = await import("fs");
-      const path = await import("path");
-      const fp = path.join(process.cwd(), "server", "temp-migration-data-fix.json");
-      if (!fs.existsSync(fp)) return res.status(404).json({ error: "fix file not found" });
-      const raw = JSON.parse(fs.readFileSync(fp, "utf-8"));
-      const items = raw.items || [];
-      const standardEquipmentType = raw.standardEquipmentType || "에스컬레이터";
-      const results = [];
-      for (const item of items) {
-        const updated = await storage.updateInspectionBaseItem(
-          item.itemId,
-          { text: item.text, sectionTitle: item.sectionTitle },
-          standardEquipmentType
-        );
-        results.push({ itemId: item.itemId, updated: !!updated });
-      }
-      res.json({ ok: true, count: items.length, results });
-    } catch (e: any) {
-      res.status(500).json({ error: String(e?.message || e), stack: e?.stack });
-    }
-  });
-
   const httpServer = createServer(app);
 
   return httpServer;
