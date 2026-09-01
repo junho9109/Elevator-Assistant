@@ -3856,6 +3856,40 @@ ${answerRules}${contextText}${memoSection}`,
     maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
   }, 30 * 60 * 1000);
 
+  // TEMP DEBUG (secret=std2022sym) — 에스컬레이터 4.2 기호표(표1) 전체를 항목별(4.2.1~4.2.48)로
+  // 구조화해서 추가 삽입 + 4.2 헤더 텍스트 갱신. AI가 조문 내 기호(h13, b7 등) 인용 시 검색 가능하도록 함.
+  app.get("/api/debug/add-escalator-symbols", async (req, res) => {
+    if (req.query.secret !== "std2022sym") return res.status(403).json({ error: "forbidden" });
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const fp = path.join(process.cwd(), "server", "temp-symbol-table.json");
+      if (!fs.existsSync(fp)) return res.status(404).json({ error: "file not found" });
+      const raw = JSON.parse(fs.readFileSync(fp, "utf-8"));
+      const items = raw.items || [];
+      const standardEquipmentType = raw.standardEquipmentType || "에스컬레이터";
+
+      // 4.2 헤더는 text 보호 로직을 우회하기 위해 update로 직접 덮어쓰기
+      const headerItem = items.find((it: any) => it.itemId === "4.2");
+      const symbolItems = items.filter((it: any) => it.itemId !== "4.2");
+
+      let headerUpdated = false;
+      if (headerItem) {
+        const updated = await storage.updateInspectionBaseItem(
+          "4.2",
+          { text: headerItem.text, sectionTitle: headerItem.sectionTitle },
+          standardEquipmentType
+        );
+        headerUpdated = !!updated;
+      }
+
+      const result = await storage.bulkUpsertInspectionBaseItems(symbolItems, standardEquipmentType);
+      res.json({ ok: true, headerUpdated, symbolCount: symbolItems.length, ...result });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e?.message || e), stack: e?.stack });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

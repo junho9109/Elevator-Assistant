@@ -1,0 +1,495 @@
+{
+  "standardEquipmentType": "에스컬레이터",
+  "items": [
+    {
+      "itemId": "4.2",
+      "sectionId": "4",
+      "sectionTitle": "4.2 기호",
+      "parentSectionId": "4",
+      "text": "4.2 기호\n\n이 기준에는 다음 기호들과 표 1에 따른 해당 측정 단위들이 사용된다. (하위 항목에 기호별 상세 정의 수록)",
+      "sortOrder": 90102,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.1",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.1 b1",
+      "parentSectionId": "4.2",
+      "text": "b1: 손잡이 중심선 사이의 거리 (단위: m, 관련 그림: 6)",
+      "sortOrder": 90103,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.2",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.2 b2",
+      "parentSectionId": "4.2",
+      "text": "b2: 손잡이 폭 (단위: mm, 관련 그림: 6)",
+      "sortOrder": 90104,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.3",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.3 b3",
+      "parentSectionId": "4.2",
+      "text": "b3: 스커트와 내부패널 사이의 수평 거리 (단위: mm, 관련 그림: 6)",
+      "sortOrder": 90105,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.4",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.4 b4",
+      "parentSectionId": "4.2",
+      "text": "b4: 내부패널에 직접 연결된 하부 내측데크 수평 부분의 폭 (단위: mm, 관련 그림: 6)",
+      "sortOrder": 90106,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.5",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.5 b5",
+      "parentSectionId": "4.2",
+      "text": "b5: 손잡이의 내부 끝과 내부패널의 상부 끝 사이의 수평 거리 (단위: mm, 관련 그림: 6)",
+      "sortOrder": 90107,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.6",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.6 b6', b6\"",
+      "parentSectionId": "4.2",
+      "text": "b6', b6\": 손잡이 외형과 주행안내 또는 덮개 외형 사이의 수평 거리 (단위: mm, 관련 그림: 6)",
+      "sortOrder": 90108,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.7",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.7 b7",
+      "parentSectionId": "4.2",
+      "text": "b7: 홈의 폭 (단위: mm, 관련 그림: 5)",
+      "sortOrder": 90109,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.8",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.8 b8",
+      "parentSectionId": "4.2",
+      "text": "b8: 웹의 폭 (단위: mm, 관련 그림: 5)",
+      "sortOrder": 90110,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.9",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.9 b9",
+      "parentSectionId": "4.2",
+      "text": "b9: 손잡이의 외부 끝과 비연속적인 장애물(지붕 교차점, 기둥 등) 사이의 수평 거리 (단위: mm, 관련 그림: Ⅰ.1)",
+      "sortOrder": 90111,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.10",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.10 b10",
+      "parentSectionId": "4.2",
+      "text": "b10: 손잡이의 외부 끝과 연속적인 장애물(벽 사이의 수평 거리 등) (단위: mm, 관련 그림: 7, Ⅰ.1)",
+      "sortOrder": 90112,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.11",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.11 b11",
+      "parentSectionId": "4.2",
+      "text": "b11: 근접한 에스컬레이터/무빙워크 손잡이 사이의 수평 거리 (단위: mm, 관련 그림: Ⅰ.1)",
+      "sortOrder": 90113,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.12",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.12 b12",
+      "parentSectionId": "4.2",
+      "text": "b12: 손잡이의 하부 끝과 난간데크 사이의 수직 거리 (단위: mm, 관련 그림: 6)",
+      "sortOrder": 90114,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.13",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.13 b13",
+      "parentSectionId": "4.2",
+      "text": "b13: 하부 외측데크의 폭 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90115,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.14",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.14 b14",
+      "parentSectionId": "4.2",
+      "text": "b14: 근접한 에스컬레이터 또는 무빙워크의 내부패널의 외부 끝 사이의 수평 거리 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90116,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.15",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.15 b15",
+      "parentSectionId": "4.2",
+      "text": "b15: 건축 구조물(벽)과 손잡이 중심선 사이의 수평 거리 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90117,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.16",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.16 b16",
+      "parentSectionId": "4.2",
+      "text": "b16: 근접한 에스컬레이터/무빙워크 손잡이 중심선 사이의 수평 거리 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90118,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.17",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.17 b17",
+      "parentSectionId": "4.2",
+      "text": "b17: 손잡이 외부 끝과 미끄럼 방지장치 사이의 수평 거리 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90119,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.18",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.18 b18",
+      "parentSectionId": "4.2",
+      "text": "b18: 손잡이의 하부 끝과 손잡이 스탠드가 난간에 연결된 지점 사이의 수직 거리 (단위: mm, 관련 그림: 6)",
+      "sortOrder": 90120,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.19",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.19 h1",
+      "parentSectionId": "4.2",
+      "text": "h1: 손잡이 상부와 스텝 앞부분 또는 팔레트 또는 벨트 표면 사이의 수직 거리 (단위: m, 관련 그림: 5, 6)",
+      "sortOrder": 90121,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.20",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.20 h2",
+      "parentSectionId": "4.2",
+      "text": "h2: 스커트의 상부 끝 또는 덮개 연결부 하부 끝과 스텝 앞부분 또는 팔레트 또는 벨트의 트레드 표면 사이의 수직 거리 (단위: m, 관련 그림: 6)",
+      "sortOrder": 90122,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.21",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.21 h3",
+      "parentSectionId": "4.2",
+      "text": "h3: 뉴얼로 들어가는 손잡이 입구와 바닥 사이의 거리 (단위: m, 관련 그림: 5, 6)",
+      "sortOrder": 90123,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.22",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.22 h4",
+      "parentSectionId": "4.2",
+      "text": "h4: 뉴얼의 끝 부분을 포함한 양쪽 손잡이의 바깥 끝부분 및 자유공간 모든 지점에 걸친 스텝 표면, 팔레트 또는 벨트로부터의 자유 높이 (단위: m, 관련 그림: 5, Ⅰ.1)",
+      "sortOrder": 90124,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.23",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.23 h5",
+      "parentSectionId": "4.2",
+      "text": "h5: 삼각부 막는조치의 높이 (단위: m, 관련 그림: 5, 7)",
+      "sortOrder": 90125,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.24",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.24 h6",
+      "parentSectionId": "4.2",
+      "text": "h6: 트레드 표면의 상부 끝과 콤의 빗살 사이의 틈새 (단위: mm, 관련 그림: 5)",
+      "sortOrder": 90126,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.25",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.25 h7",
+      "parentSectionId": "4.2",
+      "text": "h7: 홈의 깊이 (단위: mm, 관련 그림: 5)",
+      "sortOrder": 90127,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.26",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.26 h8",
+      "parentSectionId": "4.2",
+      "text": "h8: 트레드 홈으로 들어가는 콤의 빗살의 맞물림 깊이 (단위: mm, 관련 그림: 5)",
+      "sortOrder": 90128,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.27",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.27 h9",
+      "parentSectionId": "4.2",
+      "text": "h9: 바닥과 기어오름 방지장치 하부 끝 사이의 수직 거리 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90129,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.28",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.28 h10",
+      "parentSectionId": "4.2",
+      "text": "h10: 손잡이 하부 끝과 접근방지장치의 상부 끝 사이의 수직 거리 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90130,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.29",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.29 h11",
+      "parentSectionId": "4.2",
+      "text": "h11: 기어오름 방지장치의 높이 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90131,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.30",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.30 h12",
+      "parentSectionId": "4.2",
+      "text": "h12: 손잡이 외부 자유공간 상부 끝의 높이 (단위: mm, 관련 그림: Ⅰ.1)",
+      "sortOrder": 90132,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.31",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.31 h13",
+      "parentSectionId": "4.2",
+      "text": "h13: 상부와 하부의 마감된 바닥 사이의 수직 거리 (단위: m, 관련 그림: 5)",
+      "sortOrder": 90133,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.32",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.32 L1",
+      "parentSectionId": "4.2",
+      "text": "L1: 콤의 빗살의 밑바닥 (단위: －, 관련 그림: 5)",
+      "sortOrder": 90134,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.33",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.33 l1",
+      "parentSectionId": "4.2",
+      "text": "l1: 지지대 사이의 수평 거리 (단위: m, 관련 그림: 5)",
+      "sortOrder": 90135,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.34",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.34 L2",
+      "parentSectionId": "4.2",
+      "text": "L2: 콤 교차선 (단위: －, 관련 그림: 5)",
+      "sortOrder": 90136,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.35",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.35 l2",
+      "parentSectionId": "4.2",
+      "text": "l2: 손잡이에 의해 도달하는 가장 먼 지점과 트레드 표면에서 평행으로 측정된 콤 교차선 사이의 거리 (단위: m, 관련 그림: 5)",
+      "sortOrder": 90137,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.36",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.36 l3",
+      "parentSectionId": "4.2",
+      "text": "l3: 콤 교차선으로부터 측정된 승강장 방향으로 손잡이 직선부의 길이 (단위: m, 관련 그림: 5)",
+      "sortOrder": 90138,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.37",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.37 l4",
+      "parentSectionId": "4.2",
+      "text": "l4: 손잡이에 의해 도달하는 가장 먼 지점과 트레드 표면에서 평행으로 측정된 뉴얼로 진입하는 지점 사이의 거리 (단위: m, 관련 그림: 5)",
+      "sortOrder": 90139,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.38",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.38 l5",
+      "parentSectionId": "4.2",
+      "text": "l5: 하부 외측데크에 있는 기어오름 방지장치의 길이 (단위: mm, 관련 그림: 7)",
+      "sortOrder": 90140,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.39",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.39 v",
+      "parentSectionId": "4.2",
+      "text": "v: 공칭속도 (단위: m/s, 관련 그림: －)",
+      "sortOrder": 90141,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.40",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.40 x1",
+      "parentSectionId": "4.2",
+      "text": "x1: 스텝 높이 (단위: m, 관련 그림: 8)",
+      "sortOrder": 90142,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.41",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.41 y1",
+      "parentSectionId": "4.2",
+      "text": "y1: 스텝 깊이 (단위: m, 관련 그림: 8)",
+      "sortOrder": 90143,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.42",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.42 z1",
+      "parentSectionId": "4.2",
+      "text": "z1: 부하운반 구역(디딤판)의 공칭 폭 (단위: m, 관련 그림: 6, 8)",
+      "sortOrder": 90144,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.43",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.43 z2",
+      "parentSectionId": "4.2",
+      "text": "z2: 스커트 사이의 수평 거리 (단위: m, 관련 그림: 6)",
+      "sortOrder": 90145,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.44",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.44 z3",
+      "parentSectionId": "4.2",
+      "text": "z3: 지지 롤러 사이의 가로 거리 (단위: mm, 관련 그림: 11)",
+      "sortOrder": 90146,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.45",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.45 α",
+      "parentSectionId": "4.2",
+      "text": "α: 에스컬레이터 또는 무빙워크의 경사각 (단위: °, 관련 그림: 5)",
+      "sortOrder": 90147,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.46",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.46 β",
+      "parentSectionId": "4.2",
+      "text": "β: 콤의 빗살의 설계 각도 (단위: °, 관련 그림: 5)",
+      "sortOrder": 90148,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.47",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.47 γ",
+      "parentSectionId": "4.2",
+      "text": "γ: 하부 내측 데크의 단면 경사각 (단위: °, 관련 그림: 6)",
+      "sortOrder": 90149,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    },
+    {
+      "itemId": "4.2.48",
+      "sectionId": "4.2",
+      "sectionTitle": "4.2.48 μ",
+      "parentSectionId": "4.2",
+      "text": "μ: 마찰 계수 (단위: －, 관련 그림: －)",
+      "sortOrder": 90150,
+      "permitEffectiveDate": null,
+      "standardDates": "[]"
+    }
+  ]
+}
