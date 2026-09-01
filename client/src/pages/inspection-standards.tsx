@@ -29,7 +29,8 @@ function stripIdPrefix(itemId: string, raw: string): string {
 // ── 파이프(|) 구분 표 형식 감지 및 파싱 (4.2 기호표 등) ─────────────────
 // AI 검색/인용은 원본 파이프 텍스트를 그대로 쓰므로 이 파싱은 화면 표시 전용이며
 // text 컬럼 자체는 건드리지 않는다. "기호 | 설명 | 단위: x | 그림: y" 형태의 줄이
-// 일정 개수 이상 있으면 표로 판단한다.
+// 일정 개수 이상 있으면 표로 판단한다. "단위:"/"그림:" 같은 라벨 접두사는 헤더로
+// 승격시키고 셀에는 값만 남긴다.
 type ParsedTableBody = { intro: string; headers: string[]; rows: string[][] };
 function tryParsePipeTable(body: string): ParsedTableBody | null {
   const lines = body.split("\n").map(l => l.trim());
@@ -37,19 +38,44 @@ function tryParsePipeTable(body: string): ParsedTableBody | null {
   if (pipeLines.length < 5) return null; // 소수의 우연한 파이프는 표로 취급하지 않음
 
   const introLines: string[] = [];
-  const rows: string[][] = [];
-  let headerCount = 0;
+  const rawRows: string[][] = [];
+  let colCount = 0;
   for (const line of lines) {
     if (line.includes(" | ") && line.split(" | ").length >= 3) {
-      rows.push(line.split(" | ").map(c => c.trim()));
-      headerCount = Math.max(headerCount, line.split(" | ").length);
-    } else if (rows.length === 0 && line) {
+      const cells = line.split(" | ").map(c => c.trim());
+      rawRows.push(cells);
+      colCount = Math.max(colCount, cells.length);
+    } else if (rawRows.length === 0 && line) {
       introLines.push(line);
     }
     // 표 시작 후의 빈 줄/캡션(예: "[표 1. ...]")은 무시
   }
-  if (rows.length < 5) return null;
-  const headers = Array.from({ length: headerCount }, (_, i) => i === 0 ? "기호" : `열 ${i + 1}`);
+  if (rawRows.length < 5) return null;
+
+  // 각 열에서 공통 라벨 접두사("단위:", "그림:" 등)를 찾아 헤더로 승격하고 셀에서는 제거한다.
+  // 라벨은 셀 값 대부분(과반)이 같은 접두사를 쓸 때만 인정 — 우연히 콜론이 들어간 값과 구분하기 위함.
+  const headers: string[] = [];
+  const rows: string[][] = rawRows.map(() => [] as string[]);
+  for (let col = 0; col < colCount; col++) {
+    const colCells = rawRows.map(r => r[col] ?? "");
+    const labelCounts = new Map<string, number>();
+    colCells.forEach(cell => {
+      const m = cell.match(/^([^:：]{1,6})[:：]\s*/);
+      if (m) labelCounts.set(m[1], (labelCounts.get(m[1]) || 0) + 1);
+    });
+    let commonLabel = "";
+    for (const [label, count] of Array.from(labelCounts.entries())) {
+      if (count >= Math.ceil(colCells.length * 0.6)) { commonLabel = label; break; }
+    }
+    if (commonLabel) {
+      headers.push(commonLabel);
+      const prefixRe = new RegExp(`^${commonLabel}[:：]\\s*`);
+      colCells.forEach((cell, r) => rows[r].push(cell.replace(prefixRe, "")));
+    } else {
+      headers.push(col === 0 ? "기호" : col === 1 ? "내용" : `열 ${col + 1}`);
+      colCells.forEach((cell, r) => rows[r].push(cell));
+    }
+  }
   return { intro: introLines.join("\n"), headers, rows };
 }
 
@@ -60,14 +86,27 @@ function PipeTableView({ parsed }: { parsed: ParsedTableBody }) {
         <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{parsed.intro}</p>
       )}
       <div className="overflow-x-auto -mx-1">
-        <table className="w-full border-collapse text-xs">
+        <table className="w-full border-collapse text-xs table-fixed">
+          <thead>
+            <tr>
+              {parsed.headers.map((h, j) => (
+                <th
+                  key={j}
+                  className="border border-border px-2 py-2 text-left text-muted-foreground font-medium bg-muted/60"
+                  style={j === 0 ? { width: "60px" } : j >= 2 ? { width: "70px" } : undefined}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
             {parsed.rows.map((cells, i) => (
               <tr key={i} className={i % 2 === 0 ? "" : "bg-muted/20"}>
                 {cells.map((cell, j) => (
                   <td
                     key={j}
-                    className={`border border-border px-2 py-2 leading-relaxed align-top ${j === 0 ? "text-primary font-semibold whitespace-nowrap" : ""}`}
+                    className={`border border-border px-2 py-2 leading-relaxed align-top ${j === 0 ? "text-primary font-semibold" : ""}`}
                   >
                     {cell}
                   </td>
