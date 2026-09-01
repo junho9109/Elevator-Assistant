@@ -359,7 +359,7 @@ function scoreMatch(
 }
 
 
-type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; elapsedMs?: number; };
+type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
@@ -409,6 +409,30 @@ function SearchCatAccordion({ cat, onSelect }: { cat: CatGroup; onSelect: (r: Se
       )}
     </div>
   );
+}
+
+// ── 설비종류(엘리베이터/에스컬레이터) 판별 ──────────────────────────────
+// 질문 텍스트에 각 설비에서만 쓰이는 고유 용어가 있는지로 1차 판별한다.
+// 둘 다 감지되거나 둘 다 감지되지 않으면(공통 용어만 있거나 설비명이 아예 없으면)
+// "ambiguous"로 판단해 화면에서 사용자에게 직접 선택하도록 한다.
+const ESCALATOR_ONLY_TERMS = [
+  "에스컬레이터", "무빙워크", "스텝", "디딤판", "콤", "팔레트", "트레드",
+  "핸드레일", "손잡이", "스커트", "뉴얼", "데크", "트러스", "인레트",
+  "테이크아웃", "빗살", "구동체인",
+];
+const ELEVATOR_ONLY_TERMS = [
+  "엘리베이터", "카상부", "카 상부", "권상기", "완충기", "가이드레일", "조속기",
+  "카문", "카 문", "승강장문", "균형추", "피트", "승강로", "로프",
+  "권동", "비상정지장치", "카도어", "완충장치",
+];
+type EquipmentDetection = "엘리베이터" | "에스컬레이터" | "ambiguous";
+function detectEquipmentType(text: string): EquipmentDetection {
+  const t = text.toLowerCase();
+  const hasEsc = ESCALATOR_ONLY_TERMS.some(term => t.includes(term.toLowerCase()));
+  const hasEle = ELEVATOR_ONLY_TERMS.some(term => t.includes(term.toLowerCase()));
+  if (hasEsc && !hasEle) return "에스컬레이터";
+  if (hasEle && !hasEsc) return "엘리베이터";
+  return "ambiguous";
 }
 
 // 키워드로 표준화+검사기준 검색
@@ -1383,40 +1407,52 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     }
   }, [hotspots]);
   // 검사기준 DB 로드 (inspection-content.json 대체 — 정적 파일 사용 안 함)
+  // 엘리베이터(별표22)와 에스컬레이터(별표24)를 각각 별도로 로드한다 —
+  // itemId 체계(5.1, 5.2 등)가 두 문서에서 겹치므로 하나의 맵으로 합치면 안 된다.
   const { data: inspectionBaseItems } = useQuery({
     queryKey: ["/api/inspection-base-items"],
-    queryFn: () => fetch("/api/inspection-base-items").then(r => r.json()),
+    queryFn: () => fetch("/api/inspection-base-items?standardEquipmentType=" + encodeURIComponent("엘리베이터")).then(r => r.json()),
+    staleTime: 1000 * 60 * 10,
+  });
+  const { data: inspectionBaseItemsEscalator } = useQuery({
+    queryKey: ["/api/inspection-base-items", "에스컬레이터"],
+    queryFn: () => fetch("/api/inspection-base-items?standardEquipmentType=" + encodeURIComponent("에스컬레이터")).then(r => r.json()),
     staleTime: 1000 * 60 * 10,
   });
   // 관리자 수정본(inspection_item_edits) — 있으면 base_items보다 우선 (judgment.tsx와 동일한 DB 우선 원칙)
+  // 수정본은 현재 엘리베이터 문서 전용이므로 에스컬레이터 맵에는 적용하지 않는다.
   const { data: inspectionItemEdits } = useQuery({
     queryKey: ["/api/inspection-edits"],
     queryFn: () => fetch("/api/inspection-edits").then(r => r.json()),
     staleTime: 1000 * 60 * 10,
   });
+  const buildInspectionContent = (items: any[], editMap: Record<string, any>) => Object.fromEntries(
+    (items || []).map((item: any) => {
+      const edit = editMap[item.itemId];
+      const standardDatesRaw = edit?.standardDates || item.standardDates;
+      return [
+        item.itemId,
+        {
+          text: edit?.text || item.text || "",
+          effectiveDate: edit?.effectiveDate || item.effectiveDate,
+          customWarning: edit?.customWarning,
+          standardNote: edit?.standardNote,
+          revisions: standardDatesRaw
+            ? (() => { try { return JSON.parse(standardDatesRaw); } catch { return []; } })()
+            : []
+        }
+      ];
+    })
+  );
   const INSPECTION_CONTENT = useMemo(() => {
     const editMap: Record<string, any> = Object.fromEntries(
       (inspectionItemEdits || []).map((e: any) => [e.itemId, e])
     );
-    return Object.fromEntries(
-      (inspectionBaseItems || []).map((item: any) => {
-        const edit = editMap[item.itemId];
-        const standardDatesRaw = edit?.standardDates || item.standardDates;
-        return [
-          item.itemId,
-          {
-            text: edit?.text || item.text || "",
-            effectiveDate: edit?.effectiveDate || item.effectiveDate,
-            customWarning: edit?.customWarning,
-            standardNote: edit?.standardNote,
-            revisions: standardDatesRaw
-              ? (() => { try { return JSON.parse(standardDatesRaw); } catch { return []; } })()
-              : []
-          }
-        ];
-      })
-    );
+    return buildInspectionContent(inspectionBaseItems, editMap);
   }, [inspectionBaseItems, inspectionItemEdits]);
+  const INSPECTION_CONTENT_ESCALATOR = useMemo(() => {
+    return buildInspectionContent(inspectionBaseItemsEscalator, {});
+  }, [inspectionBaseItemsEscalator]);
 
   const { data: stdOverrides, refetch: refetchStdOverrides } = useQuery<any[]>({
     queryKey: ["/api/std-overrides"],
@@ -1852,11 +1888,28 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     }
   }, [isListening, toast, stopVoiceInput]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, forcedEquipmentType?: "엘리베이터" | "에스컬레이터") => {
     if (!text.trim()) return;
     const userMsg: Message = { role: "user", content: text, time: formatTime() };
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
+
+    // ── 설비종류(엘리베이터/에스컬레이터) 판별 ──
+    // 강제 지정(버튼 클릭 재전송)이 없으면 질문 텍스트에서 판별한다.
+    // 검사기준/조문 관련 질문인데 설비종류가 애매하면(공통 용어이거나 설비명이 아예 없으면)
+    // AI를 호출하지 않고 선택 버튼을 먼저 보여준다.
+    const equipmentType: EquipmentDetection = forcedEquipmentType || detectEquipmentType(text);
+    const looksLikeStandardsQuestion = /검사\s*기준|안전\s*기준|별표\s*22|별표\s*24|기준\s*몇|조문|규정/.test(text);
+    if (!forcedEquipmentType && equipmentType === "ambiguous" && looksLikeStandardsQuestion) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "엘리베이터와 에스컬레이터 중 어느 쪽 검사기준을 찾으시나요?",
+        time: formatTime(),
+        needsEquipmentChoice: true,
+        pendingQuestion: text,
+      }]);
+      return;
+    }
     setIsTyping(true);
 
     // 사고 통계 질문 처리 (기존 로직 유지)
@@ -1913,12 +1966,17 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       ? [text, ...qrQueries.filter((q: string) => q !== text)]
       : [text];
 
+    // 판별된(또는 강제 지정된) 설비종류에 맞는 검사기준 검색 풀을 선택한다.
+    // "엘리베이터"/강제엘리베이터 → 기존 엘리베이터 맵, "에스컬레이터"/강제에스컬레이터 → 에스컬레이터 맵,
+    // ambiguous인데 검사기준 질문이 아닌 일반 대화라면 기존 동작(엘리베이터)을 그대로 유지해 회귀를 막는다.
+    const activeInspectionContent = equipmentType === "에스컬레이터" ? INSPECTION_CONTENT_ESCALATOR : INSPECTION_CONTENT;
+
     // ⑦ 멀티 쿼리 검색 — 각 검색어로 검색 후 교집합 우선
-    let results = searchAllData(text, standards, stdOverrides, INSPECTION_CONTENT);
+    let results = searchAllData(text, standards, stdOverrides, activeInspectionContent);
     if (searchQueries.length > 1) {
       const multiResults: Map<string, { result: SearchResult; hitCount: number; maxScore: number }> = new Map();
       for (const q of searchQueries) {
-        const r = searchAllData(q, standards, stdOverrides, INSPECTION_CONTENT);
+        const r = searchAllData(q, standards, stdOverrides, activeInspectionContent);
         r.forEach(item => {
           const key = `${item.type}:${item.title.slice(0, 30)}`;
           const existing = multiResults.get(key);
@@ -2039,7 +2097,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       const stdResults = contextResults.filter(r => r.type !== "chat" && r.type !== "standard" && r.source !== "standards_db");
       const inspCtx = stdResults.slice(0, 2).map(r => {
         // 날짜 데이터 포함 — inspection-content.json의 effectiveDate/revisions
-        const inspEntry = (INSPECTION_CONTENT as any)[r.query || ""];
+        const inspEntry = (activeInspectionContent as any)[r.query || ""];
         const effectiveDate = inspEntry?.effectiveDate
           ? `적용일: ${inspEntry.effectiveDate.replace(/-/g, ".")} 이후 건축허가분` : "";
         const revisionNote = inspEntry?.revisions?.[0]?.description || "";
@@ -2176,10 +2234,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           const numMatch = refText.match(/(?<![\d.])(?:[1-9]|1[0-7])(?:\.\d+){1,5}/);
           const itemNo = numMatch ? numMatch[0] : "";
           // 1순위: key(조문번호)가 정확히 일치하는 항목
-          let entry = itemNo ? Object.entries(INSPECTION_CONTENT).find(([k]) => k === itemNo) : undefined;
+          let entry = itemNo ? Object.entries(activeInspectionContent).find(([k]) => k === itemNo) : undefined;
           // 2순위: key가 itemNo로 시작하는 항목(하위 조문 등)
           if (!entry && itemNo) {
-            entry = Object.entries(INSPECTION_CONTENT).find(([k]) => k.startsWith(itemNo + "-") || k === itemNo);
+            entry = Object.entries(activeInspectionContent).find(([k]) => k.startsWith(itemNo + "-") || k === itemNo);
           }
           return {
             type: "inspection" as const,
@@ -2277,7 +2335,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       }]);
     }
     setIsTyping(false);
-  }, [accidentStats, standards, messages, chatMode]);
+  }, [accidentStats, standards, messages, chatMode, INSPECTION_CONTENT, INSPECTION_CONTENT_ESCALATOR]);
 
   // 리더라인 설정 (카드 오프셋 저장값 우선, 없으면 자동 계산)
   const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {
@@ -3344,6 +3402,22 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   {msg.calcCard === "COUNTER_WEIGHT" && (
                     <CounterWeightCalcCard />
                   )}
+                  {msg.needsEquipmentChoice && msg.pendingQuestion && (
+                    <div className="flex gap-2 mt-0.5">
+                      <button
+                        onClick={() => sendMessage(msg.pendingQuestion!, "엘리베이터")}
+                        className="flex-1 text-xs font-medium border border-border rounded-xl py-2 hover:bg-muted/50"
+                      >
+                        엘리베이터
+                      </button>
+                      <button
+                        onClick={() => sendMessage(msg.pendingQuestion!, "에스컬레이터")}
+                        className="flex-1 text-xs font-medium border border-border rounded-xl py-2 hover:bg-muted/50"
+                      >
+                        에스컬레이터
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 px-1 mt-1">
                     <span className="text-xs text-muted-foreground">{msg.time}</span>
                     {msg.role === "assistant" && msg.mode && (
@@ -4041,7 +4115,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 );
               })() : (() => {
                 const itemId = selectedSearchResult.query;
-                const entry = (INSPECTION_CONTENT as unknown as Record<string, {text?: string; effectiveDate?: string; revisions?: any[]}>)[itemId];
+                type InspEntry = {text?: string; effectiveDate?: string; revisions?: any[]};
+                const entry = (INSPECTION_CONTENT as unknown as Record<string, InspEntry>)[itemId]
+                  || (INSPECTION_CONTENT_ESCALATOR as unknown as Record<string, InspEntry>)[itemId];
                 const revisions = entry?.revisions || [];
                 const effectiveDate = entry?.effectiveDate;
                 const fullText = entry?.text || selectedSearchResult.content;
