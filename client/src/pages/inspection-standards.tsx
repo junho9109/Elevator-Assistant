@@ -26,18 +26,26 @@ function stripIdPrefix(itemId: string, raw: string): string {
   return t;
 }
 
-function baseItemsToMap(rows: any[]): Record<string, Entry> {
+const DOC_SOURCE_LABEL: Record<string, string> = {
+  엘리베이터: "별표22 엘리베이터 안전기준 KC2050-51:2022",
+  에스컬레이터: "별표24 에스컬레이터 안전기준 KC2050-53:2022",
+};
+
+// standardEquipmentType(승강기 종류)별로 소스를 구분한다. 별표22_유효항목.json 화이트리스트는
+// 별표22(엘리베이터) 잡음행 제거 전용이라 엘리베이터 문서에만 적용하고, 그 외 문서(에스컬레이터 등)는
+// standardEquipmentType으로 이미 DB에서 스코핑되어 온 값이므로 그대로 신뢰한다.
+function baseItemsToMap(rows: any[], equipmentType: string = "엘리베이터"): Record<string, Entry> {
   const map: Record<string, Entry> = {};
   (rows || []).forEach((row: any) => {
     if (row.isActive === false || row.isActive === "false") return;
     const isAdminAdded = row.isAdminAdded === true || row.isAdminAdded === "true";
-    if (!VALID_IDS.has(row.itemId) && !isAdminAdded) return;
+    if (equipmentType === "엘리베이터" && !VALID_IDS.has(row.itemId) && !isAdminAdded) return;
     const rawText = (row.text && row.text.trim()) ? row.text : (row.sectionTitle || row.itemId);
     const body = stripIdPrefix(row.itemId, rawText);
     map[row.itemId] = {
       text: body ? `${row.itemId} ${body}` : row.itemId,
       title: body.split("\n")[0] || row.itemId,
-      source: "별표22 엘리베이터 안전기준 KC2050-51:2022",
+      source: DOC_SOURCE_LABEL[equipmentType] || DOC_SOURCE_LABEL.엘리베이터,
     };
   });
   return map;
@@ -64,11 +72,12 @@ type JudgmentSection =
   | { type: "table"; title: string; rows: JudgmentRow[] };
 const JUDGMENT_SECTIONS = JUDGMENT_DATA as unknown as Record<string, JudgmentSection>;
 
-// 문서 드롭다운 목록 — 별표22 / 판정지침 다음에, generations 폴더에 있는 세대별
-// 고시(1997, 2009, 2012...)가 연도 오름차순으로 하나씩 별도 문서 항목으로 자동 추가된다.
+// 문서 드롭다운 목록 — 별표22 / 별표24(에스컬레이터) / 판정지침 다음에, generations 폴더에
+// 있는 세대별 고시(1997, 2009, 2012...)가 연도 오름차순으로 하나씩 별도 문서 항목으로 자동 추가된다.
 const GEN_DOC_PREFIX = "gen:";
 const DOCUMENTS = [
   { id: "byulpyo22", label: "별표22 검사기준 (KC2050-51:2022)" },
+  { id: "escalator22", label: "별표24 에스컬레이터 안전기준 (KC2050-53:2022)" },
   { id: "judgment2016", label: "판정지침 2016.12.23" },
   ...GENERATIONS.map(g => ({
     id: `${GEN_DOC_PREFIX}${g.meta.id}`,
@@ -76,6 +85,13 @@ const DOCUMENTS = [
   })),
 ];
 type DocId = string;
+
+// 문서 id → DB standardEquipmentType 매핑 (DB 기반 문서에만 해당)
+const DB_DOC_EQUIPMENT_TYPE: Record<string, string> = {
+  byulpyo22: "엘리베이터",
+  escalator22: "에스컬레이터",
+};
+const isDbDoc = (docId: string) => docId in DB_DOC_EQUIPMENT_TYPE;
 
 interface Section {
   id: string;
@@ -198,9 +214,9 @@ function TreeNode({ sec, map, depth, activeKey, onSelect, onInteract }: {
 // ── 현행(byulpyo22) 상세 — 관리자 수정 기능 포함 (DB 직접 수정) ────────
 type InspPhoto = { id: number; displayOrder: number; mimeType: string; createdAt: string };
 
-function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
+function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType = "엘리베이터" }: {
   id: string; map: Record<string, Entry>; yearStd: string; onClose: () => void;
-  isAdminMode: boolean; onEdit: () => void;
+  isAdminMode: boolean; onEdit: () => void; equipmentType?: string;
 }) {
   const e = map[id];
   const photoQc = useQueryClient();
@@ -242,7 +258,7 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit }: {
   );
 
   const displayText = e.text || "";
-  const displaySource = e.source || `별표22 엘리베이터 안전기준 ${yearStd}`;
+  const displaySource = e.source || `${DOC_SOURCE_LABEL[equipmentType] || DOC_SOURCE_LABEL.엘리베이터} ${yearStd}`;
   const firstLine = (e.title || displayText.split("\n")[0] || id).trim();
   // 본문에는 제목(첫 줄)도 그대로 포함 — 조문번호 접두사만 제외
   const body = (displayText.startsWith(id + " ") ? displayText.slice(id.length + 1) : displayText).trim();
@@ -428,7 +444,6 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   const [query, setQuery] = useState("");
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [showSearch, setShowSearch] = useState(false);
-  const CURRENT_STD = "KC2050-51:2022";  // 현행 기준
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
@@ -447,13 +462,20 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   const [judgmentJumpKey, setJudgmentJumpKey] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  // 현행(별표22) 조문 — DB에서 직접 조회, 별도 override 없이 이 값이 곧 화면에 뜨는 값
+  // 현재 선택된 문서가 DB 기반(별표22/별표24)인 경우의 승강기 종류 — 아니면 무관
+  const dbDocEquipmentType = isDbDoc(selectedDoc) ? DB_DOC_EQUIPMENT_TYPE[selectedDoc] : DB_DOC_EQUIPMENT_TYPE.byulpyo22;
+  const CURRENT_STD_BY_TYPE: Record<string, string> = { 엘리베이터: "KC2050-51:2022", 에스컬레이터: "KC2050-53:2022" };
+  const CURRENT_STD = CURRENT_STD_BY_TYPE[dbDocEquipmentType] || CURRENT_STD_BY_TYPE.엘리베이터;  // 현행 기준
+
+  // 현행(별표22/별표24) 조문 — DB에서 직접 조회, 별도 override 없이 이 값이 곧 화면에 뜨는 값.
+  // standardEquipmentType으로 스코핑: 조문번호가 문서마다 독립적으로 채번되어 겹칠 수 있으므로
+  // (별표22 "5.2.1"과 별표24 "5.2.1"은 다른 조문) 반드시 현재 선택된 문서 종류로 필터링해야 한다.
   const { data: baseItemsRaw } = useQuery<any[]>({
-    queryKey: ["/api/inspection-base-items"],
-    queryFn: () => fetch("/api/inspection-base-items").then(r => r.json()),
+    queryKey: ["/api/inspection-base-items", dbDocEquipmentType],
+    queryFn: () => fetch(`/api/inspection-base-items?standardEquipmentType=${encodeURIComponent(dbDocEquipmentType)}`).then(r => r.json()),
     staleTime: 0,
   });
-  const dataMap = useMemo(() => baseItemsToMap(baseItemsRaw || []), [baseItemsRaw]);
+  const dataMap = useMemo(() => baseItemsToMap(baseItemsRaw || [], dbDocEquipmentType), [baseItemsRaw, dbDocEquipmentType]);
 
   // 판정지침 실제 내용 — 이제 JSON은 뼈대(type/title)만 갖고, 실제 문구는 DB 오버라이드가 유일한 원본이다.
   const { data: judgmentOverridesRaw } = useQuery<any[]>({
@@ -489,7 +511,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
     const title = body.split("\n")[0] || editKey;
     await fetch(`/api/inspection-base-items/${encodeURIComponent(editKey)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: combinedText, sectionTitle: title }),
+      body: JSON.stringify({ text: combinedText, sectionTitle: title, standardEquipmentType: dbDocEquipmentType }),
     });
     queryClient.invalidateQueries({ queryKey: ["/api/inspection-base-items"] });
     setEditKey(null);
@@ -509,6 +531,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
         itemId, text: combinedText, sectionTitle: title,
         parentSectionId: itemId.includes(".") ? itemId.slice(0, itemId.lastIndexOf(".")) : null,
         afterItemId: newItemAfter.trim() || undefined,
+        standardEquipmentType: dbDocEquipmentType,
       }),
     });
     if (!res.ok) {
@@ -537,7 +560,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
     const title = body.split("\n")[0] || itemId;
     const res = await fetch(`/api/inspection-base-items/${encodeURIComponent(itemId)}`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: combinedText, sectionTitle: title, adopt: true }),
+      body: JSON.stringify({ text: combinedText, sectionTitle: title, adopt: true, standardEquipmentType: dbDocEquipmentType }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -582,12 +605,15 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
     const kw = q.toLowerCase();
     const hits: SearchHit[] = [];
 
-    Object.entries(dataMap).forEach(([k, v]) => {
-      const hay = `${v.title || ""}\n${v.text || ""}`;
-      if (hay.toLowerCase().includes(kw)) {
-        hits.push({ docId: "byulpyo22", scopeLabel: "현행", itemId: k, title: v.title || v.text?.split("\n")[0] || k, snippet: makeSnippet(v.text || "", q) });
-      }
-    });
+    if (isDbDoc(selectedDoc)) {
+      const scopeLabel = selectedDoc === "escalator22" ? "현행 · 별표24" : "현행";
+      Object.entries(dataMap).forEach(([k, v]) => {
+        const hay = `${v.title || ""}\n${v.text || ""}`;
+        if (hay.toLowerCase().includes(kw)) {
+          hits.push({ docId: selectedDoc, scopeLabel, itemId: k, title: v.title || v.text?.split("\n")[0] || k, snippet: makeSnippet(v.text || "", q) });
+        }
+      });
+    }
     GENERATIONS.forEach(g => {
       const yr = g.meta.effectiveDate.slice(0, 4);
       Object.entries(g.items).forEach(([k, v]) => {
@@ -626,7 +652,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
     });
 
     setSearchHits(hits.slice(0, 200));
-  }, [query, dataMap, judgmentOverrideMap]);
+  }, [query, dataMap, judgmentOverrideMap, selectedDoc]);
 
   const handleClose = () => {
     // 검색 중이었다면 검색 상태(검색창·검색 결과)는 유지 — 태블릿처럼 상세보기가 좌측 패널을
@@ -650,12 +676,12 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                 <p className="text-xs text-muted-foreground">
                   {selectedDoc === "judgment2016"
                     ? "판정지침"
-                    : `${activeGeneration ? activeGeneration.meta.title : "현행 · 별표22"} · ${activeTotalCount}개 조문`}
+                    : `${activeGeneration ? activeGeneration.meta.title : (isDbDoc(selectedDoc) ? DOCUMENTS.find(d => d.id === selectedDoc)?.label || "현행" : "현행")} · ${activeTotalCount}개 조문`}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {isAdminMode && selectedDoc === "byulpyo22" && (
+              {isAdminMode && isDbDoc(selectedDoc) && (
                 <Button
                   variant="outline"
                   size="icon"
@@ -745,7 +771,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-[9px] shrink-0 rounded-full px-1.5 py-0.5 ${
-                        h.docId === "byulpyo22" ? "bg-primary/10 text-primary"
+                        isDbDoc(h.docId) ? "bg-primary/10 text-primary"
                         : h.docId === "judgment2016" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
                         : "bg-muted text-muted-foreground border border-border"
                       }`}>{h.scopeLabel}</span>
@@ -800,6 +826,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                 id={activeKey}
                 map={dataMap}
                 yearStd={CURRENT_STD}
+                equipmentType={dbDocEquipmentType}
                 onClose={handleClose}
                 isAdminMode={isAdminMode}
                 onEdit={() => {

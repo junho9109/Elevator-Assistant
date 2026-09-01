@@ -2476,9 +2476,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 검사기준 DB API
+  // standardEquipmentType 쿼리 파라미터로 문서(승강기 종류)를 스코핑한다.
+  // 조문번호가 문서마다 독립적으로 채번되어 겹칠 수 있으므로(별표22 "5.2.1" vs 별표24 "5.2.1")
+  // 반드시 지정된 종류의 조문만 반환/수정해야 한다. 미지정 시 기존 동작과 동일하게 엘리베이터.
   app.get("/api/inspection-base-items", async (req, res) => {
     try {
-      const items = await storage.getInspectionBaseItems();
+      const standardEquipmentType = (req.query.standardEquipmentType as string) || "엘리베이터";
+      const items = await storage.getInspectionBaseItems(standardEquipmentType);
       res.json(items);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch inspection base items" });
@@ -2488,17 +2492,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 관리자 화면에서 새 조문을 직접 추가 (별표22_유효항목.json 배포 없이도 즉시 화면에 노출됨)
   app.post("/api/inspection-base-items", async (req, res) => {
     try {
-      const { itemId, text, sectionTitle, parentSectionId, afterItemId } = req.body as {
-        itemId?: string; text?: string; sectionTitle?: string; parentSectionId?: string; afterItemId?: string;
+      const { itemId, text, sectionTitle, parentSectionId, afterItemId, standardEquipmentType } = req.body as {
+        itemId?: string; text?: string; sectionTitle?: string; parentSectionId?: string; afterItemId?: string; standardEquipmentType?: string;
       };
       if (!itemId || !itemId.trim() || !text || !text.trim()) {
         return res.status(400).json({ error: "조문 번호와 내용을 모두 입력해주세요." });
       }
       const trimmedId = itemId.trim();
-      // 이미 DB에 같은 itemId 행이 있는 경우 — 화면에는 안 보이던(별표22_유효항목.json 미등재,
+      const eqType = standardEquipmentType || "엘리베이터";
+      // 이미 DB에 같은 itemId+standardEquipmentType 행이 있는 경우 — 화면에는 안 보이던(별표22_유효항목.json 미등재,
       // 다른 문서에서 잘못 인덱싱된) 잡음 행일 수 있다. 그냥 실패시키지 않고 기존 내용을 함께
       // 돌려줘서, 관리자가 그 내용을 보고 "덮어쓰기(이 번호로 등록)"할지 판단할 수 있게 한다.
-      const existing = await storage.getInspectionBaseItem(trimmedId);
+      const existing = await storage.getInspectionBaseItem(trimmedId, eqType);
       if (existing) {
         return res.status(409).json({
           error: `이미 존재하는 조문번호입니다: ${trimmedId} (화면에는 숨겨져 있던 항목일 수 있습니다)`,
@@ -2516,6 +2521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sectionTitle,
         parentSectionId,
         afterItemId,
+        standardEquipmentType: eqType,
       });
       res.status(201).json(created);
     } catch (error: any) {
@@ -2525,7 +2531,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/inspection-base-items/:itemId", async (req, res) => {
     try {
-      const item = await storage.getInspectionBaseItem(req.params.itemId);
+      const standardEquipmentType = (req.query.standardEquipmentType as string) || "엘리베이터";
+      const item = await storage.getInspectionBaseItem(req.params.itemId, standardEquipmentType);
       if (!item) return res.status(404).json({ error: "Not found" });
       res.json(item);
     } catch (error) {
@@ -2538,11 +2545,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   //               isAdminAdded/isActive를 true로 같이 세팅해서 즉시 화면에 노출시킨다.
   app.put("/api/inspection-base-items/:itemId", async (req, res) => {
     try {
-      const { text, sectionTitle, adopt } = req.body as { text?: string; sectionTitle?: string; adopt?: boolean };
+      const { text, sectionTitle, adopt, standardEquipmentType } = req.body as { text?: string; sectionTitle?: string; adopt?: boolean; standardEquipmentType?: string };
       const updated = await storage.updateInspectionBaseItem(req.params.itemId, {
         text, sectionTitle,
         ...(adopt ? { isAdminAdded: "true", isActive: "true" } : {}),
-      });
+      }, standardEquipmentType || "엘리베이터");
       if (!updated) return res.status(404).json({ error: "Not found" });
       res.json(updated);
     } catch (error) {
@@ -3848,6 +3855,38 @@ ${answerRules}${contextText}${memoSection}`,
   setInterval(() => {
     maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
   }, 30 * 60 * 1000);
+
+  // TEMP DEBUG (secret=std2022esc) — inspection_base_items에 standard_equipment_type 컬럼/복합
+  // 유니크 마이그레이션 + 에스컬레이터(별표24) 조문 bulk upsert, 1회 실행 후 제거
+  app.post("/api/debug/migrate-escalator-base-items", async (req, res) => {
+    if (req.query.secret !== "std2022esc") return res.status(403).json({ error: "forbidden" });
+    try {
+      const { pool: pgPool } = await import("./db");
+      // 1) 컬럼 추가 (기존 행은 전부 엘리베이터로 백필됨 — DEFAULT 절)
+      await pgPool.query(`ALTER TABLE inspection_base_items ADD COLUMN IF NOT EXISTS standard_equipment_type VARCHAR(20) NOT NULL DEFAULT '엘리베이터'`);
+      // 2) 기존 단일 컬럼 유니크 제약/인덱스가 있다면 제거 (item_id 단독 유니크는 더 이상 유효하지 않음)
+      await pgPool.query(`ALTER TABLE inspection_base_items DROP CONSTRAINT IF EXISTS inspection_base_items_item_id_key`);
+      await pgPool.query(`DROP INDEX IF EXISTS inspection_base_items_item_id_key`);
+      // 3) 복합 유니크 인덱스 생성 (이미 있으면 스킵)
+      await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS inspection_base_items_item_equip_unique ON inspection_base_items (item_id, standard_equipment_type)`);
+
+      // 4) 에스컬레이터 조문 bulk upsert
+      const { secret, standardEquipmentType, items } = req.body as {
+        secret?: string; standardEquipmentType?: string; items?: any[];
+      };
+      let inserted = 0, updated = 0;
+      if (Array.isArray(items) && items.length > 0) {
+        const result = await storage.bulkUpsertInspectionBaseItems(items, standardEquipmentType || "에스컬레이터");
+        inserted = result.inserted; updated = result.updated;
+      }
+
+      const columns = await pgPool.query(`SELECT column_name, column_default FROM information_schema.columns WHERE table_name='inspection_base_items'`);
+      const counts = await pgPool.query(`SELECT standard_equipment_type, COUNT(*) FROM inspection_base_items GROUP BY standard_equipment_type`);
+      res.json({ ok: true, columns: columns.rows, counts: counts.rows, inserted, updated });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e?.message || e) });
+    }
+  });
 
   const httpServer = createServer(app);
 

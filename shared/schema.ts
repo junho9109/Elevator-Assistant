@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, serial, timestamp, integer, boolean} from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, serial, timestamp, integer, boolean, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -378,9 +378,16 @@ export type InspectionItemRevision = typeof inspectionItemRevisions.$inferSelect
 
 // ── 검사기준 항목 DB 저장 테이블 ──
 // 정적 파일 대신 DB에서 검사기준을 관리
+// standardEquipmentType: 이 조문이 속한 안전기준 "문서" 구분자 (예: "엘리베이터"=별표22,
+// "에스컬레이터"=별표24). 조문번호(itemId)는 문서마다 독립적으로 채번되어 서로 겹칠 수
+// 있으므로(예: 별표22의 "5.2.1"과 별표24의 "5.2.1"은 다른 조문), itemId 단독으로는 유일성을
+// 보장할 수 없다. 반드시 (itemId, standardEquipmentType) 조합으로 유일해야 한다.
+// 기존 컬럼 equipmentTypes(복수)는 "이 조문이 적용되는 승강기 하위종류 태그"라는 별개
+// 용도이므로 이름이 헷갈리지 않도록 새 컬럼명을 다르게 정했다.
 export const inspectionBaseItems = pgTable("inspection_base_items", {
   id: serial("id").primaryKey(),
-  itemId: varchar("item_id", { length: 50 }).notNull().unique(),  // e.g. "1.2.1.1-가"
+  itemId: varchar("item_id", { length: 50 }).notNull(),  // e.g. "1.2.1.1-가"
+  standardEquipmentType: varchar("standard_equipment_type", { length: 20 }).notNull().default("엘리베이터"),
   sectionId: varchar("section_id", { length: 50 }).notNull(),     // e.g. "1.2.1.1"
   sectionTitle: varchar("section_title", { length: 200 }),        // e.g. "[1.2.1.1] 주개폐기"
   parentSectionId: varchar("parent_section_id", { length: 50 }),  // e.g. "1.2.1"
@@ -393,7 +400,9 @@ export const inspectionBaseItems = pgTable("inspection_base_items", {
   isAdminAdded: varchar("is_admin_added", { length: 5 }).default("false"),  // 관리자 모드에서 새로 추가한 조문 여부
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  itemIdEquipTypeUnique: uniqueIndex("inspection_base_items_item_equip_unique").on(table.itemId, table.standardEquipmentType),
+}));
 
 export const insertInspectionBaseItemSchema = createInsertSchema(inspectionBaseItems).omit({
   id: true,

@@ -542,12 +542,17 @@ export class DatabaseStorage implements IStorage {
     await db.delete(memoComments).where(eq(memoComments.id, id));
   }
 
-  async getInspectionBaseItems(): Promise<any[]> {
-    return await db.select().from(inspectionBaseItems).orderBy(inspectionBaseItems.sortOrder);
+  // standardEquipmentType으로 스코핑 — 미지정 시 기본값 "엘리베이터"(기존 별표22 동작과 완전히 동일하게 유지)
+  async getInspectionBaseItems(standardEquipmentType: string = "엘리베이터"): Promise<any[]> {
+    return await db.select().from(inspectionBaseItems)
+      .where(eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType))
+      .orderBy(inspectionBaseItems.sortOrder);
   }
 
-  async getInspectionBaseItem(itemId: string): Promise<any> {
-    const result = await db.select().from(inspectionBaseItems).where(eq(inspectionBaseItems.itemId, itemId)).limit(1);
+  async getInspectionBaseItem(itemId: string, standardEquipmentType: string = "엘리베이터"): Promise<any> {
+    const result = await db.select().from(inspectionBaseItems)
+      .where(and(eq(inspectionBaseItems.itemId, itemId), eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType)))
+      .limit(1);
     return result[0];
   }
 
@@ -560,12 +565,13 @@ export class DatabaseStorage implements IStorage {
     sortOrder: number;
     permitEffectiveDate: string | null;
     standardDates: string;
-  }[]): Promise<{ inserted: number; updated: number }> {
+  }[], standardEquipmentType: string = "엘리베이터"): Promise<{ inserted: number; updated: number }> {
     if (items.length === 0) return { inserted: 0, updated: 0 };
 
-    // 수동 편집된 text 보호를 위해 기존 text 먼저 조회
+    // 수동 편집된 text 보호를 위해 기존 text 먼저 조회 (같은 문서 범위 내에서만 비교)
     const existingItems = await db.select({ itemId: inspectionBaseItems.itemId, text: inspectionBaseItems.text })
-      .from(inspectionBaseItems);
+      .from(inspectionBaseItems)
+      .where(eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType));
     const existingMap = new Map(existingItems.map(e => [e.itemId, e.text]));
 
     let inserted = 0;
@@ -582,6 +588,7 @@ export class DatabaseStorage implements IStorage {
         const finalText = existingText && existingText !== item.text ? existingText : item.text;
         return {
           itemId: item.itemId,
+          standardEquipmentType,
           sectionId: item.sectionId,
           sectionTitle: item.sectionTitle,
           parentSectionId: item.parentSectionId,
@@ -593,11 +600,11 @@ export class DatabaseStorage implements IStorage {
         };
       });
 
-      // drizzle onConflictDoUpdate 사용
+      // drizzle onConflictDoUpdate 사용 — (itemId, standardEquipmentType) 복합 유니크 대상
       await db.insert(inspectionBaseItems)
         .values(values)
         .onConflictDoUpdate({
-          target: inspectionBaseItems.itemId,
+          target: [inspectionBaseItems.itemId, inspectionBaseItems.standardEquipmentType],
           set: {
             sectionTitle: sql`excluded.section_title`,
             parentSectionId: sql`excluded.parent_section_id`,
@@ -622,35 +629,42 @@ export class DatabaseStorage implements IStorage {
   // 관리자 화면에서 새 조문을 직접 추가 — VALID_BYULPYO22_IDS(정적 JSON) 배포 없이도
   // isAdminAdded='true'로 표시해 클라이언트 필터를 통과하게 한다.
   async createInspectionBaseItem(data: {
-    itemId: string; text: string; sectionTitle?: string; parentSectionId?: string | null; afterItemId?: string;
+    itemId: string; text: string; sectionTitle?: string; parentSectionId?: string | null; afterItemId?: string; standardEquipmentType?: string;
   }): Promise<any> {
-    const existing = await db.select().from(inspectionBaseItems).where(eq(inspectionBaseItems.itemId, data.itemId)).limit(1);
+    const standardEquipmentType = data.standardEquipmentType || "엘리베이터";
+    const existing = await db.select().from(inspectionBaseItems)
+      .where(and(eq(inspectionBaseItems.itemId, data.itemId), eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType)))
+      .limit(1);
     if (existing[0]) {
       throw new Error(`이미 존재하는 조문번호입니다: ${data.itemId}`);
     }
 
-    // sortOrder 계산: afterItemId가 있으면 그 다음 항목과의 중간값, 없으면 맨 뒤에 추가
+    // sortOrder 계산: afterItemId가 있으면 그 다음 항목과의 중간값, 없으면 맨 뒤에 추가 (같은 문서 범위 내에서)
     let sortOrder: number;
     if (data.afterItemId) {
-      const afterRows = await db.select().from(inspectionBaseItems).where(eq(inspectionBaseItems.itemId, data.afterItemId)).limit(1);
+      const afterRows = await db.select().from(inspectionBaseItems)
+        .where(and(eq(inspectionBaseItems.itemId, data.afterItemId), eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType)))
+        .limit(1);
       if (!afterRows[0]) {
         throw new Error(`"다음에 추가" 기준 조문을 찾을 수 없습니다: ${data.afterItemId}`);
       }
       const afterOrder = afterRows[0].sortOrder ?? 0;
       const nextRows = await db.select().from(inspectionBaseItems)
-        .where(sql`${inspectionBaseItems.sortOrder} > ${afterOrder}`)
+        .where(and(sql`${inspectionBaseItems.sortOrder} > ${afterOrder}`, eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType)))
         .orderBy(inspectionBaseItems.sortOrder)
         .limit(1);
       const nextOrder = nextRows[0]?.sortOrder ?? (afterOrder + 2);
       sortOrder = Math.floor((afterOrder + nextOrder) / 2);
       if (sortOrder <= afterOrder) sortOrder = afterOrder + 1;
     } else {
-      const maxRows = await db.select({ max: sql<number>`max(${inspectionBaseItems.sortOrder})` }).from(inspectionBaseItems);
+      const maxRows = await db.select({ max: sql<number>`max(${inspectionBaseItems.sortOrder})` }).from(inspectionBaseItems)
+        .where(eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType));
       sortOrder = (maxRows[0]?.max ?? 0) + 10;
     }
 
     const result = await db.insert(inspectionBaseItems).values({
       itemId: data.itemId,
+      standardEquipmentType,
       sectionId: data.itemId,
       sectionTitle: data.sectionTitle || null,
       parentSectionId: data.parentSectionId || null,
@@ -663,10 +677,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // 관리자 화면에서 조문 하나를 직접 수정 — 별도 override 테이블 없이 원본 행을 갱신한다.
-  async updateInspectionBaseItem(itemId: string, data: { text?: string; sectionTitle?: string; isAdminAdded?: string; isActive?: string }): Promise<any> {
+  async updateInspectionBaseItem(itemId: string, data: { text?: string; sectionTitle?: string; isAdminAdded?: string; isActive?: string }, standardEquipmentType: string = "엘리베이터"): Promise<any> {
     const result = await db.update(inspectionBaseItems)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(inspectionBaseItems.itemId, itemId))
+      .where(and(eq(inspectionBaseItems.itemId, itemId), eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType)))
       .returning();
     return result[0];
   }
