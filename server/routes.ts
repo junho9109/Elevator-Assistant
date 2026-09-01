@@ -3871,8 +3871,8 @@ ${answerRules}${contextText}${memoSection}`,
         JOIN pg_class rel ON rel.oid = con.conrelid
         WHERE rel.relname = 'inspection_base_items'
           AND con.contype = 'u'
-          AND (SELECT array_agg(attname) FROM unnest(con.conkey) AS k(attnum)
-               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum) = ARRAY['item_id']
+          AND (SELECT array_agg(attname::text) FROM unnest(con.conkey) AS k(attnum)
+               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum) = ARRAY['item_id']::text[]
       `);
       for (const row of oldConstraints.rows) {
         await pgPool.query(`ALTER TABLE inspection_base_items DROP CONSTRAINT IF EXISTS "${row.conname}"`);
