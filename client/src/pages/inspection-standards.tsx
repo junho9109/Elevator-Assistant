@@ -26,6 +26,61 @@ function stripIdPrefix(itemId: string, raw: string): string {
   return t;
 }
 
+// ── 파이프(|) 구분 표 형식 감지 및 파싱 (4.2 기호표 등) ─────────────────
+// AI 검색/인용은 원본 파이프 텍스트를 그대로 쓰므로 이 파싱은 화면 표시 전용이며
+// text 컬럼 자체는 건드리지 않는다. "기호 | 설명 | 단위: x | 그림: y" 형태의 줄이
+// 일정 개수 이상 있으면 표로 판단한다.
+type ParsedTableBody = { intro: string; headers: string[]; rows: string[][] };
+function tryParsePipeTable(body: string): ParsedTableBody | null {
+  const lines = body.split("\n").map(l => l.trim());
+  const pipeLines = lines.filter(l => l.includes(" | ") && l.split(" | ").length >= 3);
+  if (pipeLines.length < 5) return null; // 소수의 우연한 파이프는 표로 취급하지 않음
+
+  const introLines: string[] = [];
+  const rows: string[][] = [];
+  let headerCount = 0;
+  for (const line of lines) {
+    if (line.includes(" | ") && line.split(" | ").length >= 3) {
+      rows.push(line.split(" | ").map(c => c.trim()));
+      headerCount = Math.max(headerCount, line.split(" | ").length);
+    } else if (rows.length === 0 && line) {
+      introLines.push(line);
+    }
+    // 표 시작 후의 빈 줄/캡션(예: "[표 1. ...]")은 무시
+  }
+  if (rows.length < 5) return null;
+  const headers = Array.from({ length: headerCount }, (_, i) => i === 0 ? "기호" : `열 ${i + 1}`);
+  return { intro: introLines.join("\n"), headers, rows };
+}
+
+function PipeTableView({ parsed }: { parsed: ParsedTableBody }) {
+  return (
+    <div className="space-y-2">
+      {parsed.intro && (
+        <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{parsed.intro}</p>
+      )}
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full border-collapse text-xs">
+          <tbody>
+            {parsed.rows.map((cells, i) => (
+              <tr key={i} className={i % 2 === 0 ? "" : "bg-muted/20"}>
+                {cells.map((cell, j) => (
+                  <td
+                    key={j}
+                    className={`border border-border px-2 py-2 leading-relaxed align-top ${j === 0 ? "text-primary font-semibold whitespace-nowrap" : ""}`}
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 const DOC_SOURCE_LABEL: Record<string, string> = {
   엘리베이터: "별표22 엘리베이터 안전기준 KC2050-51:2022",
   에스컬레이터: "별표24 에스컬레이터 안전기준 KC2050-53:2022",
@@ -282,7 +337,12 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-2">조문 내용</p>
-          <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>
+          {(() => {
+            const parsedTable = tryParsePipeTable(body || displayText);
+            return parsedTable
+              ? <PipeTableView parsed={parsedTable} />
+              : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>;
+          })()}
         </div>
         {(photos.length > 0 || isAdminMode) && (
           <div>
@@ -412,7 +472,12 @@ function GenerationDetail({ id, gen, onClose }: { id: string; gen: GenerationDoc
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <div>
           <p className="text-xs font-medium text-muted-foreground mb-2">조문 내용</p>
-          <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>
+          {(() => {
+            const parsedTable = tryParsePipeTable(body || displayText);
+            return parsedTable
+              ? <PipeTableView parsed={parsedTable} />
+              : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>;
+          })()}
         </div>
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {gen.meta.title} · {gen.meta.source || gen.meta.effectiveDate}</p>
       </div>
