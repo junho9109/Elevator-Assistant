@@ -3856,34 +3856,6 @@ ${answerRules}${contextText}${memoSection}`,
     maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
   }, 30 * 60 * 1000);
 
-  // TEMP DEBUG (secret=std2022merge42) — 잘못 만든 4.2.1~4.2.48 하위 항목 48개를 삭제하고,
-  // 표1 기호 전체를 4.2 하나의 text 안에 통합한다 (사용자 지적: 하위 항목으로 쪼개지 말 것).
-  app.get("/api/debug/merge-escalator-42", async (req, res) => {
-    if (req.query.secret !== "std2022merge42") return res.status(403).json({ error: "forbidden" });
-    try {
-      const fs = await import("fs");
-      const path = await import("path");
-      const { pool: pgPool } = await import("./db");
-
-      const delResult = await pgPool.query(
-        `DELETE FROM inspection_base_items WHERE standard_equipment_type = '에스컬레이터' AND item_id LIKE '4.2.%'`
-      );
-
-      const fp = path.join(process.cwd(), "server", "temp-merge-42.json");
-      if (!fs.existsSync(fp)) return res.status(404).json({ error: "file not found" });
-      const raw = JSON.parse(fs.readFileSync(fp, "utf-8"));
-      const updated = await storage.updateInspectionBaseItem(
-        "4.2",
-        { text: raw.text, sectionTitle: raw.sectionTitle },
-        raw.standardEquipmentType || "에스컬레이터"
-      );
-
-      res.json({ ok: true, deletedSubItems: delResult.rowCount, headerUpdated: !!updated });
-    } catch (e: any) {
-      res.status(500).json({ error: String(e?.message || e), stack: e?.stack });
-    }
-  });
-
   const httpServer = createServer(app);
 
   return httpServer;
