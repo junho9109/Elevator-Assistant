@@ -3856,24 +3856,6 @@ ${answerRules}${contextText}${memoSection}`,
     maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
   }, 30 * 60 * 1000);
 
-  // TEMP DEBUG (secret=std2022add31) — 에스컬레이터 "3.1 용어 및 정의" 절 헤더 항목 추가
-  // (기존에 3.1.1~3.1.30만 있고 3.1 자체 헤더/안내문이 누락되어 있던 것 보완)
-  app.get("/api/debug/add-escalator-31", async (req, res) => {
-    if (req.query.secret !== "std2022add31") return res.status(403).json({ error: "forbidden" });
-    try {
-      const fs = await import("fs");
-      const path = await import("path");
-      const fp = path.join(process.cwd(), "server", "temp-add-31.json");
-      if (!fs.existsSync(fp)) return res.status(404).json({ error: "file not found" });
-      const raw = JSON.parse(fs.readFileSync(fp, "utf-8"));
-      const items = raw.items || [];
-      const result = await storage.bulkUpsertInspectionBaseItems(items, raw.standardEquipmentType || "에스컬레이터");
-      res.json({ ok: true, count: items.length, ...result });
-    } catch (e: any) {
-      res.status(500).json({ error: String(e?.message || e), stack: e?.stack });
-    }
-  });
-
   const httpServer = createServer(app);
 
   return httpServer;
