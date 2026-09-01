@@ -3864,9 +3864,27 @@ ${answerRules}${contextText}${memoSection}`,
       const { pool: pgPool } = await import("./db");
       // 1) 컬럼 추가 (기존 행은 전부 엘리베이터로 백필됨 — DEFAULT 절)
       await pgPool.query(`ALTER TABLE inspection_base_items ADD COLUMN IF NOT EXISTS standard_equipment_type VARCHAR(20) NOT NULL DEFAULT '엘리베이터'`);
-      // 2) 기존 단일 컬럼 유니크 제약/인덱스가 있다면 제거 (item_id 단독 유니크는 더 이상 유효하지 않음)
-      await pgPool.query(`ALTER TABLE inspection_base_items DROP CONSTRAINT IF EXISTS inspection_base_items_item_id_key`);
-      await pgPool.query(`DROP INDEX IF EXISTS inspection_base_items_item_id_key`);
+      // 2) 기존 단일 컬럼(item_id) 유니크 제약을 실제 이름으로 조회해서 전부 제거
+      const oldConstraints = await pgPool.query(`
+        SELECT con.conname
+        FROM pg_constraint con
+        JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'inspection_base_items'
+          AND con.contype = 'u'
+          AND (SELECT array_agg(attname) FROM unnest(con.conkey) AS k(attnum)
+               JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum) = ARRAY['item_id']
+      `);
+      for (const row of oldConstraints.rows) {
+        await pgPool.query(`ALTER TABLE inspection_base_items DROP CONSTRAINT IF EXISTS "${row.conname}"`);
+      }
+      // 혹시 제약이 아니라 단독 유니크 인덱스로만 존재하는 경우도 커버
+      const oldIndexes = await pgPool.query(`
+        SELECT indexname FROM pg_indexes
+        WHERE tablename = 'inspection_base_items' AND indexdef LIKE '%UNIQUE%(item_id)%'
+      `);
+      for (const row of oldIndexes.rows) {
+        await pgPool.query(`DROP INDEX IF EXISTS "${row.indexname}"`);
+      }
       // 3) 복합 유니크 인덱스 생성 (이미 있으면 스킵)
       await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS inspection_base_items_item_equip_unique ON inspection_base_items (item_id, standard_equipment_type)`);
 
