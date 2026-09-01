@@ -1088,8 +1088,12 @@ export default function JudgmentPage() {
     setRevisionsLoading(true);
     setRefRevisions([]);
 
-    // 본문에서 6항 참조 조문번호 추출 (예: 6.3.3, 6.5.2.2.1)
-    const refMatches = (item.text || "").match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
+    // 본문에서 안전기준 참조 조문번호 추출 (예: 6.3.3, 6.5.2.2.1)
+    // 엘리베이터 안전기준은 6~17장, 에스컬레이터 안전기준은 5~7장 체계를 쓰므로
+    // 현재 선택된 승강기 종류에 맞는 대분류 범위로 매칭한다 (번호 자체는 equipmentType으로
+    // DB에서도 분리 저장되므로, 여기서는 정규식이 놓치지 않도록 범위만 넓게 잡으면 된다).
+    const refNumRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
+    const refMatches = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${refNumRange})\\.\\d+(?:\\.\\d+)*`, "g")) || [];
     // 본문에 번호가 안 적혀 있어 정규식으로 못 잡는 예외 항목은 수동으로 추가
     const uniqueRefs = [...new Set([...refMatches, ...(EXTRA_REF_IDS[item.id] || [])])];
     if (uniqueRefs.length > 0) {
@@ -1729,11 +1733,13 @@ export default function JudgmentPage() {
     const status = getItemStatus(item);
     const autoResults = getAutoResults(item);  // [v5] 다중 선택용 배열
     const hasCustomEdit = !!(serverEdits && serverEdits.some((e: any) => e.itemId === item.id));
-    // 연혁 뱃지 — 6~8항 참조 조문이 있고 연혁 데이터 있을 때
-    const refRevisionExists = (item.text || "").match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g)?.some(
+    // 연혁 뱃지 — 승강기 종류별 안전기준 참조 조문이 있고(엘리베이터 6~17장, 에스컬레이터 5~7장)
+    // 연혁 데이터가 있을 때 표시. revisionCounts는 이미 현재 equipmentType으로 스코핑되어 있다.
+    const badgeNumRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
+    const refRevisionExists = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${badgeNumRange})\\.\\d+(?:\\.\\d+)*`, "g"))?.some(
       (ref: string) => revisionCounts[ref] && revisionCounts[ref] > 0
     ) || false;
-    const directRevision = /^(?:6|7|8|9|1[0-7])\./.test(item.id) && !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
+    const directRevision = new RegExp(`^(?:${badgeNumRange})\\.`).test(item.id) && !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
     const hasRevisionData = directRevision || refRevisionExists;
     
     return (
