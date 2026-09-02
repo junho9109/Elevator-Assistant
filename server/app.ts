@@ -60,6 +60,10 @@ async function ensureChatTable() {
         updated_at TIMESTAMP DEFAULT NOW() NOT NULL
       )
     `);
+    // 관리자 패널(클러스터 현황 조회)이 status로 필터링하고 updated_at으로 정렬하므로,
+    // 데이터가 누적돼도 조회가 느려지지 않도록 인덱스를 미리 걸어둠
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_answer_pool_status ON ai_answer_pool (status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_answer_pool_updated_at ON ai_answer_pool (updated_at DESC)`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }

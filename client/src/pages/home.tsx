@@ -1664,6 +1664,34 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     }
   }
 
+  // ── AI 피드백 현황: 읽기 전용 모니터링 패널 (좋아요/아쉬워요로 자동 분류된 상태를 그대로 보여줌) ──
+  const [showAiFeedbackPanel, setShowAiFeedbackPanel] = useState(false);
+  const [aiFeedbackStatusFilter, setAiFeedbackStatusFilter] = useState<"전체" | "excluded" | "pending" | "approved">("전체");
+  const [aiFeedbackLimit, setAiFeedbackLimit] = useState(50);
+  const { data: aiFeedbackData, isLoading: aiFeedbackLoading } = useQuery<{ clusters: any[]; total: number; limit: number; offset: number }>({
+    queryKey: ["/api/ai-feedback/clusters", aiFeedbackStatusFilter, aiFeedbackLimit],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (aiFeedbackStatusFilter !== "전체") params.set("status", aiFeedbackStatusFilter);
+      params.set("limit", String(aiFeedbackLimit));
+      const r = await fetch(`/api/ai-feedback/clusters?${params.toString()}`);
+      return r.json();
+    },
+    enabled: showAiFeedbackPanel,
+  });
+  const excludeAiFeedbackCluster = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/ai-feedback/clusters/${id}/exclude`, { method: "POST" });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-feedback/clusters"] });
+      toast({ title: "참고 목록에서 제외했습니다." });
+    },
+    onError: () => toast({ title: "제외 처리에 실패했습니다.", variant: "destructive" }),
+  });
+
   // ── 전문가 지식 수집: 관리자 검수 패널 ──
   const [showExpertReview, setShowExpertReview] = useState(false);
   const [expertReviewTab, setExpertReviewTab] = useState<"대기"|"승인"|"반려">("대기");
@@ -3018,6 +3046,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   지식 검수
                 </button>
               )}
+              {isAdminMode && defaultTab === "chat" && (
+                <button
+                  onClick={() => setShowAiFeedbackPanel(s => !s)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
+                >
+                  AI 피드백 현황
+                </button>
+              )}
               <button
                 onClick={() => { if (onLogout) onLogout(); }}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted"
@@ -3345,6 +3381,103 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             </div>
           ) : (
             <div className="px-4 py-6 text-center text-xs text-muted-foreground">데이터를 불러올 수 없습니다</div>
+          )}
+        </div>
+      )}
+
+      {/* AI 피드백 현황: 읽기 전용 모니터링 — 좋아요/아쉬워요 누적으로 자동 승인/제외되는 현재 상태를 그대로 보여줌.
+          관리자가 직접 승인/반려를 선택하는 구조가 아니라, 시스템이 이미 자동으로 하고 있는 학습 결과를
+          투명하게 확인하는 용도. 명백히 틀린 답변만 "지금 제외하기"로 예외적 강제 개입 가능. */}
+      {defaultTab === "chat" && showAiFeedbackPanel && (
+        <div className="mx-3 mt-2 bg-card border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-b border-border">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">AI 피드백 현황</span>
+          </div>
+          <div className="px-3 py-2 border-b border-border">
+            <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
+              좋아요가 많은 답변은 유사 질문에 자동으로 참고되고, 아쉬워요가 많은 답변은 자동으로 참고 목록에서 빠집니다.
+            </p>
+            <div className="flex gap-1.5">
+              {([
+                ["전체", "전체"],
+                ["excluded", "제외됨"],
+                ["pending", "학습중"],
+                ["approved", "참고 답변"],
+              ] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => { setAiFeedbackStatusFilter(val as any); setAiFeedbackLimit(50); }}
+                  className={`text-[11px] font-medium px-2.5 py-1 rounded-lg ${aiFeedbackStatusFilter === val ? "bg-blue-600 text-white" : "border border-border text-muted-foreground"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="max-h-[420px] overflow-y-auto px-3 py-2 space-y-2">
+            {aiFeedbackLoading ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">불러오는 중...</div>
+            ) : (aiFeedbackData?.clusters || []).length === 0 ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">해당 조건의 데이터가 없습니다</div>
+            ) : (
+              (aiFeedbackData?.clusters || []).map((c: any) => {
+                const statusMeta =
+                  c.status === "excluded"
+                    ? { label: "참고 목록에서 제외됨", cls: "bg-red-500 text-white" }
+                    : c.status === "approved"
+                    ? { label: "유사 질문에 참고중", cls: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" }
+                    : { label: "학습중", cls: "border border-border text-muted-foreground" };
+                const negReasons: string[] = Array.from(
+                  new Set((c.recentFeedback || []).filter((f: any) => f.rating === -1).flatMap((f: any) => f.reasons || []))
+                );
+                const comments: string[] = (c.recentFeedback || [])
+                  .filter((f: any) => f.comment)
+                  .slice(0, 2)
+                  .map((f: any) => f.comment);
+                return (
+                  <div key={c.id} className={`rounded-xl px-3 py-2.5 ${c.status === "excluded" ? "bg-red-50 dark:bg-red-900/10" : "bg-muted/40"}`}>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <p className="text-[13px] font-medium flex-1">{c.question}</p>
+                      <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">👍{c.thumbsUp ?? c.thumbs_up} 👎{c.thumbsDown ?? c.thumbs_down}</span>
+                    </div>
+                    <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-md mb-1.5 ${statusMeta.cls}`}>{statusMeta.label}</span>
+                    <p className="text-[11px] text-muted-foreground mb-1.5 line-clamp-2">최근 답변: {c.answer}</p>
+                    {negReasons.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1.5">
+                        {negReasons.map((r) => (
+                          <span key={r} className="text-[10px] px-1.5 py-0.5 rounded-md bg-background text-muted-foreground">{r}</span>
+                        ))}
+                      </div>
+                    )}
+                    {comments.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground italic mb-1.5">
+                        {comments.map((cm, i) => `"${cm}"`).join(" · ")}
+                      </p>
+                    )}
+                    {c.status !== "excluded" && (
+                      <button
+                        onClick={() => excludeAiFeedbackCluster.mutate(c.id)}
+                        disabled={excludeAiFeedbackCluster.isPending}
+                        className="mt-0.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-red-200 text-red-600 dark:border-red-800 dark:text-red-400"
+                      >
+                        지금 제외하기
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {(aiFeedbackData?.total ?? 0) > (aiFeedbackData?.clusters || []).length && (
+            <div className="px-3 py-2 border-t border-border">
+              <button
+                onClick={() => setAiFeedbackLimit((n) => n + 50)}
+                className="w-full text-[11px] font-medium py-1.5 rounded-lg border border-border text-muted-foreground"
+              >
+                더 보기 (최근 {(aiFeedbackData?.clusters || []).length}개 / 전체 {aiFeedbackData?.total}개)
+              </button>
+            </div>
           )}
         </div>
       )}

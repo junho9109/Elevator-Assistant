@@ -415,6 +415,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 관리자 모드: AI 답변 클러스터 현황 (읽기 전용 모니터링) — 좋아요/아쉬워요로 자동 분류된
+  // 상태(approved/pending/excluded)를 그대로 보여줌. status 필터 + limit/offset 페이지네이션으로
+  // 데이터가 쌓여도 패널이 항상 빠르게 열리도록 함.
+  app.get("/api/ai-feedback/clusters", async (req, res) => {
+    try {
+      const { pool } = await import("./db");
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const limit = Math.min(parseInt(String(req.query.limit ?? "50"), 10) || 50, 100);
+      const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+
+      const validStatuses = ["pending", "approved", "excluded"];
+      const whereClause = status && validStatuses.includes(status) ? `WHERE status = $1` : "";
+      const params: any[] = status && validStatuses.includes(status) ? [status] : [];
+
+      const countResult = await pool.query(
+        `SELECT COUNT(*)::int as total FROM ai_answer_pool ${whereClause}`,
+        params
+      );
+      const total = countResult.rows[0]?.total ?? 0;
+
+      const clusterRows = await pool.query(
+        `SELECT id, question, answer, thumbs_up, thumbs_down, status, created_at, updated_at
+         FROM ai_answer_pool
+         ${whereClause}
+         ORDER BY updated_at DESC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset]
+      );
+
+      // 각 클러스터에 달린 최근 코멘트(사유 태그 포함)를 질문 텍스트로 매칭해 조인
+      // (ai_feedback은 poolId를 직접 저장하지 않으므로 question 일치로 근사 매칭)
+      const clusters = await Promise.all(
+        clusterRows.rows.map(async (c: any) => {
+          const feedbackRows = await pool.query(
+            `SELECT rating, reasons, comment, created_at
+             FROM ai_feedback
+             WHERE question = $1
+             ORDER BY created_at DESC
+             LIMIT 5`,
+            [c.question]
+          );
+          return { ...c, recentFeedback: feedbackRows.rows };
+        })
+      );
+
+      res.json({ clusters, total, limit, offset });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "클러스터 조회 실패" });
+    }
+  });
+
+  // 관리자 모드: 명백히 틀린 답변을 즉시 참고 목록에서 제외 (예외적 강제 조치 — 자동 학습과 별개)
+  app.post("/api/ai-feedback/clusters/:id/exclude", async (req, res) => {
+    try {
+      const { pool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: "잘못된 id" });
+      }
+      const result = await pool.query(
+        `UPDATE ai_answer_pool SET status = 'excluded', updated_at = NOW() WHERE id = $1 RETURNING id`,
+        [id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "클러스터를 찾을 수 없습니다" });
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "제외 처리 실패" });
+    }
+  });
+
   app.get("/api/standards/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
