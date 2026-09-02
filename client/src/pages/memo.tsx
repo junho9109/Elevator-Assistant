@@ -614,8 +614,11 @@ export default function MemoPage() {
     setImageViewer(prev => ({ ...prev, isOpen: false, panX: 0, panY: 0 }));
   };
 
+  // queryKey는 "/api/memos"로 통일 — 등록/수정/삭제 mutation의 invalidateQueries가
+  // 같은 키(["/api/memos"])를 무효화하므로, 이전에 ['memos']로 되어 있으면 매칭되지 않아
+  // 저장 직후 목록이 갱신되지 않고(새로고침 전까지 캐시 유지) 재접속해야 반영되는 문제가 있었다.
   const { data: memosRaw, isLoading, error } = useQuery<Memo[]>({
-    queryKey: ['memos'],
+    queryKey: ["/api/memos"],
     queryFn: async () => {
       const res = await fetch('/api/memos');
       if (!res.ok) {
