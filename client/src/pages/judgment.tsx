@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ZoomControl } from "@/components/ZoomControl";
+import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
 // inspection-content.json → DB로 이전
 type ContentEntry = {
@@ -562,6 +563,20 @@ export default function JudgmentPage() {
   // Item detail dialog state (photos & comments)
   const [detailItem, setDetailItem] = useState<InspectionItem | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  // 상세보기 안에서 핀치 줌 시 배경 페이지가 아니라 상세보기 콘텐츠 자체가 확대되도록 하는 훅.
+  // resetDep(detailItem?.id)이 바뀌면(다른 항목 열람) 확대 상태를 초기화한다.
+  const detailZoom = usePinchZoomPan(isDetailDialogOpen ? detailItem?.id : "closed", { interactive: true });
+  // 상세보기가 열려 있는 동안에는 body의 네이티브 핀치 줌(뷰포트 확대)을 막아,
+  // 손가락 두 개로 문지를 때 배경 페이지가 함께 확대되는 현상을 차단한다.
+  // 다이얼로그가 닫히면 원상복구해 평소 페이지 탐색 시의 확대 기능은 그대로 유지한다.
+  useEffect(() => {
+    if (!isDetailDialogOpen) return;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.touchAction = "pan-y pan-x";
+    return () => {
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [isDetailDialogOpen]);
   const [newComment, setNewComment] = useState({ author: "", content: "" });
   const [revisions, setRevisions] = useState<{id?:number; effectiveDate:string; expiryDate:string; introductionType:string; description:string}[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
@@ -2191,7 +2206,14 @@ export default function JudgmentPage() {
             </DialogTitle>
           </DialogHeader>
           {detailItem && (
-            <div className="flex-1 overflow-y-auto flex flex-col">
+            <div
+              className="flex-1 overflow-y-auto flex flex-col"
+              onTouchStart={detailZoom.containerHandlers.onTouchStart}
+              onTouchMove={detailZoom.containerHandlers.onTouchMove}
+              onTouchEnd={detailZoom.containerHandlers.onTouchEnd}
+            >
+              {/* 핀치 줌 시 이 wrapper만 확대되고 배경 페이지는 영향받지 않음(위 usePinchZoomPan 참고) */}
+              <div style={detailZoom.contentStyle} className="flex flex-col">
               {/* 관리자 편집 섹션 */}
               {isAdminMode && editingItem?.id === detailItem.id && (
                 <div className="border border-primary/30 rounded-xl bg-primary/5 mb-4">
@@ -2561,6 +2583,7 @@ export default function JudgmentPage() {
               </div>
                   </div>
                   </div>
+              </div>
             </div>
           )}
           <DialogFooter>
