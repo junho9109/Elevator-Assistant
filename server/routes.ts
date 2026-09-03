@@ -2892,34 +2892,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       })();
 
-      // ════════════════════════════════════════════════════════════
-      // 0단계: 질문 유형 분류 (Haiku — 경량 빠름)
-      // 유형: LOOKUP(조문/기준조회) | JUDGMENT(판정/판단) | CALCULATE(계산)
-      // ════════════════════════════════════════════════════════════
-      const classifierTask = (async (): Promise<"LOOKUP" | "JUDGMENT" | "CALCULATE"> => {
-        try {
-          const classifier = await anthropic.messages.create({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 20,
-            system: `승강기 검사 질문을 분류한다. 아래 중 하나만 반환한다.
-LOOKUP: 조문·기준·규정을 묻는 질문 (예: "기준이 뭐야", "조문 알려줘")
-JUDGMENT: 판정·적부·합격여부를 묻는 질문 (예: "적합한가", "지적해야 하나")
-CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하는 질문
-  - 동사형: "구해줘", "계산해줘", "얼마야"
-  - 명사형: "균형추 여유거리", "카 상부틈새", "완충기 행정" 등 수치 계산이 명확히 필요한 항목명만 해당
-  - 단순 기준 조회("높이 기준", "거리 기준", "설치 높이" 등)는 LOOKUP으로 분류
-단어 하나만 반환.`,
-            messages: [{ role: "user", content: userQuestion }],
-          });
-          const cls = classifier.content[0].type === "text" ? classifier.content[0].text.trim() : "";
-          if (cls === "JUDGMENT") return "JUDGMENT";
-          if (cls === "CALCULATE") return "CALCULATE";
-        } catch {}
-        return "LOOKUP";
-      })();
-
-      const [goodAnswerRefSection, articleRows, keywordRows, memoSection, questionType] = await Promise.all([
-        ragTask, articleTask, keywordTask, memoTask, classifierTask,
+      // [2026-09] 질문 유형 분류(LOOKUP/JUDGMENT/CALCULATE) 단계 제거.
+      // 원래 목적은 "계산 질문이면 전용 계산 답변으로 보낸다" 하나뿐이었고 LOOKUP/JUDGMENT는
+      // 구분해도 이후 로직에서 전혀 다르게 처리되지 않았다(둘 다 answerRules로 동일 처리).
+      // 그런데 이 분류만을 위해 매 요청마다 Haiku API를 한 번 더 순차로 왕복했고, 그 뒤 답변
+      // 생성 Haiku 호출과 합쳐 fast 모드에서도 AI 왕복이 2회(총 8~9초)나 필요했다.
+      // 계산 질문 처리는 answerRules 안의 "계산/판정 질문 처리" 지시(아래 참고)로 이미 커버되므로
+      // 분류 호출 없이 답변 생성 1회 호출로 통합한다.
+      const [goodAnswerRefSection, articleRows, keywordRows, memoSection] = await Promise.all([
+        ragTask, articleTask, keywordTask, memoTask,
       ]);
 
       // ── 병렬 조회 결과를 고정된 순서(조문번호 직접매칭 → 키워드 매칭)로 합성 ──
@@ -2975,47 +2956,28 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
         ? "\n\n---\n" + sections.join("\n\n") + elevatorInfoSection + goodAnswerRefSection + "\n---"
         : "";
 
-      // CALCULATE: 자료에서 공식 추출 → 필요 변수 질문 → 계산
-      if (questionType === "CALCULATE") {
-        // 대화 히스토리에 이미 변수값이 있는지 확인
-        const prevMessages = messages.slice(0, -1);
-        const hasVariables = prevMessages.some(m => m.role === "user" && /\d+(\.\d+)?/.test(m.content));
-
-        const calcSystem = hasVariables
-          ? `승강기 검사 계산 전문가다. 제공된 자료에서 공식을 찾아 대화에서 수집된 변수값으로 계산하고 결과와 적합/부적합 판정을 내린다. 계산 과정을 단계별로 보여준다.${contextText}${memoSection}`
-          : `승강기 검사 계산 전문가다. 제공된 자료(메모 포함)에서 계산 공식과 필요한 변수를 파악한다.
-공식을 찾으면: "계산을 위해 다음 값이 필요합니다:" 로 시작하여 필요한 변수만 번호로 나열한다.
-공식이 없으면: "해당 계산 기준 없음" 한 줄만 출력한다.
-불필요한 설명 없이 필요한 변수 목록만 출력한다.${contextText}${memoSection}`;
-
-        const calcResp = await anthropic.messages.create({
-          model: "claude-sonnet-4-6",
-          max_tokens: 800,
-          system: calcSystem,
-          messages: messages,
+      // 균형추 여유거리 계산 카드 감지 — 안전망.
+      // 정상 경로에서는 client/src/pages/home.tsx의 sendMessage가 이 패턴을 프론트에서 먼저
+      // 가로채 AI 호출 자체를 생략하므로 보통 여기까지 오지 않는다. 그래도 음성입력 텍스트 변형이나
+      // 예상 못한 경로로 도달하는 경우를 대비해 서버에도 동일 조건을 유지한다.
+      const isCounterWeight = /균형추.*여유거리|여유거리.*균형추/i.test(userQuestion);
+      if (isCounterWeight) {
+        const hasVerb = /구해|계산|얼마|알려|나와/.test(userQuestion);
+        const replyText = hasVerb
+          ? "균형추 최대 여유거리를 계산해드릴게요. 아래 정보를 입력해주세요."
+          : "균형추 최대 여유거리는 측정값·완충기 행정·속도로 계산합니다. 아래 카드로 바로 계산해보세요.";
+        return res.json({
+          reply: replyText,
+          usedSources: [],
+          type: "CALCULATE",
+          calcCard: "COUNTER_WEIGHT",
         });
-        const calcText = calcResp.content[0].type === "text" ? calcResp.content[0].text.trim() : "";
-
-        // 균형추 여유거리 계산 카드 감지
-        const isCounterWeight = /균형추.*여유거리|여유거리.*균형추/i.test(userQuestion);
-        if (isCounterWeight) {
-          const hasVerb = /구해|계산|얼마|알려|나와/.test(userQuestion);
-          const replyText = hasVerb
-            ? "균형추 최대 여유거리를 계산해드릴게요. 아래 정보를 입력해주세요."
-            : "균형추 최대 여유거리는 측정값·완충기 행정·속도로 계산합니다. 아래 카드로 바로 계산해보세요.";
-          return res.json({
-            reply: replyText,
-            usedSources: [],
-            type: "CALCULATE",
-            calcCard: "COUNTER_WEIGHT",
-          });
-        }
-
-        return res.json({ reply: calcText, usedSources: [], type: "CALCULATE" });
       }
 
       // ════════════════════════════════════════════════════════════
-      // 3-Agent 파이프라인 (LOOKUP / JUDGMENT)
+      // 3-Agent 파이프라인 (LOOKUP / JUDGMENT / CALCULATE 공통)
+      // [2026-09] 계산 질문도 이제 별도 분류·별도 호출 없이 이 파이프라인으로 통합 처리된다.
+      // answerRules 안의 "계산/판정 질문 처리" 지시가 공식 파악→변수 질문→계산까지 담당한다.
       // 규칙1: 어플 내 등록된 데이터만 검색한다 (외부 인터넷 검색 없음)
       // 규칙2: 에이전트1 초안 → 에이전트2 독립 재검증 (병렬 실행)
       //        → 불일치 시에만 에이전트3 중재
@@ -3096,13 +3058,23 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
 
       let agent1: any = null, agent2: any = null, compare: any = null, agent3: any = null;
       let reply = "";
+      let isStreaming = false;
 
       if (chatMode === "fast") {
         // ── 빠른 답변: 교차검증 없이 단일 에이전트 1회 호출 (속도 최우선) ──
         // 예전엔 fast 모드도 rerank + 에이전트1/2 + 비교 + (불일치시)에이전트3, 최대 4번의
         // Claude 왕복을 거쳐 20초+ 걸렸다. 정밀 답변 모드가 따로 있으니, 빠른 답변은
         // 이름 그대로 검증 단계 없이 단일 호출로 바로 답한다.
-        agent1 = await anthropic.messages.create({
+        // [2026-09] 스트리밍 적용 — 응답을 다 받을 때까지 기다리지 않고 텍스트 델타가
+        // 생성되는 즉시 SSE로 클라이언트에 흘려보내 체감 속도를 개선한다.
+        isStreaming = true;
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no"); // 프록시(Railway 등) 버퍼링 방지
+        (res as any).flushHeaders?.();
+
+        const stream = anthropic.messages.stream({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 1200,
           system: `당신은 승강기 안전검사 현장 전문가다. 제공된 어플 내부 자료만 근거로 답한다.
@@ -3110,6 +3082,12 @@ CALCULATE: 수치 계산이 필요하거나 계산 가능한 항목을 언급하
 ${answerRules}${contextText}${memoSection}`,
           messages: messages,
         } as any);
+
+        stream.on("text", (delta: string) => {
+          res.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
+        });
+
+        agent1 = await stream.finalMessage();
         reply = getText(agent1);
       } else {
         // ── 정밀 답변: 에이전트1 초안 + 에이전트2 독립 재검증(병렬) → 불일치 시에만 에이전트3 중재 ──
@@ -3298,15 +3276,23 @@ ${answerRules}${contextText}${memoSection}`,
       const safetyPoints = (req as any).safetyPoints || [];
       const elevatorData = (req as any).elevatorData || null;
       const isElevatorQuery = (req as any).isElevatorQuery || false;
-      res.json({
+      const finalPayload = {
         reply: isElevatorQuery ? "" : reply,
         usedSources: isElevatorQuery ? [] : usedSources,
         articleCards: isElevatorQuery ? [] : articleCards,
         safetyPoints, elevatorData, isElevatorQuery,
         mode: chatMode,
         elapsedMs: Date.now() - pipelineStart,
-      });
+      };
 
+      if (isStreaming) {
+        // 스트리밍(fast) — 델타는 이미 전송됐으므로, 카드 연동에 필요한 메타데이터만
+        // 마지막 이벤트로 보내고 스트림을 닫는다.
+        res.write(`data: ${JSON.stringify({ type: "done", ...finalPayload })}\n\n`);
+        res.end();
+      } else {
+        res.json(finalPayload);
+      }
 
     } catch (error: any) {
       console.error("Chat API error:", error?.message || error);
@@ -3315,7 +3301,16 @@ ${answerRules}${contextText}${memoSection}`,
       const msg = error?.status === 401 ? "API 키 오류"
         : error?.status === 429 ? "요청 한도 초과"
         : error?.message || "AI 응답 생성 오류";
-      res.status(500).json({ error: msg });
+      if (res.headersSent) {
+        // 스트리밍 도중 에러 — 이미 SSE 헤더가 나갔으므로 JSON 상태코드 응답 대신
+        // 에러 이벤트로 알리고 스트림을 닫는다.
+        try {
+          res.write(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`);
+          res.end();
+        } catch {}
+      } else {
+        res.status(500).json({ error: msg });
+      }
     }
   });
 

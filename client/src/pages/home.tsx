@@ -2157,6 +2157,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     })() : [];
     const searchResults = limitedResults.length > 0 ? limitedResults : undefined;
 
+    // 스트리밍(fast) 경로에서만 채워지는 placeholder 메시지 인덱스.
+    // try/catch 양쪽에서 참조하므로 try 블록 바깥(함수 스코프)에 선언해둔다.
+    const placeholderIdx = { current: -1 };
+
     // AI API 호출
     try {
       // 대화 히스토리 구성 (최근 8개)
@@ -2341,7 +2345,61 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       });
 
       if (!resp.ok) throw new Error("서버 오류");
-      const data = await resp.json();
+
+      const contentType = resp.headers.get("content-type") || "";
+      let data: any;
+
+      if (contentType.includes("text/event-stream") && resp.body) {
+        // ── 빠른 답변(fast) — SSE 스트림을 읽으며 델타가 도착할 때마다
+        // 메시지를 점진적으로 업데이트한다(타이핑 효과). 마지막 "done" 이벤트에
+        // usedSources/articleCards 등 카드 연동용 메타데이터가 함께 온다.
+        setMessages(prev => {
+          placeholderIdx.current = prev.length;
+          return [...prev, { role: "assistant", content: "", time: formatTime(), mode: chatMode }];
+        });
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let streamedText = "";
+        let donePayload: any = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const jsonStr = trimmed.slice(5).trim();
+            if (!jsonStr) continue;
+            let evt: any;
+            try { evt = JSON.parse(jsonStr); } catch { continue; }
+            if (evt.type === "delta") {
+              streamedText += evt.text;
+              const idx = placeholderIdx.current;
+              setMessages(prev => {
+                if (idx < 0 || idx >= prev.length) return prev;
+                const next = [...prev];
+                next[idx] = { ...next[idx], content: streamedText };
+                return next;
+              });
+            } else if (evt.type === "done") {
+              donePayload = evt;
+            } else if (evt.type === "error") {
+              throw new Error(evt.error || "AI 응답 생성 오류");
+            }
+          }
+        }
+
+        data = donePayload
+          ? { ...donePayload, reply: donePayload.reply !== undefined && donePayload.reply !== "" ? donePayload.reply : streamedText }
+          : { reply: streamedText, usedSources: [], articleCards: [], mode: chatMode };
+      } else {
+        data = await resp.json();
+      }
 
       // ── 에이전트가 실제 사용한 자료를 카드로 변환 ──────────────
       const usedSources: { type: string; title: string; ref: string }[] = data.usedSources || [];
@@ -2428,8 +2486,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       // CALCULATE 유형이라도 전용 카드(calcCard)가 없는 경우엔 텍스트 답변을 그대로 보여준다.
       // (전용 카드가 있는 경우만 카드가 안내를 대신하므로 본문 텍스트를 비운다)
       const hasCalcCard = data.type === "CALCULATE" && !!data.calcCard;
-      setMessages(prev => [...prev, {
-        role: "assistant",
+      const finalMsg = {
+        role: "assistant" as const,
         content: hasCalcCard ? "" : data.reply,
         time: formatTime(),
         searchResults: hasCalcCard ? undefined : (displayCards.length > 0 ? displayCards : undefined),
@@ -2439,19 +2497,44 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         isElevatorQuery: data.isElevatorQuery || false,
         mode: data.mode,
         elapsedMs: data.elapsedMs,
-      }]);
+      };
+      // 스트리밍(fast) 경로는 이미 placeholder 메시지를 만들어 델타로 채워왔으므로
+      // 새로 append하지 않고 그 자리를 최종 메타데이터로 교체한다.
+      if (placeholderIdx.current >= 0) {
+        const idx = placeholderIdx.current;
+        setMessages(prev => {
+          if (idx < 0 || idx >= prev.length) return [...prev, finalMsg];
+          const next = [...prev];
+          next[idx] = finalMsg;
+          return next;
+        });
+      } else {
+        setMessages(prev => [...prev, finalMsg]);
+      }
     } catch (err: any) {
       console.error("Chat fetch error:", err);
       // AI 실패 시 기존 키워드 검색 결과로 폴백
       const fallback = searchResults
         ? `"${text}"에 대한 검색 결과 ${results.length}건입니다. 아래 항목을 눌러 확인하세요.`
         : `"${text}"에 대한 검색 결과가 없습니다. 다른 키워드로 검색해보세요.`;
-      setMessages(prev => [...prev, {
-        role: "assistant",
+      const fallbackMsg = {
+        role: "assistant" as const,
         content: fallback,
         time: formatTime(),
         searchResults,
-      }]);
+      };
+      // 스트리밍 도중 에러가 났다면 빈 placeholder가 이미 추가돼있으므로 그 자리를 교체한다.
+      if (placeholderIdx.current >= 0) {
+        const idx = placeholderIdx.current;
+        setMessages(prev => {
+          if (idx < 0 || idx >= prev.length) return [...prev, fallbackMsg];
+          const next = [...prev];
+          next[idx] = fallbackMsg;
+          return next;
+        });
+      } else {
+        setMessages(prev => [...prev, fallbackMsg]);
+      }
     }
     setIsTyping(false);
   }, [accidentStats, standards, messages, chatMode, INSPECTION_CONTENT, INSPECTION_CONTENT_ESCALATOR]);
