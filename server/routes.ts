@@ -347,11 +347,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 2) answer_pool 업데이트 — 질문 임베딩 유사도로 클러스터링해서 누적 (공유 헬퍼 사용)
       const { thumbsUp, thumbsDown, newStatus, statusChangedToExcluded } = await applyFeedbackToPool(pool, question, answer, rating);
 
-      // 3) 클러스터가 새로 제외(excluded) 상태로 전환되는 순간 관리자에게 FCM 알림
+      // 3) 클러스터가 새로 제외(excluded) 상태로 전환되는 순간 관리자(노준호, 사번 910919)에게만 FCM 알림
+      //    — 예전엔 push_tokens 전체(전 직원)에게 보내고 있었음. AI 피드백 관리는 관리자 업무이므로 한정.
       if (statusChangedToExcluded) {
         try {
           if (firebaseAdmin) {
-            const tokenRows = await pool.query(`SELECT token FROM push_tokens`);
+            await pool.query(`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
+            const tokenRows = await pool.query(`SELECT token FROM push_tokens WHERE employee_id = $1`, ["910919"]);
             const tokens = tokenRows.rows.map((r: any) => r.token).filter(Boolean);
             await Promise.allSettled(
               tokens.map((token: string) =>
