@@ -1697,8 +1697,12 @@ export default function JudgmentPage() {
     const isAutoSelected = !hasUserChoice && autoResults.includes(resultType);
     const isDisabled = (status === "not-applicable" && resultType !== "해당없음");
     
-    const baseClasses = "px-2 py-0.5 text-[11px] rounded border transition-all whitespace-nowrap leading-tight";
-    
+    // 헤더 열(w-9=36px)과 폭을 맞춰야 하므로 "시정권고"/"해당없음"(4글자)은 헤더처럼 2글자씩 줄바꿈
+    const baseClasses = "w-8 px-0.5 py-0.5 text-[10px] rounded border transition-all leading-[1.15] text-center";
+    const label = resultType === "시정권고" || resultType === "해당없음"
+      ? <>{resultType.slice(0, 2)}<br />{resultType.slice(2)}</>
+      : resultType;
+
     if (isSelected) {
       return (
         <button
@@ -1706,7 +1710,7 @@ export default function JudgmentPage() {
           onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
           data-testid={`result-${itemId}-${resultType}`}
         >
-          {resultType}
+          {label}
         </button>
       );
     }
@@ -1723,7 +1727,7 @@ export default function JudgmentPage() {
         disabled={isDisabled}
         data-testid={`result-${itemId}-${resultType}`}
       >
-        {resultType}
+        {label}
       </button>
     );
   };
@@ -1750,8 +1754,8 @@ export default function JudgmentPage() {
           false
         )}
       >
-        <div className="flex items-start gap-2 p-3">
-          <div className="flex items-center justify-center w-5 h-5 mt-0.5 shrink-0">
+        <div className="flex items-center gap-2 p-3">
+          <div className="flex items-center justify-center w-5 h-5 shrink-0">
             {isAdminMode ? (
               <button
                 onClick={() => handleOpenEditItem(item)}
@@ -1762,18 +1766,6 @@ export default function JudgmentPage() {
               </button>
             ) : (
               <Check className="w-4 h-4 text-primary" />
-            )}
-          </div>
-          <div 
-            className="flex-1 text-xs leading-relaxed cursor-pointer hover:text-primary"
-            onClick={() => handleOpenDetail(item)}
-          >
-            {item.text}
-            {hasRevisionData && (
-              <span className="ml-1.5 shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">연혁</span>
-            )}
-            {itemCommentCounts[item.id] > 0 && (
-              <span className="ml-1 text-xs font-medium text-orange-500">(댓글 {itemCommentCounts[item.id]})</span>
             )}
           </div>
           {installType === "수시교체" && (
@@ -1797,17 +1789,31 @@ export default function JudgmentPage() {
           >
             <Image className="w-3.5 h-3.5 text-muted-foreground" />
           </button>
-          <div className="flex gap-0.5 flex-wrap">
-            {renderResultButton(item.id, "적합", status, autoResults)}
-            {renderResultButton(item.id, "부적합", status, autoResults)}
-            {renderResultButton(item.id, "시정권고", status, autoResults)}
-            {renderResultButton(item.id, "해당없음", status, autoResults)}
-            {renderResultButton(item.id, "종전", status, autoResults)}
+          <div
+            className="flex-1 min-w-0 text-xs leading-relaxed cursor-pointer hover:text-primary"
+            onClick={() => handleOpenDetail(item)}
+          >
+            {item.text}
+            {hasRevisionData && (
+              <span className="ml-1.5 shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">연혁</span>
+            )}
+            {itemCommentCounts[item.id] > 0 && (
+              <span className="ml-1 text-xs font-medium text-orange-500">(댓글 {itemCommentCounts[item.id]})</span>
+            )}
+          </div>
+          {/* 판정 버튼 5개 — 위 헤더 행(적합/부적합/시정권고/해당없음/종전, 각 w-9)과 동일한 고정폭으로 맞춰
+              세로선이 헤더 칸과 일직선이 되도록 정렬. 텍스트 줄 수와 무관하게 버튼 열 위치가 항상 고정됨. */}
+          <div className="flex shrink-0">
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "적합", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "부적합", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "시정권고", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "해당없음", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "종전", status, autoResults)}</div>
           </div>
           {isAdminMode && item.id.startsWith("custom-") && (
             <button
               onClick={() => handleDeleteCustomItem(item.id)}
-              className="p-1 hover:bg-red-100 rounded transition-colors ml-2"
+              className="p-1 hover:bg-red-100 rounded transition-colors ml-2 shrink-0"
               data-testid={`delete-item-${item.id}`}
               title="삭제"
             >
