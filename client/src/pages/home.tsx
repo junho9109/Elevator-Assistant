@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check, Calculator } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
@@ -1386,6 +1386,60 @@ function CounterWeightCalcCard() {
   );
 }
 
+function DecelerationCalcCard() {
+  const [speedInput, setSpeedInput] = React.useState("");
+  const [brakeDistance, setBrakeDistance] = React.useState("");
+  const [result, setResult] = React.useState<{ value: number; formula: string } | null>(null);
+
+  const G_CONST = 9.81;
+
+  const calculate = () => {
+    const v = parseFloat(speedInput);
+    const s = parseFloat(brakeDistance);
+    if (isNaN(v) || isNaN(s) || s === 0) return;
+    const val = (v * v) / (2 * G_CONST * s);
+    setResult({
+      value: val,
+      formula: `${v}² / (2 × ${G_CONST} × ${s}) = ${val.toFixed(3)} g`,
+    });
+  };
+
+  return (
+    <div className="mt-2 rounded-xl border border-border overflow-hidden text-xs w-full max-w-sm">
+      <div className="bg-blue-700 text-white px-3 py-2">
+        <p className="font-bold text-[11px]">🔧 감속도(G) 계산</p>
+        <p className="text-[10px] opacity-80">공식: 속도² / (2 × 중력가속도 × 제동거리)</p>
+      </div>
+      <div className="p-3 border-b border-border flex flex-col gap-2">
+        <p className="text-[10px] font-bold text-muted-foreground">측정값 입력</p>
+        {[
+          { label: "정격속도", unit: "m/s", val: speedInput, set: setSpeedInput },
+          { label: "제동거리", unit: "m", val: brakeDistance, set: setBrakeDistance },
+        ].map(row => (
+          <div key={row.label} className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground w-20 flex-shrink-0">{row.label}</span>
+            <input type="number" value={row.val} onChange={e => { row.set(e.target.value); setResult(null); }}
+              className="flex-1 border border-border rounded-lg px-2 py-1.5 text-[12px] bg-background outline-none focus:border-blue-500" placeholder="0" />
+            <span className="text-[10px] text-muted-foreground w-6">{row.unit}</span>
+          </div>
+        ))}
+      </div>
+      <div className="p-3">
+        <button onClick={calculate} className="w-full bg-blue-600 text-white rounded-lg py-2 text-[12px] font-semibold">계산하기</button>
+        {result && (
+          <div className="mt-3 bg-muted/40 rounded-lg p-2.5">
+            <p className="text-[10px] text-muted-foreground mb-1">계산 과정</p>
+            <p className="font-mono text-[10px] text-foreground mb-2">{result.formula}</p>
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-bold text-foreground">{result.value.toFixed(3)} g</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Home({ defaultTab = "chat", role = "user", onLogout }: { defaultTab?: "chat" | "map"; role?: string; onLogout?: () => void }) {
   // [제거됨 — 2026-08-16] 예전엔 여기서 /api/standards(레거시 standards 테이블) + /api/std-overrides를
   // 병합해 모듈 전역 배열 STD_ITEMS를 채웠음. std_item_overrides가 표준화 자료의 단일 진실 소스가 된 뒤로는
@@ -1549,6 +1603,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const selectChatMode = (m: "fast" | "precise") => {
     setChatMode(m);
     try { localStorage.setItem("aiChatMode", m); } catch {}
+  };
+
+  // 빠른 계산 바로가기 메뉴 — 채팅 입력 없이 계산 카드를 바로 띄우는 용도
+  const [showQuickCalcMenu, setShowQuickCalcMenu] = useState(false);
+  const openQuickCalc = (card: "COUNTER_WEIGHT" | "DECELERATION") => {
+    setShowQuickCalcMenu(false);
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: "",
+      time: formatTime(),
+      calcCard: card,
+    }]);
   };
 
   // 업데이트 내역
@@ -1921,6 +1987,31 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     const userMsg: Message = { role: "user", content: text, time: formatTime() };
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
+
+    // ── 계산 카드 즉시 감지 ──
+    // "균형추 최대 여유거리"처럼 정규식으로 결정론적으로 판별 가능한 계산 질문은
+    // AI(질문분류·계산추출) 왕복 없이 프론트에서 바로 카드를 띄운다. 이전엔 이런 질문도
+    // /api/chat까지 가서 분류 LLM + 계산 LLM을 거친 뒤에야 카드가 떴는데, 그 계산 LLM
+    // 응답은 실제로 버려지고 있었다 — 순수 지연만 발생하던 구조. 아래 감지에 걸리지
+    // 않는 질문은 기존처럼 서버로 보내 AI가 처리한다.
+    if (/균형추.*여유거리|여유거리.*균형추/i.test(text)) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "",
+        time: formatTime(),
+        calcCard: "COUNTER_WEIGHT",
+      }]);
+      return;
+    }
+    if (/감속도/.test(text)) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "",
+        time: formatTime(),
+        calcCard: "DECELERATION",
+      }]);
+      return;
+    }
 
     // ── 설비종류(엘리베이터/에스컬레이터) 판별 ──
     // 강제 지정(버튼 클릭 재전송)이 없으면 질문 텍스트에서 판별한다.
@@ -3535,6 +3626,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   {msg.calcCard === "COUNTER_WEIGHT" && (
                     <CounterWeightCalcCard />
                   )}
+                  {msg.calcCard === "DECELERATION" && (
+                    <DecelerationCalcCard />
+                  )}
                   {msg.needsEquipmentChoice && msg.pendingQuestion && (
                     <div className="flex gap-2 mt-0.5">
                       <button
@@ -3663,32 +3757,59 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
 
           {/* 입력창 */}
           <div className="px-4 py-3 border-t border-border bg-card shrink-0">
-            <div className="flex gap-1.5 mb-2">
+            <div className="flex gap-1.5 mb-2 items-stretch">
+              {/* 빠른 계산 바로가기 — 채팅 입력 없이 계산 카드를 즉시 띄우는 메뉴 */}
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => setShowQuickCalcMenu(s => !s)}
+                  title="빠른 계산"
+                  className={`h-full px-2.5 flex items-center justify-center rounded-lg border transition-colors ${
+                    showQuickCalcMenu
+                      ? "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700 text-blue-600 dark:text-blue-400"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  <Calculator className="h-4 w-4" />
+                </button>
+                {showQuickCalcMenu && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowQuickCalcMenu(false)} />
+                    <div className="absolute bottom-full mb-1.5 left-0 z-20 w-44 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+                      <button
+                        onClick={() => openQuickCalc("COUNTER_WEIGHT")}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 transition-colors"
+                      >
+                        균형추 최대 여유거리
+                      </button>
+                      <button
+                        onClick={() => openQuickCalc("DECELERATION")}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 transition-colors border-t border-border"
+                      >
+                        감속도(G)
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 onClick={() => selectChatMode("fast")}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg border transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                   chatMode === "fast"
-                    ? "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700"
-                    : "border-border"
+                    ? "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700 text-blue-600 dark:text-blue-400"
+                    : "border-border text-muted-foreground"
                 }`}
               >
-                <span className={`flex items-center gap-1 text-xs font-medium ${chatMode === "fast" ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}`}>
-                  <Zap className="h-3 w-3" />빠른 답변
-                </span>
-                <span className={`text-[10px] ${chatMode === "fast" ? "text-blue-500 dark:text-blue-400" : "text-muted-foreground"}`}>평소처럼 빠르게</span>
+                <Zap className="h-3 w-3" />빠른 답변
               </button>
               <button
                 onClick={() => selectChatMode("precise")}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg border transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                   chatMode === "precise"
-                    ? "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700"
-                    : "border-border"
+                    ? "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700 text-blue-600 dark:text-blue-400"
+                    : "border-border text-muted-foreground"
                 }`}
               >
-                <span className={`flex items-center gap-1 text-xs font-medium ${chatMode === "precise" ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}`}>
-                  <Lightbulb className="h-3 w-3" />정밀 답변
-                </span>
-                <span className={`text-[10px] ${chatMode === "precise" ? "text-blue-500 dark:text-blue-400" : "text-muted-foreground"}`}>더 꼼꼼하게, 조금 느려요</span>
+                <Lightbulb className="h-3 w-3" />정밀 답변
               </button>
             </div>
             <div className="flex gap-2">
