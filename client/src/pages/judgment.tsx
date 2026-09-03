@@ -2208,9 +2208,19 @@ export default function JudgmentPage() {
           {detailItem && (
             <div
               className="flex-1 overflow-y-auto flex flex-col"
+              // 확대(zoom>1) 상태에서는 touch-action:none으로 브라우저의 네이티브 세로 스크롤 제스처
+              // 선점을 완전히 차단해, 아래 onTouchMove의 JS pan 로직이 상하좌우 모두 가로챌 수 있게 한다.
+              // (touch-action이 'auto'로 남아있으면 브라우저가 세로 이동만 자체 스크롤로 처리해버려서
+              // 가로로는 전혀 안 움직이고 세로만 움직이는 것처럼 보이는 현상이 발생했다.)
+              // 확대하지 않은 평소 상태(zoom===1)에는 pan-y를 유지해 일반 스크롤은 그대로 동작시킨다.
+              style={{ touchAction: detailZoom.zoom > 1 ? "none" : "pan-y", cursor: detailZoom.cursor }}
               onTouchStart={detailZoom.containerHandlers.onTouchStart}
               onTouchMove={detailZoom.containerHandlers.onTouchMove}
               onTouchEnd={detailZoom.containerHandlers.onTouchEnd}
+              onMouseDown={detailZoom.containerHandlers.onMouseDown}
+              onMouseMove={detailZoom.containerHandlers.onMouseMove}
+              onMouseUp={detailZoom.containerHandlers.onMouseUp}
+              onMouseLeave={detailZoom.containerHandlers.onMouseLeave}
             >
               {/* 핀치 줌 시 이 wrapper만 확대되고 배경 페이지는 영향받지 않음(위 usePinchZoomPan 참고) */}
               <div style={detailZoom.contentStyle} className="flex flex-col">

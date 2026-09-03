@@ -40,8 +40,10 @@ export function usePinchZoomPan(resetDep: unknown, options: PinchZoomPanOptions 
       lastTouchDistance.current = distance;
       lastZoom.current = zoom;
       isPanning.current = false;
-    } else if (e.touches.length === 1 && !interactive && zoom > 1) {
-      e.stopPropagation();
+    } else if (e.touches.length === 1 && zoom > 1) {
+      // interactive 모드도 확대된(zoom>1) 상태에서는 한 손가락 드래그를 좌우+상하 팬으로 사용한다.
+      // 확대 전(zoom===1)에는 이 분기를 타지 않으므로 기존 세로 스크롤 동작은 그대로 유지된다.
+      if (interactive) e.stopPropagation();
       isPanning.current = true;
       lastPanPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     }
@@ -56,7 +58,10 @@ export function usePinchZoomPan(resetDep: unknown, options: PinchZoomPanOptions 
       );
       const scale = distance / lastTouchDistance.current;
       setZoom(Math.min(5, Math.max(0.5, lastZoom.current * scale)));
-    } else if (e.touches.length === 1 && !interactive && isPanning.current && zoom > 1) {
+    } else if (e.touches.length === 1 && isPanning.current && zoom > 1) {
+      // 확대된 상태의 1손가락 이동 — preventDefault로 스크롤 컨테이너의 네이티브 세로 스크롤을 억제해
+      // 세로만 움직이고 가로는 안 움직이던(브라우저가 세로 스크롤로 제스처를 선점하던) 문제를 막는다.
+      if (interactive && e.cancelable) e.preventDefault();
       e.stopPropagation();
       const deltaX = e.touches[0].clientX - lastPanPos.current.x;
       const deltaY = e.touches[0].clientY - lastPanPos.current.y;
