@@ -742,7 +742,11 @@ function DatePicker({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
-const emptyForm = { categoryId: "", title: "", standardNumber: "", body: "", basis: "", conclusion: "", source: "", permitDate: "", inspectionDate: "", inspectionYear: "", installInspectionDate: "", images: [] as string[] };
+// [2026-09] overrideTitle/typeTag/category는 실제로 표준화 편집 폼(입력창·저장 로직)에서
+// 읽고 쓰는 필드인데 emptyForm 타입 선언에서만 빠져 있었다 — setForm(emptyForm)으로 폼을
+// 초기화하면 이 필드들이 undefined가 되어 controlled input이 순간적으로 uncontrolled로
+// 전환될 수 있었다(tsc가 Property 'overrideTitle'/'typeTag'/'category' does not exist로 지적).
+const emptyForm = { categoryId: "", title: "", overrideTitle: "", standardNumber: "", body: "", basis: "", conclusion: "", source: "", typeTag: "", category: "", permitDate: "", inspectionDate: "", inspectionYear: "", installInspectionDate: "", images: [] as string[] };
 
 // ── 리치 텍스트 에디터 (글자색 지원) ──
 const COLOR_PALETTE = [
@@ -2217,7 +2221,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       } catch {}
 
       // 1) 검사기준(별표22) — 최대 2개 (score 높은 순), 항목당 600자
-      const stdResults = contextResults.filter(r => r.type !== "chat" && r.type !== "standard" && r.source !== "standards_db");
+      // [2026-09] SearchResult에는 원래 source 필드가 없어(searchAllData가 채운 적 없음)
+      // "r.source !== 'standards_db'" 조건이 사실상 항상 참이라 아무것도 걸러내지 못하던
+      // 죽은 코드였다(tsc가 Property 'source' does not exist on type 'SearchResult'로 지적).
+      // 표준화 항목 배제 목적은 바로 앞의 r.type !== "standard"가 이미 온전히 담당하므로 제거.
+      const stdResults = contextResults.filter(r => r.type !== "chat" && r.type !== "standard");
       const inspCtx = stdResults.slice(0, 2).map(r => {
         // 날짜 데이터 포함 — inspection-content.json의 effectiveDate/revisions
         const inspEntry = (activeInspectionContent as any)[r.query || ""];

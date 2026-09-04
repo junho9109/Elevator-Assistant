@@ -24,7 +24,7 @@ import {
   type CustomInspectionItem,
   type PpeItem,
   type InsertPpeItem,
-  type NearMiss as NearMissType,
+  type NearMiss,
   type InsertNearMiss,
   type JudgmentResult,
   type InsertJudgmentResult,
@@ -455,8 +455,7 @@ export class DatabaseStorage implements IStorage {
   }
   async upsertJudgmentResult(data: InsertJudgmentResult): Promise<JudgmentResult> {
     const existing = await db.select().from(judgmentResults)
-      .where(eq(judgmentResults.sessionId, data.sessionId))
-      .where(eq(judgmentResults.itemId, data.itemId));
+      .where(and(eq(judgmentResults.sessionId, data.sessionId), eq(judgmentResults.itemId, data.itemId)));
     if (existing.length > 0) {
       const [updated] = await db.update(judgmentResults)
         .set({ result: data.result, updatedAt: new Date() })
