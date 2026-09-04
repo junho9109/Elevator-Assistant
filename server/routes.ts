@@ -2841,6 +2841,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 조문 연혁 키워드 검색 (조문번호를 언급하지 않는 질문도 커버) — SQL 자체는 위 조회와 무관하므로
       // 동시에 실행하고, 중복 제거(articleCards와 겹치는 item_id 제외)만 두 결과가 모두 온 뒤 처리한다.
+      //
+      // [2026-09] "설치" 처럼 조문 전반에 흔히 등장하는 단어 하나만 매칭돼도 "비상통화장치"처럼
+      // 소수 조문에만 등장하는 단어와 동일하게 match_count=1로 취급되어, 실제로는 무관한 조문이
+      // (동점 상황에서 effective_date 최신순으로) 상위에 노출되는 문제가 있었다.
+      // 예) "비상통화장치는 2개소 설치 의무야?" → "설치" 단어만으로 매칭된 무관 조문들이 3~5순위로 노출.
+      //
+      // "설치" 자체를 불용어로 막으면 "설치검사 시 서류제출" 같은 질문에서 "설치"가 진짜 핵심 단어인
+      // 경우까지 죽여버리므로, 특정 단어를 하드코딩해 배제하는 대신 DB 통계로 흔함/희귀함을 그때그때
+      // 계산한다(IDF와 동일한 원리): 등장 조문 수가 적을수록(희귀할수록) 가중치를 높게 준다.
+      // 가중치(단어) = 전체 조문 수 / 그 단어가 등장하는 조문 수
+      // 각 매칭 행의 점수 = 그 행에 매칭된 토큰들의 가중치 합 → 점수가 낮은(흔한 단어만 매칭된) 행은
+      // 결과에서 제외한다.
       const keywordTask = (async (): Promise<any[] | null> => {
         try {
           const STOPWORDS = new Set([
@@ -2848,26 +2860,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
             "확인", "경우", "있는지", "해줘", "그리고", "되나요", "되는지", "인가요",
             "입니다", "궁금해요", "궁금합니다", "엘리베이터", "승강기", "기준", "조문", "규정", "조항",
           ]);
+          // 흔한 조사를 단어 끝에서 제거 — "비상통화장치는" → "비상통화장치"로 정규화해
+          // 조사가 안 붙은 원형과 매칭되도록 한다(길이 3 이상 단어에만 적용해 과도한 축약 방지).
+          const JOSA = /(으로써|으로서|이라고|라고|이라는|라는|이라도|라도|에서부터|에서|으로|이나|나|이든|든|까지|부터|보다|한테|에게|처럼|이랑|랑|와|과|만|도|는|은|를|을|의|이|가|에)$/;
+          const stripJosa = (t: string): string => {
+            if (t.length < 3) return t;
+            const stripped = t.replace(JOSA, "");
+            return stripped.length >= 2 ? stripped : t;
+          };
           const tokens = (userQuestion.match(/[가-힣A-Za-z0-9]+/g) || [])
+            .map(stripJosa)
             .filter((t: string) => t.length >= 2 && !STOPWORDS.has(t));
           const uniqueTokens = [...new Set(tokens)].slice(0, 6) as string[];
           if (uniqueTokens.length === 0) return null;
           const { pool: kwPool } = await import("./db");
-          const likeConds = uniqueTokens.map((_, i) => `description ILIKE $${i + 1}`).join(" OR ");
-          const matchCountExpr = uniqueTokens.map((_, i) => `(CASE WHEN description ILIKE $${i + 1} THEN 1 ELSE 0 END)`).join(" + ");
           const likeParams = uniqueTokens.map(t => `%${t}%`);
+          // 토큰별 가중치(IDF) 계산: 전체 조문 수 / 해당 토큰이 등장하는 고유 item_id 수.
+          // 전체 조문 수 + 토큰별 등장 조문 수를 쿼리 1번(UNION ALL)으로 한꺼번에 가져와
+          // 왕복 횟수를 줄인다(토큰마다 개별 쿼리를 날리지 않음).
+          const idfParams = uniqueTokens.map(t => `%${t}%`);
+          const perTokenCountSql = uniqueTokens
+            .map((_, i) => `SELECT ${i} AS idx, COUNT(DISTINCT item_id) AS c FROM inspection_item_revisions
+               WHERE description ILIKE $${i + 1} AND introduction_type IN ('current', 'old') AND description IS NOT NULL AND TRIM(description) != ''`)
+            .join(" UNION ALL ");
+          const countsResult = await kwPool.query(
+            `SELECT -1 AS idx, COUNT(DISTINCT item_id) AS c FROM inspection_item_revisions
+             WHERE introduction_type IN ('current', 'old') AND description IS NOT NULL AND TRIM(description) != ''
+             UNION ALL ${perTokenCountSql}`,
+            idfParams
+          );
+          const countByIdx = new Map<number, number>();
+          for (const row of countsResult.rows as any[]) {
+            countByIdx.set(Number(row.idx), Number(row.c) || 0);
+          }
+          const totalDocs = countByIdx.get(-1) || 1;
+          const idfWeights: number[] = uniqueTokens.map((_, i) => {
+            const docCount = countByIdx.get(i) || 0;
+            return docCount > 0 ? totalDocs / docCount : 0;
+          });
+
+          const likeConds = uniqueTokens.map((_, i) => `description ILIKE $${i + 1}`).join(" OR ");
+          const scoreExpr = uniqueTokens
+            .map((_, i) => `(CASE WHEN description ILIKE $${i + 1} THEN ${idfWeights[i].toFixed(4)} ELSE 0 END)`)
+            .join(" + ");
           const kwRows = await kwPool.query(
             `SELECT item_id, introduction_type, effective_date, expiry_date, description,
-                    (${matchCountExpr}) AS match_count
+                    (${scoreExpr}) AS kw_score
              FROM inspection_item_revisions
              WHERE (${likeConds})
                AND introduction_type IN ('current', 'old')
                AND description IS NOT NULL AND TRIM(description) != ''
-             ORDER BY match_count DESC, effective_date DESC NULLS FIRST
-             LIMIT 8`,
+             ORDER BY kw_score DESC, effective_date DESC NULLS FIRST
+             LIMIT 16`,
             likeParams
           );
-          return kwRows.rows as any[];
+          // 가중치 합산 점수가 임계치 미달인 결과는 제외한다.
+          // 임계치 = "매칭된 토큰 중 가장 흔한(최소 가중치) 단어 하나"보다는 커야 통과 —
+          // 즉 가장 흔한 단어 혼자만 매칭된 행(점수 = 그 단어의 가중치와 동일)은 걸러내고,
+          // 그보다 희귀한 단어가 하나라도 더 매칭된 행(점수가 더 큼)만 남긴다.
+          // 예) "설치"(3.4) + "비상통화장치"(56) 매칭 시 → "설치" 단독 매칭 행(점수 3.4)은
+          //     임계치(3.4)를 넘지 못해 제외되고, "비상통화장치"가 걸린 행(점수 56+)만 남는다.
+          // 단, 유효 토큰이 1개뿐이라 그 단어 자체가 최선의 단서인 경우(예: "설치검사 서류제출"
+          // 질문에서 매칭 토큰이 "설치"류 하나뿐)에는 그 단어만으로 매칭된 행도 통과시켜야
+          // 결과가 0개로 사라지지 않는다 — 이때는 임계치를 0으로 낮춘다.
+          const positiveWeights = idfWeights.filter(w => w > 0);
+          const minWeight = positiveWeights.length > 0 ? Math.min(...positiveWeights) : 0;
+          const hasMultipleDistinctWeights = new Set(positiveWeights.map(w => w.toFixed(4))).size > 1;
+          const threshold = hasMultipleDistinctWeights ? minWeight * 1.01 : 0;
+          let filtered = (kwRows.rows as any[]).filter(r => Number(r.kw_score) >= threshold).slice(0, 8);
+          // 임계치 필터로 결과가 전부 사라진 경우(모든 매칭이 흔한 단어 하나뿐이었던 경우)엔
+          // 아예 카드를 안 보여주는 것이 무관한 카드를 보여주는 것보다 낫다 — 필터링 없이
+          // 강제로 채우지 않는다.
+          return filtered;
         } catch (e) {
           return null; // 키워드 조문 연혁 검색 실패 시 무시
         }
