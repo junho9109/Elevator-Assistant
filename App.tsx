@@ -16,6 +16,7 @@ import ChatPage from "@/pages/chat";
 import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
 import { isDuplicateName } from "@/lib/teams";
+import { setGlobalAdminMode } from "@/lib/super-admin";
 
 function Router() {
   return (
@@ -74,6 +75,10 @@ function App() {
             setUserRole(name === "노준호" ? "admin" : (data.role || "user"));
             setUserOrg(saved.org || data.org || "");
             setUserName(name);
+            // [2026-09] 같은 기기를 다른 사람이 이어서 쓰는 경우, 이전 사용자가 켜둔
+            // 로컬 관리자모드(localStorage globalAdminMode)가 그대로 남아있으면 안 되므로
+            // 로그인 확정 시점마다 본인 확인해서 아니면 강제로 끈다.
+            if (name !== "노준호") setGlobalAdminMode(false);
           }
         })
         .catch(() => {})
@@ -90,6 +95,10 @@ function App() {
     setUserRole("user");
     setUserOrg("");
     setUserName("");
+    // [2026-09] 로그아웃 시점에 로컬 관리자모드를 꺼둔다 — 같은 기기에서 다음 사람이
+    // 로그인했을 때 이전 사용자의 관리자모드가 남아있지 않도록 하기 위한 안전장치.
+    // (실제 확정은 다음 로그인 성공 시 이름 재확인으로도 한 번 더 걸린다.)
+    setGlobalAdminMode(false);
   };
 
   if (isChecking) return null;
@@ -98,10 +107,15 @@ function App() {
     return (
       <QueryClientProvider client={queryClient}>
         <LoginPage onLogin={(token, org, role, name) => {
+          const trimmedName = (name || "").trim();
           setAuthToken(token);
-          setUserRole((name || "").trim() === "노준호" ? "admin" : role);
+          setUserRole(trimmedName === "노준호" ? "admin" : role);
           setUserOrg(org);
           setUserName(name);
+          // [2026-09] 새로 로그인한 사람이 노준호가 아니면, 같은 기기에 이전 사람이
+          // 남겨둔 로컬 관리자모드를 즉시 끈다 (super-admin.ts의 이벤트로 열려있는
+          // 화면에도 바로 반영됨).
+          if (trimmedName !== "노준호") setGlobalAdminMode(false);
         }} />
       </QueryClientProvider>
     );
