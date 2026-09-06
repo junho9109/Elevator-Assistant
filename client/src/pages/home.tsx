@@ -1762,6 +1762,31 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     onError: () => toast({ title: "제외 처리에 실패했습니다.", variant: "destructive" }),
   });
 
+  // ── 외부자료 후보: "자료 범위 밖" 답변을 AI가 웹 검색으로 보강한 후보를 관리자가
+  // 검토·승인/반려하는 패널. 승인 전에는 어떤 사용자 답변에도 영향을 주지 않는다. ──
+  const [showResearchPanel, setShowResearchPanel] = useState(false);
+  const [researchStatusFilter, setResearchStatusFilter] = useState<"pending_review" | "approved" | "rejected">("pending_review");
+  const { data: researchData, isLoading: researchLoading } = useQuery<{ candidates: any[] }>({
+    queryKey: ["/api/ai-research-candidates", researchStatusFilter],
+    queryFn: async () => {
+      const r = await fetch(`/api/ai-research-candidates?status=${researchStatusFilter}`);
+      return r.json();
+    },
+    enabled: showResearchPanel,
+  });
+  const reviewResearchCandidate = useMutation({
+    mutationFn: async ({ id, action }: { id: number; action: "approve" | "reject" }) => {
+      const r = await fetch(`/api/ai-research-candidates/${id}/${action}`, { method: "POST" });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-research-candidates"] });
+      toast({ title: variables.action === "approve" ? "승인했습니다. 이후 비슷한 질문에 참고자료로 쓰입니다." : "반려했습니다." });
+    },
+    onError: () => toast({ title: "처리에 실패했습니다.", variant: "destructive" }),
+  });
+
   // ── 전문가 지식 수집: 관리자 검수 패널 ──
   const [showExpertReview, setShowExpertReview] = useState(false);
   const [expertReviewTab, setExpertReviewTab] = useState<"대기"|"승인"|"반려">("대기");
@@ -3236,6 +3261,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   AI 피드백 현황
                 </button>
               )}
+              {isAdminMode && defaultTab === "chat" && (
+                <button
+                  onClick={() => setShowResearchPanel(s => !s)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
+                >
+                  외부자료 후보
+                </button>
+              )}
               <button
                 onClick={() => { if (onLogout) onLogout(); }}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted"
@@ -3661,6 +3694,99 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 외부자료 후보: AI가 "자료 범위 밖" 답변을 감지해 웹 검색으로 찾아온 참고자료 후보.
+          승인 전에는 어떤 사용자 답변에도 노출되지 않으며, 반드시 관리자가 원문 출처를 직접
+          확인한 뒤 승인해야만 이후 비슷한 질문에 "참고자료 - 외부검색"으로 인용된다. */}
+      {defaultTab === "chat" && showResearchPanel && (
+        <div className="mx-3 mt-2 bg-card border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-b border-border">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">외부자료 후보</span>
+          </div>
+          <div className="px-3 py-2 border-b border-border">
+            <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
+              앱 자체 자료(검사기준·판정지침·기술자료·메모)로 답을 못 찾은 질문에 대해 AI가 웹에서
+              찾아온 참고자료 후보입니다. 원문 출처를 확인하고 승인해야만 이후 비슷한 질문에
+              "참고자료 - 외부검색"으로 인용됩니다. 검사기준 자체가 아니므로 반드시 내용을 검토하세요.
+            </p>
+            <div className="flex gap-1.5">
+              {([
+                ["pending_review", "검토 대기"],
+                ["approved", "승인됨"],
+                ["rejected", "반려됨"],
+              ] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setResearchStatusFilter(val as any)}
+                  className={`text-[11px] font-medium px-2.5 py-1 rounded-lg ${researchStatusFilter === val ? "bg-blue-600 text-white" : "border border-border text-muted-foreground"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="max-h-[420px] overflow-y-auto px-3 py-2 space-y-2">
+            {researchLoading ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">불러오는 중...</div>
+            ) : (researchData?.candidates || []).length === 0 ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">해당 조건의 데이터가 없습니다</div>
+            ) : (
+              (researchData?.candidates || []).map((c: any) => {
+                const sources: { url: string; title: string }[] = Array.isArray(c.sources) ? c.sources : [];
+                return (
+                  <div key={c.id} className="rounded-xl px-3 py-2.5 bg-muted/40">
+                    <p className="text-[13px] font-medium mb-1">{c.question}</p>
+                    <p className="text-[11px] text-muted-foreground mb-1.5 line-clamp-1">
+                      기존 답변: {c.original_answer || c.originalAnswer}
+                    </p>
+                    <p className="text-[12px] whitespace-pre-line mb-1.5">{c.summary}</p>
+                    {sources.length > 0 && (
+                      <div className="flex flex-col gap-0.5 mb-1.5">
+                        {sources.map((s, i) => (
+                          <a
+                            key={i}
+                            href={s.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-blue-600 dark:text-blue-400 underline truncate"
+                          >
+                            {s.title || s.url}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    {c.status === "pending_review" && (
+                      <div className="flex gap-1.5 mt-0.5">
+                        <button
+                          onClick={() => reviewResearchCandidate.mutate({ id: c.id, action: "approve" })}
+                          disabled={reviewResearchCandidate.isPending}
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-green-200 text-green-600 dark:border-green-800 dark:text-green-400"
+                        >
+                          승인
+                        </button>
+                        <button
+                          onClick={() => reviewResearchCandidate.mutate({ id: c.id, action: "reject" })}
+                          disabled={reviewResearchCandidate.isPending}
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-red-200 text-red-600 dark:border-red-800 dark:text-red-400"
+                        >
+                          반려
+                        </button>
+                      </div>
+                    )}
+                    {c.status === "approved" && (
+                      <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">승인됨 — 참고자료로 사용중</span>
+                    )}
+                    {c.status === "rejected" && (
+                      <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">반려됨</span>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
 

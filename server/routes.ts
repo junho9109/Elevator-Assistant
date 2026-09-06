@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { storage } from "./storage";
 import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema } from "@shared/schema";
 import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
+import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAnswer } from "./routes/research-candidates";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -237,6 +238,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // (/api/ai-similar-answers, /api/ai-feedback, /api/ai-feedback/export,
   //  /api/ai-feedback/clusters, /api/ai-feedback/clusters/:id/exclude)
   registerAiFeedbackRoutes(app);
+
+  // [2026-09] "자료 범위 밖" 답변 → 웹 검색 보강 → 관리자 승인 파이프라인 API
+  // (/api/ai-research-candidates, /api/ai-research-candidates/:id/approve, /reject)
+  registerResearchCandidateRoutes(app);
 
   app.get("/api/standards/:id", async (req, res) => {
     try {
@@ -2705,6 +2710,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       })();
 
+      // [2026-09] 관리자가 승인한 "참고자료 - 외부검색" 후보 중 이번 질문과 관련된 것을 조회.
+      // ai_research_candidates는 status='approved'인 것만 컨텍스트에 노출한다 — 관리자가
+      // 원문 링크를 직접 확인하고 승인하기 전까지는 어떤 사용자 답변에도 영향을 주지 않는다.
+      // memoTask와 동일한 가벼운 키워드 매칭 방식(임베딩 유사도까지는 과함 — 후보 수 자체가
+      // 적을 것으로 예상되는 데이터라 단순 매칭으로 충분).
+      const researchTask = (async (): Promise<string> => {
+        try {
+          const kwMatches = userQuestion.match(/[가-힣a-zA-Z]{2,6}/g) || [];
+          const kws = [...new Set(kwMatches)].slice(0, 3) as string[];
+          if (kws.length === 0) return "";
+          const { pool: rcPool } = await import("./db");
+          const likeConds = kws.map((_, i) => `question ILIKE $${i + 1}`).join(" OR ");
+          const rows = await rcPool.query(
+            `SELECT question, summary, sources FROM ai_research_candidates
+             WHERE status = 'approved' AND (${likeConds})
+             ORDER BY reviewed_at DESC NULLS LAST LIMIT 2`,
+            kws.map(k => `%${k}%`)
+          );
+          if (rows.rows.length === 0) return "";
+          const text = rows.rows.map((r: any) => {
+            const srcs = Array.isArray(r.sources) ? r.sources : [];
+            const srcText = srcs.map((s: any) => s.title || s.url).join(", ");
+            return `[참고자료 - 외부검색] 관련 질문: "${r.question}"\n${r.summary}\n(출처: ${srcText || "확인 필요"})`;
+          }).join("\n\n");
+          return "\n\n[참고자료 - 외부검색 (관리자 승인됨, 앱 자체 검사기준 아님)]\n" + text;
+        } catch {
+          return "";
+        }
+      })();
+
       // [2026-09] 질문 유형 분류(LOOKUP/JUDGMENT/CALCULATE) 단계 제거.
       // 원래 목적은 "계산 질문이면 전용 계산 답변으로 보낸다" 하나뿐이었고 LOOKUP/JUDGMENT는
       // 구분해도 이후 로직에서 전혀 다르게 처리되지 않았다(둘 다 answerRules로 동일 처리).
@@ -2712,8 +2747,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 생성 Haiku 호출과 합쳐 fast 모드에서도 AI 왕복이 2회(총 8~9초)나 필요했다.
       // 계산 질문 처리는 answerRules 안의 "계산/판정 질문 처리" 지시(아래 참고)로 이미 커버되므로
       // 분류 호출 없이 답변 생성 1회 호출로 통합한다.
-      const [goodAnswerRefSection, articleRows, keywordRows, memoSection] = await Promise.all([
-        ragTask, articleTask, keywordTask, memoTask,
+      const [goodAnswerRefSection, articleRows, keywordRows, memoSection, researchSection] = await Promise.all([
+        ragTask, articleTask, keywordTask, memoTask, researchTask,
       ]);
 
       // ── 병렬 조회 결과를 고정된 순서(조문번호 직접매칭 → 키워드 매칭)로 합성 ──
@@ -2814,9 +2849,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 3순위 [기술자료] — 표준화 결정 (공식 적용 방법)
 4순위 [현장메모] — 비공식 현장 의견. 1~3순위에서 답을 찾은 경우 메모는 완전 무시.
                    1~3순위에 자료가 전혀 없을 때만 참고하고 반드시 "(비공식 현장의견)" 표시.
+5순위 [참고자료 - 외부검색] — 관리자가 사전에 직접 검토·승인한 외부 자료(법령/KS표준/공식기관 문서
+                   요약). 1~4순위에 전혀 자료가 없을 때만 참고. 반드시 "(참고자료 - 외부검색,
+                   앱 자체 검사기준 아님)"이라고 명시하고, 승강기 검사기준인 것처럼 단정하지 않는다.
 
-★ 메모가 검사기준과 다르면 검사기준이 정답이다.
-★ 키워드가 비슷해도 질문의 맥락과 다른 메모는 무시한다.
+★ 메모/외부검색 자료가 검사기준과 다르면 검사기준이 정답이다.
+★ 키워드가 비슷해도 질문의 맥락과 다른 메모·외부검색 자료는 무시한다.
 
 ## 자료가 부족할 때 처리 순서 (중요 — 절대 바로 포기하지 말 것)
 1단계: 1~4순위 자료 전체에서 질문과 직접 일치하는 조문·기준을 찾는다.
@@ -2861,13 +2899,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 - 인사·서론·마무리·공단문의 없음
 - 1~3순위 자료에 직접 일치가 없을 때는 위 "자료가 부족할 때 처리 순서"를 따른다 ("해당 기준 없음" 한 줄로 끝내지 말 것)
 - 표(|---|) 금지
-- 외부 인터넷 정보 절대 사용 금지
+- 스스로 인터넷을 검색하거나 아는 척 추측하지 말 것 — 컨텍스트로 이미 제공된 자료(검사기준/
+  판정지침/기술자료/현장메모/승인된 참고자료) 안에서만 답한다
 - • 기호 사용 금지 — 반드시 마크다운 - 리스트 사용
 
 ## 출처
 답변 마지막:
-📌 근거: [검사기준] 조문 | [판정지침] 항목 | [기술자료] 표준화명
-메모는 1~3순위 자료 없을 때만 표시`;
+📌 근거: [검사기준] 조문 | [판정지침] 항목 | [기술자료] 표준화명 | [참고자료 - 외부검색] 출처명
+메모/외부검색 자료는 1~3순위 자료 없을 때만 표시`;
 
       let agent1: any = null, agent2: any = null, compare: any = null, agent3: any = null;
       let reply = "";
@@ -2892,7 +2931,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           max_tokens: 1200,
           system: `당신은 승강기 안전검사 현장 전문가다. 제공된 어플 내부 자료만 근거로 답한다.
 
-${answerRules}${contextText}${memoSection}`,
+${answerRules}${contextText}${memoSection}${researchSection}`,
           messages: messages,
         } as any);
 
@@ -2918,7 +2957,7 @@ ${answerRules}${contextText}${memoSection}`,
 
 먼저 첫 줄에 "[핵심결론] 한 줄 요약"을 쓰고, 빈 줄 하나 띄운 뒤 아래 형식의 최종 답변을 작성해라.
 
-${answerRules}${contextText}${memoSection}`,
+${answerRules}${contextText}${memoSection}${researchSection}`,
             messages: messages,
           } as any),
           // ── 에이전트2 — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
@@ -2937,7 +2976,7 @@ ${answerRules}${contextText}${memoSection}`,
   "확신도": "high|medium|low",
   "사용자료": "검사기준|판정지침|기술자료|메모"
 }
-다른 텍스트 없이 JSON만.${contextText}${memoSection}`,
+다른 텍스트 없이 JSON만.${contextText}${memoSection}${researchSection}`,
             messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
           }),
         ]);
@@ -2986,7 +3025,7 @@ ${answerRules}${contextText}${memoSection}`,
 에이전트2 결론: "${agent2Data.독립결론 || ""}"
 불일치 사유: "${compareData.불일치_사유 || ""}"
 
-${answerRules}${contextText}${memoSection}`,
+${answerRules}${contextText}${memoSection}${researchSection}`,
             messages: messages,
           } as any);
           reply = getText(agent3) || agent1Answer;
@@ -3105,6 +3144,13 @@ ${answerRules}${contextText}${memoSection}`,
         res.end();
       } else {
         res.json(finalPayload);
+      }
+
+      // [2026-09] "자료 범위 밖" 답변 감지 → 백그라운드 웹 검색 보강 (fire-and-forget).
+      // 사용자 응답은 이미 위에서 전송 완료됐으므로, 이 작업의 성패/속도는 사용자 체감
+      // 응답 시간에 전혀 영향을 주지 않는다. await 하지 않고 에러도 함수 내부에서 처리.
+      if (!isElevatorQuery && reply && isOutOfScopeAnswer(reply)) {
+        enrichOutOfScopeAnswer(userQuestion, reply);
       }
 
     } catch (error: any) {

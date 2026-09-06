@@ -64,6 +64,24 @@ async function ensureChatTable() {
     // 데이터가 누적돼도 조회가 느려지지 않도록 인덱스를 미리 걸어둠
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_answer_pool_status ON ai_answer_pool (status)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_answer_pool_updated_at ON ai_answer_pool (updated_at DESC)`);
+
+    // [2026-09] "자료 범위 밖" 답변 → AI 웹 검색 보강 → 관리자 승인 파이프라인용 테이블.
+    // ai_answer_pool(사람 피드백 기반)과 신뢰 수준이 다른 별도 테이블로 분리해,
+    // 관리자가 "사람이 검증한 것"과 "AI가 찾아온 미검증 외부자료"를 명확히 구분해서 본다.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_research_candidates (
+        id SERIAL PRIMARY KEY,
+        question TEXT NOT NULL,
+        original_answer TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        sources JSONB DEFAULT '[]' NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending_review' NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        reviewed_at TIMESTAMP
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_research_candidates_status ON ai_research_candidates (status)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_research_candidates_created_at ON ai_research_candidates (created_at DESC)`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }
