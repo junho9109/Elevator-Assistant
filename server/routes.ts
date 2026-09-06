@@ -2415,6 +2415,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const userQuestion = messages[messages.length - 1]?.content || "";
 
+      // [2026-09] 사용자별 질문 통계용 로그 — 핸들러 최상단에서 남겨서, 균형추 계산
+      // 카드 감지 등 중간에 조기 응답(return)하는 분기를 타도 질문 자체는 항상 기록되게
+      // 한다. 응답 전송과 무관한 fire-and-forget이며, 실패해도 사용자 흐름에 영향 없음.
+      (async () => {
+        try {
+          const { pool: logPool } = await import("./db");
+          await logPool.query(
+            `INSERT INTO ai_question_log (employee_id, employee_name, team, question, mode) VALUES ($1, $2, $3, $4, $5)`,
+            [employeeId || null, employeeName || null, team || null, userQuestion, mode || null]
+          );
+        } catch (e) {
+          console.error("[질문 로그 기록] 실패:", e);
+        }
+      })();
+
       // 좋은 평가를 받은 유사 답변 참고 (RAG) — 참고만 하고 그대로 복사하지 않도록 프롬프트에 명시
       // 아래에서 바로 await하지 않고 Promise만 만들어 둔 뒤, 뒤따르는 승강기번호 조회/DB조회들과
       // 함께 나중에 한꺼번에 기다린다 — 임베딩 호출 왕복시간을 다른 작업과 겹쳐서 지연을 줄인다.
@@ -3159,20 +3174,6 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
       if (!isElevatorQuery && reply && isOutOfScopeAnswer(reply)) {
         enrichOutOfScopeAnswer(userQuestion, reply);
       }
-
-      // [2026-09] 사용자별 질문 통계용 로그 — 응답 전송에 전혀 영향 없는 fire-and-forget.
-      // 로그인 안 한 사용자는 employeeId가 없으므로 NULL로 남는다(강제하지 않음).
-      (async () => {
-        try {
-          const { pool: logPool } = await import("./db");
-          await logPool.query(
-            `INSERT INTO ai_question_log (employee_id, employee_name, team, question, mode, is_elevator_query) VALUES ($1, $2, $3, $4, $5, $6)`,
-            [employeeId || null, employeeName || null, team || null, userQuestion, chatMode || null, !!isElevatorQuery]
-          );
-        } catch (e) {
-          console.error("[질문 로그 기록] 실패:", e);
-        }
-      })();
 
     } catch (error: any) {
       console.error("Chat API error:", error?.message || error);
