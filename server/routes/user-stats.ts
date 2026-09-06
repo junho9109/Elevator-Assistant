@@ -56,4 +56,17 @@ export function registerUserStatsRoutes(app: Express) {
       res.status(500).json({ error: e.message || "사용자 통계 조회 실패" });
     }
   });
+
+  // [TEMP-2026-09] 기능 검증 중 남긴 테스트 데이터(TEST001) 정리용 임시 엔드포인트.
+  // 실행 후 바로 코드에서 제거할 예정 — 상시 운영 API 아님.
+  app.post("/api/_temp/cleanup-test-user-stats", async (req, res) => {
+    try {
+      const { pool } = await import("../db");
+      const q = await pool.query(`DELETE FROM ai_question_log WHERE employee_id = 'TEST001' RETURNING id`);
+      const f = await pool.query(`DELETE FROM ai_feedback WHERE employee_id = 'TEST001' RETURNING id`);
+      res.json({ deletedQuestionLogs: q.rows.length, deletedFeedback: f.rows.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "정리 실패" });
+    }
+  });
 }
