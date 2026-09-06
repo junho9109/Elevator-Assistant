@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema } from "@shared/schema";
 import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
 import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAnswer } from "./routes/research-candidates";
+import { registerUserStatsRoutes } from "./routes/user-stats";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -242,6 +243,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // [2026-09] "자료 범위 밖" 답변 → 웹 검색 보강 → 관리자 승인 파이프라인 API
   // (/api/ai-research-candidates, /api/ai-research-candidates/:id/approve, /reject)
   registerResearchCandidateRoutes(app);
+
+  // [2026-09] 사용자별 질문/피드백 통계 API (/api/user-stats)
+  registerUserStatsRoutes(app);
 
   app.get("/api/standards/:id", async (req, res) => {
     try {
@@ -2388,9 +2392,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== AI 챗봇 ====================
   app.post("/api/chat", async (req, res) => {
     try {
-      const { messages, context, mode } = req.body as {
+      const { messages, context, mode, employeeId, employeeName, team } = req.body as {
         messages: { role: "user" | "assistant"; content: string }[];
         mode?: "fast" | "precise";
+        employeeId?: string;
+        employeeName?: string;
+        team?: string;
         context?: {
           inspCtx?: { priority: string; title: string; ref: string; content: string }[];
           techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string; permitDate?: string; inspectionDate?: string; inspectionYear?: string; installInspectionDate?: string }[];
@@ -3152,6 +3159,20 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
       if (!isElevatorQuery && reply && isOutOfScopeAnswer(reply)) {
         enrichOutOfScopeAnswer(userQuestion, reply);
       }
+
+      // [2026-09] 사용자별 질문 통계용 로그 — 응답 전송에 전혀 영향 없는 fire-and-forget.
+      // 로그인 안 한 사용자는 employeeId가 없으므로 NULL로 남는다(강제하지 않음).
+      (async () => {
+        try {
+          const { pool: logPool } = await import("./db");
+          await logPool.query(
+            `INSERT INTO ai_question_log (employee_id, employee_name, team, question, mode, is_elevator_query) VALUES ($1, $2, $3, $4, $5, $6)`,
+            [employeeId || null, employeeName || null, team || null, userQuestion, chatMode || null, !!isElevatorQuery]
+          );
+        } catch (e) {
+          console.error("[질문 로그 기록] 실패:", e);
+        }
+      })();
 
     } catch (error: any) {
       console.error("Chat API error:", error?.message || error);

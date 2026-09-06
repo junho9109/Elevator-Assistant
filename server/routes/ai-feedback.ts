@@ -159,16 +159,18 @@ export function registerAiFeedbackRoutes(app: Express) {
 
   app.post("/api/ai-feedback", async (req, res) => {
     try {
-      const { question, answer, rating, sections, reasons, comment } = req.body;
+      const { question, answer, rating, sections, reasons, comment, employeeId, employeeName, team } = req.body;
       if (!question || !answer || ![1, -1].includes(rating)) {
         return res.status(400).json({ error: "잘못된 요청" });
       }
       const { pool } = await import("../db");
 
       // 1) 피드백 로그 저장 (섹션/이유/기타의견 포함)
+      // [2026-09] 사용자별 좋아요/아쉬워요 통계용으로 employee_id/name/team도 함께 저장.
+      // 로그인 안 한 사용자는 NULL로 남는다(기존 흐름을 막지 않기 위해 강제하지 않음).
       await pool.query(
-        `INSERT INTO ai_feedback (question, answer, rating, sections, reasons, comment) VALUES ($1, $2, $3, $4, $5, $6)`,
-        [question, answer, rating, sections || [], reasons || [], comment || null]
+        `INSERT INTO ai_feedback (question, answer, rating, sections, reasons, comment, employee_id, employee_name, team) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [question, answer, rating, sections || [], reasons || [], comment || null, employeeId || null, employeeName || null, team || null]
       );
 
       // 2) answer_pool 업데이트 — 질문 임베딩 유사도로 클러스터링해서 누적 (공유 헬퍼 사용)

@@ -1103,7 +1103,7 @@ function FeedbackModal({ rating, onSubmit, onSkip, onClose }: { rating: 1 | -1; 
   );
 }
 
-function FeedbackButtons({ question, answer }: { question: string; answer: string }) {
+function FeedbackButtons({ question, answer, empIdentity }: { question: string; answer: string; empIdentity?: { empId: string; empName: string; team: string | null } }) {
   const { toast } = useToast();
   const [rated, setRated] = React.useState<1 | -1 | null>(null);
   const [modalRating, setModalRating] = React.useState<1 | -1 | null>(null);
@@ -1116,7 +1116,12 @@ function FeedbackButtons({ question, answer }: { question: string; answer: strin
       const res = await fetch("/api/ai-feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, answer, rating, sections, reasons, comment }),
+        body: JSON.stringify({
+          question, answer, rating, sections, reasons, comment,
+          employeeId: empIdentity?.empId || undefined,
+          employeeName: empIdentity?.empName || undefined,
+          team: empIdentity?.team || undefined,
+        }),
       });
       if (!res.ok) throw new Error("피드백 저장 실패");
       setRated(rating);
@@ -2374,7 +2379,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       const resp = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: historyMsgs, context, mode: chatMode }),
+        body: JSON.stringify({
+          messages: historyMsgs, context, mode: chatMode,
+          employeeId: empIdentity.empId || undefined,
+          employeeName: empIdentity.empName || undefined,
+          team: empIdentity.team || undefined,
+        }),
       });
 
       if (!resp.ok) throw new Error("서버 오류");
@@ -3884,7 +3894,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                         <MessageCircle className="w-3.5 h-3.5" />
                         이 질문 채팅에서 묻기
                       </button>
-                      <FeedbackButtons question={messages[i-1].content} answer={msg.content} />
+                      <FeedbackButtons question={messages[i-1].content} answer={msg.content} empIdentity={empIdentity} />
                     </div>
                   )}
                   {msg.searchResults && msg.searchResults.length > 0 && !msg.isElevatorQuery && (() => {

@@ -82,6 +82,31 @@ async function ensureChatTable() {
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_research_candidates_status ON ai_research_candidates (status)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_research_candidates_created_at ON ai_research_candidates (created_at DESC)`);
+
+    // [2026-09] 사용자별 질문/피드백 통계용. 로그인 정보(사번/이름/소속)가 있는 사용자만
+    // 채워지고, 로그인 안 한 익명 사용자는 employee_id가 NULL로 남는다(강제하지 않음 —
+    // 기존 사용 흐름을 막지 않기 위함).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_question_log (
+        id SERIAL PRIMARY KEY,
+        employee_id VARCHAR(50),
+        employee_name VARCHAR(50),
+        team VARCHAR(100),
+        question TEXT NOT NULL,
+        mode VARCHAR(20),
+        is_elevator_query BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_question_log_employee_id ON ai_question_log (employee_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_question_log_created_at ON ai_question_log (created_at DESC)`);
+
+    // ai_feedback(좋아요/아쉬워요)에도 동일한 취지로 사용자 컬럼 추가.
+    // 기존 배포에 이미 테이블이 있으므로 ALTER로 컬럼만 보강한다(멱등).
+    await pool.query(`ALTER TABLE ai_feedback ADD COLUMN IF NOT EXISTS employee_id VARCHAR(50)`);
+    await pool.query(`ALTER TABLE ai_feedback ADD COLUMN IF NOT EXISTS employee_name VARCHAR(50)`);
+    await pool.query(`ALTER TABLE ai_feedback ADD COLUMN IF NOT EXISTS team VARCHAR(100)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_feedback_employee_id ON ai_feedback (employee_id)`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }
