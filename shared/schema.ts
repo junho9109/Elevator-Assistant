@@ -189,6 +189,23 @@ export const stdItemOverrides = pgTable("std_item_overrides", {
 export const insertStdItemOverrideSchema = createInsertSchema(stdItemOverrides).omit({ id: true, updatedAt: true });
 export type StdItemOverride = typeof stdItemOverrides.$inferSelect;
 
+// 기술자료 (표준화가 아닌 자유형식 자료 — 소음, 기종별 특성 등). 표준화와 완전히
+// 별도의 데이터소스로 관리한다. title에는 std_item_overrides에서 빠졌던 unique
+// 제약을 반영해 동일 제목 중복 저장을 DB 차원에서 막는다.
+export const technicalMaterials = pgTable("technical_materials", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull().unique(),  // 자료 제목
+  category: text("category"),               // 분류 (예: 소음, 기종별 특성 등, 자유 입력)
+  body: text("body").notNull(),             // 본문 (자유 서식 텍스트)
+  source: text("source"),                   // 출처
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertTechnicalMaterialSchema = createInsertSchema(technicalMaterials).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTechnicalMaterial = z.infer<typeof insertTechnicalMaterialSchema>;
+export type TechnicalMaterial = typeof technicalMaterials.$inferSelect;
+
 // 검사기준 항목 오버라이드 (별표22_parsed.json 위에 DB 수정값 덮어씌우기)
 export const inspStdOverrides = pgTable("insp_std_overrides", {
   id: serial("id").primaryKey(),

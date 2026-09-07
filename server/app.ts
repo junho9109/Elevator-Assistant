@@ -107,6 +107,22 @@ async function ensureChatTable() {
     await pool.query(`ALTER TABLE ai_feedback ADD COLUMN IF NOT EXISTS employee_name VARCHAR(50)`);
     await pool.query(`ALTER TABLE ai_feedback ADD COLUMN IF NOT EXISTS team VARCHAR(100)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_feedback_employee_id ON ai_feedback (employee_id)`);
+
+    // [2026-09] 기술자료(표준화가 아닌 자유형식 자료 — 소음, 기종별 특성 등)를
+    // 표준화(std_item_overrides)와 완전히 분리된 데이터소스로 관리하기 위한 테이블.
+    // title에는 std_item_overrides가 놓쳤던 unique 제약을 명시해 중복 저장을 막는다.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS technical_materials (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL UNIQUE,
+        category TEXT,
+        body TEXT NOT NULL,
+        source TEXT,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_technical_materials_category ON technical_materials (category)`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }

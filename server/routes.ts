@@ -833,6 +833,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── 기술자료 API (표준화와 완전히 분리된 데이터소스 — 소음, 기종별 특성 등 자유형식 자료) ──
+  app.get("/api/technical-materials", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { technicalMaterials } = await import("@shared/schema");
+      const { desc } = await import("drizzle-orm");
+      const rows = await db.select().from(technicalMaterials).orderBy(desc(technicalMaterials.updatedAt));
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.json(rows);
+    } catch (e) {
+      console.error("[GET /api/technical-materials 오류]", e);
+      res.status(500).json({ error: "Failed to fetch technical materials" });
+    }
+  });
+
+  app.put("/api/technical-materials/:title", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { technicalMaterials } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
+      const { category, body, source, newTitle } = req.body;
+      if (!body) return res.status(400).json({ error: "본문(body)은 필수입니다" });
+      const existing = await db.select().from(technicalMaterials).where(eq(technicalMaterials.title, title)).limit(1);
+      let row;
+      if (existing.length > 0) {
+        [row] = await db.update(technicalMaterials)
+          .set({ title: newTitle || title, category, body, source, updatedAt: new Date() })
+          .where(eq(technicalMaterials.title, title))
+          .returning();
+      } else {
+        [row] = await db.insert(technicalMaterials)
+          .values({ title: newTitle || title, category, body, source })
+          .returning();
+      }
+      res.json(row);
+    } catch (e) {
+      console.error("[PUT /api/technical-materials 오류]", e);
+      res.status(500).json({ error: "Failed to save technical material", detail: String(e) });
+    }
+  });
+
+  app.delete("/api/technical-materials/:title", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { technicalMaterials } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
+      const deleted = await db.delete(technicalMaterials).where(eq(technicalMaterials.title, title)).returning();
+      if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
+      res.status(204).send();
+    } catch (e) {
+      console.error("[DELETE /api/technical-materials 오류]", e);
+      res.status(500).json({ error: "Failed to delete technical material", detail: String(e) });
+    }
+  });
+
   // ── 검사기준 오버라이드 API ──
   app.get("/api/insp-std-overrides", async (req, res) => {
     try {
@@ -2401,6 +2458,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         context?: {
           inspCtx?: { priority: string; title: string; ref: string; content: string }[];
           techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string; permitDate?: string; inspectionDate?: string; inspectionYear?: string; installInspectionDate?: string }[];
+          techMaterialCtx?: { priority: string; title: string; category?: string; content: string; source?: string }[];
           verdictCtx?: { priority: string; title: string; content: string }[];
           chatCtx?: { priority: string; content: string; note: string }[];
           memoCtx?: { title: string; content: string }[];
@@ -2561,7 +2619,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             context.verdictCtx.map(c => `■ ${c.title}\n${c.content}`).join("\n\n"));
         }
         if (context.techCtx?.length) {
-          sections.push("[3순위] 기술자료(표준화)\n" +
+          sections.push("[3순위] 표준화\n" +
             context.techCtx.map(c => {
               const dates = [
                 c.permitDate ? `건축허가일: ${c.permitDate}` : "",
@@ -2571,6 +2629,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ].filter(Boolean).join(" / ");
               return `■ ${c.title}\n${c.basis ? `현안: ${c.basis}\n` : ""}${c.conclusion ? `결정: ${c.conclusion}\n` : ""}${dates ? `적용시기: ${dates}\n` : ""}출처: ${c.source}`;
             }).join("\n\n"));
+        }
+        // [2026-09] 기술자료 — 표준화(std_item_overrides)와 완전히 별도의 데이터소스
+        // (technical_materials 테이블: 소음, 기종별 특성 등 자유형식 자료).
+        if (context.techMaterialCtx?.length) {
+          sections.push("[3순위] 기술자료\n" +
+            context.techMaterialCtx.map(c =>
+              `■ ${c.title}${c.category ? ` [${c.category}]` : ""}\n${c.content}${c.source ? `\n출처: ${c.source}` : ""}`
+            ).join("\n\n"));
         }
         if (context.memoCtx?.length) {
           sections.push("[4순위] 현장메모\n" +

@@ -17,7 +17,7 @@ import {
   useStandards, useHotspots, useCreateStandard, useUpdateStandard, useDeleteStandard, useCreateCategory,
   useCreateHotspot, useUpdateHotspot, useDeleteHotspot,
 } from "@/lib/api";
-import type { Standard, Hotspot } from "@shared/schema";
+import type { Standard, Hotspot, TechnicalMaterial } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import ReactMarkdown from "react-markdown";
@@ -361,7 +361,7 @@ function scoreMatch(
 
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
-type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
+type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article" | "technical"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
 // ==================== 검색결과 아코디언 ====================
 type CatGroup = { key: string; label: string; color: string; bg: string; dot: string; items: SearchResult[] };
@@ -1526,6 +1526,17 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     refetchOnWindowFocus: true,
   });
 
+  // 기술자료 — 표준화(std-overrides)와 완전히 분리된 별도 데이터소스(technical_materials 테이블)
+  const { data: technicalMaterialsData, refetch: refetchTechMaterials } = useQuery<TechnicalMaterial[]>({
+    queryKey: ["/api/technical-materials"],
+    queryFn: () => fetch("/api/technical-materials", { cache: "no-store" }).then(r => r.json()),
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+  const allTechMaterials = technicalMaterialsData || [];
+
   // 판정지침 — JSON은 뼈대(type/title)만, 실제 문구는 insp-std-overrides(DB)가 단일 진실 소스(2026-08-20 이후).
   const { data: judgmentOverridesRaw } = useQuery<any[]>({
     queryKey: ["/api/insp-std-overrides"],
@@ -1656,10 +1667,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // 구조도/표준화
   const [activeButtonId, setActiveButtonId] = useState<number | null>(null);
   const [selectedStandard, setSelectedStandard] = useState<Standard | null>(null);
+  // 표준화&기술자료 페이지: 구조도 위 서브탭 (표준화 / 기술자료 — 완전히 별도 데이터소스)
+  const [mapSubTab, setMapSubTab] = useState<"std" | "tech">("std");
   // 표준화 탭 상태
   const [stdCategory, setStdCategory] = useState("전체");
   const [stdSelected, setStdSelected] = useState<StdItem | null>(null);
   const [stdSearch, setStdSearch] = useState("");
+  // 기술자료 탭 상태 (표준화와 별도 데이터소스: technical_materials 테이블)
+  const [techSearch, setTechSearch] = useState("");
+  const [techCategory, setTechCategory] = useState("전체");
+  const [techSelected, setTechSelected] = useState<TechnicalMaterial | null>(null);
+  const [showAddTechModal, setShowAddTechModal] = useState(false);
+  const [editingTechMaterial, setEditingTechMaterial] = useState<TechnicalMaterial | null>(null);
+  const [techForm, setTechForm] = useState({ title: "", category: "", body: "", source: "" });
+  const [deleteTechConfirm, setDeleteTechConfirm] = useState<TechnicalMaterial | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingStandard, setEditingStandard] = useState<Standard | null>(null);
@@ -2307,6 +2328,24 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         };
       }).filter(c => c.basis || c.conclusion);
 
+      // 2.6) 기술자료 — 표준화(std_item_overrides)와 완전히 별도의 데이터소스(technical_materials).
+      // 표준화처럼 검사기준 조문 교차참조는 없으므로, 질문 키워드와 제목/본문/카테고리를
+      // 직접 매칭해 점수를 매긴다 (판정지침 매칭 방식과 동일한 접근).
+      const techMaterialScored = allTechMaterials.map(m => {
+        const combined = (m.title + " " + m.body + " " + (m.category || "")).toLowerCase();
+        let score = 0;
+        primaryTerms.forEach(t => { if (t && combined.includes(t.toLowerCase())) score += 40; });
+        secondaryTerms.forEach(t => { if (t && combined.includes(t.toLowerCase())) score += 10; });
+        return { item: m, score };
+      }).filter(e => e.score >= 40).sort((a, b) => b.score - a.score);
+      const techMaterialCtx = techMaterialScored.slice(0, 2).map(({ item }) => ({
+        priority: "기술자료",
+        title: item.title,
+        category: item.category || "",
+        content: item.body.slice(0, 600),
+        source: item.source || "",
+      })).filter(c => c.content);
+
       // 2.5) 판정지침(승강기검사결과 판정지침) — 키워드 매칭 최대 2개, 항목당 600자
       const verdictScored = Object.keys(JUDGMENT_SECTIONS_AI).map(k => getJudgmentSectionAI(k)).filter((s): s is JudgmentSection2 => !!s).map(sec => {
         const bodyText = judgmentSectionToText(sec);
@@ -2346,7 +2385,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       const hasPrecisionQ = precisionKeywords.some(k => qLower.includes(k));
       const precisionCtx = hasPrecisionQ ? PRECISION_RULES_SUMMARY : [];
 
-      const context = { inspCtx, techCtx, verdictCtx, chatCtx, precisionCtx };
+      const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx };
 
       // AI가 실제로 참고한 항목을 SearchResult로 변환 (카드 표시용)
       const contextUsed: SearchResult[] = [
@@ -2366,6 +2405,15 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           content: c.conclusion ? c.conclusion.slice(0, 150) : c.basis.slice(0, 150),
           query: c.ref,
           score: 190,
+          priority: 2,
+        })),
+        // 2.6순위: 기술자료(별도 데이터소스) 컨텍스트 항목
+        ...techMaterialCtx.map(c => ({
+          type: "technical" as const,
+          title: c.title,
+          content: c.content.slice(0, 150),
+          query: c.title,
+          score: 185,
           priority: 2,
         })),
         // 3순위: 채팅 참고 항목
@@ -3206,6 +3254,62 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     }
   };
 
+  // 기술자료 저장(추가/수정) — 표준화와 별도 데이터소스(technical_materials)
+  const handleSubmitTechMaterial = async () => {
+    if (!techForm.title.trim() || !techForm.body.trim()) {
+      toast({ title: "제목과 본문은 필수입니다.", variant: "destructive" });
+      return;
+    }
+    try {
+      const originalTitle = editingTechMaterial?.title || techForm.title;
+      const res = await fetch(`/api/technical-materials/${encodeURIComponent(originalTitle)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newTitle: techForm.title,
+          category: techForm.category || null,
+          body: techForm.body,
+          source: techForm.source || null,
+        }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      await refetchTechMaterials();
+      toast({ title: editingTechMaterial ? "수정되었습니다." : "추가되었습니다." });
+      setShowAddTechModal(false);
+      setEditingTechMaterial(null);
+      setTechForm({ title: "", category: "", body: "", source: "" });
+    } catch (e) {
+      console.error("[handleSubmitTechMaterial 오류]", e);
+      toast({ title: "저장 실패", description: String(e), variant: "destructive" });
+    }
+  };
+
+  const handleDeleteTechMaterial = async () => {
+    if (!deleteTechConfirm) return;
+    try {
+      const res = await fetch(`/api/technical-materials/${encodeURIComponent(deleteTechConfirm.title)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete failed");
+      toast({ title: "삭제되었습니다." });
+      setDeleteTechConfirm(null);
+      setTechSelected(null);
+      refetchTechMaterials();
+    } catch {
+      toast({ title: "삭제 실패", variant: "destructive" });
+    }
+  };
+
+  const openAddTechModal = () => {
+    setEditingTechMaterial(null);
+    setTechForm({ title: "", category: "", body: "", source: "" });
+    setShowAddTechModal(true);
+  };
+
+  const openEditTechModal = (item: TechnicalMaterial) => {
+    setEditingTechMaterial(item);
+    setTechForm({ title: item.title, category: item.category || "", body: item.body, source: item.source || "" });
+    setShowAddTechModal(true);
+  };
+
   // ==================== 렌더링 ====================
   return (
     <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",backgroundColor:"var(--background)"}}>
@@ -3218,7 +3322,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
               {defaultTab === "chat" ? <Bot className="h-3 w-3 text-primary-foreground" /> : <ImageIcon className="h-3 w-3 text-primary-foreground" />}
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight">{defaultTab === "chat" ? "AI 검색" : "기술자료"}</h1>
+              <h1 className="text-lg font-bold tracking-tight">{defaultTab === "chat" ? "AI 검색" : "표준화&기술자료"}</h1>
               
             </div>
           </div>
@@ -4128,6 +4232,59 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         </div>
       )}
 
+      {/* 기술자료 삭제 확인 */}
+      {deleteTechConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setDeleteTechConfirm(null)}>
+          <div className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-semibold mb-2">기술자료 삭제</h2>
+            <p className="text-sm text-muted-foreground mb-6">"{deleteTechConfirm.title}"을 삭제하시겠습니까?</p>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteTechConfirm(null)}>취소</Button>
+              <Button variant="destructive" className="flex-1" onClick={handleDeleteTechMaterial}>삭제</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 기술자료 추가/수정 모달 — 표준화 폼과 무관한 자유형식 입력(제목/카테고리/본문/출처) */}
+      {showAddTechModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddTechModal(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-5 border-b border-border">
+              <h2 className="font-semibold">{editingTechMaterial ? "기술자료 수정" : "기술자료 추가"}</h2>
+              <button onClick={() => setShowAddTechModal(false)} className="text-muted-foreground"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">제목 *</label>
+                <Input value={techForm.title} onChange={e => setTechForm(prev => ({ ...prev, title: e.target.value }))} placeholder="예: 승강기 소음 기준" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">카테고리</label>
+                <Input value={techForm.category} onChange={e => setTechForm(prev => ({ ...prev, category: e.target.value }))} placeholder="예: 소음, 기종별 특성 (자유 입력)" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">본문 *</label>
+                <textarea
+                  className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-card focus:outline-none focus:ring-2 focus:ring-primary/50 min-h-[160px]"
+                  value={techForm.body}
+                  onChange={e => setTechForm(prev => ({ ...prev, body: e.target.value }))}
+                  placeholder="자유롭게 서술하세요."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">출처</label>
+                <Input value={techForm.source} onChange={e => setTechForm(prev => ({ ...prev, source: e.target.value }))} placeholder="예: 제조사 매뉴얼, 사내 자료 등" />
+              </div>
+            </div>
+            <div className="flex gap-3 p-5 pt-0">
+              <Button variant="outline" className="flex-1" onClick={() => setShowAddTechModal(false)}>취소</Button>
+              <Button className="flex-1" onClick={handleSubmitTechMaterial}>{editingTechMaterial ? "수정" : "추가"}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 추가/수정 모달 */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddModal(false)}>
@@ -4201,12 +4358,33 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         <div className="flex-1 overflow-y-auto" ref={zoomContentRef}>
           <div className="p-3 space-y-3">
 
+            {/* 표준화 / 기술자료 서브탭 — 완전히 별도의 데이터소스를 전환 */}
+            <div className="flex gap-1.5 p-1 bg-secondary rounded-xl">
+              <button
+                onClick={() => setMapSubTab("std")}
+                className={`flex-1 text-sm font-medium py-2 rounded-lg transition-colors ${mapSubTab === "std" ? "bg-card shadow text-foreground" : "text-muted-foreground"}`}
+              >
+                표준화
+              </button>
+              <button
+                onClick={() => setMapSubTab("tech")}
+                className={`flex-1 text-sm font-medium py-2 rounded-lg transition-colors ${mapSubTab === "tech" ? "bg-card shadow text-foreground" : "text-muted-foreground"}`}
+              >
+                기술자료
+              </button>
+            </div>
+
             {/* 편집 모드 툴바 */}
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">구조도</h2>
               <div className="flex gap-2">
-                {isAdminMode && (
+                {isAdminMode && mapSubTab === "std" && (
                   <Button size="sm" onClick={openAddModal}>
+                    <Plus className="h-4 w-4 mr-1" />추가
+                  </Button>
+                )}
+                {isAdminMode && mapSubTab === "tech" && (
+                  <Button size="sm" onClick={openAddTechModal}>
                     <Plus className="h-4 w-4 mr-1" />추가
                   </Button>
                 )}
@@ -4257,6 +4435,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             </div>
 
             {/* 표준화 목록 + 상세 */}
+            {mapSubTab === "std" && (
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
               <div className="p-3 border-b border-border">
                 <h3 className="font-semibold text-sm mb-2">표준화 자료 ({allStdItems.length}건)</h3>
@@ -4447,6 +4626,100 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 })()}
               </div>
             </div>
+            )}
+
+            {/* 기술자료 목록 + 상세 — 표준화와 완전히 별도의 데이터소스(technical_materials) */}
+            {mapSubTab === "tech" && (
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+              <div className="p-3 border-b border-border">
+                <h3 className="font-semibold text-sm mb-2">기술자료 ({allTechMaterials.length}건)</h3>
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input placeholder="검색..." value={techSearch} onChange={e => { setTechSearch(e.target.value); setTechSelected(null); }} className="pl-9 h-8 text-xs bg-secondary border-0" />
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {[
+                    { key: "전체", cnt: allTechMaterials.length },
+                    ...Array.from(new Set(allTechMaterials.map(x => x.category).filter((c): c is string => !!c)))
+                      .map(cat => ({ key: cat, cnt: allTechMaterials.filter(x => x.category === cat).length }))
+                  ].filter(({ key, cnt }) => key === "전체" || cnt > 0).map(({ key, cnt }) => (
+                    <button key={key} onClick={() => { setTechCategory(key); setTechSelected(null); }}
+                      className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${techCategory === key ? "bg-foreground text-background border-foreground" : "bg-background border-border text-muted-foreground hover:bg-muted"}`}>
+                      {key} <span className="opacity-60">{cnt}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="divide-y divide-border max-h-[480px] overflow-y-auto">
+                {(() => {
+                  const techTokens = techSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+                  const techPhrase = techTokens.join(" ");
+                  const filtered = allTechMaterials
+                    .filter(x => techCategory === "전체" || x.category === techCategory)
+                    .map(x => ({ item: x, haystack: [x.title, x.body, x.source, x.category].join(" ").toLowerCase() }))
+                    .filter(({ haystack }) => techTokens.length === 0 || techTokens.every(t => haystack.includes(t)))
+                    .sort((a, b) => {
+                      if (!techPhrase) return 0;
+                      const aExact = a.haystack.includes(techPhrase) ? 0 : 1;
+                      const bExact = b.haystack.includes(techPhrase) ? 0 : 1;
+                      return aExact - bExact;
+                    })
+                    .map(({ item }) => item);
+                  if (filtered.length === 0) return <p className="text-center text-muted-foreground py-8 text-sm">검색 결과 없음</p>;
+                  return filtered.map((item) => (
+                    <div key={item.id}>
+                      <div onClick={() => setTechSelected(techSelected?.id === item.id ? null : item)}
+                        className={`p-3 cursor-pointer transition-colors ${techSelected?.id === item.id ? "bg-blue-500/5" : "hover:bg-muted/50"}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <div className="text-sm font-medium leading-snug text-foreground line-clamp-2">{item.title}</div>
+                              {item.category && (
+                                <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">{item.category}</span>
+                              )}
+                            </div>
+                            {item.source && <div className="text-[11px] text-muted-foreground">{item.source}</div>}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                            {isAdminMode && (
+                              <button
+                                onClick={e => { e.stopPropagation(); openEditTechModal(item); }}
+                                className="w-6 h-6 rounded-md flex items-center justify-center bg-orange-50 hover:bg-orange-100 border border-orange-200"
+                                title="수정"
+                              >
+                                <Pencil className="h-3 w-3 text-orange-600" />
+                              </button>
+                            )}
+                            {isAdminMode && (
+                              <button
+                                onClick={e => { e.stopPropagation(); setDeleteTechConfirm(item); }}
+                                className="w-6 h-6 rounded-md flex items-center justify-center bg-red-50 hover:bg-red-100 border border-red-200"
+                                title="삭제"
+                              >
+                                <Trash2 className="h-3 w-3 text-red-600" />
+                              </button>
+                            )}
+                            <span className="text-muted-foreground text-xs">{techSelected?.id === item.id ? "▲" : "▽"}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {techSelected?.id === item.id && (
+                        <div className="px-3 pb-3 pt-1 bg-blue-500/5 border-t border-blue-200/30 space-y-2.5">
+                          <p className="text-[11px] text-foreground leading-relaxed whitespace-pre-wrap bg-card rounded-lg p-2">{item.body}</p>
+                          {isAdminMode && (
+                            <div className="pt-1.5 border-t border-border/50 flex items-center justify-end gap-3">
+                              <button onClick={e => { e.stopPropagation(); setDeleteTechConfirm(item); }} className="text-[10px] text-red-600 underline shrink-0">🗑️ 삭제</button>
+                              <button onClick={e => { e.stopPropagation(); openEditTechModal(item); }} className="text-[10px] text-blue-600 underline shrink-0">✏️ 수정</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+            )}
           </div>
         </div>
       )}
@@ -4462,13 +4735,15 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 <span className={`text-[10px] font-medium px-2.5 py-1 rounded-full ${
                   selectedSearchResult.type === "standard"
                     ? "bg-blue-50 text-blue-700"
+                    : selectedSearchResult.type === "technical"
+                    ? "bg-teal-50 text-teal-700"
                     : selectedSearchResult.type === "judgment"
                     ? "bg-green-50 text-green-700"
                     : selectedSearchResult.type === "article"
                     ? "bg-indigo-50 text-indigo-700"
                     : "bg-amber-50 text-amber-700"
                 }`}>
-                  {selectedSearchResult.type === "standard" ? "기술자료" : selectedSearchResult.type === "judgment" ? "검사가이드" : selectedSearchResult.type === "article" ? "📋 조문 원문" : "검사기준"}
+                  {selectedSearchResult.type === "standard" ? "표준화" : selectedSearchResult.type === "technical" ? "기술자료" : selectedSearchResult.type === "judgment" ? "검사가이드" : selectedSearchResult.type === "article" ? "📋 조문 원문" : "검사기준"}
                 </span>
               </div>
               <button onClick={() => setSelectedSearchResult(null)} className="w-7 h-7 rounded-full flex items-center justify-center bg-secondary text-muted-foreground hover:bg-muted">
@@ -4560,7 +4835,28 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                     )}
                     {!std && <p className="text-xs leading-relaxed text-foreground whitespace-pre-wrap">{selectedSearchResult.content}</p>}
                     <div className="pt-1 border-t border-border">
-                      <p className="text-[10px] font-medium text-blue-600">[기술자료] {std?.source || "표준화 자료"}</p>
+                      <p className="text-[10px] font-medium text-blue-600">[표준화] {std?.source || "표준화 자료"}</p>
+                    </div>
+                  </>
+                );
+              })() : selectedSearchResult.type === "technical" ? (() => {
+                const material = allTechMaterials.find(m => m.title === selectedSearchResult.title || m.title === selectedSearchResult.query);
+                return (
+                  <>
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center shrink-0 mt-0.5">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F766E" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      </div>
+                      <div>
+                        <h2 className="text-sm font-medium text-foreground leading-snug">{selectedSearchResult.title}</h2>
+                        {material?.source && <p className="text-xs text-muted-foreground mt-0.5">{material.source}</p>}
+                      </div>
+                    </div>
+                    <div className="bg-secondary rounded-xl p-3">
+                      <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{material?.body || selectedSearchResult.content}</p>
+                    </div>
+                    <div className="pt-1 border-t border-border">
+                      <p className="text-[10px] font-medium text-teal-600">[기술자료] {material?.source || "기술자료"}</p>
                     </div>
                   </>
                 );
