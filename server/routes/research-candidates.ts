@@ -170,4 +170,31 @@ export function registerResearchCandidateRoutes(app: Express) {
       res.status(500).json({ error: e.message || "반려 처리 실패" });
     }
   });
+
+  // [TEMP-2026-09] 카카오톡 오픈채팅 대화 로그에서 추출한 Q&A 후보를 일괄 등록하는
+  // 임시 엔드포인트. 실행 후 바로 코드에서 제거할 예정 — 상시 운영 API 아님.
+  // 사람이 원본 대화를 직접 읽고 선별한 항목만 pending_review로 넣으며, 관리자가
+  // 홈 화면 승인 UI에서 개별 검토 후 승인/반려한다. 자동 반영 없음.
+  app.post("/api/_temp/seed-research-candidates", async (req, res) => {
+    try {
+      const { pool } = await import("../db");
+      const items = req.body?.items;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "items 배열이 필요합니다" });
+      }
+      let inserted = 0;
+      for (const it of items) {
+        if (!it.question || !it.original_answer || !it.summary) continue;
+        await pool.query(
+          `INSERT INTO ai_research_candidates (question, original_answer, summary, sources, status)
+           VALUES ($1, $2, $3, $4::jsonb, 'pending_review')`,
+          [it.question, it.original_answer, it.summary, JSON.stringify(it.sources || [{ title: "카카오톡 오픈채팅 - 승강기 검사기준 419", url: null }])]
+        );
+        inserted++;
+      }
+      res.json({ ok: true, inserted });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "일괄 등록 실패" });
+    }
+  });
 }
