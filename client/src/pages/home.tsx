@@ -4203,7 +4203,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
 
             {/* 편집 모드 툴바 */}
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold">구조도 & 기술자료</h2>
+              <h2 className="font-semibold">구조도</h2>
               <div className="flex gap-2">
                 {isAdminMode && (
                   <Button size="sm" onClick={openAddModal}>
