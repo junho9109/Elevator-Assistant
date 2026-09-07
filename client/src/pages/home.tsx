@@ -4374,65 +4374,73 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
               </button>
             </div>
 
-            {/* 편집 모드 툴바 */}
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">구조도</h2>
-              <div className="flex gap-2">
-                {isAdminMode && mapSubTab === "std" && (
-                  <Button size="sm" onClick={openAddModal}>
-                    <Plus className="h-4 w-4 mr-1" />추가
-                  </Button>
-                )}
-                {isAdminMode && mapSubTab === "tech" && (
-                  <Button size="sm" onClick={openAddTechModal}>
-                    <Plus className="h-4 w-4 mr-1" />추가
-                  </Button>
-                )}
-              </div>
-            </div>
+            {mapSubTab === "std" && (
+              <>
+                {/* 편집 모드 툴바 */}
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold">구조도</h2>
+                  <div className="flex gap-2">
+                    {isAdminMode && (
+                      <Button size="sm" onClick={openAddModal}>
+                        <Plus className="h-4 w-4 mr-1" />추가
+                      </Button>
+                    )}
+                  </div>
+                </div>
 
-            {isAdminMode && (
-              <div className="p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-xl flex flex-wrap gap-2 items-center text-sm">
-                <span className="text-orange-700 dark:text-orange-300 font-medium">✏️ 버튼을 드래그해서 이동</span>
-                <label className="flex items-center gap-1 cursor-pointer bg-white dark:bg-card border border-orange-300 rounded-lg px-2 py-1 text-xs text-orange-700 dark:text-orange-300 hover:bg-orange-50">
-                  <ImageIcon className="h-3 w-3" />구조도 변경
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-                </label>
-                <Button size="sm" variant="outline" className="text-xs h-7 border-orange-300 text-orange-700" onClick={() => setShowAddHotspot(true)}>
-                  <Plus className="h-3 w-3 mr-1" />버튼 추가
-                </Button>
-                {hotspots.map(h => (
-                  <Button key={h.id} size="sm" variant="outline" className="text-xs h-7 border-red-300 text-red-600" onClick={() => setDeleteHotspotConfirm(h)}>
-                    <Trash2 className="h-3 w-3 mr-1" />{h.label}
-                  </Button>
-                ))}
-              </div>
+                {isAdminMode && (
+                  <div className="p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-xl flex flex-wrap gap-2 items-center text-sm">
+                    <span className="text-orange-700 dark:text-orange-300 font-medium">✏️ 버튼을 드래그해서 이동</span>
+                    <label className="flex items-center gap-1 cursor-pointer bg-white dark:bg-card border border-orange-300 rounded-lg px-2 py-1 text-xs text-orange-700 dark:text-orange-300 hover:bg-orange-50">
+                      <ImageIcon className="h-3 w-3" />구조도 변경
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                    </label>
+                    <Button size="sm" variant="outline" className="text-xs h-7 border-orange-300 text-orange-700" onClick={() => setShowAddHotspot(true)}>
+                      <Plus className="h-3 w-3 mr-1" />버튼 추가
+                    </Button>
+                    {hotspots.map(h => (
+                      <Button key={h.id} size="sm" variant="outline" className="text-xs h-7 border-red-300 text-red-600" onClick={() => setDeleteHotspotConfirm(h)}>
+                        <Trash2 className="h-3 w-3 mr-1" />{h.label}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                {/* 구조도 */}
+                <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-lg border border-border">
+                  <canvas ref={canvasRef} className={`w-full h-full ${isAdminMode ? "cursor-move" : "cursor-pointer"}`}
+                    onClick={handleCanvasClick}
+                    onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp} onMouseLeave={async () => {
+                      if (draggingId !== null) {
+                        const canvas = canvasRef.current;
+                        if (canvas && pinDragPosRef.current) {
+                          const newLeft = (pinDragPosRef.current.x / canvas.width) * 100;
+                          const newTop = (pinDragPosRef.current.y / canvas.height) * 100;
+                          updateHotspot.mutate({ id: draggingId, hotspot: { left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)) } });
+                        }
+                        pinDragPosRef.current = null;
+                        setDraggingId(null);
+                      }
+                      if (draggingCardId !== null) {
+                        fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsetsRef.current) }) }).catch(() => {});
+                        setDraggingCardId(null);
+                      }
+                    }}
+                    onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+                    style={{touchAction: isAdminMode ? "none" : "auto"}} />
+                </div>
+              </>
             )}
 
-            {/* 구조도 */}
-            <div className="relative w-full aspect-[2/3] sm:aspect-[3/4] md:aspect-[9/8] rounded-2xl overflow-hidden shadow-lg border border-border">
-              <canvas ref={canvasRef} className={`w-full h-full ${isAdminMode ? "cursor-move" : "cursor-pointer"}`}
-                onClick={handleCanvasClick}
-                onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp} onMouseLeave={async () => {
-                  if (draggingId !== null) {
-                    const canvas = canvasRef.current;
-                    if (canvas && pinDragPosRef.current) {
-                      const newLeft = (pinDragPosRef.current.x / canvas.width) * 100;
-                      const newTop = (pinDragPosRef.current.y / canvas.height) * 100;
-                      updateHotspot.mutate({ id: draggingId, hotspot: { left: String(newLeft.toFixed(2)), top: String(newTop.toFixed(2)) } });
-                    }
-                    pinDragPosRef.current = null;
-                    setDraggingId(null);
-                  }
-                  if (draggingCardId !== null) {
-                    fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "cardOffsets", value: JSON.stringify(cardOffsetsRef.current) }) }).catch(() => {});
-                    setDraggingCardId(null);
-                  }
-                }}
-                onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
-                style={{touchAction: isAdminMode ? "none" : "auto"}} />
-            </div>
+            {/* 기술자료 탭 전용 툴바 — 구조도 불필요, 추가 버튼만 노출 */}
+            {mapSubTab === "tech" && isAdminMode && (
+              <div className="flex items-center justify-end">
+                <Button size="sm" onClick={openAddTechModal}>
+                  <Plus className="h-4 w-4 mr-1" />추가
+                </Button>
+              </div>
+            )}
 
             {/* 표준화 목록 + 상세 */}
             {mapSubTab === "std" && (
