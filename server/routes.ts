@@ -2681,6 +2681,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       })();
 
+      // [2026-09] 조문 "원문 본문" 조회 (inspection_base_items) — 위 articleTask는 개정연혁
+      // (inspection_item_revisions.description, "무엇이 왜 바뀌었는지")만 조회했고 정작 조문의
+      // 실제 검사기준 본문(무엇을 검사해야 하는지)은 AI 컨텍스트에 전혀 포함되지 않고 있었다.
+      // 예) "7.5.2 검사기준 알려줘" → 상위 섹션 "7.5.2 동력 작동식 문" 하나만 정확일치로
+      // 찾다 보니, 실제 검사내용이 담긴 하위 조문(7.5.2.1.1.1~7.5.2.1.1.3)은 통째로 빠졌다.
+      //
+      // [시도했다가 폐기한 접근] inspection_base_items의 sortOrder가 "문서 전체 순번"일
+      // 것으로 가정하고 "다음 형제 섹션 시작 직전까지"를 계산해봤으나, 실제 데이터는
+      // 최초 시딩 이후 관리자가 개별 추가한 항목들이 섞여 sortOrder가 문서 순서와
+      // 무관하게 뒤죽박죽이었다(예: "7" 조회 시 5.1.4 → 7.1 → 9.7처럼 전혀 다른 장으로
+      // 튐). sortOrder에 의존하는 범위 계산은 실제 라이브 데이터로 검증한 결과 폐기.
+      //
+      // 대신 sectionId/itemId 문자열 자체의 계층 구조만으로 안전하게 하위 확장한다:
+      // ref와 완전히 같거나 "ref."로 시작하는 행만 포함 — "7"을 물으면 7.1~7.18...(7로
+      // 시작하는 모든 하위)이 포함되고 "8.x"는 애초에 prefix가 달라 걸리지 않으므로,
+      // 별도의 "다음 챕터 경계 계산" 없이도 자연스럽게 그 장(章) 안에서 멈춘다.
+      const baseItemTask = (async (): Promise<any[] | null> => {
+        try {
+          const refMatches = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g);
+          if (!refMatches || refMatches.length === 0) return null;
+          const uniqueRefs = [...new Set(refMatches)].slice(0, 3) as string[];
+          const { pool: biPool } = await import("./db");
+          // [2026-09] 기존 articleTask와 동일하게 equipmentType 구분 없이 조회한다
+          // (articleTask도 이 함수가 추가되기 전부터 설비종류 필터 없이 item_id로만 찾고
+          // 있었음 — 이번 추가에서 새 정책을 도입하지 않고 기존 동작에 맞춘다).
+          const likeConds = uniqueRefs
+            .map((_, i) => `(section_id = $${i * 2 + 1} OR section_id LIKE $${i * 2 + 2} OR item_id = $${i * 2 + 1} OR item_id LIKE $${i * 2 + 2})`)
+            .join(" OR ");
+          const params = uniqueRefs.flatMap(ref => [ref, `${ref}.%`]);
+          const rowsResult = await biPool.query(
+            `SELECT item_id, section_id, section_title, text, sort_order
+             FROM inspection_base_items
+             WHERE ${likeConds}
+             ORDER BY item_id`,
+            params
+          );
+          const resultRows = rowsResult.rows as any[];
+          // 안전장치: 하위 항목이 아주 많은 대분류(예: 최상위 "7" 전체)를 물은 경우
+          // 컨텍스트 폭증을 막기 위해 글자수 총량 기준으로 자른다.
+          let totalChars = 0;
+          const capped: any[] = [];
+          for (const r of resultRows) {
+            const len = (r.text || "").length;
+            if (totalChars > 0 && totalChars + len > 6000) break;
+            totalChars += len;
+            capped.push(r);
+          }
+          return capped.length > 0 ? capped : null;
+        } catch (e) {
+          return null; // 조문 원문 DB 조회 실패 시 무시
+        }
+      })();
+
       // 조문 연혁 키워드 검색 (조문번호를 언급하지 않는 질문도 커버) — SQL 자체는 위 조회와 무관하므로
       // 동시에 실행하고, 중복 제거(articleCards와 겹치는 item_id 제외)만 두 결과가 모두 온 뒤 처리한다.
       //
@@ -2835,11 +2888,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 생성 Haiku 호출과 합쳐 fast 모드에서도 AI 왕복이 2회(총 8~9초)나 필요했다.
       // 계산 질문 처리는 answerRules 안의 "계산/판정 질문 처리" 지시(아래 참고)로 이미 커버되므로
       // 분류 호출 없이 답변 생성 1회 호출로 통합한다.
-      const [goodAnswerRefSection, articleRows, keywordRows, memoSection, researchSection] = await Promise.all([
-        ragTask, articleTask, keywordTask, memoTask, researchTask,
+      const [goodAnswerRefSection, articleRows, baseItemRows, keywordRows, memoSection, researchSection] = await Promise.all([
+        ragTask, articleTask, baseItemTask, keywordTask, memoTask, researchTask,
       ]);
 
-      // ── 병렬 조회 결과를 고정된 순서(조문번호 직접매칭 → 키워드 매칭)로 합성 ──
+      // ── 병렬 조회 결과를 고정된 순서(조문 원문 → 조문번호 직접매칭 연혁 → 키워드 매칭)로 합성 ──
+      // 조문 원문(inspection_base_items)을 가장 먼저 배치한다 — "무엇을 검사해야 하는지"가
+      // "무엇이 언제 바뀌었는지(연혁)"보다 우선순위 높은 정보이기 때문.
+      if (baseItemRows) {
+        const grouped: Record<string, any[]> = {};
+        for (const r of baseItemRows) {
+          const sid = r.section_id;
+          if (!grouped[sid]) grouped[sid] = [];
+          grouped[sid].push(r);
+        }
+        const text = Object.entries(grouped).map(([sectionId, rows]) => {
+          const title = rows[0]?.section_title || sectionId;
+          const body = rows.map((r: any) => `  [${r.item_id}] ${r.text}`).join("\n");
+          return `${title}\n${body}`;
+        }).join("\n\n");
+        sections.push("[별표22 조문 원문 — 해당 조문 및 하위 세부조문 전체]\n" + text);
+      }
+
       if (articleRows) {
         const revText = articleRows.map((r: any) => {
           const dateInfo = r.introduction_type === 'current'
@@ -2847,7 +2917,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
           return `[${r.item_id}] ${dateInfo}\n${r.description}`;
         }).join("\n\n");
-        sections.push("[별표22 조문 원문]\n" + revText);
+        sections.push("[별표22 조문 개정연혁 — 언제 어떻게 바뀌었는지]\n" + revText);
 
         const grouped: Record<string, any[]> = {};
         for (const r of articleRows) {
