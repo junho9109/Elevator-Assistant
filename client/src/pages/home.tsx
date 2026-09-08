@@ -844,6 +844,7 @@ function RichTextEditor({ value, onChange, placeholder, minHeight = "80px" }: {
 // ==================== 표준화 항목 이미지 섹션 ====================
 // 기술자료 이미지 첨부 — StdPhotoSection과 완전히 동일한 UI/로직, 엔드포인트만 /api/tech-photos로 분리
 function TechPhotoSection({ itemKey }: { itemKey: string }) {
+  const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<{ id: number; mimeType: string; createdAt: string }[]>([]);
   const [viewer, setViewer] = useState<{ open: boolean; idx: number }>({ open: false, idx: 0 });
@@ -893,8 +894,14 @@ function TechPhotoSection({ itemKey }: { itemKey: string }) {
       const fd = new FormData();
       fd.append('image', compressed);
       const r = await fetch(`/api/tech-photos/${encodedKey}`, { method: 'POST', body: fd });
-      if (r.ok) await loadPhotos();
-    } catch {}
+      if (r.ok) {
+        await loadPhotos();
+      } else {
+        toast({ title: "사진 업로드 실패", description: r.status === 413 ? "파일 용량이 너무 큽니다." : "잠시 후 다시 시도해주세요.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "사진 업로드 실패", description: "네트워크 상태를 확인해주세요.", variant: "destructive" });
+    }
     setUploading(false);
   };
 
@@ -1022,6 +1029,7 @@ function TechPhotoSection({ itemKey }: { itemKey: string }) {
 }
 
 function StdPhotoSection({ itemKey }: { itemKey: string }) {
+  const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<{ id: number; mimeType: string; createdAt: string }[]>([]);
   const [viewer, setViewer] = useState<{ open: boolean; idx: number }>({ open: false, idx: 0 });
@@ -1071,8 +1079,14 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
       const fd = new FormData();
       fd.append('image', compressed);
       const r = await fetch(`/api/std-photos/${encodedKey}`, { method: 'POST', body: fd });
-      if (r.ok) await loadPhotos();
-    } catch {}
+      if (r.ok) {
+        await loadPhotos();
+      } else {
+        toast({ title: "사진 업로드 실패", description: r.status === 413 ? "파일 용량이 너무 큽니다." : "잠시 후 다시 시도해주세요.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "사진 업로드 실패", description: "네트워크 상태를 확인해주세요.", variant: "destructive" });
+    }
     setUploading(false);
   };
 
@@ -1857,6 +1871,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [stdCategory, setStdCategory] = useState("전체");
   const [stdSelected, setStdSelected] = useState<StdItem | null>(null);
   const [stdSearch, setStdSearch] = useState("");
+  // [2026-09] 표준화 항목 선택 비교를 객체 참조(===)가 아닌 안정적인 키(title)로 수행.
+  // stdOverrides는 staleTime:0/refetchOnWindowFocus:true라 매번 새 배열·새 객체를
+  // 만들어내는데(allStdItems useMemo), 객체 참조 비교를 쓰면 모바일에서 카메라 앱
+  // 전환 후 복귀(focus 이벤트)로 자동 refetch가 일어날 때 선택 상태가 사라져
+  // 상세보기(사진 섹션 포함)가 통째로 닫혀버린다 — "사진이 사라진 것처럼" 보이는
+  // 원인이었다. null은 서로 다른 유일 문자열로 취급해 매칭되지 않게 한다.
+  const stdItemKey = (v: { _key?: string; title?: string } | null | undefined) =>
+    v == null ? "__none__" : (v._key || v.title || "__none__");
   // 기술자료 탭 상태 (표준화와 별도 데이터소스: technical_materials 테이블)
   const [techSearch, setTechSearch] = useState("");
   const [techCategory, setTechCategory] = useState("전체");
@@ -4674,8 +4696,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                     const headerOv = stdOverrides?.find((o: any) => o.title === (item._key || item.title));
                     return (
                     <div key={idx}>
-                      <div onClick={() => setStdSelected(stdSelected === item ? null : item)}
-                        className={`p-3 cursor-pointer transition-colors ${stdSelected === item ? "bg-blue-500/5" : "hover:bg-muted/50"}`}>
+                      <div onClick={() => setStdSelected(stdItemKey(stdSelected) === stdItemKey(item) ? null : item)}
+                        className={`p-3 cursor-pointer transition-colors ${stdItemKey(stdSelected) === stdItemKey(item) ? "bg-blue-500/5" : "hover:bg-muted/50"}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 mb-1">
@@ -4732,11 +4754,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                                 <Trash2 className="h-3 w-3 text-red-600" />
                               </button>
                             )}
-                            <span className="text-muted-foreground text-xs">{stdSelected === item ? "▲" : "▽"}</span>
+                            <span className="text-muted-foreground text-xs">{stdItemKey(stdSelected) === stdItemKey(item) ? "▲" : "▽"}</span>
                           </div>
                         </div>
                       </div>
-                      {stdSelected === item && (() => {
+                      {stdItemKey(stdSelected) === stdItemKey(item) && (() => {
                         const ov = stdOverrides?.find((o: any) => o.title === item.title);
                         const dispRef = ov?.ref || item.ref;
                         const fmtText = (s: string) => (s || '').replace(/\u2023\s*/g, '\n\u2023 ').replace(/\u25B8\s*/g, '\n\u25B8 ').replace(/\u2605\s*/g, '\n\u2605 ').replace(/\u203B\s*/g, '\n\u203B ').replace(/\n{3,}/g, '\n\n').trim();
