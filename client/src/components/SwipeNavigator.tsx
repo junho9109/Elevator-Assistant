@@ -104,11 +104,14 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
             <button
               key={i}
               onClick={() => setCurrentIndex(i)}
-              className={`flex-1 flex flex-col items-center justify-center py-2.5 transition-all duration-150 ${
+              className={`flex-1 flex flex-col items-center justify-center py-2.5 px-0.5 min-w-0 transition-all duration-150 ${
                 currentIndex === i ? "text-primary" : "text-muted-foreground"
               }`}
             >
-              <span className={`text-[10px] font-medium tracking-tight whitespace-nowrap ${currentIndex === i ? "font-semibold" : ""}`}>
+              <span
+                className={`text-[10px] leading-tight font-medium tracking-tight text-center break-keep ${currentIndex === i ? "font-semibold" : ""}`}
+                style={{ wordBreak: "keep-all" }}
+              >
                 {name}
               </span>
               {currentIndex === i && (
