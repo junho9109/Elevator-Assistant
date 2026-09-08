@@ -462,6 +462,16 @@ export const stdItemPhotos = pgTable("std_item_photos", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ── 기술자료 이미지 — 표준화 사진(std_item_photos)과 동일 패턴, 별도 데이터소스 ──
+export const techMaterialPhotos = pgTable("tech_material_photos", {
+  id: serial("id").primaryKey(),
+  itemKey: varchar("item_key", { length: 200 }).notNull(), // technical_materials.title 기반 식별자
+  imageData: text("image_data").notNull(),
+  mimeType: varchar("mime_type", { length: 50 }).default("image/jpeg"),
+  displayOrder: integer("display_order").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ── 검사기준(별표22) 조문 이미지 — 본문에 여러 장 첨부 ──
 export const inspectionItemPhotos = pgTable("inspection_item_photos", {
   id: serial("id").primaryKey(),

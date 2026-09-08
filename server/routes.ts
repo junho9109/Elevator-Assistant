@@ -3645,6 +3645,71 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });
 
+  // ==================== 기술자료 이미지 (표준화 사진과 동일 패턴, 별도 데이터소스) ====================
+  const TECH_PHOTO_DELETE_PW = "910919";
+
+  app.get("/api/tech-photos/:itemKey", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      const key = decodeURIComponent(req.params.itemKey);
+      const photos = await db.select({
+        id: techMaterialPhotos.id,
+        displayOrder: techMaterialPhotos.displayOrder,
+        mimeType: techMaterialPhotos.mimeType,
+        createdAt: techMaterialPhotos.createdAt,
+      }).from(techMaterialPhotos).where(eq(techMaterialPhotos.itemKey, key)).orderBy(asc(techMaterialPhotos.displayOrder));
+      res.json(photos);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.get("/api/tech-photos/:itemKey/:id/image", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [photo] = await db.select().from(techMaterialPhotos).where(eq(techMaterialPhotos.id, parseInt(req.params.id)));
+      if (!photo) return res.status(404).json({ error: "Not found" });
+      const b64 = photo.imageData.replace(/^data:image\/\w+;base64,/, '');
+      res.setHeader('Content-Type', photo.mimeType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(Buffer.from(b64, 'base64'));
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/tech-photos/:itemKey", upload.single('image'), async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq, count } = await import("drizzle-orm");
+      const key = decodeURIComponent(req.params.itemKey);
+      const [{ value: cnt }] = await db.select({ value: count() }).from(techMaterialPhotos).where(eq(techMaterialPhotos.itemKey, key));
+      if (Number(cnt) >= 10) return res.status(400).json({ error: "최대 10장" });
+      if (!req.file) return res.status(400).json({ error: "No image" });
+      const base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const [photo] = await db.insert(techMaterialPhotos).values({
+        itemKey: key,
+        imageData: base64Data,
+        mimeType: req.file.mimetype,
+        displayOrder: Number(cnt),
+      }).returning({ id: techMaterialPhotos.id, displayOrder: techMaterialPhotos.displayOrder, mimeType: techMaterialPhotos.mimeType, createdAt: techMaterialPhotos.createdAt });
+      res.status(201).json(photo);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.delete("/api/tech-photos/:id", async (req, res) => {
+    try {
+      const { password } = req.body;
+      if (password !== TECH_PHOTO_DELETE_PW) return res.status(403).json({ error: "비밀번호 오류" });
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(techMaterialPhotos).where(eq(techMaterialPhotos.id, parseInt(req.params.id)));
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
   // ==================== 검사기준(별표22) 조문 이미지 ====================
   app.get("/api/inspection-photos/:itemId", async (req, res) => {
     try {

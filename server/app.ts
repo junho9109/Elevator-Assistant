@@ -123,6 +123,18 @@ async function ensureChatTable() {
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_technical_materials_category ON technical_materials (category)`);
+
+    // 기술자료 이미지 — std_item_photos와 동일 패턴(item_key로 technical_materials.title과 매칭)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tech_material_photos (
+        id SERIAL PRIMARY KEY,
+        item_key VARCHAR(200) NOT NULL,
+        image_data TEXT NOT NULL,
+        mime_type VARCHAR(50) DEFAULT 'image/jpeg',
+        display_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }
