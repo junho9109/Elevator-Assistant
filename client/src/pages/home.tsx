@@ -22,6 +22,11 @@ import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import ReactMarkdown from "react-markdown";
 
+// [2026-09] AI 채팅 답변 아래 "참고 자료" 카드 표시 여부. 카드가 실제 인용 정확도를
+// 반영하지 못한다는 피드백으로 비활성화. AI 프롬프트 컨텍스트(context 객체)와는
+// 무관한 화면 표시 전용 플래그이므로, 끄더라도 답변 품질에는 영향 없음.
+const SHOW_SEARCH_RESULT_CARDS = false;
+
 // ── 판정지침(승강기검사결과 판정지침) — AI검색 [2순위] 컨텍스트용 ──────────
 // inspection-standards.tsx가 화면에 보여주는 것과 동일한 원본 데이터.
 type JudgmentRow2  = { ref: string; target: string; content: string; group?: string };
@@ -4180,7 +4185,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                       <FeedbackButtons question={messages[i-1].content} answer={msg.content} empIdentity={empIdentity} />
                     </div>
                   )}
-                  {msg.searchResults && msg.searchResults.length > 0 && !msg.isElevatorQuery && (() => {
+                  {/* [2026-09] 참고자료 카드 정확도 문제로 표시 비활성화 — 복구 시 SHOW_SEARCH_RESULT_CARDS를 true로 */}
+                  {SHOW_SEARCH_RESULT_CARDS && msg.searchResults && msg.searchResults.length > 0 && !msg.isElevatorQuery && (() => {
                     const TYPE_LABEL: Record<string, string> = {
                       inspection: "검사기준", standard: "기술자료",
                       judgment: "검사가이드", chat: "채팅", article: "조문 원문"
