@@ -28,7 +28,9 @@ function handleError(res: any, error: any, message: string) {
 // 질문은 삭제한다. 관리자 수동 생성 버튼과 30분 주기 백그라운드 점검이 이 로직을 공유한다.
 const EXPERT_QUESTION_LOW_WATERMARK = 5;
 const EXPERT_QUESTION_CAP = 10;
-const EXPERT_QUESTION_SKIP_LIMIT = 10;
+// [2026-09] 10 → 3으로 하향: 여러 사람이 같은 질문을 반복해서 건너뛰는 건 "이 질문 자체가
+// 답하기 어렵거나 관심이 없다"는 신호로 보고, 더 빨리 다른 질문으로 교체한다.
+const EXPERT_QUESTION_SKIP_LIMIT = 3;
 const EXPERT_QUESTION_DAILY_MS = 24 * 60 * 60 * 1000;
 
 // AI가 새 질문 + 예상 답변 4개를 생성해 DB에 저장 — 기존 질문과 겹치지 않도록 등록된 질문 목록을 함께 전달함
@@ -3949,12 +3951,19 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
     try {
       const { db } = await import("./db");
       const { expertAnswers } = await import("@shared/schema");
-      const { eq, and, desc } = await import("drizzle-orm");
+      const { eq, and, ne, desc } = await import("drizzle-orm");
       const employeeId = req.query.employeeId as string | undefined;
       const status = req.query.status as string | undefined;
       const conditions = [] as any[];
       if (employeeId) conditions.push(eq(expertAnswers.employeeId, employeeId));
-      if (status) conditions.push(eq(expertAnswers.status, status));
+      if (status) {
+        conditions.push(eq(expertAnswers.status, status));
+        // [2026-09] 관리자 검수 큐(status 조회)에는 "건너뜀"을 노출하지 않는다 — 건너뜀은
+        // 검수할 내용이 없는 기록용 행이고 이제 제출 즉시 자동 반려 처리되므로, 대기/승인/
+        // 반려 어느 탭에서도 검수 대상 목록에 섞여 보이지 않게 한다(employeeId 조회는
+        // "이 사용자가 이미 건너뛴 질문인지" 판단에 skip 기록이 반드시 필요하므로 그대로 둔다).
+        conditions.push(ne(expertAnswers.answerType, "skip"));
+      }
       const rows = conditions.length > 0
         ? await db.select().from(expertAnswers).where(and(...conditions)).orderBy(desc(expertAnswers.createdAt))
         : await db.select().from(expertAnswers).orderBy(desc(expertAnswers.createdAt));
@@ -3969,8 +3978,22 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
       const { db } = await import("./db");
       const { expertAnswers, insertExpertAnswerSchema } = await import("@shared/schema");
       const validated = insertExpertAnswerSchema.parse(req.body);
-      const [row] = await db.insert(expertAnswers).values(validated).returning();
+      // [2026-09] "건너뜀"은 검수할 내용 자체가 없는 기록용 행이므로, 기본값 '대기'로 남겨
+      // 관리자가 매번 승인/반려를 눌러야 하게 만들지 않고 즉시 '반려' 처리한다 — 지식 검수
+      // 화면에서 관리자가 처리해야 할 실질적인 답변(직접 입력/선택형)만 대기 큐에 남긴다.
+      const insertValues = validated.answerType === "skip"
+        ? { ...validated, status: "반려" as const }
+        : validated;
+      const [row] = await db.insert(expertAnswers).values(insertValues).returning();
       res.status(201).json(row);
+
+      // [2026-09] 같은 질문이 전체 사용자 합산으로 건너뜀 EXPERT_QUESTION_SKIP_LIMIT(3)회
+      // 쌓이면 그 질문을 즉시 정리(삭제)한다. 기존에는 30분 주기 백그라운드 점검에서만
+      // 처리되어 최대 30분간 계속 같은 질문이 노출될 수 있었는데, 건너뛴 직후 바로
+      // 반영되도록 응답 전송 후(fire-and-forget) 점검을 즉시 한 번 실행한다.
+      if (validated.answerType === "skip") {
+        maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 건너뜀 즉시 점검 실패:", e));
+      }
     } catch (error) {
       res.status(400).json({ error: "Invalid expert answer data", detail: String(error) });
     }
