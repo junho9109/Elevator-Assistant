@@ -3782,6 +3782,48 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });
 
+  // ==================== [임시 진단용] tech_material_photos.item_key 고아 데이터 점검 ====================
+  // 읽기 전용(SELECT만 수행) — technical_materials.title 변경 시 item_key가 갱신되지 않아
+  // 사진이 고아가 되는지 확인하기 위한 디버그 엔드포인트. 문제 조사 후 제거 예정.
+  app.get("/api/debug/tech-photo-keys", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos, technicalMaterials } = await import("@shared/schema");
+      const { sql } = await import("drizzle-orm");
+
+      const keyCounts = await db
+        .select({
+          itemKey: techMaterialPhotos.itemKey,
+          count: sql<number>`count(*)`.mapWith(Number),
+        })
+        .from(techMaterialPhotos)
+        .groupBy(techMaterialPhotos.itemKey)
+        .orderBy(techMaterialPhotos.itemKey);
+
+      const titleRows = await db
+        .select({ title: technicalMaterials.title })
+        .from(technicalMaterials);
+      const titleSet = new Set(titleRows.map((r) => r.title));
+
+      const result = keyCounts.map((row) => ({
+        itemKey: row.itemKey,
+        count: row.count,
+        matchesCurrentTitle: titleSet.has(row.itemKey),
+      }));
+
+      res.json({
+        totalDistinctKeys: result.length,
+        totalCurrentTitles: titleRows.length,
+        orphanedKeys: result.filter((r) => !r.matchesCurrentTitle),
+        allKeys: result,
+        currentTitles: titleRows.map((r) => r.title),
+      });
+    } catch (e) {
+      console.error("[GET /api/debug/tech-photo-keys 오류]", e);
+      res.status(500).json({ error: "Failed", detail: String(e) });
+    }
+  });
+
   // ==================== 검사기준(별표22) 조문 이미지 ====================
   app.get("/api/inspection-photos/:itemId", async (req, res) => {
     try {
