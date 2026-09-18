@@ -853,7 +853,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/technical-materials/:title", async (req, res) => {
     try {
       const db = (await import("./db")).db;
-      const { technicalMaterials } = await import("@shared/schema");
+      const { technicalMaterials, techMaterialPhotos } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
       const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
       const { category, body, source, newTitle } = req.body;
@@ -865,6 +865,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .set({ title: newTitle || title, category, body, source, updatedAt: new Date() })
           .where(eq(technicalMaterials.title, title))
           .returning();
+        // 제목이 실제로 바뀐 경우, 사진 테이블의 item_key(제목 기반 연결키)도 함께 갱신해
+        // 사진이 고아 상태(예전 제목으로 남아 화면에서 조회 안 됨)가 되는 것을 방지한다.
+        if (newTitle && newTitle !== title) {
+          await db.update(techMaterialPhotos)
+            .set({ itemKey: newTitle })
+            .where(eq(techMaterialPhotos.itemKey, title));
+        }
       } else {
         [row] = await db.insert(technicalMaterials)
           .values({ title: newTitle || title, category, body, source })
@@ -880,11 +887,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/technical-materials/:title", async (req, res) => {
     try {
       const db = (await import("./db")).db;
-      const { technicalMaterials } = await import("@shared/schema");
+      const { technicalMaterials, techMaterialPhotos } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
       const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
       const deleted = await db.delete(technicalMaterials).where(eq(technicalMaterials.title, title)).returning();
       if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
+      // 자료 삭제 시 연결된 사진도 함께 정리해 고아 레코드가 남지 않도록 한다.
+      await db.delete(techMaterialPhotos).where(eq(techMaterialPhotos.itemKey, title));
       res.status(204).send();
     } catch (e) {
       console.error("[DELETE /api/technical-materials 오류]", e);
@@ -3780,80 +3789,6 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
       await db.delete(techMaterialPhotos).where(eq(techMaterialPhotos.id, parseInt(req.params.id)));
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: "Failed" }); }
-  });
-
-  // ==================== [임시 진단용] tech_material_photos.item_key 고아 데이터 점검 ====================
-  // 읽기 전용(SELECT만 수행) — technical_materials.title 변경 시 item_key가 갱신되지 않아
-  // 사진이 고아가 되는지 확인하기 위한 디버그 엔드포인트. 문제 조사 후 제거 예정.
-  app.get("/api/debug/tech-photo-keys", async (req, res) => {
-    try {
-      const db = (await import("./db")).db;
-      const { techMaterialPhotos, technicalMaterials } = await import("@shared/schema");
-      const { sql } = await import("drizzle-orm");
-
-      const keyCounts = await db
-        .select({
-          itemKey: techMaterialPhotos.itemKey,
-          count: sql<number>`count(*)`.mapWith(Number),
-        })
-        .from(techMaterialPhotos)
-        .groupBy(techMaterialPhotos.itemKey)
-        .orderBy(techMaterialPhotos.itemKey);
-
-      const titleRows = await db
-        .select({ title: technicalMaterials.title })
-        .from(technicalMaterials);
-      const titleSet = new Set(titleRows.map((r) => r.title));
-
-      const result = keyCounts.map((row) => ({
-        itemKey: row.itemKey,
-        count: row.count,
-        matchesCurrentTitle: titleSet.has(row.itemKey),
-      }));
-
-      res.json({
-        totalDistinctKeys: result.length,
-        totalCurrentTitles: titleRows.length,
-        orphanedKeys: result.filter((r) => !r.matchesCurrentTitle),
-        allKeys: result,
-        currentTitles: titleRows.map((r) => r.title),
-      });
-    } catch (e) {
-      console.error("[GET /api/debug/tech-photo-keys 오류]", e);
-      res.status(500).json({ error: "Failed", detail: String(e) });
-    }
-  });
-
-  // ==================== [임시 복구용] tech_material_photos.item_key 고아 데이터 복구 ====================
-  // 기술자료 제목 변경으로 고아가 된 사진의 item_key를 현재 제목으로 재연결한다.
-  // 매핑은 사용자가 확인한 내용만 명시적으로 고정. 복구 후 제거 예정.
-  app.post("/api/debug/fix-tech-photo-keys", async (req, res) => {
-    try {
-      const db = (await import("./db")).db;
-      const { techMaterialPhotos } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-
-      const mapping: { from: string; to: string }[] = [
-        { from: "MHC2", to: "META(MHC2)" },
-        { from: "MHC2 과부하감지장치(오버로드) 확인법", to: "META(MHC2)" },
-        { from: "S9300", to: "S9300(F6 ver.)" },
-      ];
-
-      const results = [];
-      for (const m of mapping) {
-        const updated = await db
-          .update(techMaterialPhotos)
-          .set({ itemKey: m.to })
-          .where(eq(techMaterialPhotos.itemKey, m.from))
-          .returning({ id: techMaterialPhotos.id });
-        results.push({ from: m.from, to: m.to, updatedCount: updated.length });
-      }
-
-      res.json({ results });
-    } catch (e) {
-      console.error("[POST /api/debug/fix-tech-photo-keys 오류]", e);
-      res.status(500).json({ error: "Failed", detail: String(e) });
-    }
   });
 
   // ==================== 검사기준(별표22) 조문 이미지 ====================
