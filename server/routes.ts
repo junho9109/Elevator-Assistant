@@ -3824,6 +3824,38 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
     }
   });
 
+  // ==================== [임시 복구용] tech_material_photos.item_key 고아 데이터 복구 ====================
+  // 기술자료 제목 변경으로 고아가 된 사진의 item_key를 현재 제목으로 재연결한다.
+  // 매핑은 사용자가 확인한 내용만 명시적으로 고정. 복구 후 제거 예정.
+  app.post("/api/debug/fix-tech-photo-keys", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const mapping: { from: string; to: string }[] = [
+        { from: "MHC2", to: "META(MHC2)" },
+        { from: "MHC2 과부하감지장치(오버로드) 확인법", to: "META(MHC2)" },
+        { from: "S9300", to: "S9300(F6 ver.)" },
+      ];
+
+      const results = [];
+      for (const m of mapping) {
+        const updated = await db
+          .update(techMaterialPhotos)
+          .set({ itemKey: m.to })
+          .where(eq(techMaterialPhotos.itemKey, m.from))
+          .returning({ id: techMaterialPhotos.id });
+        results.push({ from: m.from, to: m.to, updatedCount: updated.length });
+      }
+
+      res.json({ results });
+    } catch (e) {
+      console.error("[POST /api/debug/fix-tech-photo-keys 오류]", e);
+      res.status(500).json({ error: "Failed", detail: String(e) });
+    }
+  });
+
   // ==================== 검사기준(별표22) 조문 이미지 ====================
   app.get("/api/inspection-photos/:itemId", async (req, res) => {
     try {
