@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Calendar, ChevronDown, ChevronUp, Shield, AlertTriangle, ClipboardCheck, Trash2, Pencil } from "lucide-react";
 import { getTeamsForName, TEAM_ROSTERS } from "@/lib/teams";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
+import { fetchJson } from "@/lib/queryClient";
 
 type PpeItem = { id: number; name: string; issuedDate: string | null; expiryDate: string | null; standard: string | null; howToWear: string | null; createdAt: string; };
 type NearMiss = { id: number; date: string; disasterType: string; workType: string; description: string; imageUrls: string[] | null; createdAt: string; };
@@ -209,7 +210,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 오버라이드는 누가 설정했든(본인/관리자) 항상 다시 바꿀 수 있다(잠금 없음).
   const { data: myTeamOverrideRows = [] } = useQuery<EmployeeTeamOverride[]>({
     queryKey: ["/api/employee-team-overrides", "self", name],
-    queryFn: async () => { const r = await fetch(`/api/employee-team-overrides?employeeId=${encodeURIComponent(name)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/employee-team-overrides?employeeId=${encodeURIComponent(name)}`),
     enabled: !!name,
   });
   const myTeamOverride = myTeamOverrideRows[0];
@@ -284,35 +285,35 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     },
     enabled: ready,
   });
-  const { data: nearMisses = [] } = useQuery<NearMiss[]>({ queryKey: ["/api/near-misses"], queryFn: async () => { const r = await fetch("/api/near-misses"); return r.json(); } });
+  const { data: nearMisses = [] } = useQuery<NearMiss[]>({ queryKey: ["/api/near-misses"], queryFn: async () => fetchJson("/api/near-misses") });
 
   const { data: riskItems = [] } = useQuery<RiskHazardItem[]>({
     queryKey: ["/api/risk-hazard-items", branchName],
-    queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?branchId=${encodeURIComponent(branchName)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-hazard-items?branchId=${encodeURIComponent(branchName)}`),
     enabled: ready,
   });
   const { data: riskAssessmentsData = [] } = useQuery<RiskAssessment[]>({
     queryKey: ["/api/risk-assessments", branchName, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-assessments?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-assessments?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
     refetchInterval: 1000, // 다른 팀원의 평가 입력을 새로고침 없이 실시간에 가깝게 반영
   });
   // 팀별 예시/선택 구조 — 소속 팀이 있을 때만 조회 (예시 항목 자체는 회차와 무관한 재사용 라이브러리)
   const { data: teamItems = [] } = useQuery<RiskHazardItem[]>({
     queryKey: ["/api/risk-hazard-items", "team", myTeam],
-    queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?team=${encodeURIComponent(myTeam)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-hazard-items?team=${encodeURIComponent(myTeam)}`),
     enabled: ready && !!myTeam,
   });
   const { data: teamSelections = [] } = useQuery<RiskItemSelection[]>({
     queryKey: ["/api/risk-item-selections", myTeam, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-item-selections?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`),
     enabled: ready && !!myTeam,
     refetchInterval: 1000, // 다른 팀원이 방금 선택한 항목을 새로고침 없이 실시간에 가깝게 반영 (선택 시도 시엔 서버가 항상 최종 검증함)
   });
   // 회차 목록(정기+수시, 과거 회차 포함) — 공유 아카이브가 매년 누적되도록 회차를 선택해서 열람
   const { data: riskRoundsRaw = [] } = useQuery<string[]>({
     queryKey: ["/api/risk-rounds"],
-    queryFn: async () => { const r = await fetch(`/api/risk-rounds`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-rounds`),
     enabled: ready,
   });
   const riskRounds = useMemo(() => {
@@ -322,13 +323,13 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 수시 평가 신청
   const { data: adhocRequests = [] } = useQuery<RiskAdhocRequest[]>({
     queryKey: ["/api/risk-adhoc-requests", myTeam],
-    queryFn: async () => { const r = await fetch(`/api/risk-adhoc-requests?team=${encodeURIComponent(myTeam)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-adhoc-requests?team=${encodeURIComponent(myTeam)}`),
     enabled: ready && !!myTeam,
   });
   // 팀원 절반 이상이 선택을 완료하면 "무시하고 평가하기"로 전원 완료를 건너뛸 수 있음 — 한 명이라도 누르면 팀 전체에 즉시 반영됨
   const { data: roundOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string }[]>({
     queryKey: ["/api/risk-round-overrides", myTeam, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=selection`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=selection`),
     enabled: ready && !!myTeam,
     refetchInterval: 1000,
   });
@@ -336,7 +337,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 경험 여부 단계에서도 팀원 절반 이상이 답변을 완료하면 "무시하고 평가하기"로 넘어갈 수 있음
   const { data: experienceOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string }[]>({
     queryKey: ["/api/risk-round-overrides", "experience", myTeam, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=experience`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=experience`),
     enabled: ready && !!myTeam,
     refetchInterval: 1000,
   });
@@ -344,7 +345,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 중대성 평가 단계에서도 팀원 절반 이상이 완료하면 "무시하고 진행하기"로 결과 확인 단계로 넘어갈 수 있음 (휴가 등 미참석자 대응)
   const { data: severityOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string }[]>({
     queryKey: ["/api/risk-round-overrides", "severity", myTeam, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=severity`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=severity`),
     enabled: ready && !!myTeam,
     refetchInterval: 1000,
   });
@@ -352,7 +353,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 회차 전체(팀 무관) 무시하고 진행하기 기록 — 결과확인 화면에서 다른 팀의 "제외된 팀원"까지 계산하기 위해 팀 필터 없이 조회
   const { data: allRoundOverrides = [] } = useQuery<{ id: number; team: string; round: string; phase: string; excludedMembers: string[] | null }[]>({
     queryKey: ["/api/risk-round-overrides", "round", activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-round-overrides?round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-round-overrides?round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
     refetchInterval: 1000,
   });
@@ -365,14 +366,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 회차 전체(팀 무관) 선택 현황 — 결과 확인 화면에서 팀별 요약을 만들 때 사용
   const { data: allRoundSelections = [] } = useQuery<RiskItemSelection[]>({
     queryKey: ["/api/risk-item-selections", "round", activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-item-selections?round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-item-selections?round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
     refetchInterval: 1000,
   });
   // 결과 확인 — 평가 종료 후 각 팀(본인 팀 포함) 결과를 열람하고 확인했는지 기록
   const { data: resultConfirmations = [] } = useQuery<RiskResultConfirmation[]>({
     queryKey: ["/api/risk-result-confirmations", branchName, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-result-confirmations?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-result-confirmations?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
     refetchInterval: 1000,
   });
@@ -387,7 +388,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 서명 — 모든 팀 결과 확인을 마친 후 최종 서명
   const { data: roundSignatures = [] } = useQuery<RiskSignature[]>({
     queryKey: ["/api/risk-signatures", branchName, activeRound],
-    queryFn: async () => { const r = await fetch(`/api/risk-signatures?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-signatures?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
     refetchInterval: 1000,
   });
@@ -469,18 +470,18 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
   // 관리자 예시 관리 패널 — 열려있을 때만, 선택한 팀 기준 조회
   const { data: adminTeamItems = [] } = useQuery<RiskHazardItem[]>({
     queryKey: ["/api/risk-hazard-items", "admin", templateManagerTeam],
-    queryFn: async () => { const r = await fetch(`/api/risk-hazard-items?team=${encodeURIComponent(templateManagerTeam)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-hazard-items?team=${encodeURIComponent(templateManagerTeam)}`),
     enabled: showTemplateManager && !!templateManagerTeam,
   });
   const { data: adminTeamSelections = [] } = useQuery<RiskItemSelection[]>({
     queryKey: ["/api/risk-item-selections", "admin", templateManagerTeam, CURRENT_ROUND],
-    queryFn: async () => { const r = await fetch(`/api/risk-item-selections?team=${encodeURIComponent(templateManagerTeam)}&round=${encodeURIComponent(CURRENT_ROUND)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/risk-item-selections?team=${encodeURIComponent(templateManagerTeam)}&round=${encodeURIComponent(CURRENT_ROUND)}`),
     enabled: showTemplateManager && !!templateManagerTeam,
   });
   // 전체 팀 배정 오버라이드 목록 — 명단(TEAM_ROSTERS) 기준 팀 소속을 보정하는 데 씀 (관리자 배정 관리 + 선택 현황 표시등 둘 다 사용)
   const { data: allTeamOverrides = [] } = useQuery<EmployeeTeamOverride[]>({
     queryKey: ["/api/employee-team-overrides", "all"],
-    queryFn: async () => { const r = await fetch(`/api/employee-team-overrides`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/employee-team-overrides`),
     enabled: ready,
   });
   const overrideByEmployeeId = useMemo(() => new Map(allTeamOverrides.map(o => [o.employeeId, o])), [allTeamOverrides]);

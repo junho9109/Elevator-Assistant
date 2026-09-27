@@ -21,7 +21,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   useEffect(() => {
     // 소속 목록 불러오기
-    fetch("/api/auth/organizations").then(r => r.json()).then(setOrgs).catch(() => {});
+    fetch("/api/auth/organizations").then(r => r.ok ? r.json() : Promise.reject()).then(setOrgs).catch(() => {});
 
     // 저장된 정보 복원
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");

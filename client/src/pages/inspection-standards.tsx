@@ -7,6 +7,7 @@ import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
+import { fetchJson } from "@/lib/queryClient";
 
 type Entry = { text?: string; title?: string; source?: string; };
 
@@ -317,7 +318,7 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
 
   const { data: photos = [] } = useQuery<InspPhoto[]>({
     queryKey: ["/api/inspection-photos", id],
-    queryFn: async () => { const r = await fetch(`/api/inspection-photos/${encodeURIComponent(id)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/inspection-photos/${encodeURIComponent(id)}`),
   });
 
   const uploadPhoto = useMutation({
@@ -576,7 +577,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   // (별표22 "5.2.1"과 별표24 "5.2.1"은 다른 조문) 반드시 현재 선택된 문서 종류로 필터링해야 한다.
   const { data: baseItemsRaw } = useQuery<any[]>({
     queryKey: ["/api/inspection-base-items", dbDocEquipmentType],
-    queryFn: () => fetch(`/api/inspection-base-items?standardEquipmentType=${encodeURIComponent(dbDocEquipmentType)}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/inspection-base-items?standardEquipmentType=${encodeURIComponent(dbDocEquipmentType)}`),
     staleTime: 0,
   });
   const dataMap = useMemo(() => baseItemsToMap(baseItemsRaw || [], dbDocEquipmentType), [baseItemsRaw, dbDocEquipmentType]);
@@ -584,7 +585,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   // 판정지침 실제 내용 — 이제 JSON은 뼈대(type/title)만 갖고, 실제 문구는 DB 오버라이드가 유일한 원본이다.
   const { data: judgmentOverridesRaw } = useQuery<any[]>({
     queryKey: ["/api/insp-std-overrides"],
-    queryFn: () => fetch("/api/insp-std-overrides").then(r => r.json()),
+    queryFn: () => fetchJson("/api/insp-std-overrides"),
     staleTime: 0,
   });
   const judgmentOverrideMap = useMemo(() => {
@@ -1048,7 +1049,7 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
   // 오버라이드 로드
   useEffect(() => {
     fetch("/api/insp-std-overrides")
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject())
       .then((rows: any[]) => {
         const map: Record<string, { title?: string; text?: string; items?: JudgmentItem[]; rows?: JudgmentRow[] }> = {};
         const customs: string[] = [];

@@ -5,6 +5,7 @@ import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pe
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
+import { fetchJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -760,7 +761,7 @@ export default function JudgmentPage() {
 
   const { data: inspectionBaseItems = [] } = useQuery<any[]>({
     queryKey: ["/api/inspection-base-items"],
-    queryFn: () => fetch("/api/inspection-base-items").then(r => r.json()),
+    queryFn: () => fetchJson("/api/inspection-base-items"),
     staleTime: 1000 * 60 * 10,
   });
   const contentMap = useMemo(() => {
@@ -785,11 +786,11 @@ export default function JudgmentPage() {
   // 연혁집 데이터 보유 항목 목록 로드 (승강기 종류별로 스코핑된 형태로 반환됨)
   useEffect(() => {
     fetch("/api/inspection-items/revision-counts")
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setRevisionCountsByType(data))
       .catch(() => {});
     fetch("/api/inspection-items/previous-ranges")
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setPreviousRangesByType(data))
       .catch(() => {});
   }, []);
@@ -807,7 +808,7 @@ export default function JudgmentPage() {
   // DB에서 서버 편집값 fetch → 재접속 시 자동 최신화
   const { data: serverEdits } = useQuery<any[]>({
     queryKey: ["/api/inspection-edits"],
-    queryFn: () => fetch("/api/inspection-edits").then(r => r.json()),
+    queryFn: () => fetchJson("/api/inspection-edits"),
     staleTime: 0,
   });
 

@@ -9,6 +9,7 @@ import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 import { getGlobalAdminMode, setGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
+import { fetchJson } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1672,19 +1673,19 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // itemId 체계(5.1, 5.2 등)가 두 문서에서 겹치므로 하나의 맵으로 합치면 안 된다.
   const { data: inspectionBaseItems } = useQuery({
     queryKey: ["/api/inspection-base-items"],
-    queryFn: () => fetch("/api/inspection-base-items?standardEquipmentType=" + encodeURIComponent("엘리베이터")).then(r => r.json()),
+    queryFn: () => fetchJson("/api/inspection-base-items?standardEquipmentType=" + encodeURIComponent("엘리베이터")),
     staleTime: 1000 * 60 * 10,
   });
   const { data: inspectionBaseItemsEscalator } = useQuery({
     queryKey: ["/api/inspection-base-items", "에스컬레이터"],
-    queryFn: () => fetch("/api/inspection-base-items?standardEquipmentType=" + encodeURIComponent("에스컬레이터")).then(r => r.json()),
+    queryFn: () => fetchJson("/api/inspection-base-items?standardEquipmentType=" + encodeURIComponent("에스컬레이터")),
     staleTime: 1000 * 60 * 10,
   });
   // 관리자 수정본(inspection_item_edits) — 있으면 base_items보다 우선 (judgment.tsx와 동일한 DB 우선 원칙)
   // 수정본은 현재 엘리베이터 문서 전용이므로 에스컬레이터 맵에는 적용하지 않는다.
   const { data: inspectionItemEdits } = useQuery({
     queryKey: ["/api/inspection-edits"],
-    queryFn: () => fetch("/api/inspection-edits").then(r => r.json()),
+    queryFn: () => fetchJson("/api/inspection-edits"),
     staleTime: 1000 * 60 * 10,
   });
   const buildInspectionContent = (items: any[], editMap: Record<string, any>) => Object.fromEntries(
@@ -1717,7 +1718,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
 
   const { data: stdOverrides, refetch: refetchStdOverrides } = useQuery<any[]>({
     queryKey: ["/api/std-overrides"],
-    queryFn: () => fetch("/api/std-overrides", { cache: "no-store" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/std-overrides", { cache: "no-store" }),
     staleTime: 0,
     gcTime: 0,
     refetchOnMount: "always",
@@ -1727,7 +1728,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // 기술자료 — 표준화(std-overrides)와 완전히 분리된 별도 데이터소스(technical_materials 테이블)
   const { data: technicalMaterialsData, refetch: refetchTechMaterials } = useQuery<TechnicalMaterial[]>({
     queryKey: ["/api/technical-materials"],
-    queryFn: () => fetch("/api/technical-materials", { cache: "no-store" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/technical-materials", { cache: "no-store" }),
     staleTime: 0,
     gcTime: 0,
     refetchOnMount: "always",
@@ -1738,7 +1739,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // 판정지침 — JSON은 뼈대(type/title)만, 실제 문구는 insp-std-overrides(DB)가 단일 진실 소스(2026-08-20 이후).
   const { data: judgmentOverridesRaw } = useQuery<any[]>({
     queryKey: ["/api/insp-std-overrides"],
-    queryFn: () => fetch("/api/insp-std-overrides", { cache: "no-store" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/insp-std-overrides", { cache: "no-store" }),
     staleTime: 0,
     gcTime: 0,
     refetchOnMount: "always",
@@ -1910,12 +1911,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   });
   const { data: expertQuestionsData = [] } = useQuery<{ id: number; content: string; presetAnswers: string[]; category: string | null }[]>({
     queryKey: ["/api/expert-questions"],
-    queryFn: async () => { const r = await fetch("/api/expert-questions"); return r.json(); },
+    queryFn: async () => fetchJson("/api/expert-questions"),
     enabled: !!empIdentity.empId && defaultTab === "chat",
   });
   const { data: myExpertAnswers = [] } = useQuery<{ id: number; questionId: number }[]>({
     queryKey: ["/api/expert-answers", empIdentity.empId],
-    queryFn: async () => { const r = await fetch(`/api/expert-answers?employeeId=${encodeURIComponent(empIdentity.empId)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/expert-answers?employeeId=${encodeURIComponent(empIdentity.empId)}`),
     enabled: !!empIdentity.empId && defaultTab === "chat",
   });
   // 세션당 한 번만 무작위로 질문을 고정 — 재렌더링마다 질문이 바뀌지 않도록
@@ -2024,7 +2025,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [expertReviewTab, setExpertReviewTab] = useState<"대기"|"승인"|"반려">("대기");
   const { data: expertReviewData = [] } = useQuery<any[]>({
     queryKey: ["/api/expert-answers", "review", expertReviewTab],
-    queryFn: async () => { const r = await fetch(`/api/expert-answers?status=${encodeURIComponent(expertReviewTab)}`); return r.json(); },
+    queryFn: async () => fetchJson(`/api/expert-answers?status=${encodeURIComponent(expertReviewTab)}`),
     enabled: showExpertReview,
   });
   const [expertEdits, setExpertEdits] = useState<Record<number, { answerText: string; tags: string }>>({});
@@ -2048,7 +2049,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [expertReviewView, setExpertReviewView] = useState<"답변"|"질문">("답변");
   const { data: allExpertQuestions = [] } = useQuery<{ id: number; content: string; presetAnswers: string[]; category: string | null; active: boolean }[]>({
     queryKey: ["/api/expert-questions", "all"],
-    queryFn: async () => { const r = await fetch("/api/expert-questions?active=false"); return r.json(); },
+    queryFn: async () => fetchJson("/api/expert-questions?active=false"),
     enabled: showExpertReview && expertReviewView === "질문",
   });
   const generateExpertQuestion = useMutation({
@@ -2122,7 +2123,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // 공공데이터 통계 로드 - 서버 요약 API 사용
   useEffect(() => {
     fetch("/api/stats-summary")
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => {
         setStatsLoaded(true);
         // accidentStats도 업데이트 (질문 답변용)
@@ -2140,7 +2141,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // 서버에서 설정 로드
   useEffect(() => {
     fetch("/api/settings/cardOffsets")
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject())
       .then(d => {
         if (d.value) {
           const parsed = JSON.parse(d.value);
@@ -2151,7 +2152,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       })
       .catch(() => { setCardOffsetsLoaded(true); });
     fetch("/api/settings/structureImg")
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject())
       .then(d => { if (d.value) setStructureImg(d.value); })
       .catch(() => {});
   }, []);
@@ -5267,7 +5268,7 @@ function StdCommentSection({ title, isAdminMode, stdComments, setStdComments, st
     if (loaded) return;
     setLoaded(true);
     fetch(`/api/std-comments/${encodeURIComponent(title)}`)
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => setStdComments(prev => ({ ...prev, [title]: data })))
       .catch(() => {});
   }, [title]);
