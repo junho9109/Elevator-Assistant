@@ -126,31 +126,6 @@ async function maintainExpertQuestionPool(): Promise<void> {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // [임시 진단] DB 연결 실패 원인 파악용 — 확인 후 반드시 제거할 것
-  app.get("/api/debug/db-check", async (req, res) => {
-    const started = Date.now();
-    try {
-      const { Pool } = await import("pg");
-      const freshPool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.DATABASE_URL?.includes("neon.tech") ? { rejectUnauthorized: false } : undefined,
-        connectionTimeoutMillis: 8000,
-      });
-      const r = await freshPool.query("select 1 as ok, now() as ts");
-      await freshPool.end();
-      res.json({ ok: true, elapsedMs: Date.now() - started, result: r.rows });
-    } catch (e: any) {
-      res.status(500).json({
-        ok: false,
-        elapsedMs: Date.now() - started,
-        errorName: e?.name,
-        errorCode: e?.code,
-        errorMessage: e?.message,
-        errorsArray: Array.isArray(e?.errors) ? e.errors.map((x: any) => ({ code: x?.code, message: x?.message, address: x?.address, port: x?.port })) : undefined,
-      });
-    }
-  });
-
   // Category routes
   app.get("/api/categories", async (req, res) => {
     try {
