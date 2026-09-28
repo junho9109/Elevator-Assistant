@@ -135,6 +135,23 @@ async function ensureChatTable() {
         created_at TIMESTAMP DEFAULT NOW() NOT NULL
       )
     `);
+
+    // [2026-09-29] inspection_base_items 변경 이력(감사 로그). 같은 날 발생한 사고(엘리베이터
+    // 부속서Ⅱ가 standardEquipmentType 기본값 처리 버그로 에스컬레이터 내용에 덮어써짐) 재발 시
+    // PDF 재추출 없이 바로 이전 값으로 되돌릴 수 있도록, update/upsert 직전 스냅샷을 여기 적재한다.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS inspection_base_items_history (
+        id SERIAL PRIMARY KEY,
+        base_item_id INTEGER NOT NULL,
+        item_id VARCHAR(50) NOT NULL,
+        standard_equipment_type VARCHAR(20) NOT NULL,
+        section_title VARCHAR(200),
+        text TEXT NOT NULL,
+        change_type VARCHAR(10) NOT NULL,
+        changed_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_inspection_base_items_history_lookup ON inspection_base_items_history (item_id, standard_equipment_type, changed_at DESC)`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }

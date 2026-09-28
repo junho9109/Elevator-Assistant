@@ -429,6 +429,24 @@ export const insertInspectionBaseItemSchema = createInsertSchema(inspectionBaseI
 export type InsertInspectionBaseItem = z.infer<typeof insertInspectionBaseItemSchema>;
 export type InspectionBaseItem = typeof inspectionBaseItems.$inferSelect;
 
+// ── 검사기준 항목 변경 이력 (감사 로그) ──
+// updateInspectionBaseItem/deleteInspectionBaseItem으로 조문이 수정·삭제되기 "직전"의
+// 스냅샷을 여기 자동으로 적재한다. 2026-09-29 사고(엘리베이터 부속서Ⅱ가 잘못된
+// standardEquipmentType 기본값 때문에 에스컬레이터 내용으로 덮어써진 사건) 재발 방지 조치의
+// 일부 — 앱 버그로 잘못된 값이 저장되더라도 PDF 재추출이나 DB 벤더의 시점 복구 없이
+// 이 테이블에서 바로 이전 값을 찾아 되돌릴 수 있게 한다.
+export const inspectionBaseItemsHistory = pgTable("inspection_base_items_history", {
+  id: serial("id").primaryKey(),
+  baseItemId: integer("base_item_id").notNull(),           // inspection_base_items.id
+  itemId: varchar("item_id", { length: 50 }).notNull(),
+  standardEquipmentType: varchar("standard_equipment_type", { length: 20 }).notNull(),
+  sectionTitle: varchar("section_title", { length: 200 }),
+  text: text("text").notNull(),                            // 변경/삭제 "직전" 텍스트 스냅샷
+  changeType: varchar("change_type", { length: 10 }).notNull(), // "update" | "delete"
+  changedAt: timestamp("changed_at").defaultNow().notNull(),
+});
+export type InspectionBaseItemHistory = typeof inspectionBaseItemsHistory.$inferSelect;
+
 // ── 채팅 메시지 ──
 export const chatMessages = pgTable("chat_messages", {
   id: serial("id").primaryKey(),

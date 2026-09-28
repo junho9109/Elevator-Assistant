@@ -2398,8 +2398,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!itemId || !itemId.trim() || !text || !text.trim()) {
         return res.status(400).json({ error: "조문 번호와 내용을 모두 입력해주세요." });
       }
+      // standardEquipmentType은 반드시 명시해야 한다 — itemId는 문서(별표22/별표24 등)마다
+      // 독립적으로 채번되어 서로 겹칠 수 있으므로, 생략 시 조용히 기본값("엘리베이터")으로
+      // 처리하면 호출부 실수가 엉뚱한 문서에 항목을 만드는 사고로 이어진다.
+      if (!standardEquipmentType || !standardEquipmentType.trim()) {
+        return res.status(400).json({ error: "standardEquipmentType(대상 문서 종류)을 지정해주세요." });
+      }
       const trimmedId = itemId.trim();
-      const eqType = standardEquipmentType || "엘리베이터";
+      const eqType = standardEquipmentType.trim();
       // 이미 DB에 같은 itemId+standardEquipmentType 행이 있는 경우 — 화면에는 안 보이던(별표22_유효항목.json 미등재,
       // 다른 문서에서 잘못 인덱싱된) 잡음 행일 수 있다. 그냥 실패시키지 않고 기존 내용을 함께
       // 돌려줘서, 관리자가 그 내용을 보고 "덮어쓰기(이 번호로 등록)"할지 판단할 수 있게 한다.
@@ -2446,14 +2452,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/inspection-base-items/:itemId", async (req, res) => {
     try {
       const { text, sectionTitle, adopt, standardEquipmentType } = req.body as { text?: string; sectionTitle?: string; adopt?: boolean; standardEquipmentType?: string };
+      // standardEquipmentType 필수 — 없으면 400 (2026-09-29 사고: 쿼리로 보낸 값이 무시되고
+      // 기본값 "엘리베이터"로 조용히 처리되어 엉뚱한 문서의 항목을 덮어쓴 사고의 재발 방지).
+      if (!standardEquipmentType || !standardEquipmentType.trim()) {
+        return res.status(400).json({ error: "standardEquipmentType(대상 문서 종류)을 지정해주세요." });
+      }
       const updated = await storage.updateInspectionBaseItem(req.params.itemId, {
         text, sectionTitle,
         ...(adopt ? { isAdminAdded: "true", isActive: "true" } : {}),
-      }, standardEquipmentType || "엘리베이터");
+      }, standardEquipmentType.trim());
       if (!updated) return res.status(404).json({ error: "Not found" });
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update inspection base item" });
+    }
+  });
+
+  // 특정 조문의 변경 이력 조회 — 관리자 화면에서 실수로 덮어쓴 내용을 되돌릴 때 사용.
+  app.get("/api/inspection-base-items/:itemId/history", async (req, res) => {
+    try {
+      const standardEquipmentType = req.query.standardEquipmentType as string;
+      if (!standardEquipmentType || !standardEquipmentType.trim()) {
+        return res.status(400).json({ error: "standardEquipmentType(대상 문서 종류)을 지정해주세요." });
+      }
+      const history = await storage.getInspectionBaseItemHistory(req.params.itemId, standardEquipmentType.trim());
+      res.json(history);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inspection base item history" });
+    }
+  });
+
+  // 이력 스냅샷 하나로 현재 값을 되돌리기
+  app.post("/api/inspection-base-items/history/:historyId/restore", async (req, res) => {
+    try {
+      const historyId = parseInt(req.params.historyId, 10);
+      if (Number.isNaN(historyId)) return res.status(400).json({ error: "잘못된 historyId입니다." });
+      const restored = await storage.restoreInspectionBaseItemFromHistory(historyId);
+      res.json(restored);
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || "Failed to restore inspection base item" });
     }
   });
 

@@ -759,9 +759,13 @@ export default function JudgmentPage() {
     enabled: !!detailItem
   });
 
+  // standardEquipmentType 없이 호출하면 서버가 조용히 "엘리베이터"로 처리해버려서, 에스컬레이터
+  // 선택 시에도 엘리베이터 조문 내용이 뒤섞여 나오는 문제가 있었다(2026-09-29 사고와 같은 계열의
+  // 버그 — itemId가 문서마다 독립 채번되어 겹칠 수 있음). 현재 선택된 승강기 종류로 명시 스코핑한다.
+  const baseItemsEquipmentType = equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터";
   const { data: inspectionBaseItems = [] } = useQuery<any[]>({
-    queryKey: ["/api/inspection-base-items"],
-    queryFn: () => fetchJson("/api/inspection-base-items"),
+    queryKey: ["/api/inspection-base-items", baseItemsEquipmentType],
+    queryFn: () => fetchJson(`/api/inspection-base-items?standardEquipmentType=${encodeURIComponent(baseItemsEquipmentType)}`),
     staleTime: 1000 * 60 * 10,
   });
   const contentMap = useMemo(() => {

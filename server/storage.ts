@@ -52,7 +52,8 @@ import {
   judgmentComments,
   inspectionItemEdits,
   customInspectionItems,
-  inspectionBaseItems
+  inspectionBaseItems,
+  inspectionBaseItemsHistory
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, ilike, like, or, and, asc, sql } from "drizzle-orm";
@@ -676,7 +677,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   // 관리자 화면에서 조문 하나를 직접 수정 — 별도 override 테이블 없이 원본 행을 갱신한다.
-  async updateInspectionBaseItem(itemId: string, data: { text?: string; sectionTitle?: string; isAdminAdded?: string; isActive?: string }, standardEquipmentType: string = "엘리베이터"): Promise<any> {
+  // standardEquipmentType은 필수 — 없으면 어떤 문서의 어느 항목을 고치는지 특정할 수 없어
+  // (itemId는 문서마다 독립 채번되어 겹칠 수 있음) 호출부의 실수가 엉뚱한 문서를 덮어쓰는
+  // 사고로 이어진다(2026-09-29 실제 발생: 기본값 "엘리베이터"로 조용히 처리되어 엘리베이터
+  // 부속서Ⅱ가 에스컬레이터 내용으로 덮어써짐). 갱신 직전 값은 항상 이력 테이블에 남긴다.
+  async updateInspectionBaseItem(itemId: string, data: { text?: string; sectionTitle?: string; isAdminAdded?: string; isActive?: string }, standardEquipmentType: string): Promise<any> {
+    if (!standardEquipmentType) {
+      throw new Error("standardEquipmentType은 필수입니다 (itemId만으로는 문서를 특정할 수 없음)");
+    }
+    const before = await this.getInspectionBaseItem(itemId, standardEquipmentType);
+    if (!before) return undefined;
+
+    await db.insert(inspectionBaseItemsHistory).values({
+      baseItemId: before.id,
+      itemId: before.itemId,
+      standardEquipmentType: before.standardEquipmentType,
+      sectionTitle: before.sectionTitle,
+      text: before.text,
+      changeType: "update",
+    });
+
     const result = await db.update(inspectionBaseItems)
       .set({ ...data, updatedAt: new Date() })
       .where(and(eq(inspectionBaseItems.itemId, itemId), eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType)))
@@ -684,20 +704,57 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  // 특정 조문의 변경 이력(가장 최근 변경이 먼저) — 관리자 화면에서 "되돌리기"에 사용.
+  async getInspectionBaseItemHistory(itemId: string, standardEquipmentType: string): Promise<any[]> {
+    return await db.select().from(inspectionBaseItemsHistory)
+      .where(and(
+        eq(inspectionBaseItemsHistory.itemId, itemId),
+        eq(inspectionBaseItemsHistory.standardEquipmentType, standardEquipmentType),
+      ))
+      .orderBy(sql`${inspectionBaseItemsHistory.changedAt} DESC`);
+  }
+
+  // 이력 테이블의 특정 스냅샷으로 현재 행을 되돌린다. 되돌리기 자체도 "update"로 이력에 남는다.
+  async restoreInspectionBaseItemFromHistory(historyId: number): Promise<any> {
+    const rows = await db.select().from(inspectionBaseItemsHistory).where(eq(inspectionBaseItemsHistory.id, historyId)).limit(1);
+    const snapshot = rows[0];
+    if (!snapshot) throw new Error("해당 이력을 찾을 수 없습니다.");
+    return await this.updateInspectionBaseItem(
+      snapshot.itemId,
+      { text: snapshot.text, sectionTitle: snapshot.sectionTitle ?? undefined },
+      snapshot.standardEquipmentType,
+    );
+  }
+
   // itemId가 아직 DB에 없는 경우(정적 JSON에만 있던 항목) 새 행으로 추가한다.
-  async upsertInspectionBaseItemText(itemId: string, data: {
+  // standardEquipmentType 필수 — updateInspectionBaseItem과 같은 이유(문서 간 itemId 충돌 방지).
+  async upsertInspectionBaseItemText(itemId: string, standardEquipmentType: string, data: {
     text: string; sectionId: string; sectionTitle?: string; parentSectionId?: string | null; sortOrder?: number;
   }): Promise<any> {
-    const existing = await db.select().from(inspectionBaseItems).where(eq(inspectionBaseItems.itemId, itemId)).limit(1);
+    if (!standardEquipmentType) {
+      throw new Error("standardEquipmentType은 필수입니다 (itemId만으로는 문서를 특정할 수 없음)");
+    }
+    const existing = await db.select().from(inspectionBaseItems)
+      .where(and(eq(inspectionBaseItems.itemId, itemId), eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType)))
+      .limit(1);
     if (existing[0]) {
+      await db.insert(inspectionBaseItemsHistory).values({
+        baseItemId: existing[0].id,
+        itemId: existing[0].itemId,
+        standardEquipmentType: existing[0].standardEquipmentType,
+        sectionTitle: existing[0].sectionTitle,
+        text: existing[0].text,
+        changeType: "update",
+      });
       const result = await db.update(inspectionBaseItems)
         .set({ text: data.text, sectionTitle: data.sectionTitle, updatedAt: new Date() })
-        .where(eq(inspectionBaseItems.itemId, itemId))
+        .where(and(eq(inspectionBaseItems.itemId, itemId), eq(inspectionBaseItems.standardEquipmentType, standardEquipmentType)))
         .returning();
       return result[0];
     }
     const result = await db.insert(inspectionBaseItems).values({
       itemId,
+      standardEquipmentType,
       sectionId: data.sectionId,
       sectionTitle: data.sectionTitle || null,
       parentSectionId: data.parentSectionId || null,
