@@ -2504,7 +2504,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         employeeName?: string;
         team?: string;
         context?: {
-          inspCtx?: { priority: string; title: string; ref: string; content: string }[];
+          inspCtx?: { priority: string; title: string; ref: string; content: string; docLabel?: string }[];
           techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string; permitDate?: string; inspectionDate?: string; inspectionYear?: string; installInspectionDate?: string }[];
           techMaterialCtx?: { priority: string; title: string; category?: string; content: string; source?: string }[];
           verdictCtx?: { priority: string; title: string; content: string }[];
@@ -2659,8 +2659,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sections: string[] = [];
       if (context) {
         if (context.inspCtx?.length) {
-          sections.push("[1순위] 검사기준(별표22)\n" +
-            context.inspCtx.map(c => `■ ${c.title}${c.ref ? ` [${c.ref}]` : ""}\n${c.content}`).join("\n\n"));
+          // 문서 라벨(별표22=엘리베이터 / 별표24=에스컬레이터)은 하드코딩하지 않고 클라이언트가
+          // 실제 검색에 사용한 문서를 그대로 넘겨받아 표시한다. 예전엔 여기가 무조건 "별표22"로
+          // 고정돼 있어서, 무빙워크처럼 에스컬레이터(별표24) 조문이 검색돼도 AI가 "[별표22] X.X"
+          // 형식으로 존재하지 않는 조문을 인용하는 사고가 있었다(2026-09-29).
+          const docLabels = [...new Set(context.inspCtx.map(c => c.docLabel).filter(Boolean))];
+          const headerLabel = docLabels.length === 1 ? docLabels[0] : "별표22/별표24";
+          sections.push(`[1순위] 검사기준(${headerLabel})\n` +
+            context.inspCtx.map(c => {
+              const refLabel = c.ref ? ` [${c.docLabel ? c.docLabel + " " : ""}${c.ref}]` : "";
+              return `■ ${c.title}${refLabel}\n${c.content}`;
+            }).join("\n\n"));
         }
         if (context.verdictCtx?.length) {
           sections.push("[2순위] 판정지침\n" +
@@ -3050,7 +3059,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const answerRules = `## 자료 정확도 원칙 (최우선)
 아래 순서대로 자료를 찾아라. 상위 자료에서 답을 찾으면 하위 자료는 무시한다.
 
-1순위 [검사기준] — 별표22 조문 (법적 근거, 가장 신뢰)
+1순위 [검사기준] — 별표22(엘리베이터)/별표24(에스컬레이터) 등 위 컨텍스트에 표시된 문서의 조문 (법적 근거, 가장 신뢰)
 2순위 [판정지침] — 승강기검사결과 판정지침 (공식 판정 기준)
 3순위 [기술자료] — 표준화 결정 (공식 적용 방법)
 4순위 [현장메모] — 비공식 현장 의견. 1~3순위에서 답을 찾은 경우 메모는 완전 무시.
@@ -3097,7 +3106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 ## 답변 규칙
 - 결론을 첫 줄에 (판정/핵심 수치/날짜)
-- 조문번호는 [별표22] X.X.X 형식으로 명시
+- 조문번호는 [문서명] X.X.X 형식으로 명시 — 문서명은 항상 위 [1순위] 검사기준 섹션 헤더나 각 조문 옆 [ ] 안에 표시된 것(별표22 또는 별표24)을 그대로 쓴다. "별표22"로 고정하지 말 것 — 에스컬레이터/무빙워크 관련 조문은 별표24다.
 - 항목 2개 이상이면 반드시 마크다운 리스트 형식으로 각 항목을 별도 줄에 작성:
   - 항목1
   - 항목2

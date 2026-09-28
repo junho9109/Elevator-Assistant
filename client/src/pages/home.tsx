@@ -2484,6 +2484,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       // 죽은 코드였다(tsc가 Property 'source' does not exist on type 'SearchResult'로 지적).
       // 표준화 항목 배제 목적은 바로 앞의 r.type !== "standard"가 이미 온전히 담당하므로 제거.
       const stdResults = contextResults.filter(r => r.type !== "chat" && r.type !== "standard");
+      // 이 조문이 실제로 어느 문서(별표22=엘리베이터 / 별표24=에스컬레이터)에서 왔는지 —
+      // activeInspectionContent를 고른 것과 동일한 기준. 서버(routes.ts)가 AI 답변 인용
+      // 라벨을 만들 때 이 값을 그대로 쓴다. 예전엔 서버가 "별표22"를 하드코딩해서, 무빙워크처럼
+      // 에스컬레이터(별표24) 조문이 검색돼도 AI가 "[별표22] X.X" 형식으로 없는 조문을 인용하는
+      // 사고가 있었다(2026-09-29 AI검색 오답 사례).
+      const docLabel = equipmentType === "에스컬레이터" ? "별표24" : "별표22";
       const inspCtx = stdResults.slice(0, 2).map(r => {
         // 날짜 데이터 포함 — inspection-content.json의 effectiveDate/revisions
         const inspEntry = (activeInspectionContent as any)[r.query || ""];
@@ -2496,6 +2502,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           priority: "검사기준",
           title: r.title,
           ref: r.query || "",
+          docLabel,
           content: r.content.slice(0, 600) + dateInfo,
         };
       }).filter(c => c.content);
