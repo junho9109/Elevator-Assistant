@@ -2497,12 +2497,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== AI 챗봇 ====================
   app.post("/api/chat", async (req, res) => {
     try {
-      const { messages, context, mode, employeeId, employeeName, team } = req.body as {
+      const { messages, context, mode, employeeId, employeeName, team, equipmentType: requestEquipmentType } = req.body as {
         messages: { role: "user" | "assistant"; content: string }[];
         mode?: "fast" | "precise";
         employeeId?: string;
         employeeName?: string;
         team?: string;
+        // [2026-09-29] 클라이언트가 질문 텍스트로 판별한 설비종류("엘리베이터"|"에스컬레이터").
+        // 애매하면 클라이언트가 아예 이 필드를 안 보낸다(undefined) — articleTask/baseItemTask가
+        // item_id만으로 조문을 찾을 때, 엘리베이터·에스컬레이터 두 문서에 번호가 겹치는 조문을
+        // 서로 뒤섞어 잘못된 문서 이름으로 인용하는 사고(2026-09-29 무빙워크 오인용)를 막기
+        // 위해 쓰인다. 값이 있으면 해당 문서로 조회를 좁히고, 없으면 양쪽 다 조회하되
+        // 각 결과에 실제 소속 문서 라벨을 붙여 반환한다.
+        equipmentType?: "엘리베이터" | "에스컬레이터";
         context?: {
           inspCtx?: { priority: string; title: string; ref: string; content: string; docLabel?: string }[];
           techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string; permitDate?: string; inspectionDate?: string; inspectionYear?: string; installInspectionDate?: string }[];
@@ -2723,14 +2730,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const uniqueRefs = [...new Set(refMatches)].slice(0, 5) as string[];
           const { pool: pgPool } = await import("./db");
           const placeholders = uniqueRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
+          // [2026-09-29] 조문번호(item_id)는 엘리베이터(별표22)/에스컬레이터(별표24) 문서마다
+          // 독립적으로 채번되어 번호가 겹칠 수 있다(예: 두 문서 모두 "5.2.1" 존재). 질문에서
+          // 설비종류가 명확히 판별된 경우(requestEquipmentType) 그 문서로 조회를 좁혀 애초에
+          // 엉뚱한 문서 내용이 섞여 들어오지 않게 하고, 애매한 경우엔 기존처럼 양쪽 다 조회하되
+          // equipment_type을 같이 SELECT해서 아래 렌더링 단계에서 문서별로 정확히 라벨링한다.
+          const typeFilter = requestEquipmentType ? ` AND equipment_type = $${uniqueRefs.length + 1}` : "";
+          const typeParams = requestEquipmentType ? [...uniqueRefs, requestEquipmentType] : uniqueRefs;
           const revRows = await pgPool.query(
-            `SELECT item_id, introduction_type, effective_date, expiry_date, description
+            `SELECT item_id, introduction_type, effective_date, expiry_date, description, equipment_type
              FROM inspection_item_revisions
              WHERE item_id IN (${placeholders})
              AND introduction_type IN ('current', 'old')
-             AND description IS NOT NULL AND TRIM(description) != ''
+             AND description IS NOT NULL AND TRIM(description) != ''${typeFilter}
              ORDER BY item_id, effective_date DESC NULLS FIRST`,
-            uniqueRefs
+            typeParams
           );
           return (revRows.rows && revRows.rows.length > 0) ? (revRows.rows as any[]) : null;
         } catch (e) {
@@ -2760,19 +2774,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!refMatches || refMatches.length === 0) return null;
           const uniqueRefs = [...new Set(refMatches)].slice(0, 3) as string[];
           const { pool: biPool } = await import("./db");
-          // [2026-09] 기존 articleTask와 동일하게 equipmentType 구분 없이 조회한다
-          // (articleTask도 이 함수가 추가되기 전부터 설비종류 필터 없이 item_id로만 찾고
-          // 있었음 — 이번 추가에서 새 정책을 도입하지 않고 기존 동작에 맞춘다).
+          // [2026-09-29] articleTask와 동일한 이유로 설비종류가 명확하면(requestEquipmentType)
+          // standard_equipment_type으로 좁혀서 조회한다. 예전엔 이 필터가 아예 없어서, 질문
+          // 번호가 엘리베이터·에스컬레이터 양쪽 문서에 다 있으면 서로 다른 문서 내용이 하나로
+          // 섞여 항상 "별표22"로 잘못 라벨링되는 사고(2026-09-29 무빙워크 오인용)가 있었다.
           const likeConds = uniqueRefs
             .map((_, i) => `(section_id = $${i * 2 + 1} OR section_id LIKE $${i * 2 + 2} OR item_id = $${i * 2 + 1} OR item_id LIKE $${i * 2 + 2})`)
             .join(" OR ");
           const params = uniqueRefs.flatMap(ref => [ref, `${ref}.%`]);
+          const typeFilter = requestEquipmentType ? ` AND standard_equipment_type = $${params.length + 1}` : "";
+          const finalParams = requestEquipmentType ? [...params, requestEquipmentType] : params;
           const rowsResult = await biPool.query(
-            `SELECT item_id, section_id, section_title, text, sort_order
+            `SELECT item_id, section_id, section_title, text, sort_order, standard_equipment_type
              FROM inspection_base_items
-             WHERE ${likeConds}
+             WHERE (${likeConds})${typeFilter}
              ORDER BY item_id`,
-            params
+            finalParams
           );
           const resultRows = rowsResult.rows as any[];
           // 안전장치: 하위 항목이 아주 많은 대분류(예: 최상위 "7" 전체)를 물은 경우
@@ -2952,29 +2969,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // ── 병렬 조회 결과를 고정된 순서(조문 원문 → 조문번호 직접매칭 연혁 → 키워드 매칭)로 합성 ──
       // 조문 원문(inspection_base_items)을 가장 먼저 배치한다 — "무엇을 검사해야 하는지"가
       // "무엇이 언제 바뀌었는지(연혁)"보다 우선순위 높은 정보이기 때문.
+      // 문서 라벨 헬퍼: standard_equipment_type/equipment_type 값을 실제 문서명으로 변환.
+      // requestEquipmentType으로 SQL을 이미 좁힌 경우 결과가 한 종류뿐이지만, 애매해서
+      // 필터를 안 건 경우 한 응답 안에 엘리베이터/에스컬레이터 항목이 섞여 있을 수 있으므로
+      // 항상 "행 자체의" 종류값을 기준으로 라벨링한다(하드코딩 금지 — 2026-09-29 사고 재발 방지).
+      const docLabelOf = (eqType: string | undefined) => eqType === "에스컬레이터" ? "별표24" : "별표22";
+
       if (baseItemRows) {
-        const grouped: Record<string, any[]> = {};
+        // standard_equipment_type별로 먼저 나누고, 그 안에서 section_id별로 묶는다 — 같은
+        // 번호의 조문이 두 문서에 동시에 있어도 서로 다른 섹션으로 분리되어 올바른 문서명이 붙는다.
+        const byType: Record<string, any[]> = {};
         for (const r of baseItemRows) {
-          const sid = r.section_id;
-          if (!grouped[sid]) grouped[sid] = [];
-          grouped[sid].push(r);
+          const key = r.standard_equipment_type || "엘리베이터";
+          (byType[key] ||= []).push(r);
         }
-        const text = Object.entries(grouped).map(([sectionId, rows]) => {
-          const title = rows[0]?.section_title || sectionId;
-          const body = rows.map((r: any) => `  [${r.item_id}] ${r.text}`).join("\n");
-          return `${title}\n${body}`;
-        }).join("\n\n");
-        sections.push("[별표22 조문 원문 — 해당 조문 및 하위 세부조문 전체]\n" + text);
+        for (const [eqType, rows] of Object.entries(byType)) {
+          const grouped: Record<string, any[]> = {};
+          for (const r of rows) {
+            const sid = r.section_id;
+            if (!grouped[sid]) grouped[sid] = [];
+            grouped[sid].push(r);
+          }
+          const text = Object.entries(grouped).map(([sectionId, rs]) => {
+            const title = rs[0]?.section_title || sectionId;
+            const body = rs.map((r: any) => `  [${r.item_id}] ${r.text}`).join("\n");
+            return `${title}\n${body}`;
+          }).join("\n\n");
+          sections.push(`[${docLabelOf(eqType)} 조문 원문 — 해당 조문 및 하위 세부조문 전체]\n` + text);
+        }
       }
 
       if (articleRows) {
-        const revText = articleRows.map((r: any) => {
-          const dateInfo = r.introduction_type === 'current'
-            ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
-            : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
-          return `[${r.item_id}] ${dateInfo}\n${r.description}`;
-        }).join("\n\n");
-        sections.push("[별표22 조문 개정연혁 — 언제 어떻게 바뀌었는지]\n" + revText);
+        const byType: Record<string, any[]> = {};
+        for (const r of articleRows) {
+          const key = r.equipment_type || "엘리베이터";
+          (byType[key] ||= []).push(r);
+        }
+        for (const [eqType, rows] of Object.entries(byType)) {
+          const revText = rows.map((r: any) => {
+            const dateInfo = r.introduction_type === 'current'
+              ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
+              : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
+            return `[${r.item_id}] ${dateInfo}\n${r.description}`;
+          }).join("\n\n");
+          sections.push(`[${docLabelOf(eqType)} 조문 개정연혁 — 언제 어떻게 바뀌었는지]\n` + revText);
+        }
 
         const grouped: Record<string, any[]> = {};
         for (const r of articleRows) {

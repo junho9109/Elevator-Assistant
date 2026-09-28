@@ -2643,6 +2643,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: historyMsgs, context, mode: chatMode,
+          // [2026-09-29] 질문이 명확히 엘리베이터/에스컬레이터 중 하나로 판별된 경우에만
+          // 서버에 전달한다. "ambiguous"까지 넘기면 서버가 그 값을 곧이곧대로 필터 조건에
+          // 써버릴 위험이 있어(잘못 판별 시 있어야 할 문서까지 걸러짐), 판별이 애매한
+          // 경우는 아예 안 보내는 쪽이 더 안전하다 — 서버는 미전달 시 기존처럼 필터 없이
+          // 양쪽 문서를 다 찾아보되, 각 조문이 실제로 어느 문서 소속인지 라벨을 정확히
+          // 붙여서 반환한다(inspection_base_items/inspection_item_revisions 조회 로직 참고).
+          equipmentType: equipmentType === "ambiguous" ? undefined : equipmentType,
           employeeId: empIdentity.empId || undefined,
           employeeName: empIdentity.empName || undefined,
           team: empIdentity.team || undefined,
