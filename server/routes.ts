@@ -33,12 +33,65 @@ const EXPERT_QUESTION_CAP = 10;
 const EXPERT_QUESTION_SKIP_LIMIT = 3;
 const EXPERT_QUESTION_DAILY_MS = 24 * 60 * 60 * 1000;
 
+// [2026-09-29] 전문가 질문이 실제 이용자들의 AI 검색 사용 패턴과 동떨어진다는 지적 반영.
+// 예전에는 AI가 "그럴듯한 애매한 상황"을 순수 상상으로 지어냈고, 중복만 피했을 뿐 실제
+// 현장에서 어떤 질문이 오가는지는 전혀 참고하지 않았다. 이미 앱에 쌓여 있는 실제 신호
+// 두 가지를 소재로 삼는다: (1) ai_answer_pool에서 아쉬워요가 더 많아 자동 제외(excluded)된
+// 답변 — AI 답변이 실제로 부족했던 질문, (2) ai_research_candidates — DB 자체에 자료가
+// 없어 외부 검색까지 가야 했던 질문. 둘 다 "AI 혼자서는 확신 있게 못 답한 질문"이라는
+// 공통점이 있어, 전문가 지식으로 보강할 가치가 가장 큰 소재다.
+// 순수 쿼리 로직만 분리해 exports — LLM 호출 없이 회귀 테스트할 수 있게 한다.
+export async function getExpertQuestionSeedMaterial(): Promise<{
+  negativeFeedback: { question: string; answer: string }[];
+  outOfScope: { question: string }[];
+}> {
+  const { pool } = await import("./db");
+  const [negRows, oosRows] = await Promise.all([
+    pool.query(
+      `SELECT question, answer FROM ai_answer_pool WHERE status = 'excluded' ORDER BY updated_at DESC LIMIT 5`
+    ),
+    pool.query(
+      `SELECT question FROM ai_research_candidates WHERE status IN ('pending_review', 'approved') ORDER BY created_at DESC LIMIT 5`
+    ),
+  ]);
+  return {
+    negativeFeedback: negRows.rows as { question: string; answer: string }[],
+    outOfScope: oosRows.rows as { question: string }[],
+  };
+}
+
 // AI가 새 질문 + 예상 답변 4개를 생성해 DB에 저장 — 기존 질문과 겹치지 않도록 등록된 질문 목록을 함께 전달함
 async function generateOneExpertQuestion() {
   const { db } = await import("./db");
   const { expertQuestions } = await import("@shared/schema");
   const existing = await db.select().from(expertQuestions);
   const existingList = existing.map(q => `- ${q.content}`).join("\n") || "(없음)";
+
+  // 실제 현장 신호를 프롬프트에 반영 — 하나라도 있으면 섹션을 추가하고, 하나도 없으면
+  // (신규 앱이라 데이터가 아직 없는 경우 등) 기존 방식과 완전히 동일하게 동작한다.
+  let realSignalSection = "";
+  try {
+    const { negativeFeedback, outOfScope } = await getExpertQuestionSeedMaterial();
+    if (negativeFeedback.length > 0 || outOfScope.length > 0) {
+      const negList = negativeFeedback.map(r => `- "${r.question}" (AI 답변이 부족하다는 평가를 받음)`).join("\n") || "(없음)";
+      const oosList = outOfScope.map(r => `- "${r.question}" (이 앱 자료에서 답을 찾지 못함)`).join("\n") || "(없음)";
+      realSignalSection = `
+
+## 실제 이용자 질문 (최우선 참고자료)
+아래는 실제 검사원들이 AI 검색에 물어봤지만 AI가 확신 있게 답하지 못한 진짜 질문들이다.
+가능하면 완전히 새로운 상황을 상상해서 지어내기보다, 이 중 하나의 주제를 골라 "왜 AI가 명확히
+답하지 못했는지"의 배경이 되는 현장 판단 지점을 짚어내는 질문으로 다듬어라. 질문 문구를
+그대로 베끼지 말고, 그 이면의 판단 상황을 일반화해라.
+
+AI 답변이 부족했던 질문:
+${negList}
+
+이 앱 자료에 없어 외부 검색까지 갔던 질문:
+${oosList}`;
+    }
+  } catch (e) {
+    console.error("[전문가질문생성] 실제 이용자 질문 조회 실패 — 기존 방식으로 진행:", e);
+  }
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const response = await anthropic.messages.create({
@@ -56,6 +109,7 @@ async function generateOneExpertQuestion() {
 
 이미 등록된 질문:
 ${existingList}
+${realSignalSection}
 
 다른 설명 없이 아래 JSON 형식만 반환하라:
 {"content": "질문 내용", "presetAnswers": ["답변1","답변2","답변3","답변4"], "category": "판정기준"}`,

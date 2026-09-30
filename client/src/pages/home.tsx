@@ -1971,7 +1971,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [showAiFeedbackPanel, setShowAiFeedbackPanel] = useState(false);
   const [aiFeedbackStatusFilter, setAiFeedbackStatusFilter] = useState<"전체" | "excluded" | "pending" | "approved">("전체");
   const [aiFeedbackLimit, setAiFeedbackLimit] = useState(50);
-  const { data: aiFeedbackData, isLoading: aiFeedbackLoading } = useQuery<{ clusters: any[]; total: number; limit: number; offset: number }>({
+  const { data: aiFeedbackData, isLoading: aiFeedbackLoading } = useQuery<{ clusters: any[]; total: number; limit: number; offset: number; unreadTotal: number }>({
     queryKey: ["/api/ai-feedback/clusters", aiFeedbackStatusFilter, aiFeedbackLimit],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -1993,6 +1993,36 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       toast({ title: "참고 목록에서 제외했습니다." });
     },
     onError: () => toast({ title: "제외 처리에 실패했습니다.", variant: "destructive" }),
+  });
+  // [2026-09-29] "읽음" 관리 — 카드를 눌러 펼쳐본 순간 하나만 읽음 처리하거나, 한 번에 전부
+  // 처리. 서버 재조회 없이 캐시를 직접 갱신해 배지가 클릭 즉시 사라지도록 한다(낙관적 갱신).
+  const markAiFeedbackRead = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/ai-feedback/clusters/${id}/mark-read`, { method: "POST" });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: (_data, id) => {
+      queryClient.setQueriesData({ queryKey: ["/api/ai-feedback/clusters"] }, (old: any) => {
+        if (!old) return old;
+        const wasUnread = old.clusters?.find((c: any) => c.id === id)?.isUnread;
+        return {
+          ...old,
+          unreadTotal: wasUnread ? Math.max(0, (old.unreadTotal ?? 0) - 1) : old.unreadTotal,
+          clusters: (old.clusters || []).map((c: any) => c.id === id ? { ...c, isUnread: false } : c),
+        };
+      });
+    },
+  });
+  const markAllAiFeedbackRead = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/ai-feedback/clusters/mark-all-read`, { method: "POST" });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-feedback/clusters"] });
+    },
   });
 
   // ── 외부자료 후보: "자료 범위 밖" 답변을 AI가 웹 검색으로 보강한 후보를 관리자가
@@ -3943,6 +3973,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-b border-border">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">AI 피드백 현황</span>
+            {(aiFeedbackData?.unreadTotal ?? 0) > 0 && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-500 text-white">
+                읽지 않음 {aiFeedbackData?.unreadTotal}
+              </span>
+            )}
+            {(aiFeedbackData?.unreadTotal ?? 0) > 0 && (
+              <button
+                onClick={() => markAllAiFeedbackRead.mutate()}
+                disabled={markAllAiFeedbackRead.isPending}
+                className="text-[11px] font-medium text-blue-700 dark:text-blue-400"
+              >
+                모두 읽음
+              </button>
+            )}
           </div>
           <div className="px-3 py-2 border-b border-border">
             <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
@@ -3986,9 +4030,16 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   .slice(0, 2)
                   .map((f: any) => f.comment);
                 return (
-                  <div key={c.id} className={`rounded-xl px-3 py-2.5 ${c.status === "excluded" ? "bg-red-50 dark:bg-red-900/10" : "bg-muted/40"}`}>
+                  <div
+                    key={c.id}
+                    onClick={() => { if (c.isUnread) markAiFeedbackRead.mutate(c.id); }}
+                    className={`rounded-xl px-3 py-2.5 ${c.status === "excluded" ? "bg-red-50 dark:bg-red-900/10" : "bg-muted/40"} ${c.isUnread ? "ring-1 ring-blue-400" : ""}`}
+                  >
                     <div className="flex items-start justify-between gap-2 mb-1">
-                      <p className="text-[13px] font-medium flex-1">{c.question}</p>
+                      <p className="text-[13px] font-medium flex-1 flex items-center gap-1.5">
+                        {c.isUnread && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />}
+                        {c.question}
+                      </p>
                       <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">👍{c.thumbsUp ?? c.thumbs_up} 👎{c.thumbsDown ?? c.thumbs_down}</span>
                     </div>
                     <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-md mb-1.5 ${statusMeta.cls}`}>{statusMeta.label}</span>
@@ -4007,7 +4058,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                     )}
                     {c.status !== "excluded" && (
                       <button
-                        onClick={() => excludeAiFeedbackCluster.mutate(c.id)}
+                        onClick={(e) => { e.stopPropagation(); excludeAiFeedbackCluster.mutate(c.id); }}
                         disabled={excludeAiFeedbackCluster.isPending}
                         className="mt-0.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-red-200 text-red-600 dark:border-red-800 dark:text-red-400"
                       >

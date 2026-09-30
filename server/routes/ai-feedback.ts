@@ -249,6 +249,10 @@ export function registerAiFeedbackRoutes(app: Express) {
   // 관리자 모드: AI 답변 클러스터 현황 (읽기 전용 모니터링) — 좋아요/아쉬워요로 자동 분류된
   // 상태(approved/pending/excluded)를 그대로 보여줌. status 필터 + limit/offset 페이지네이션으로
   // 데이터가 쌓여도 패널이 항상 빠르게 열리도록 함.
+  // [2026-09-29] isUnread 플래그 추가 — last_reviewed_at이 없거나(한 번도 확인 안 함) updated_at보다
+  // 과거면(그 사이 좋아요/아쉬워요가 새로 붙어 상태가 바뀐 경우 포함) "읽지 않음"으로 표시한다.
+  // unreadTotal은 현재 필터와 무관하게 전체 기준으로 세어서, 필터를 "제외됨"으로 바꿔도 다른
+  // 상태에 새 항목이 쌓인 걸 놓치지 않게 한다.
   app.get("/api/ai-feedback/clusters", async (req, res) => {
     try {
       const { pool } = await import("../db");
@@ -266,8 +270,13 @@ export function registerAiFeedbackRoutes(app: Express) {
       );
       const total = countResult.rows[0]?.total ?? 0;
 
+      const unreadResult = await pool.query(
+        `SELECT COUNT(*)::int as unread FROM ai_answer_pool WHERE last_reviewed_at IS NULL OR updated_at > last_reviewed_at`
+      );
+      const unreadTotal = unreadResult.rows[0]?.unread ?? 0;
+
       const clusterRows = await pool.query(
-        `SELECT id, question, answer, thumbs_up, thumbs_down, status, created_at, updated_at
+        `SELECT id, question, answer, thumbs_up, thumbs_down, status, created_at, updated_at, last_reviewed_at
          FROM ai_answer_pool
          ${whereClause}
          ORDER BY updated_at DESC
@@ -287,13 +296,44 @@ export function registerAiFeedbackRoutes(app: Express) {
              LIMIT 5`,
             [c.question]
           );
-          return { ...c, recentFeedback: feedbackRows.rows };
+          const isUnread = !c.last_reviewed_at || new Date(c.updated_at) > new Date(c.last_reviewed_at);
+          return { ...c, recentFeedback: feedbackRows.rows, isUnread };
         })
       );
 
-      res.json({ clusters, total, limit, offset });
+      res.json({ clusters, total, limit, offset, unreadTotal });
     } catch (e: any) {
       res.status(500).json({ error: e.message || "클러스터 조회 실패" });
+    }
+  });
+
+  // 관리자 모드: 클러스터 하나를 "확인함"으로 표시 — 카드를 눌러 내용을 봤을 때 호출.
+  app.post("/api/ai-feedback/clusters/:id/mark-read", async (req, res) => {
+    try {
+      const { pool } = await import("../db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const result = await pool.query(
+        `UPDATE ai_answer_pool SET last_reviewed_at = NOW() WHERE id = $1 RETURNING id`,
+        [id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "클러스터를 찾을 수 없습니다" });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "읽음 처리 실패" });
+    }
+  });
+
+  // 관리자 모드: 현재 읽지 않은 것 전부를 한 번에 "확인함"으로 표시.
+  app.post("/api/ai-feedback/clusters/mark-all-read", async (_req, res) => {
+    try {
+      const { pool } = await import("../db");
+      const result = await pool.query(
+        `UPDATE ai_answer_pool SET last_reviewed_at = NOW() WHERE last_reviewed_at IS NULL OR updated_at > last_reviewed_at RETURNING id`
+      );
+      res.json({ ok: true, count: result.rows.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "일괄 읽음 처리 실패" });
     }
   });
 

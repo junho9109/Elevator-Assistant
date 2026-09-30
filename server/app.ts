@@ -152,6 +152,13 @@ async function ensureChatTable() {
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_inspection_base_items_history_lookup ON inspection_base_items_history (item_id, standard_equipment_type, changed_at DESC)`);
+
+    // [2026-09-29] AI 피드백 현황 "읽음" 관리 — 클러스터가 쌓여도 관리자가 새로 생기거나
+    // 상태가 바뀐 것만 빠르게 구분할 수 있도록 마지막으로 확인한 시각을 기록한다.
+    // NULL이면 "한 번도 확인 안 함". updated_at이 이 값보다 최신이면(좋아요/아쉬워요가
+    // 새로 붙어 상태가 바뀐 경우 포함) 다시 "읽지 않음"으로 뜬다. 기존 행에는 영향 없는
+    // 순수 추가 컬럼이라 되돌릴 때도 DROP COLUMN 한 줄이면 충분하다.
+    await pool.query(`ALTER TABLE ai_answer_pool ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMP`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }
