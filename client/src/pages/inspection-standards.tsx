@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus, Info, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus, Info, ZoomIn, ZoomOut, History, ArrowRightLeft, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
@@ -480,7 +480,10 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
 }
 
 // ── 과거 연도(세대별) 문서 상세 — 읽기전용, 그 연도 문서 그대로 표시 ────
-function GenerationDetail({ id, gen, onClose }: { id: string; gen: GenerationDoc; onClose: () => void }) {
+function GenerationDetail({ id, gen, onClose, isAdminMode, onAddRevision }: {
+  id: string; gen: GenerationDoc; onClose: () => void;
+  isAdminMode?: boolean; onAddRevision?: (itemId: string, description: string, effectiveDate: string) => void;
+}) {
   const e = gen.items[id];
 
   if (!e) return (
@@ -505,6 +508,15 @@ function GenerationDetail({ id, gen, onClose }: { id: string; gen: GenerationDoc
           <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">종전 · {gen.meta.effectiveDate}</span>
           <p className="text-sm font-medium mt-0.5 leading-snug line-clamp-2 min-h-[2.375rem]">{firstLine}</p>
         </div>
+        {isAdminMode && onAddRevision && (
+          <button
+            onClick={() => onAddRevision(id, body || displayText, gen.meta.effectiveDate)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 transition-colors shrink-0"
+            title="연혁으로 추가"
+          >
+            <History size={13} className="text-amber-600" />
+          </button>
+        )}
         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border hover:bg-secondary transition-colors shrink-0">
           <X size={14} />
         </button>
@@ -566,6 +578,50 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   const [selectedDoc, setSelectedDoc] = useState<DocId>("byulpyo22");
   const [judgmentJumpKey, setJudgmentJumpKey] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  // 연혁 추가 모달 — 검사기준 페이지(과거 연도 원문)의 특정 항을 검사가이드의 현재 조문에
+  // "연혁"으로 연결한다. 쓰기 작업이라 서버가 비밀번호를 검증하므로(routes.ts REVISION_EDIT_PW),
+  // 제출 시 비밀번호를 물어본다.
+  const [addRevisionDraft, setAddRevisionDraft] = useState<{ sourceItemId: string; description: string; effectiveDate: string } | null>(null);
+  const [revisionTargetId, setRevisionTargetId] = useState("");
+  const [revisionEffectiveDate, setRevisionEffectiveDate] = useState("");
+  const [revisionExpiryDate, setRevisionExpiryDate] = useState("");
+  const [revisionIntroType, setRevisionIntroType] = useState<"old" | "current">("old");
+  const [revisionError, setRevisionError] = useState("");
+  const createRevision = useMutation({
+    mutationFn: async (password: string) => {
+      const r = await fetch("/api/inspection-revisions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemId: revisionTargetId,
+          equipmentType: dbDocEquipmentType,
+          effectiveDate: revisionEffectiveDate || null,
+          expiryDate: revisionExpiryDate || null,
+          introductionType: revisionIntroType,
+          description: addRevisionDraft?.description || "",
+          password,
+        }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || "추가 실패");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inspection-revisions"] });
+      setAddRevisionDraft(null);
+      setRevisionError("");
+    },
+    onError: (e: any) => setRevisionError(e.message || "추가 실패"),
+  });
+  const handleSubmitRevision = () => {
+    setRevisionError("");
+    if (!revisionTargetId) { setRevisionError("대상 조문을 선택해주세요."); return; }
+    const password = window.prompt("관리자 비밀번호를 입력하세요");
+    if (password === null) return;
+    createRevision.mutate(password);
+  };
 
   // 현재 선택된 문서가 DB 기반(별표22/별표24)인 경우의 승강기 종류 — 아니면 무관
   const dbDocEquipmentType = isDbDoc(selectedDoc) ? DB_DOC_EQUIPMENT_TYPE[selectedDoc] : DB_DOC_EQUIPMENT_TYPE.byulpyo22;
@@ -925,7 +981,20 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
         {activeKey ? (
           <div className="flex-1 flex flex-col min-h-0">
             {activeGeneration ? (
-              <GenerationDetail id={activeKey} gen={activeGeneration} onClose={handleClose} />
+              <GenerationDetail
+                id={activeKey}
+                gen={activeGeneration}
+                onClose={handleClose}
+                isAdminMode={isAdminMode}
+                onAddRevision={(sourceItemId, description, effectiveDate) => {
+                  setRevisionTargetId("");
+                  setRevisionEffectiveDate(effectiveDate);
+                  setRevisionExpiryDate("");
+                  setRevisionIntroType("old");
+                  setRevisionError("");
+                  setAddRevisionDraft({ sourceItemId, description, effectiveDate });
+                }}
+              />
             ) : (
               <Detail
                 id={activeKey}
@@ -1016,6 +1085,55 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
           <div className="flex gap-2">
             <button onClick={() => { setShowAddItem(false); setAddItemConflict(null); }} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
             <button onClick={handleAddItem} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl">DB에 추가</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* 연혁으로 추가 모달 — 과거 연도 원문의 이 항을 검사가이드의 어느 현재 조문에 연결할지 선택 */}
+    {addRevisionDraft && (
+      <div className="fixed inset-0 z-50 bg-black/40 flex items-end">
+        <div className="bg-card w-full rounded-t-2xl p-5 flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
+          <div className="flex items-center gap-2">
+            <History size={15} className="text-amber-500" />
+            <span className="text-sm font-medium flex-1">연혁으로 추가 [{addRevisionDraft.sourceItemId}]</span>
+            <button onClick={() => setAddRevisionDraft(null)} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
+          </div>
+          <p className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3 max-h-32 overflow-y-auto">
+            {addRevisionDraft.description}
+          </p>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">대상 조문 (검사가이드 · 현행 {dbDocEquipmentType})</label>
+            <select className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={revisionTargetId} onChange={e => setRevisionTargetId(e.target.value)}>
+              <option value="">선택하세요</option>
+              {Object.entries(dataMap).sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true })).map(([k, v]) => (
+                <option key={k} value={k}>{k} — {(v.title || v.text || "").split("\n")[0].slice(0, 30)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">시행일</label>
+              <input className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={revisionEffectiveDate} onChange={e => setRevisionEffectiveDate(e.target.value)} placeholder="1997-08-18" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">종료일</label>
+              <input className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={revisionExpiryDate} onChange={e => setRevisionExpiryDate(e.target.value)} placeholder="2022-03-02" />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">구분</label>
+            <select className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary" value={revisionIntroType} onChange={e => setRevisionIntroType(e.target.value as "old" | "current")}>
+              <option value="old">종전 조문 (old)</option>
+              <option value="current">현행 조문 (current)</option>
+            </select>
+          </div>
+          {revisionError && <p className="text-xs text-destructive">{revisionError}</p>}
+          <div className="flex gap-2">
+            <button onClick={() => setAddRevisionDraft(null)} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
+            <button onClick={handleSubmitRevision} disabled={createRevision.isPending} className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl disabled:opacity-50">
+              {createRevision.isPending ? "추가 중..." : "연혁에 추가"}
+            </button>
           </div>
         </div>
       </div>

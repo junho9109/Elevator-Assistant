@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench } from "lucide-react";
+import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench, ArrowRightLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
@@ -544,6 +544,9 @@ export default function JudgmentPage() {
   const [revisionCountsByType, setRevisionCountsByType] = useState<Record<string, Record<string, number>>>({});
   const [previousRangesByType, setPreviousRangesByType] = useState<Record<string, Record<string, { minDate: string; maxExpiry: string }>>>({});
   const [refRevisions, setRefRevisions] = useState<{refId: string; versions: any[]}[]>([]);
+  // 연혁 이동/삭제 (관리자 모드) — 잘못 매핑된 연혁을 다른 조문으로 옮기거나 지운다.
+  const [moveRevisionTarget, setMoveRevisionTarget] = useState<{ id: number; currentRefId: string } | null>(null);
+  const [moveRevisionNewId, setMoveRevisionNewId] = useState("");
   const [detailRevisionOpen, setDetailRevisionOpen] = useState(true);
   const [detailMediaOpen, setDetailMediaOpen] = useState(true);
   const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({});
@@ -1102,12 +1105,9 @@ export default function JudgmentPage() {
     }
   });
 
-  const handleOpenDetail = async (item: InspectionItem) => {
-    setDetailItem(item);
-    setIsDetailDialogOpen(true);
-    setRevisionsLoading(true);
-    setRefRevisions([]);
-
+  // 참조 조문 연혁 조회 — handleOpenDetail에서 최초 로드할 때와, 관리자가 연혁을
+  // 이동/삭제한 뒤 목록을 새로고침할 때 둘 다에서 쓰는 공용 로직으로 분리했다.
+  const loadRefRevisions = async (item: InspectionItem) => {
     // 본문에서 안전기준 참조 조문번호 추출 (예: 6.3.3, 6.5.2.2.1)
     // 엘리베이터 안전기준은 6~17장, 에스컬레이터 안전기준은 5~7장 체계를 쓰므로
     // 현재 선택된 승강기 종류에 맞는 대분류 범위로 매칭한다 (번호 자체는 equipmentType으로
@@ -1144,6 +1144,7 @@ export default function JudgmentPage() {
           }
           if (!grouped.has(actualId)) { grouped.set(actualId, []); order.push(actualId); }
           grouped.get(actualId)!.push({
+            id: rv.id,
             effectiveDate: rv.effective_date || rv.effectiveDate || "",
             expiryDate: rv.expiry_date || rv.expiryDate || "",
             introductionType: rv.introduction_type || rv.introductionType || "old",
@@ -1153,7 +1154,17 @@ export default function JudgmentPage() {
       }
       order.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       setRefRevisions(order.map(id => ({ refId: id, versions: grouped.get(id)! })));
+    } else {
+      setRefRevisions([]);
     }
+  };
+
+  const handleOpenDetail = async (item: InspectionItem) => {
+    setDetailItem(item);
+    setIsDetailDialogOpen(true);
+    setRevisionsLoading(true);
+    setRefRevisions([]);
+    await loadRefRevisions(item);
 
     // 1) JSON 기반 revision 데이터
     const entry = contentMap[item.id] as ContentEntry | undefined;
@@ -1185,6 +1196,46 @@ export default function JudgmentPage() {
     }
     setRevisionsLoading(false);
   };
+
+  // 연혁 삭제 — 잘못 등록된 항목을 지운다. 서버가 비밀번호를 검증하므로 매번 물어본다.
+  const deleteRevision = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const password = window.prompt("관리자 비밀번호를 입력하세요");
+      if (password === null) throw new Error("cancelled");
+      const r = await fetch(`/api/inspection-revisions/${id}`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || "삭제 실패");
+      }
+    },
+    onSuccess: () => { if (detailItem) loadRefRevisions(detailItem); },
+    onError: (e: any) => { if (e.message !== "cancelled") toast({ title: e.message || "삭제 실패", variant: "destructive" }); },
+  });
+
+  // 연혁 이동 — 다른 조문번호(itemId)로 재배정한다. PUT 바디에 새 itemId만 넣으면 된다.
+  const moveRevision = useMutation({
+    mutationFn: async ({ id, newItemId }: { id: number; newItemId: string }) => {
+      const password = window.prompt("관리자 비밀번호를 입력하세요");
+      if (password === null) throw new Error("cancelled");
+      const r = await fetch(`/api/inspection-revisions/${id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: newItemId, password }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || "이동 실패");
+      }
+    },
+    onSuccess: () => {
+      setMoveRevisionTarget(null);
+      setMoveRevisionNewId("");
+      if (detailItem) loadRefRevisions(detailItem);
+    },
+    onError: (e: any) => { if (e.message !== "cancelled") toast({ title: e.message || "이동 실패", variant: "destructive" }); },
+  });
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -2412,6 +2463,20 @@ export default function JudgmentPage() {
                                     {v.description || ""}
                                   </p>
                                 </div>
+                                {isAdminMode && typeof v.id === "number" && (
+                                  <div className="flex flex-col gap-1 shrink-0 pt-0.5">
+                                    <button
+                                      aria-label="다른 조문으로 이동"
+                                      onClick={() => { setMoveRevisionNewId(refId); setMoveRevisionTarget({ id: v.id, currentRefId: refId }); }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md border border-border hover:bg-secondary"
+                                    ><ArrowRightLeft size={11} /></button>
+                                    <button
+                                      aria-label="삭제"
+                                      onClick={() => { if (window.confirm("이 연혁 항목을 삭제할까요?")) deleteRevision.mutate({ id: v.id }); }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md border border-red-200 text-red-500 hover:bg-red-50"
+                                    ><Trash2 size={11} /></button>
+                                  </div>
+                                )}
                               </div>
                             );
                           };
@@ -2445,6 +2510,39 @@ export default function JudgmentPage() {
                     </div>
                   )}
 
+                  {moveRevisionTarget && createPortal(
+                    <div className="fixed inset-0 z-[60] bg-black/40 flex items-end" onClick={() => setMoveRevisionTarget(null)}>
+                      <div className="bg-card w-full rounded-t-2xl p-5 flex flex-col gap-3" onClick={ev => ev.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <ArrowRightLeft size={15} className="text-amber-500" />
+                          <span className="text-sm font-medium flex-1">연혁을 다른 조문으로 이동 [{moveRevisionTarget.currentRefId}]</span>
+                          <button onClick={() => setMoveRevisionTarget(null)} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-muted-foreground">새 조문 번호</label>
+                          <input
+                            className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary"
+                            value={moveRevisionNewId}
+                            onChange={e => setMoveRevisionNewId(e.target.value)}
+                            placeholder="예: 5.12.2.7.7"
+                            list="move-revision-ids"
+                          />
+                          <datalist id="move-revision-ids">
+                            {collectAllSectionIds(INSPECTION_DATA_MR).map(sid => <option key={sid} value={sid} />)}
+                          </datalist>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setMoveRevisionTarget(null)} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
+                          <button
+                            onClick={() => moveRevisionNewId.trim() && moveRevision.mutate({ id: moveRevisionTarget.id, newItemId: moveRevisionNewId.trim() })}
+                            disabled={moveRevision.isPending || !moveRevisionNewId.trim()}
+                            className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl disabled:opacity-50"
+                          >{moveRevision.isPending ? "이동 중..." : "이동"}</button>
+                        </div>
+                      </div>
+                    </div>,
+                    document.body
+                  )}
 
                   {/* 검사기준 적용일 (개정) 섹션 — 별도 컴포넌트로 분리 (esbuild JSX 파서 이슈 회피) */}
                   <RevisionDateSection

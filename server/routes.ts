@@ -1878,6 +1878,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Inspection item revisions routes
   // equipmentType으로 스코핑: 조문번호(item_id)는 승강기 종류마다 별도 안전기준을 참조하므로
   // 번호만으로는 구분이 안 된다 (예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문).
+  //
+  // [2026-09-30] 쓰기 계열(POST/PUT/DELETE)에 비밀번호 검증 추가. 검사기준 연혁은 검사원이
+  // 실제 법적 판단에 참고하는 데이터라, 관리자 모드 버튼을 숨기는 것만으로는(클라이언트단
+  // 제어일 뿐이라 누구나 devtools/curl로 API를 직접 호출해 우회 가능) 부족하다고 판단해
+  // 기존 std-photos/tech-photos 삭제 엔드포인트와 동일한 패턴(요청 바디의 password를
+  // 상수와 비교)으로 서버측 검증을 추가했다. GET(조회)은 검증 대상이 아니다.
+  const REVISION_EDIT_PW = "910919";
+  function checkRevisionPassword(req: any, res: any): boolean {
+    if (req.body?.password !== REVISION_EDIT_PW) {
+      res.status(403).json({ error: "비밀번호 오류" });
+      return false;
+    }
+    return true;
+  }
   app.get("/api/inspection-revisions/:itemId", async (req, res) => {
     try {
       const equipmentType = (req.query.equipmentType as string) || undefined;
@@ -1889,6 +1903,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.post("/api/inspection-revisions", async (req, res) => {
     try {
+      if (!checkRevisionPassword(req, res)) return;
       const body = { ...req.body, equipmentType: req.body.equipmentType || "엘리베이터" };
       const revision = await storage.createItemRevision(body);
       res.status(201).json(revision);
@@ -1898,6 +1913,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.put("/api/inspection-revisions/:id", async (req, res) => {
     try {
+      if (!checkRevisionPassword(req, res)) return;
       const updated = await storage.updateItemRevision(parseInt(req.params.id), req.body);
       if (!updated) return res.status(404).json({ error: "Revision not found" });
       res.json(updated);
@@ -1907,6 +1923,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.delete("/api/inspection-revisions/:id", async (req, res) => {
     try {
+      if (!checkRevisionPassword(req, res)) return;
       await storage.deleteItemRevision(parseInt(req.params.id));
       res.status(204).send();
     } catch (error) {
@@ -1915,6 +1932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   app.delete("/api/inspection-revisions/item/:itemId", async (req, res) => {
     try {
+      if (!checkRevisionPassword(req, res)) return;
       const equipmentType = (req.query.equipmentType as string) || undefined;
       await storage.deleteAllItemRevisions(req.params.itemId, equipmentType);
       res.status(204).send();
