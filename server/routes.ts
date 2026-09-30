@@ -96,7 +96,12 @@ ${oosList}`;
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 600,
+    // [2026-09-30] 600 → 1200. 실제 이용자 질문 소재(realSignalSection)를 프롬프트에
+    // 추가한 뒤 라이브에서 "SyntaxError: Unterminated string in JSON" 500 에러가
+    // 재현됐다 — 참고할 실제 사례가 생기니 모델이 이전보다 풍부하게(예상 답변 4개를
+    // 더 길게) 작성하면서 600 토큰 한도에서 JSON이 중간에 잘린 것. 실제로 출력되는
+    // JSON은 질문 1개 + 답변 4개로 원래도 여유가 크지 않았으므로 넉넉히 올린다.
+    max_tokens: 1200,
     system: `너는 승강기(엘리베이터·에스컬레이터·휠체어리프트) 정밀·정기검사 분야의 베테랑 검사원이다.
 현직 검사원들에게 던질 질문 1개를 새로 만들어라. 목적은 법령·판정지침·매뉴얼에 명확한 답이 나와 있지 않아서 검사원 개인의 현장 경험과 판단이 꼭 필요한 주제를 찾아, 그 경험을 데이터로 모으는 것이다.
 
