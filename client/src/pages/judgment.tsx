@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench, ArrowRightLeft } from "lucide-react";
+import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench, ArrowRightLeft, Flag } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
@@ -1196,6 +1196,24 @@ export default function JudgmentPage() {
     }
     setRevisionsLoading(false);
   };
+
+  // 연혁 "확인 요청" — 매핑이 이상해 보일 때 일반 이용자도 신고할 수 있다(비밀번호 불필요).
+  const flagRevision = useMutation({
+    mutationFn: async ({ id, note }: { id: number; note?: string }) => {
+      let employeeId: string | undefined, employeeName: string | undefined;
+      try {
+        const li = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+        employeeId = li.empId; employeeName = li.name;
+      } catch {}
+      const r = await fetch(`/api/inspection-revisions/${id}/flag`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note, employeeId, employeeName }),
+      });
+      if (!r.ok) throw new Error();
+    },
+    onSuccess: () => toast({ title: "확인 요청을 접수했습니다. 관리자가 검토할게요." }),
+    onError: () => toast({ title: "접수에 실패했습니다.", variant: "destructive" }),
+  });
 
   // 연혁 삭제 — 잘못 등록된 항목을 지운다. 서버가 비밀번호를 검증하므로 매번 물어본다.
   const deleteRevision = useMutation({
@@ -2463,18 +2481,37 @@ export default function JudgmentPage() {
                                     {v.description || ""}
                                   </p>
                                 </div>
-                                {isAdminMode && typeof v.id === "number" && (
+                                {typeof v.id === "number" && (
                                   <div className="flex flex-col gap-1 shrink-0 pt-0.5">
+                                    {isAdminMode && (
+                                      <>
+                                        <button
+                                          aria-label="다른 조문으로 이동"
+                                          onClick={() => { setMoveRevisionNewId(refId); setMoveRevisionTarget({ id: v.id, currentRefId: refId }); }}
+                                          className="w-6 h-6 flex items-center justify-center rounded-md border border-border hover:bg-secondary"
+                                        ><ArrowRightLeft size={11} /></button>
+                                        <button
+                                          aria-label="삭제"
+                                          onClick={() => { if (window.confirm("이 연혁 항목을 삭제할까요?")) deleteRevision.mutate({ id: v.id }); }}
+                                          className="w-6 h-6 flex items-center justify-center rounded-md border border-red-200 text-red-500 hover:bg-red-50"
+                                        ><Trash2 size={11} /></button>
+                                      </>
+                                    )}
+                                    {/* 확인 요청 — 모든 이용자에게 노출. 매핑이 이상해 보이면 현장에서 바로 신고할 수 있게 한다. */}
                                     <button
-                                      aria-label="다른 조문으로 이동"
-                                      onClick={() => { setMoveRevisionNewId(refId); setMoveRevisionTarget({ id: v.id, currentRefId: refId }); }}
-                                      className="w-6 h-6 flex items-center justify-center rounded-md border border-border hover:bg-secondary"
-                                    ><ArrowRightLeft size={11} /></button>
-                                    <button
-                                      aria-label="삭제"
-                                      onClick={() => { if (window.confirm("이 연혁 항목을 삭제할까요?")) deleteRevision.mutate({ id: v.id }); }}
-                                      className="w-6 h-6 flex items-center justify-center rounded-md border border-red-200 text-red-500 hover:bg-red-50"
-                                    ><Trash2 size={11} /></button>
+                                      aria-label="이 연혁 내용이 이상해요 — 확인 요청"
+                                      title="이 연혁 내용이 이상해요 — 확인 요청"
+                                      onClick={() => {
+                                        const note = window.prompt("어떤 점이 이상한가요? 실수로 접수되지 않도록 내용을 입력해야 신고할 수 있습니다.");
+                                        if (note === null) return;
+                                        if (!note.trim()) {
+                                          window.alert("신고 사유를 입력해야 접수됩니다.");
+                                          return;
+                                        }
+                                        flagRevision.mutate({ id: v.id, note: note.trim() });
+                                      }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md border border-amber-200 text-amber-600 hover:bg-amber-50"
+                                    ><Flag size={11} /></button>
                                   </div>
                                 )}
                               </div>

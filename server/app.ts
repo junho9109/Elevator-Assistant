@@ -159,6 +159,27 @@ async function ensureChatTable() {
     // 새로 붙어 상태가 바뀐 경우 포함) 다시 "읽지 않음"으로 뜬다. 기존 행에는 영향 없는
     // 순수 추가 컬럼이라 되돌릴 때도 DROP COLUMN 한 줄이면 충분하다.
     await pool.query(`ALTER TABLE ai_answer_pool ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMP`);
+
+    // [2026-10-01] 연혁 "확인 요청" 신고 — 검사기준 연혁(특히 과거 문서에서 사람이 수동으로
+    // 매핑한 항목)은 실제 현장 전문가가 봤을 때 "이 매핑이 이상하다"고 느낄 수 있다.
+    // 관리자뿐 아니라 일반 이용자도 특정 연혁 항목을 신고할 수 있게 하고, 관리자가
+    // "AI 학습 관리" 화면에서 모아서 검토 후 처리(resolved)한다. 비밀번호 검증 없이
+    // 누구나 생성 가능(단순 신고일 뿐 데이터를 직접 바꾸지 않으므로 위험이 없다).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS revision_flags (
+        id SERIAL PRIMARY KEY,
+        revision_id INTEGER NOT NULL,
+        item_id VARCHAR(50) NOT NULL,
+        equipment_type VARCHAR(20) NOT NULL,
+        note TEXT,
+        employee_id VARCHAR(50),
+        employee_name VARCHAR(50),
+        resolved BOOLEAN DEFAULT FALSE NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        resolved_at TIMESTAMP
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_revision_flags_resolved ON revision_flags (resolved)`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }

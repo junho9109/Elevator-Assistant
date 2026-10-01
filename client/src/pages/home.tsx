@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check, Calculator } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check, Calculator, Flag } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
@@ -2069,6 +2069,23 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     onError: () => toast({ title: "처리에 실패했습니다.", variant: "destructive" }),
   });
 
+  // ── 연혁 확인 요청 — 일반 이용자가 "이 연혁 매핑이 이상하다"고 신고한 건을 관리자가 검토 ──
+  const [showRevisionFlagsPanel, setShowRevisionFlagsPanel] = useState(false);
+  const [revisionFlagFilter, setRevisionFlagFilter] = useState<"false" | "true">("false");
+  const { data: revisionFlagsData, isLoading: revisionFlagsLoading } = useQuery<{ flags: any[] }>({
+    queryKey: ["/api/revision-flags", revisionFlagFilter],
+    queryFn: async () => fetchJson(`/api/revision-flags?resolved=${revisionFlagFilter}`),
+    enabled: showRevisionFlagsPanel,
+  });
+  const resolveRevisionFlag = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/revision-flags/${id}/resolve`, { method: "POST" });
+      if (!r.ok) throw new Error();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/revision-flags"] }); toast({ title: "처리 완료로 표시했습니다." }); },
+    onError: () => toast({ title: "처리에 실패했습니다.", variant: "destructive" }),
+  });
+
   // ── 전문가 지식 수집: 관리자 검수 패널 ──
   const [showExpertReview, setShowExpertReview] = useState(false);
   const [expertReviewTab, setExpertReviewTab] = useState<"대기"|"승인"|"반려">("대기");
@@ -3637,8 +3654,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
               {isAdminMode && defaultTab === "chat" && (
                 <button
                   onClick={() => {
-                    if (showExpertReview || showAiFeedbackPanel || showResearchPanel) {
-                      setShowExpertReview(false); setShowAiFeedbackPanel(false); setShowResearchPanel(false);
+                    if (showExpertReview || showAiFeedbackPanel || showResearchPanel || showRevisionFlagsPanel) {
+                      setShowExpertReview(false); setShowAiFeedbackPanel(false); setShowResearchPanel(false); setShowRevisionFlagsPanel(false);
                     } else {
                       setShowExpertReview(true);
                     }
@@ -3722,13 +3739,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         </div>
       )}
 
-      {/* AI 학습 관리 — 통합 탭 전환 바. 세 패널 중 하나라도 열려 있을 때만 노출된다. */}
-      {defaultTab === "chat" && (showExpertReview || showAiFeedbackPanel || showResearchPanel) && (
+      {/* AI 학습 관리 — 통합 탭 전환 바. 네 패널 중 하나라도 열려 있을 때만 노출된다. */}
+      {defaultTab === "chat" && (showExpertReview || showAiFeedbackPanel || showResearchPanel || showRevisionFlagsPanel) && (
         <div className="mx-3 mt-2 flex gap-1.5">
           {([
             ["expert", "지식 검수", showExpertReview],
             ["feedback", "AI 피드백 현황", showAiFeedbackPanel],
             ["research", "외부자료 후보", showResearchPanel],
+            ["flags", "연혁 확인 요청", showRevisionFlagsPanel],
           ] as const).map(([key, label, active]) => (
             <button
               key={key}
@@ -3736,6 +3754,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 setShowExpertReview(key === "expert");
                 setShowAiFeedbackPanel(key === "feedback");
                 setShowResearchPanel(key === "research");
+                setShowRevisionFlagsPanel(key === "flags");
               }}
               className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium px-2 py-1.5 rounded-lg border ${active ? "bg-blue-600 border-blue-600 text-white" : "border-border text-muted-foreground"}`}
             >
@@ -4244,6 +4263,71 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   </div>
                 );
               })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 연혁 확인 요청: 검사가이드 연혁 항목이 이상하다고 이용자(관리자 포함)가 신고한 건을 모아서 처리 */}
+      {defaultTab === "chat" && showRevisionFlagsPanel && (
+        <div className="mx-3 mt-2 bg-card border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 dark:bg-blue-900/20 border-b border-border">
+            <Flag className="h-3.5 w-3.5" style={{ color: "#185FA5" }} />
+            <span className="text-sm font-medium text-blue-800 dark:text-blue-300 flex-1">연혁 확인 요청</span>
+          </div>
+          <div className="px-3 py-2 border-b border-border">
+            <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
+              검사가이드 연혁 항목 옆 깃발 버튼으로 누구나(관리자 포함) 신고할 수 있습니다. 매핑을 확인한 뒤 "처리 완료"로 표시하세요.
+            </p>
+            <div className="flex gap-1.5">
+              {([
+                ["false", "미처리"],
+                ["true", "처리됨"],
+              ] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setRevisionFlagFilter(val)}
+                  className={`text-[11px] font-medium px-2.5 py-1 rounded-lg ${revisionFlagFilter === val ? "bg-blue-600 text-white" : "border border-border text-muted-foreground"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="max-h-[420px] overflow-y-auto px-3 py-2 space-y-2">
+            {revisionFlagsLoading ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">불러오는 중...</div>
+            ) : (revisionFlagsData?.flags || []).length === 0 ? (
+              <div className="px-4 py-6 text-center text-xs text-muted-foreground">해당 조건의 신고가 없습니다</div>
+            ) : (
+              (revisionFlagsData?.flags || []).map((f: any) => (
+                <div key={f.id} className="rounded-xl px-3 py-2.5 bg-muted/40">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <p className="text-[13px] font-medium flex-1">[{f.equipment_type}] {f.item_id}</p>
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">{new Date(f.created_at).toLocaleDateString()}</span>
+                  </div>
+                  {f.description && (
+                    <p className="text-[11px] text-muted-foreground mb-1.5 line-clamp-2">연혁 내용: {f.description}</p>
+                  )}
+                  {f.note && (
+                    <p className="text-[12px] mb-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-2 py-1.5">
+                      신고 메모: {f.note}
+                    </p>
+                  )}
+                  {f.employee_name && (
+                    <p className="text-[11px] text-muted-foreground mb-1.5">신고자: {f.employee_name}</p>
+                  )}
+                  {!f.resolved && (
+                    <button
+                      onClick={() => resolveRevisionFlag.mutate(f.id)}
+                      disabled={resolveRevisionFlag.isPending}
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-green-200 text-green-600 dark:border-green-800 dark:text-green-400"
+                    >
+                      처리 완료
+                    </button>
+                  )}
+                </div>
+              ))
             )}
           </div>
         </div>

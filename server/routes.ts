@@ -1941,6 +1941,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // [2026-10-01] 연혁 "확인 요청" 신고 — 과거 문서를 사람이 읽고 현재 조문번호에 수동으로
+  // 매핑한 연혁은(특히 1997→2022 에스컬레이터 연혁처럼) 현장 전문가가 보기에 매핑이
+  // 어색할 수 있다. 관리자뿐 아니라 일반 이용자도 신고할 수 있게 비밀번호 검증 없이 연다
+  // — 신고 자체는 데이터를 바꾸지 않는 단순 플래그라 위험이 없다.
+  app.post("/api/inspection-revisions/:id/flag", async (req, res) => {
+    try {
+      const { pool: flagPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const row = await flagPool.query(`SELECT item_id, equipment_type FROM inspection_item_revisions WHERE id = $1`, [id]);
+      if (row.rows.length === 0) return res.status(404).json({ error: "연혁을 찾을 수 없습니다" });
+      const itemId: string = row.rows[0].item_id;
+      const equipmentType: string = row.rows[0].equipment_type;
+      const { note, employeeId, employeeName } = req.body as { note?: string; employeeId?: string; employeeName?: string };
+      const trimmedNote = typeof note === "string" ? note.trim() : "";
+      if (!trimmedNote) return res.status(400).json({ error: "신고 사유를 입력해야 합니다" });
+      const inserted = await flagPool.query(
+        `INSERT INTO revision_flags (revision_id, item_id, equipment_type, note, employee_id, employee_name)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [id, itemId, equipmentType || "엘리베이터", trimmedNote, employeeId || null, employeeName || null]
+      );
+      res.status(201).json({ id: inserted.rows[0].id });
+    } catch (error) {
+      res.status(500).json({ error: "신고 접수 실패" });
+    }
+  });
+
+  // 관리자 모드: 신고 목록 조회 ("AI 학습 관리" 화면의 "연혁 확인 요청" 탭)
+  app.get("/api/revision-flags", async (req, res) => {
+    try {
+      const { pool: flagPool } = await import("./db");
+      const resolved = req.query.resolved;
+      const whereClause = resolved === "true" ? "WHERE resolved = TRUE" : resolved === "false" ? "WHERE resolved = FALSE" : "";
+      const rows = await flagPool.query(
+        `SELECT f.id, f.revision_id, f.item_id, f.equipment_type, f.note, f.employee_id, f.employee_name,
+                f.resolved, f.created_at, r.description, r.effective_date, r.expiry_date, r.introduction_type
+         FROM revision_flags f
+         LEFT JOIN inspection_item_revisions r ON r.id = f.revision_id
+         ${whereClause}
+         ORDER BY f.created_at DESC
+         LIMIT 200`
+      );
+      res.json({ flags: rows.rows });
+    } catch (error) {
+      res.status(500).json({ error: "신고 목록 조회 실패" });
+    }
+  });
+
+  // 관리자 모드: 신고 처리 완료 표시 (비밀번호 불필요 — 데이터 변경이 아닌 처리 상태 기록)
+  app.post("/api/revision-flags/:id/resolve", async (req, res) => {
+    try {
+      const { pool: flagPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const result = await flagPool.query(
+        `UPDATE revision_flags SET resolved = TRUE, resolved_at = NOW() WHERE id = $1 RETURNING id`,
+        [id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "신고를 찾을 수 없습니다" });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: "처리 실패" });
+    }
+  });
+
   // 연도별 기준 브라우징 — 개정 이력 테이블에 존재하는 연도 목록
   // (effective_date / expiry_date에서 연도만 추출해 선택 버튼을 구성하는 데 사용)
   app.get("/api/inspection-revisions-years", async (req, res) => {
