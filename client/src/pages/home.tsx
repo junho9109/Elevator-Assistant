@@ -2049,6 +2049,25 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     },
     onError: () => toast({ title: "처리에 실패했습니다.", variant: "destructive" }),
   });
+  // 수정 후 승인 — 웹 검색 요약이 부정확할 때 고쳐서 그 자리에서 바로 승인한다.
+  const [researchEditingId, setResearchEditingId] = useState<number | null>(null);
+  const [researchEditText, setResearchEditText] = useState("");
+  const editApproveResearchCandidate = useMutation({
+    mutationFn: async ({ id, summary }: { id: number; summary: string }) => {
+      const r = await fetch(`/api/ai-research-candidates/${id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ summary }),
+      });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-research-candidates"] });
+      setResearchEditingId(null);
+      toast({ title: "수정한 내용으로 승인했습니다." });
+    },
+    onError: () => toast({ title: "처리에 실패했습니다.", variant: "destructive" }),
+  });
 
   // ── 전문가 지식 수집: 관리자 검수 패널 ──
   const [showExpertReview, setShowExpertReview] = useState(false);
@@ -3610,28 +3629,23 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 <Settings className="h-3.5 w-3.5" />
                 {isAdminMode ? "관리자 모드 끄기" : "관리자 모드"}
               </button>
-              {isAdminMode && (
-                <button
-                  onClick={() => setShowExpertReview(s => !s)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
-                >
-                  지식 검수
-                </button>
-              )}
+              {/* [2026-10] "지식 검수"/"AI 피드백 현황"/"외부자료 후보" 세 버튼을 하나의
+                  "AI 학습 관리" 진입점으로 통합. DB 테이블은 기존처럼 분리 유지하고(각 패널의
+                  useState/useQuery는 그대로 재사용), 화면상 진입 버튼과 탭 전환 UI만 하나로
+                  합쳤다 — 세 상태값 중 정확히 하나만 true가 되도록 토글해 기존 패널 렌더
+                  조건(showExpertReview 등)을 그대로 재사용한다. */}
               {isAdminMode && defaultTab === "chat" && (
                 <button
-                  onClick={() => setShowAiFeedbackPanel(s => !s)}
+                  onClick={() => {
+                    if (showExpertReview || showAiFeedbackPanel || showResearchPanel) {
+                      setShowExpertReview(false); setShowAiFeedbackPanel(false); setShowResearchPanel(false);
+                    } else {
+                      setShowExpertReview(true);
+                    }
+                  }}
                   className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
                 >
-                  AI 피드백 현황
-                </button>
-              )}
-              {isAdminMode && defaultTab === "chat" && (
-                <button
-                  onClick={() => setShowResearchPanel(s => !s)}
-                  className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
-                >
-                  외부자료 후보
+                  AI 학습 관리
                 </button>
               )}
               <button
@@ -3705,6 +3719,32 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
             </div>
             <p className="text-[11px] text-muted-foreground mt-2 text-center">제출한 답변은 관리자 검수 후 지식베이스에 반영됩니다.</p>
           </div>
+        </div>
+      )}
+
+      {/* AI 학습 관리 — 통합 탭 전환 바. 세 패널 중 하나라도 열려 있을 때만 노출된다. */}
+      {defaultTab === "chat" && (showExpertReview || showAiFeedbackPanel || showResearchPanel) && (
+        <div className="mx-3 mt-2 flex gap-1.5">
+          {([
+            ["expert", "지식 검수", showExpertReview],
+            ["feedback", "AI 피드백 현황", showAiFeedbackPanel],
+            ["research", "외부자료 후보", showResearchPanel],
+          ] as const).map(([key, label, active]) => (
+            <button
+              key={key}
+              onClick={() => {
+                setShowExpertReview(key === "expert");
+                setShowAiFeedbackPanel(key === "feedback");
+                setShowResearchPanel(key === "research");
+              }}
+              className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium px-2 py-1.5 rounded-lg border ${active ? "bg-blue-600 border-blue-600 text-white" : "border-border text-muted-foreground"}`}
+            >
+              {label}
+              {key === "feedback" && (aiFeedbackData?.unreadTotal ?? 0) > 0 && (
+                <span className={`text-[9px] font-medium px-1 rounded-full ${active ? "bg-white/20" : "bg-red-500 text-white"}`}>{aiFeedbackData?.unreadTotal}</span>
+              )}
+            </button>
+          ))}
         </div>
       )}
 
@@ -4128,7 +4168,16 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                     <p className="text-[11px] text-muted-foreground mb-1.5 line-clamp-1">
                       기존 답변: {c.original_answer || c.originalAnswer}
                     </p>
-                    <p className="text-[12px] whitespace-pre-line mb-1.5">{c.summary}</p>
+                    {researchEditingId === c.id ? (
+                      <textarea
+                        value={researchEditText}
+                        onChange={e => setResearchEditText(e.target.value)}
+                        rows={4}
+                        className="w-full border border-border rounded-lg px-2 py-1.5 text-[12px] bg-card mb-1.5"
+                      />
+                    ) : (
+                      <p className="text-[12px] whitespace-pre-line mb-1.5">{c.summary}</p>
+                    )}
                     {sources.length > 0 && (
                       <div className="flex flex-col gap-0.5 mb-1.5">
                         {sources.map((s, i) => (
@@ -4145,22 +4194,46 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                       </div>
                     )}
                     {c.status === "pending_review" && (
-                      <div className="flex gap-1.5 mt-0.5">
-                        <button
-                          onClick={() => reviewResearchCandidate.mutate({ id: c.id, action: "approve" })}
-                          disabled={reviewResearchCandidate.isPending}
-                          className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-green-200 text-green-600 dark:border-green-800 dark:text-green-400"
-                        >
-                          승인
-                        </button>
-                        <button
-                          onClick={() => reviewResearchCandidate.mutate({ id: c.id, action: "reject" })}
-                          disabled={reviewResearchCandidate.isPending}
-                          className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-red-200 text-red-600 dark:border-red-800 dark:text-red-400"
-                        >
-                          반려
-                        </button>
-                      </div>
+                      researchEditingId === c.id ? (
+                        <div className="flex gap-1.5 mt-0.5">
+                          <button
+                            onClick={() => editApproveResearchCandidate.mutate({ id: c.id, summary: researchEditText })}
+                            disabled={editApproveResearchCandidate.isPending || !researchEditText.trim()}
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-green-200 text-green-600 dark:border-green-800 dark:text-green-400"
+                          >
+                            수정 후 승인
+                          </button>
+                          <button
+                            onClick={() => setResearchEditingId(null)}
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-border text-muted-foreground"
+                          >
+                            취소
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1.5 mt-0.5">
+                          <button
+                            onClick={() => reviewResearchCandidate.mutate({ id: c.id, action: "approve" })}
+                            disabled={reviewResearchCandidate.isPending}
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-green-200 text-green-600 dark:border-green-800 dark:text-green-400"
+                          >
+                            승인
+                          </button>
+                          <button
+                            onClick={() => { setResearchEditingId(c.id); setResearchEditText(c.summary || ""); }}
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400"
+                          >
+                            수정
+                          </button>
+                          <button
+                            onClick={() => reviewResearchCandidate.mutate({ id: c.id, action: "reject" })}
+                            disabled={reviewResearchCandidate.isPending}
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-red-200 text-red-600 dark:border-red-800 dark:text-red-400"
+                          >
+                            반려
+                          </button>
+                        </div>
+                      )
                     )}
                     {c.status === "approved" && (
                       <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">승인됨 — 참고자료로 사용중</span>

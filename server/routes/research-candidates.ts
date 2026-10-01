@@ -154,6 +154,27 @@ export function registerResearchCandidateRoutes(app: Express) {
     }
   });
 
+  // 관리자 모드: 수정 후 승인 — 원문 요약이 부정확하거나 손봐야 할 때, 내용을 고친 뒤
+  // 그 자리에서 바로 승인까지 한 번에 처리한다(통합 관리 화면 설계에서 합의된 "외부자료"
+  // 전용 버튼 — 전문가지식/피드백과 달리 외부 웹 검색 결과라 관리자가 다듬을 일이 잦다).
+  app.put("/api/ai-research-candidates/:id", async (req, res) => {
+    try {
+      const { pool } = await import("../db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const summary = typeof req.body?.summary === "string" ? req.body.summary.trim() : "";
+      if (!summary) return res.status(400).json({ error: "summary가 비어있습니다" });
+      const result = await pool.query(
+        `UPDATE ai_research_candidates SET summary = $1, status = 'approved', reviewed_at = NOW() WHERE id = $2 RETURNING id`,
+        [summary, id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "후보를 찾을 수 없습니다" });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "수정 승인 처리 실패" });
+    }
+  });
+
   // 관리자 모드: 반려 — 컨텍스트에 반영되지 않고 목록에는 반려 상태로 남음
   app.post("/api/ai-research-candidates/:id/reject", async (req, res) => {
     try {

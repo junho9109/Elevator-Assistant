@@ -3040,6 +3040,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       })();
 
+      // [2026-10] "지식 검수"에서 관리자가 승인한 현장 전문가 답변(expert_answers, status='승인')을
+      // 컨텍스트에 반영. 그동안 승인 버튼("승인하고 반영")이 status만 바꿀 뿐 실제로는 어디에도
+      // 반영되지 않는 죽은 데이터였다 — researchTask와 동일한 가벼운 키워드 매칭 패턴으로 연결한다.
+      // answerType='skip'(건너뜀 기록용)은 답변 내용이 없으므로 제외.
+      const expertAnswerTask = (async (): Promise<string> => {
+        try {
+          const kwMatches = userQuestion.match(/[가-힣a-zA-Z]{2,6}/g) || [];
+          const kws = [...new Set(kwMatches)].slice(0, 3) as string[];
+          if (kws.length === 0) return "";
+          const { pool: eaPool } = await import("./db");
+          const likeConds = kws.map((_, i) => `question_content ILIKE $${i + 1}`).join(" OR ");
+          const rows = await eaPool.query(
+            `SELECT question_content, answer_text FROM expert_answers
+             WHERE status = '승인' AND answer_type != 'skip' AND answer_text IS NOT NULL AND (${likeConds})
+             ORDER BY reviewed_at DESC NULLS LAST LIMIT 2`,
+            kws.map(k => `%${k}%`)
+          );
+          if (rows.rows.length === 0) return "";
+          const text = rows.rows.map((r: any) =>
+            `[전문가 지식 - 현장 검수 승인] 관련 질문: "${r.question_content}"\n${r.answer_text}`
+          ).join("\n\n");
+          return "\n\n[전문가 지식 (관리자 승인됨, 현장 경험 기반)]\n" + text;
+        } catch {
+          return "";
+        }
+      })();
+
       // [2026-09] 질문 유형 분류(LOOKUP/JUDGMENT/CALCULATE) 단계 제거.
       // 원래 목적은 "계산 질문이면 전용 계산 답변으로 보낸다" 하나뿐이었고 LOOKUP/JUDGMENT는
       // 구분해도 이후 로직에서 전혀 다르게 처리되지 않았다(둘 다 answerRules로 동일 처리).
@@ -3047,8 +3074,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 생성 Haiku 호출과 합쳐 fast 모드에서도 AI 왕복이 2회(총 8~9초)나 필요했다.
       // 계산 질문 처리는 answerRules 안의 "계산/판정 질문 처리" 지시(아래 참고)로 이미 커버되므로
       // 분류 호출 없이 답변 생성 1회 호출로 통합한다.
-      const [goodAnswerRefSection, articleRows, baseItemRows, keywordRows, memoSection, researchSection] = await Promise.all([
-        ragTask, articleTask, baseItemTask, keywordTask, memoTask, researchTask,
+      const [goodAnswerRefSection, articleRows, baseItemRows, keywordRows, memoSection, researchSection, expertSection] = await Promise.all([
+        ragTask, articleTask, baseItemTask, keywordTask, memoTask, researchTask, expertAnswerTask,
       ]);
 
       // ── 병렬 조회 결과를 고정된 순서(조문 원문 → 조문번호 직접매칭 연혁 → 키워드 매칭)로 합성 ──
@@ -3270,7 +3297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           max_tokens: 1200,
           system: `당신은 승강기 안전검사 현장 전문가다. 제공된 어플 내부 자료만 근거로 답한다.
 
-${answerRules}${contextText}${memoSection}${researchSection}`,
+${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
           messages: messages,
         } as any);
 
@@ -3296,7 +3323,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
 
 먼저 첫 줄에 "[핵심결론] 한 줄 요약"을 쓰고, 빈 줄 하나 띄운 뒤 아래 형식의 최종 답변을 작성해라.
 
-${answerRules}${contextText}${memoSection}${researchSection}`,
+${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
             messages: messages,
           } as any),
           // ── 에이전트2 — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
@@ -3315,7 +3342,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
   "확신도": "high|medium|low",
   "사용자료": "검사기준|판정지침|기술자료|메모"
 }
-다른 텍스트 없이 JSON만.${contextText}${memoSection}${researchSection}`,
+다른 텍스트 없이 JSON만.${contextText}${memoSection}${researchSection}${expertSection}`,
             messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
           }),
         ]);
@@ -3364,7 +3391,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}`,
 에이전트2 결론: "${agent2Data.독립결론 || ""}"
 불일치 사유: "${compareData.불일치_사유 || ""}"
 
-${answerRules}${contextText}${memoSection}${researchSection}`,
+${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
             messages: messages,
           } as any);
           reply = getText(agent3) || agent1Answer;
