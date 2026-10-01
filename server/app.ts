@@ -180,6 +180,22 @@ async function ensureChatTable() {
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_revision_flags_resolved ON revision_flags (resolved)`);
+
+    // 2026-10 "법령개정" — 메모 페이지 안에서 관리자가 고시 전문을 붙여넣어 등록하고
+    // 이용자는 목록에서 골라 읽기만 하는 용도. 검사기준(별표22/24)과는 별개로, 수수료
+    // 고시처럼 조문 트리가 필요 없는 짧은 고시문을 통째로 저장한다.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS law_notices (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(200) NOT NULL,
+        notice_number VARCHAR(100),
+        effective_date DATE,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+        updated_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_law_notices_effective_date ON law_notices (effective_date DESC NULLS LAST)`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }

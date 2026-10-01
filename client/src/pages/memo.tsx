@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette, Settings, Lock, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette, Settings, Lock, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Gavel } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Stage, Layer, Line, Rect, Ellipse, Arrow, Image as KonvaImage } from "react-konva";
@@ -588,6 +588,14 @@ export default function MemoPage() {
     window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
     return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
   }, []);
+  // 법령개정 — 메모 페이지 안의 탭. 관리자가 고시 전문을 붙여넣어 등록하고
+  // 이용자는 목록에서 골라 읽기만 한다. 검사기준(별표22/24)과는 별개 데이터.
+  const [mainTab, setMainTab] = useState<"memo" | "law">("memo");
+  const [selectedLawId, setSelectedLawId] = useState<number | null>(null);
+  const [isLawFormOpen, setIsLawFormOpen] = useState(false);
+  const [lawFormMode, setLawFormMode] = useState<"create" | "edit">("create");
+  const [lawForm, setLawForm] = useState({ title: "", noticeNumber: "", effectiveDate: "", content: "" });
+  const [lawFormError, setLawFormError] = useState("");
   const [newComment, setNewComment] = useState({ author: "", content: "" });
   const [imageViewer, setImageViewer] = useState<ImageViewerState>({
     isOpen: false,
@@ -681,6 +689,129 @@ export default function MemoPage() {
     }
     setIsAuthenticated(false);
   }, [selectedMemo]);
+
+  // ── 법령개정 목록/상세 ──
+  interface LawNoticeListItem { id: number; title: string; notice_number: string | null; effective_date: string | null; created_at: string; updated_at: string; }
+  interface LawNoticeDetail extends LawNoticeListItem { content: string; }
+
+  const { data: lawNoticesRaw, isLoading: lawNoticesLoading } = useQuery<LawNoticeListItem[]>({
+    queryKey: ["/api/law-notices"],
+    queryFn: async () => {
+      const res = await fetch("/api/law-notices");
+      if (!res.ok) throw new Error("목록 조회 실패");
+      return res.json();
+    },
+    enabled: mainTab === "law",
+    staleTime: 0,
+  });
+  const lawNotices: LawNoticeListItem[] = Array.isArray(lawNoticesRaw) ? lawNoticesRaw : [];
+
+  const { data: selectedLaw } = useQuery<LawNoticeDetail>({
+    queryKey: ["/api/law-notices", selectedLawId],
+    queryFn: async () => {
+      const res = await fetch(`/api/law-notices/${selectedLawId}`);
+      if (!res.ok) throw new Error("조회 실패");
+      return res.json();
+    },
+    enabled: !!selectedLawId,
+  });
+
+  const createLawNotice = useMutation({
+    mutationFn: async (vars: typeof lawForm) => {
+      const password = window.prompt("관리자 비밀번호를 입력하세요");
+      if (password === null) throw new Error("cancelled");
+      const res = await fetch("/api/law-notices", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...vars, password }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "등록 실패");
+      }
+      return res.json();
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/law-notices"] });
+      setIsLawFormOpen(false);
+      setSelectedLawId(created.id);
+      toast({ title: "법령개정 고시가 등록되었습니다" });
+    },
+    onError: (e: any) => { if (e.message !== "cancelled") setLawFormError(e.message || "등록 실패"); }
+  });
+
+  const updateLawNotice = useMutation({
+    mutationFn: async (vars: typeof lawForm & { id: number }) => {
+      const password = window.prompt("관리자 비밀번호를 입력하세요");
+      if (password === null) throw new Error("cancelled");
+      const { id, ...rest } = vars;
+      const res = await fetch(`/api/law-notices/${id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...rest, password }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "수정 실패");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/law-notices"] });
+      if (selectedLawId) queryClient.invalidateQueries({ queryKey: ["/api/law-notices", selectedLawId] });
+      setIsLawFormOpen(false);
+      toast({ title: "수정되었습니다" });
+    },
+    onError: (e: any) => { if (e.message !== "cancelled") setLawFormError(e.message || "수정 실패"); }
+  });
+
+  const deleteLawNotice = useMutation({
+    mutationFn: async (id: number) => {
+      const password = window.prompt("관리자 비밀번호를 입력하세요");
+      if (password === null) throw new Error("cancelled");
+      const res = await fetch(`/api/law-notices/${id}`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "삭제 실패");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/law-notices"] });
+      setSelectedLawId(null);
+      toast({ title: "삭제되었습니다" });
+    },
+    onError: (e: any) => { if (e.message !== "cancelled") toast({ title: e.message || "삭제 실패", variant: "destructive" }); }
+  });
+
+  const handleOpenLawFormCreate = () => {
+    setLawFormMode("create");
+    setLawForm({ title: "", noticeNumber: "", effectiveDate: "", content: "" });
+    setLawFormError("");
+    setIsLawFormOpen(true);
+  };
+
+  const handleOpenLawFormEdit = () => {
+    if (!selectedLaw) return;
+    setLawFormMode("edit");
+    setLawForm({
+      title: selectedLaw.title,
+      noticeNumber: selectedLaw.notice_number || "",
+      effectiveDate: selectedLaw.effective_date ? String(selectedLaw.effective_date).slice(0, 10) : "",
+      content: selectedLaw.content,
+    });
+    setLawFormError("");
+    setIsLawFormOpen(true);
+  };
+
+  const handleSubmitLawForm = () => {
+    if (!lawForm.title.trim() || !lawForm.content.trim()) {
+      setLawFormError("제목과 본문을 입력해주세요.");
+      return;
+    }
+    if (lawFormMode === "create") createLawNotice.mutate(lawForm);
+    else updateLawNotice.mutate({ ...lawForm, id: selectedLawId! });
+  };
 
   const createMemo = useMutation({
     mutationFn: async (password: string) => {
@@ -911,24 +1042,108 @@ export default function MemoPage() {
     <>
       <div ref={zoomContentRef} style={{position:"absolute",top:0,left:0,right:0,bottom:0,display:"flex",flexDirection:"column",backgroundColor:"var(--background)"}}>
         <div className="bg-card border-b p-3">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                placeholder="메모 검색..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8"
-                data-testid="input-memo-search"
-              />
-            </div>
-            <Button onClick={handleCreateMemo} size="sm" data-testid="button-create-memo">
-              <Plus className="w-4 h-4" />
-            </Button>
+          <div className="flex gap-1.5 mb-2">
+            <button
+              onClick={() => setMainTab("memo")}
+              className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium px-2 py-1.5 rounded-lg border ${mainTab === "memo" ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground"}`}
+              data-testid="tab-memo"
+            >
+              메모
+            </button>
+            <button
+              onClick={() => { setMainTab("law"); setSelectedMemoId(null); setIsEditing(false); }}
+              className={`flex-1 flex items-center justify-center gap-1 text-xs font-medium px-2 py-1.5 rounded-lg border ${mainTab === "law" ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground"}`}
+              data-testid="tab-law"
+            >
+              <Gavel className="w-3.5 h-3.5" /> 법령개정
+            </button>
           </div>
+          {mainTab === "memo" ? (
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="메모 검색..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8"
+                  data-testid="input-memo-search"
+                />
+              </div>
+              <Button onClick={handleCreateMemo} size="sm" data-testid="button-create-memo">
+                <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+          ) : (
+            isAdminMode && !selectedLawId && (
+              <Button onClick={handleOpenLawFormCreate} size="sm" variant="outline" className="w-full" data-testid="button-create-law-notice">
+                <Plus className="w-4 h-4 mr-1" /> 고시 등록
+              </Button>
+            )
+          )}
         </div>
 
         <div className="flex-1 overflow-hidden relative">
+          {mainTab === "law" ? (
+            <>
+              {/* 법령개정 목록 - 슬라이드 */}
+              <div className={`absolute inset-0 overflow-y-auto bg-background transition-transform duration-200 ${selectedLawId ? "-translate-x-full" : "translate-x-0"}`}>
+                <div className="p-3 space-y-2">
+                  {lawNoticesLoading ? (
+                    <p className="text-center text-muted-foreground py-8">로딩중...</p>
+                  ) : lawNotices.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">등록된 법령개정이 없습니다</p>
+                  ) : (
+                    lawNotices.map(law => (
+                      <div
+                        key={law.id}
+                        onClick={() => setSelectedLawId(law.id)}
+                        className="bg-card rounded-xl border border-border p-3 cursor-pointer hover:border-primary/40 transition-colors active:scale-[0.98]"
+                        data-testid={`law-notice-card-${law.id}`}
+                      >
+                        <div className="font-medium text-sm mb-1">{law.title}</div>
+                        <div className="text-xs text-muted-foreground flex justify-between">
+                          <span>{law.notice_number || ""}</span>
+                          <span>{law.effective_date ? new Date(law.effective_date).toLocaleDateString("ko-KR") : ""}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              {/* 법령개정 상세 - 슬라이드 */}
+              <div className={`absolute inset-0 flex flex-col bg-background transition-transform duration-200 ${selectedLawId ? "translate-x-0" : "translate-x-full"}`}>
+                {selectedLaw ? (
+                  <>
+                    <div className="bg-card border-b p-3 flex items-center gap-2">
+                      <button onClick={() => setSelectedLawId(null)} className="p-1.5 rounded-lg hover:bg-muted mr-1 shrink-0" data-testid="button-back-law"><ChevronLeft className="w-5 h-5" /></button>
+                      <h2 className="flex-1 font-medium text-sm truncate">{selectedLaw.title}</h2>
+                      {isAdminMode && (
+                        <>
+                          <button onClick={handleOpenLawFormEdit} className="p-1.5 rounded-lg hover:bg-muted" data-testid="button-edit-law"><Edit2 className="w-4 h-4" /></button>
+                          <button
+                            onClick={() => { if (window.confirm("이 고시를 삭제할까요?")) deleteLawNotice.mutate(selectedLaw.id); }}
+                            className="p-1.5 rounded-lg hover:bg-muted text-red-500"
+                            data-testid="button-delete-law"
+                          ><Trash2 className="w-4 h-4" /></button>
+                        </>
+                      )}
+                    </div>
+                    <ScrollArea className="flex-1">
+                      <div className="p-3 space-y-3">
+                        <div className="text-xs text-muted-foreground flex gap-3 flex-wrap">
+                          {selectedLaw.notice_number && <span>{selectedLaw.notice_number}</span>}
+                          {selectedLaw.effective_date && <span>시행일 {new Date(selectedLaw.effective_date).toLocaleDateString("ko-KR")}</span>}
+                        </div>
+                        <div className="whitespace-pre-wrap text-sm" data-testid="text-law-content">{selectedLaw.content}</div>
+                      </div>
+                    </ScrollArea>
+                  </>
+                ) : null}
+              </div>
+            </>
+          ) : (
+          <>
           {/* 메모 목록 - 슬라이드 */}
           <div className={`absolute inset-0 overflow-y-auto bg-background transition-transform duration-200 ${selectedMemoId ? "-translate-x-full" : "translate-x-0"}`}>
             <div className="p-3 space-y-2">
@@ -1106,8 +1321,56 @@ export default function MemoPage() {
             ) : null}
           </div>
         </div>
+          </>
+          )}
         </div>
 
+
+        <Dialog open={isLawFormOpen} onOpenChange={setIsLawFormOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{lawFormMode === "create" ? "법령개정 고시 등록" : "법령개정 고시 수정"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <Input
+                placeholder="고시 제목"
+                value={lawForm.title}
+                onChange={e => setLawForm(p => ({ ...p, title: e.target.value }))}
+                data-testid="input-law-title"
+              />
+              <Input
+                placeholder="고시번호 (예: 행정안전부고시 제2026-59호)"
+                value={lawForm.noticeNumber}
+                onChange={e => setLawForm(p => ({ ...p, noticeNumber: e.target.value }))}
+                data-testid="input-law-notice-number"
+              />
+              <Input
+                type="date"
+                value={lawForm.effectiveDate}
+                onChange={e => setLawForm(p => ({ ...p, effectiveDate: e.target.value }))}
+                data-testid="input-law-effective-date"
+              />
+              <Textarea
+                placeholder="고시 본문 전체를 붙여넣으세요"
+                value={lawForm.content}
+                onChange={e => setLawForm(p => ({ ...p, content: e.target.value }))}
+                className="min-h-[240px]"
+                data-testid="textarea-law-content"
+              />
+              {lawFormError && <p className="text-xs text-red-500">{lawFormError}</p>}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsLawFormOpen(false)}>취소</Button>
+              <Button
+                onClick={handleSubmitLawForm}
+                disabled={createLawNotice.isPending || updateLawNotice.isPending}
+                data-testid="button-submit-law-form"
+              >
+                {lawFormMode === "create" ? "등록" : "저장"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={annotatingPhotoId !== null} onOpenChange={(open) => !open && setAnnotatingPhotoId(null)}>
           <DialogContent className="max-w-4xl h-[80vh] flex flex-col">

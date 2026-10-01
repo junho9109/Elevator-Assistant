@@ -2006,6 +2006,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 법령개정 — 메모 페이지 안의 "법령개정" 탭에서 쓰는 CRUD. 관리자가 고시 전문을
+  // 통째로 붙여넣어 등록하고, 이용자는 목록에서 골라 읽기만 한다. 쓰기는 연혁 CRUD와
+  // 같은 관리자 비밀번호 검증(checkRevisionPassword)을 재사용한다.
+  app.get("/api/law-notices", async (req, res) => {
+    try {
+      const { pool: lnPool } = await import("./db");
+      const rows = await lnPool.query(
+        `SELECT id, title, notice_number, effective_date, created_at, updated_at
+         FROM law_notices ORDER BY effective_date DESC NULLS LAST, created_at DESC`
+      );
+      res.json(rows.rows);
+    } catch (error) {
+      res.status(500).json({ error: "목록 조회 실패" });
+    }
+  });
+
+  app.get("/api/law-notices/:id", async (req, res) => {
+    try {
+      const { pool: lnPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const row = await lnPool.query(`SELECT * FROM law_notices WHERE id = $1`, [id]);
+      if (row.rows.length === 0) return res.status(404).json({ error: "찾을 수 없습니다" });
+      res.json(row.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: "조회 실패" });
+    }
+  });
+
+  app.post("/api/law-notices", async (req, res) => {
+    if (!checkRevisionPassword(req, res)) return;
+    try {
+      const { pool: lnPool } = await import("./db");
+      const { title, noticeNumber, effectiveDate, content } = req.body as {
+        title?: string; noticeNumber?: string; effectiveDate?: string; content?: string;
+      };
+      const trimmedTitle = (title || "").trim();
+      const trimmedContent = (content || "").trim();
+      if (!trimmedTitle || !trimmedContent) return res.status(400).json({ error: "제목과 본문을 입력해야 합니다" });
+      const inserted = await lnPool.query(
+        `INSERT INTO law_notices (title, notice_number, effective_date, content)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [trimmedTitle, noticeNumber || null, effectiveDate || null, trimmedContent]
+      );
+      res.status(201).json(inserted.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: "등록 실패" });
+    }
+  });
+
+  app.put("/api/law-notices/:id", async (req, res) => {
+    if (!checkRevisionPassword(req, res)) return;
+    try {
+      const { pool: lnPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const { title, noticeNumber, effectiveDate, content } = req.body as {
+        title?: string; noticeNumber?: string; effectiveDate?: string; content?: string;
+      };
+      const trimmedTitle = (title || "").trim();
+      const trimmedContent = (content || "").trim();
+      if (!trimmedTitle || !trimmedContent) return res.status(400).json({ error: "제목과 본문을 입력해야 합니다" });
+      const result = await lnPool.query(
+        `UPDATE law_notices SET title = $1, notice_number = $2, effective_date = $3, content = $4, updated_at = NOW()
+         WHERE id = $5 RETURNING *`,
+        [trimmedTitle, noticeNumber || null, effectiveDate || null, trimmedContent, id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "찾을 수 없습니다" });
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: "수정 실패" });
+    }
+  });
+
+  app.delete("/api/law-notices/:id", async (req, res) => {
+    if (!checkRevisionPassword(req, res)) return;
+    try {
+      const { pool: lnPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const result = await lnPool.query(`DELETE FROM law_notices WHERE id = $1 RETURNING id`, [id]);
+      if (result.rows.length === 0) return res.status(404).json({ error: "찾을 수 없습니다" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "삭제 실패" });
+    }
+  });
+
   // 연도별 기준 브라우징 — 개정 이력 테이블에 존재하는 연도 목록
   // (effective_date / expiry_date에서 연도만 추출해 선택 버튼을 구성하는 데 사용)
   app.get("/api/inspection-revisions-years", async (req, res) => {
