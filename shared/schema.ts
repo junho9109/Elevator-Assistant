@@ -508,6 +508,11 @@ export const aiUsage = pgTable("ai_usage", {
   outputTokens: integer("output_tokens").notNull().default(0),
   costUsd: text("cost_usd").notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // 2026-10 추가 — 사용량 패널에서 질문자(관리자 전용 표시)와 답변 본문(지연 로딩)을
+  // 보여주기 위해 저장. 기존 행에는 이 세 컬럼이 NULL이다(과거 로그는 소급 적용 안 됨).
+  employeeId: varchar("employee_id", { length: 50 }),
+  employeeName: varchar("employee_name", { length: 50 }),
+  answer: text("answer"),
 });
 export type AiUsage = typeof aiUsage.$inferSelect;
 

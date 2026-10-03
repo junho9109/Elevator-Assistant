@@ -3581,6 +3581,9 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
           inputTokens: inputTok,
           outputTokens: outputTok,
           costUsd: cost.toFixed(6),
+          employeeId: employeeId || null,
+          employeeName: employeeName || null,
+          answer: reply || null,
         });
       } catch (e) {
         console.error("[usage 저장 오류]", e);
@@ -3766,9 +3769,24 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
       const { aiUsage } = await import("@shared/schema");
       const { gte, desc: usageDesc } = await import("drizzle-orm");
 
+      // 다른 관리자 전용 GET들과 같은 느슨한 판정(클라이언트가 보내는 admin 플래그 +
+      // 노준호 계정 더블체크) — 쓰기가 아닌 읽기 전용 노출 범위 조절이라 비밀번호
+      // 검증까진 쓰지 않는다. 질문자 이름은 이 조건이 참일 때만 응답에 포함된다.
+      const { employeeId: reqEmployeeId, employeeName: reqEmployeeName, admin } = req.query as {
+        employeeId?: string; employeeName?: string; admin?: string;
+      };
+      const isAdmin = admin === "true" || (reqEmployeeId === "910919" && reqEmployeeName === "노준호");
+
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const allRows = await usageDb.select().from(aiUsage).where(gte(aiUsage.createdAt, monthStart));
+      // 집계에는 토큰/비용/날짜만 필요 — answer(본문)까지 끌어오면 질문이 쌓일수록
+      // 응답과 무관한 대용량 텍스트를 메모리에 올리게 되므로 집계용 컬럼만 선택한다.
+      const allRows = await usageDb.select({
+        inputTokens: aiUsage.inputTokens,
+        outputTokens: aiUsage.outputTokens,
+        costUsd: aiUsage.costUsd,
+        createdAt: aiUsage.createdAt,
+      }).from(aiUsage).where(gte(aiUsage.createdAt, monthStart));
 
       const totalQuestions = allRows.length;
       const totalInput = allRows.reduce((s, r) => s + r.inputTokens, 0);
@@ -3790,8 +3808,34 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
         }
       });
 
-      const recentLogs = await usageDb.select().from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(10);
+      // 최근 로그 — answer(답변 본문)는 목록 응답에 넣지 않는다. 눌렀을 때만
+      // /api/ai-usage/log/:id/answer로 따로 가져오는 지연 로딩 방식.
+      const recentLogsRaw = await usageDb.select({
+        id: aiUsage.id,
+        question: aiUsage.question,
+        inputTokens: aiUsage.inputTokens,
+        outputTokens: aiUsage.outputTokens,
+        costUsd: aiUsage.costUsd,
+        createdAt: aiUsage.createdAt,
+        employeeName: aiUsage.employeeName,
+      }).from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(10);
+      const recentLogs = recentLogsRaw.map(r => isAdmin ? r : { ...r, employeeName: null });
+
       res.json({ totalQuestions, totalInput, totalOutput, totalCost: totalCost.toFixed(4), daily, recentLogs });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // 사용량 로그 답변 본문 지연 로딩 — 목록에는 안 들어있고 눌렀을 때만 가져온다.
+  app.get("/api/ai-usage/log/:id/answer", async (req, res) => {
+    try {
+      const { db: usageDb } = await import("./db");
+      const { aiUsage } = await import("@shared/schema");
+      const { eq: usageEq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const rows = await usageDb.select({ answer: aiUsage.answer }).from(aiUsage).where(usageEq(aiUsage.id, id)).limit(1);
+      if (rows.length === 0) return res.status(404).json({ error: "찾을 수 없습니다" });
+      res.json({ answer: rows[0].answer || "" });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 

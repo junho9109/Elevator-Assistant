@@ -196,6 +196,12 @@ async function ensureChatTable() {
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_law_notices_effective_date ON law_notices (effective_date DESC NULLS LAST)`);
+
+    // 2026-10 "사용량 로그 상세화" — 사용량 패널에서 질문자(관리자 전용)와 답변 본문
+    // (지연 로딩)을 보여주기 위해 ai_usage에 컬럼을 추가한다. 기존 행은 모두 NULL.
+    await pool.query(`ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS employee_id VARCHAR(50)`);
+    await pool.query(`ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS employee_name VARCHAR(50)`);
+    await pool.query(`ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS answer TEXT`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
   }

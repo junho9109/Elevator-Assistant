@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
-import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check, Calculator, Flag } from "lucide-react";
+import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check, Calculator, Flag, ChevronDown, ChevronUp } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
@@ -1806,10 +1806,29 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const fetchUsageStats = async () => {
     setUsageLoading(true);
     try {
-      const r = await fetch("/api/ai-usage/stats");
+      const r = await fetch(`/api/ai-usage/stats?admin=${isAdminMode ? "true" : "false"}`);
       if (r.ok) setUsageStats(await r.json());
     } catch {}
     setUsageLoading(false);
+  };
+
+  // 사용량 로그의 답변 지연 로딩 — 눌렀을 때만 /api/ai-usage/log/:id/answer를 불러온다.
+  const [usageAnswerById, setUsageAnswerById] = useState<Record<number, string>>({});
+  const [usageAnswerLoadingId, setUsageAnswerLoadingId] = useState<number | null>(null);
+  const [usageAnswerOpenId, setUsageAnswerOpenId] = useState<number | null>(null);
+  const toggleUsageAnswer = async (id: number) => {
+    if (usageAnswerOpenId === id) { setUsageAnswerOpenId(null); return; }
+    setUsageAnswerOpenId(id);
+    if (usageAnswerById[id] !== undefined) return;
+    setUsageAnswerLoadingId(id);
+    try {
+      const r = await fetch(`/api/ai-usage/log/${id}/answer`);
+      const data = r.ok ? await r.json() : { answer: "" };
+      setUsageAnswerById(prev => ({ ...prev, [id]: data.answer || "(답변 내용 없음)" }));
+    } catch {
+      setUsageAnswerById(prev => ({ ...prev, [id]: "불러오기 실패" }));
+    }
+    setUsageAnswerLoadingId(null);
   };
 
   // AI 검색 답변 모드 (빠른 답변 / 정밀 답변) — 기본값 빠른 답변, 선택값은 기기에 저장
@@ -3981,33 +4000,58 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{background:"#B5D4F4"}}></div><span className="text-[9px] text-muted-foreground">입력</span></div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                <div className="flex-1">
-                  <p className="text-xs text-blue-800 dark:text-blue-300">질문 1회 평균 비용</p>
-                  <p className="text-[10px] text-blue-600">입력 ~800tok + 출력 ~500tok 기준</p>
-                </div>
-                <span className="text-sm font-medium text-blue-700">
-                  {usageStats.totalQuestions > 0 ? `$${(parseFloat(usageStats.totalCost) / usageStats.totalQuestions).toFixed(4)}` : "-"}
-                </span>
-              </div>
               <div>
-                <p className="text-[10px] font-medium text-muted-foreground mb-1.5">최근 질문 로그</p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] font-medium text-muted-foreground">최근 질문·답변 로그</p>
+                  <span className="text-[9px] text-muted-foreground">최신 {(usageStats.recentLogs || []).length}건</span>
+                </div>
                 <div className="border border-border rounded-lg overflow-hidden">
-                  {(usageStats.recentLogs || []).slice(0, 5).map((log: any, i: number) => (
-                    <div key={i} className="flex items-center gap-2 px-3 py-2 border-b border-border last:border-0">
-                      <span className="text-[9px] text-muted-foreground min-w-[48px]">
-                        {new Date(log.createdAt).toLocaleTimeString("ko-KR", {hour: "2-digit", minute: "2-digit"})}
-                      </span>
-                      <span className="text-[10px] flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{log.question}</span>
-                      <span className="text-[9px] text-muted-foreground">{(log.inputTokens + log.outputTokens).toLocaleString()}tok</span>
-                      <span className="text-[10px] font-medium text-blue-600 min-w-[36px] text-right">${parseFloat(log.costUsd).toFixed(4)}</span>
-                    </div>
-                  ))}
+                  {(usageStats.recentLogs || []).map((log: any) => {
+                    const isOpen = usageAnswerOpenId === log.id;
+                    const isAnswerLoading = usageAnswerLoadingId === log.id;
+                    const answerText = usageAnswerById[log.id];
+                    return (
+                      <div key={log.id} className="px-3 py-2 border-b border-border last:border-0">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(log.createdAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {log.employeeName && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                              {log.employeeName}
+                            </span>
+                          )}
+                          <span className="text-[9px] text-muted-foreground ml-auto">
+                            {(log.inputTokens + log.outputTokens).toLocaleString()}tok · ${parseFloat(log.costUsd).toFixed(4)}
+                          </span>
+                        </div>
+                        <p className="text-[11px] mb-1.5 leading-relaxed">{log.question}</p>
+                        <button
+                          onClick={() => toggleUsageAnswer(log.id)}
+                          className="flex items-center gap-1 text-[10px] font-medium text-blue-600 dark:text-blue-400"
+                        >
+                          {isOpen ? <ChevronUp className="h-3 w-3" /> : <MessageCircle className="h-3 w-3" />}
+                          {isOpen ? "답변 숨기기" : "답변 보기"}
+                        </button>
+                        {isOpen && (
+                          <div className="mt-1.5 bg-secondary rounded-md px-2.5 py-2">
+                            {isAnswerLoading ? (
+                              <p className="text-[10px] text-muted-foreground">불러오는 중…</p>
+                            ) : (
+                              <p className="text-[11px] whitespace-pre-wrap leading-relaxed text-muted-foreground">{answerText}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   {(usageStats.recentLogs || []).length === 0 && (
                     <div className="px-3 py-4 text-center text-xs text-muted-foreground">아직 기록이 없습니다</div>
                   )}
                 </div>
+                {isAdminMode && (
+                  <p className="text-[9px] text-muted-foreground mt-1">이름 배지는 관리자 모드에서만 보입니다.</p>
+                )}
               </div>
               <a
                 href="/api/ai-feedback/export"
