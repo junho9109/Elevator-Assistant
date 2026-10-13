@@ -2000,9 +2000,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       setExpertBannerDismissed(true);
     },
   });
+  // "다음에": 서버에 건너뜀을 기록하지 않고 이번 접속에서만 숨긴다 → 다음 접속 때 전구가 다시 나타남
+  const [expertBulbOpen, setExpertBulbOpen] = useState(false);
   function submitExpertSkip() {
-    if (!expertQuestion) return;
-    submitExpertAnswer.mutate({ questionId: expertQuestion.id, questionContent: expertQuestion.content, employeeId: empIdentity.empId, employeeName: empIdentity.empName, team: empIdentity.team, answerType: "skip" });
+    setExpertBulbOpen(false);
+    setExpertBannerDismissed(true);
   }
   function submitExpertResponse() {
     if (!expertQuestion) return;
@@ -3725,7 +3727,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       </div>
 
       {/* 전문가 지식 수집: 앱 첫 접속 시 1회 노출되는 배너 — home.tsx는 AI검색(chat)과 기술자료(map) 두 탭에서 재사용되므로 AI검색 탭에서만 노출 */}
-      {defaultTab === "chat" && showExpertBanner && expertQuestion && (
+      {defaultTab === "chat" && showExpertBanner && expertQuestion && !expertBulbOpen && (
+        <div className="mx-3 mt-2 flex justify-start">
+          <button
+            onClick={() => setExpertBulbOpen(true)}
+            aria-label="지식 공유 요청 열기"
+            className="w-10 h-10 rounded-full flex items-center justify-center bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 animate-pulse"
+          >
+            <Lightbulb className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+          </button>
+        </div>
+      )}
+      {defaultTab === "chat" && showExpertBanner && expertQuestion && expertBulbOpen && (
         <div className="mx-3 mt-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
           <div className="flex items-start gap-2">
             <Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
@@ -3733,9 +3746,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
               <p className="text-sm font-medium">지식을 공유해주세요</p>
               <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{expertQuestion.content}</p>
             </div>
+            <button onClick={() => setExpertBulbOpen(false)} aria-label="접기" className="w-6 h-6 flex items-center justify-center text-muted-foreground">
+              <ChevronUp className="h-4 w-4" />
+            </button>
           </div>
           <div className="flex gap-2 mt-2.5">
-            <Button size="sm" variant="outline" className="flex-1" onClick={submitExpertSkip} disabled={submitExpertAnswer.isPending}>다음에</Button>
+            <Button size="sm" variant="outline" className="flex-1" onClick={submitExpertSkip}>다음에</Button>
             <Button size="sm" className="flex-1" onClick={() => setShowExpertModal(true)}>답변하기</Button>
           </div>
           <p className="text-[11px] text-muted-foreground mt-2">답변하신 내용은 AI 학습에 활용됩니다.</p>
