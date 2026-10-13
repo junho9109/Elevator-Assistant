@@ -1962,7 +1962,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     queryFn: async () => fetchJson("/api/expert-questions"),
     enabled: !!empIdentity.empId && defaultTab === "chat",
   });
-  const { data: myExpertAnswers = [] } = useQuery<{ id: number; questionId: number }[]>({
+  const { data: myExpertAnswers = [] } = useQuery<{ id: number; questionId: number; answerType?: string }[]>({
     queryKey: ["/api/expert-answers", empIdentity.empId],
     queryFn: async () => fetchJson(`/api/expert-answers?employeeId=${encodeURIComponent(empIdentity.empId)}`),
     enabled: !!empIdentity.empId && defaultTab === "chat",
@@ -1971,7 +1971,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [expertQuestionPick] = useState(() => Math.random());
   // 이 사용자가 이미 답변했거나 건너뛴 질문은 제외 — 같은 질문을 같은 사람에게 두 번 묻지 않되, 다른 사람에게는 계속 물어볼 수 있음
   const expertUnseenQuestions = useMemo(() => {
-    const answeredIds = new Set(myExpertAnswers.map(a => a.questionId));
+    // 건너뜀("다음에")은 제외하지 않는다 — 다음 접속 때 다시 보이되, 서버에서 3회 누적되면 질문이 삭제됨
+    const answeredIds = new Set(myExpertAnswers.filter(a => a.answerType !== "skip").map(a => a.questionId));
     return expertQuestionsData.filter(q => !answeredIds.has(q.id));
   }, [expertQuestionsData, myExpertAnswers]);
   const expertQuestion = useMemo(() => {
@@ -2000,11 +2001,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       setExpertBannerDismissed(true);
     },
   });
-  // "다음에": 서버에 건너뜀을 기록하지 않고 이번 접속에서만 숨긴다 → 다음 접속 때 전구가 다시 나타남
+  // "다음에": 서버에 건너뜀을 기록(3회 누적 시 질문 자동 삭제)하되, 이 사용자에게는 다음 접속 때 다시 노출한다
   const [expertBulbOpen, setExpertBulbOpen] = useState(false);
   function submitExpertSkip() {
+    if (!expertQuestion) return;
     setExpertBulbOpen(false);
-    setExpertBannerDismissed(true);
+    submitExpertAnswer.mutate({ questionId: expertQuestion.id, questionContent: expertQuestion.content, employeeId: empIdentity.empId, employeeName: empIdentity.empName, team: empIdentity.team, answerType: "skip" });
   }
   function submitExpertResponse() {
     if (!expertQuestion) return;
