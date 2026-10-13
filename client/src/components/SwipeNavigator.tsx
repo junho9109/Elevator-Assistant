@@ -1,4 +1,5 @@
-import { useState, useRef, cloneElement, isValidElement } from "react";
+import { useState, useRef, useEffect, cloneElement, isValidElement } from "react";
+import { trackActivity } from "@/lib/activity";
 
 interface SwipeNavigatorProps {
   pages: React.ReactNode[];
@@ -16,6 +17,12 @@ export default function SwipeNavigator({ pages = [], pageNames = [] }: SwipeNavi
     window.addEventListener("navigatePage", handler);
     return () => window.removeEventListener("navigatePage", handler);
   });
+  // 자료 조회 기록 — 탭을 옮길 때마다(첫 화면 포함) 어느 화면을 열었는지 남긴다.
+  useEffect(() => {
+    const name = pageNames[currentIndex];
+    if (name) trackActivity(name);
+  }, [currentIndex]);
+
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
 

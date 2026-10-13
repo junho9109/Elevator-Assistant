@@ -9,6 +9,7 @@ import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 import { getGlobalAdminMode, setGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
+import { trackActivity } from "@/lib/activity";
 import { fetchJson } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -1809,7 +1810,31 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       const r = await fetch(`/api/ai-usage/stats?admin=${isAdminMode ? "true" : "false"}`);
       if (r.ok) setUsageStats(await r.json());
     } catch {}
+    // 관리자 전용: 이용자별 활동(AI 질문 + 자료 조회). 실패해도 위쪽 사용량 표시에는 영향 없음.
+    if (isAdminMode) {
+      try {
+        const r2 = await fetch("/api/activity-stats?admin=true");
+        if (r2.ok) setActivityStats(await r2.json());
+      } catch {}
+    }
     setUsageLoading(false);
+  };
+
+  // 이용자별 활동 섹션 상태 (관리자 전용)
+  const [activityStats, setActivityStats] = useState<{ summary: { visitors: number; aiUsers: number; browseOnly: number }; users: any[] } | null>(null);
+  const [activityFilter, setActivityFilter] = useState<"all" | "browseOnly" | "aiOnly">("all");
+  const [activityOpenUserId, setActivityOpenUserId] = useState<string | null>(null);
+  const [activityEntriesByUser, setActivityEntriesByUser] = useState<Record<string, any[]>>({});
+  const toggleActivityUser = async (employeeId: string) => {
+    if (activityOpenUserId === employeeId) { setActivityOpenUserId(null); return; }
+    setActivityOpenUserId(employeeId);
+    try {
+      const r = await fetch(`/api/activity-log/user/${encodeURIComponent(employeeId)}?admin=true&limit=10`);
+      const data = r.ok ? await r.json() : { entries: [] };
+      setActivityEntriesByUser(prev => ({ ...prev, [employeeId]: data.entries || [] }));
+    } catch {
+      setActivityEntriesByUser(prev => ({ ...prev, [employeeId]: [] }));
+    }
   };
 
   // 사용량 로그의 답변 지연 로딩 — 눌렀을 때만 /api/ai-usage/log/:id/answer를 불러온다.
@@ -1903,6 +1928,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [techSearch, setTechSearch] = useState("");
   const [techCategory, setTechCategory] = useState("전체");
   const [techSelected, setTechSelected] = useState<TechnicalMaterial | null>(null);
+  // 자료 조회 기록 — 기술자료를 펼쳐 볼 때마다 남긴다.
+  useEffect(() => {
+    if (techSelected) trackActivity("표준화&기술자료", `기술자료 · ${techSelected.title}`);
+  }, [techSelected?.id]);
   const [showAddTechModal, setShowAddTechModal] = useState(false);
   const [editingTechMaterial, setEditingTechMaterial] = useState<TechnicalMaterial | null>(null);
   const [techForm, setTechForm] = useState({ title: "", category: "", body: "", source: "" });
@@ -3961,8 +3990,6 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 {[
                   { label: "총 질문 수", val: `${usageStats.totalQuestions}건`, sub: "" },
                   { label: "예상 비용", val: `$${parseFloat(usageStats.totalCost).toFixed(3)}`, sub: `약 ${Math.round(parseFloat(usageStats.totalCost) * 1450)}원` },
-                  { label: "입력 토큰", val: `${(usageStats.totalInput / 1000).toFixed(1)}K`, sub: `$${(usageStats.totalInput * 3 / 1_000_000).toFixed(3)}` },
-                  { label: "출력 토큰", val: `${(usageStats.totalOutput / 1000).toFixed(1)}K`, sub: `$${(usageStats.totalOutput * 15 / 1_000_000).toFixed(3)}` },
                 ].map((s, i) => (
                   <div key={i} className="bg-secondary rounded-lg p-2.5">
                     <p className="text-[10px] text-muted-foreground mb-1">{s.label}</p>
@@ -3970,35 +3997,6 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                     {s.sub && <p className="text-[10px] text-muted-foreground mt-0.5">{s.sub}</p>}
                   </div>
                 ))}
-              </div>
-              <div className="bg-secondary rounded-lg p-3">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[10px] text-muted-foreground">최근 7일 비용</span>
-                  <span className="text-[10px] font-medium text-blue-600">${parseFloat(usageStats.totalCost).toFixed(3)} 합계</span>
-                </div>
-                <div className="flex items-end gap-1" style={{height: 56}}>
-                  {Object.entries(usageStats.daily || {}).map(([date, d]: [string, any]) => {
-                    const allCosts = Object.values(usageStats.daily || {}).map((x: any) => x.cost);
-                    const maxCost = Math.max(...allCosts as number[], 0.001);
-                    const hTotal = Math.round((d.cost / maxCost) * 44);
-                    const hOut = Math.round((d.output / (d.input + d.output + 0.001)) * hTotal);
-                    const hInp = hTotal - hOut;
-                    const dayLabel = ["일","월","화","수","목","금","토"][new Date(date).getDay()];
-                    return (
-                      <div key={date} className="flex flex-col items-center gap-0.5 flex-1">
-                        <div className="flex flex-col items-center w-full">
-                          <div className="w-full rounded-t" style={{height: hOut, background: "#185FA5", borderRadius: "3px 3px 0 0"}}></div>
-                          <div className="w-full" style={{height: hInp, background: "#B5D4F4"}}></div>
-                        </div>
-                        <span className="text-[9px] text-muted-foreground">{dayLabel}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="flex gap-3 mt-1.5">
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{background:"#185FA5"}}></div><span className="text-[9px] text-muted-foreground">출력</span></div>
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full" style={{background:"#B5D4F4"}}></div><span className="text-[9px] text-muted-foreground">입력</span></div>
-                </div>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -4061,6 +4059,90 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 이용자 좋아요/아쉬워요 피드백 CSV 다운로드
               </a>
+
+              {/* 이용자별 활동 — AI 질문 없이 자료만 조회하는 사람 파악용 (관리자 전용) */}
+              {isAdminMode && activityStats && (
+                <div className="border-t border-dashed border-border pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-medium text-muted-foreground">이용자별 활동 (AI 질문 + 자료 조회)</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">관리자 전용</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 mb-2">
+                    <div className="bg-secondary rounded-lg px-2.5 py-2">
+                      <p className="text-[9px] text-muted-foreground">접속자</p>
+                      <p className="text-sm font-medium">{activityStats.summary.visitors}명</p>
+                    </div>
+                    <div className="bg-secondary rounded-lg px-2.5 py-2">
+                      <p className="text-[9px] text-muted-foreground">AI 질문</p>
+                      <p className="text-sm font-medium">{activityStats.summary.aiUsers}명</p>
+                    </div>
+                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg px-2.5 py-2">
+                      <p className="text-[9px] text-amber-700 dark:text-amber-300">조회만</p>
+                      <p className="text-sm font-medium text-amber-700 dark:text-amber-300">{activityStats.summary.browseOnly}명</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5 mb-2">
+                    {([["all", "전체"], ["browseOnly", "조회만 한 사람"], ["aiOnly", "AI만 쓴 사람"]] as const).map(([key, label]) => (
+                      <button
+                        key={key}
+                        onClick={() => setActivityFilter(key)}
+                        className={`text-[10px] px-2.5 py-1 rounded-lg border ${activityFilter === key ? "bg-blue-600 border-blue-600 text-white" : "border-border text-muted-foreground"}`}
+                      >{label}</button>
+                    ))}
+                  </div>
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-[1.3fr_0.6fr_0.6fr_1fr] gap-1.5 px-2.5 py-1.5 bg-secondary text-[10px] text-muted-foreground">
+                      <span>이용자</span><span className="text-right">AI질문</span><span className="text-right">조회</span><span className="text-right">마지막 활동</span>
+                    </div>
+                    {activityStats.users
+                      .filter(u => activityFilter === "all" ? true : activityFilter === "browseOnly" ? u.question_count === 0 : u.view_count === 0)
+                      .map(u => {
+                        const isOpenUser = activityOpenUserId === u.employee_id;
+                        const entries = activityEntriesByUser[u.employee_id];
+                        return (
+                          <div key={u.employee_id} className="border-t border-border">
+                            <button
+                              onClick={() => toggleActivityUser(u.employee_id)}
+                              className={`w-full grid grid-cols-[1.3fr_0.6fr_0.6fr_1fr] gap-1.5 px-2.5 py-2 items-center text-left ${u.question_count === 0 ? "bg-amber-50/60 dark:bg-amber-900/10" : ""}`}
+                            >
+                              <div>
+                                <div className="text-[11px]">{u.employee_name || u.employee_id}</div>
+                                {u.team && <div className="text-[9px] text-muted-foreground">{u.team}</div>}
+                              </div>
+                              <span className="text-[11px] text-right">{u.question_count}</span>
+                              <span className="text-[11px] text-right">{u.view_count}</span>
+                              <span className="text-[9px] text-right text-muted-foreground">
+                                {u.last_active ? new Date(u.last_active).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}
+                              </span>
+                            </button>
+                            {isOpenUser && (
+                              <div className="bg-secondary/60 px-2.5 py-2">
+                                {entries === undefined ? (
+                                  <p className="text-[10px] text-muted-foreground">불러오는 중…</p>
+                                ) : entries.length === 0 ? (
+                                  <p className="text-[10px] text-muted-foreground">조회 내역이 없습니다</p>
+                                ) : (
+                                  entries.map((e: any, i: number) => (
+                                    <div key={i} className="flex gap-2 text-[10px] py-0.5">
+                                      <span className="text-muted-foreground shrink-0">
+                                        {new Date(e.created_at).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                      </span>
+                                      <span>{e.page}{e.detail ? ` · ${e.detail}` : ""}</span>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    {activityStats.users.length === 0 && (
+                      <div className="px-3 py-4 text-center text-xs text-muted-foreground">아직 기록이 없습니다</div>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-muted-foreground mt-1.5">조회 기록은 90일 후 자동 삭제됩니다. 기록 시작 이전 조회는 집계되지 않아요.</p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="px-4 py-6 text-center text-xs text-muted-foreground">데이터를 불러올 수 없습니다</div>

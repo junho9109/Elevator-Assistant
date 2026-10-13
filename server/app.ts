@@ -202,8 +202,34 @@ async function ensureChatTable() {
     await pool.query(`ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS employee_id VARCHAR(50)`);
     await pool.query(`ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS employee_name VARCHAR(50)`);
     await pool.query(`ALTER TABLE ai_usage ADD COLUMN IF NOT EXISTS answer TEXT`);
+
+    // 2026-10 "자료 조회 기록" — AI 질문 없이 자료만 조회하는 이용자를 파악하기 위한
+    // 활동 로그(탭 이동 + 주요 항목 열람). 90일이 지난 행은 purgeOldActivityLog()가 지운다.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS activity_log (
+        id SERIAL PRIMARY KEY,
+        employee_id VARCHAR(50),
+        employee_name VARCHAR(50),
+        team VARCHAR(50),
+        page VARCHAR(30) NOT NULL,
+        detail VARCHAR(200),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_activity_log_created_at ON activity_log (created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_activity_log_employee ON activity_log (employee_id, created_at DESC)`);
   } catch (e) {
     console.error("테이블 생성 실패:", e);
+  }
+}
+
+// 조회 기록 보관기간(90일) 경과분 삭제 — 질문·답변 로그(ai_question_log, ai_usage)는 건드리지 않는다.
+export async function purgeOldActivityLog() {
+  try {
+    const r = await pool.query(`DELETE FROM activity_log WHERE created_at < NOW() - INTERVAL '90 days'`);
+    if (r.rowCount) console.log(`[조회기록 정리] ${r.rowCount}건 삭제`);
+  } catch (e) {
+    console.error("[조회기록 정리] 실패:", e);
   }
 }
 
@@ -275,6 +301,9 @@ export default async function runApp(
   setup: (app: Express, server: Server) => Promise<void>,
 ) {
   await ensureChatTable();
+  // 조회 기록 90일 보관: 기동 시 1회 + 24시간마다 정리 (타이머가 프로세스 종료를 막지 않게 unref)
+  purgeOldActivityLog();
+  setInterval(purgeOldActivityLog, 24 * 60 * 60 * 1000).unref();
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
+import { trackActivity } from "@/lib/activity";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus, Info, ZoomIn, ZoomOut, History, ArrowRightLeft, Trash2 } from "lucide-react";
@@ -747,6 +748,13 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
     window.addEventListener("navigatePage", h);
     return () => window.removeEventListener("navigatePage", h);
   }, []);
+
+  // 자료 조회 기록 — 조문을 열 때마다 어느 문서의 어느 조문인지 남긴다(관리자 사용량 패널용).
+  useEffect(() => {
+    if (!activeKey) return;
+    const docLabel = DOCUMENTS.find(d => d.id === selectedDoc)?.label || selectedDoc;
+    trackActivity("검사기준", `${docLabel} · ${activeKey}`);
+  }, [activeKey, selectedDoc]);
 
   // 현재 선택된 문서가 세대별(연도별) 역사 문서인지 판별
   const activeGeneration = useMemo(

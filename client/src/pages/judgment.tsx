@@ -5,6 +5,7 @@ import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pe
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
+import { trackActivity } from "@/lib/activity";
 import { fetchJson } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -1160,6 +1161,8 @@ export default function JudgmentPage() {
   };
 
   const handleOpenDetail = async (item: InspectionItem) => {
+    // 자료 조회 기록 — 검사가이드 항목 상세를 열 때마다 남긴다.
+    trackActivity("검사가이드", `${equipmentType} · ${item.id}${(item as any).title ? " " + (item as any).title : ""}`);
     setDetailItem(item);
     setIsDetailDialogOpen(true);
     setRevisionsLoading(true);

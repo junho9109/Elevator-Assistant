@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Stage, Layer, Line, Rect, Ellipse, Arrow, Image as KonvaImage } from "react-konva";
 import useImage from "use-image";
+import { trackActivity } from "@/lib/activity";
 import type { Memo, MemoPhoto, PhotoAnnotation } from "@shared/schema";
 
 type DrawingTool = "freehand" | "rectangle" | "circle" | "arrow" | "line";
@@ -715,6 +716,11 @@ export default function MemoPage() {
     },
     enabled: !!selectedLawId,
   });
+
+  // 자료 조회 기록 — 법령개정 고시를 열어 본문이 로드되면 한 번 남긴다.
+  useEffect(() => {
+    if (selectedLaw) trackActivity("메모", `법령개정 · ${selectedLaw.title}`);
+  }, [selectedLaw?.id]);
 
   const createLawNotice = useMutation({
     mutationFn: async (vars: typeof lawForm) => {

@@ -7,6 +7,7 @@ import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, ins
 import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
 import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAnswer } from "./routes/research-candidates";
 import { registerUserStatsRoutes } from "./routes/user-stats";
+import { registerActivityLogRoutes } from "./routes/activity-log";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -315,6 +316,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // [2026-09] 사용자별 질문/피드백 통계 API (/api/user-stats)
   registerUserStatsRoutes(app);
+
+  // [2026-10] 자료 조회 기록 (/api/activity-log, /api/activity-stats)
+  registerActivityLogRoutes(app);
 
   app.get("/api/standards/:id", async (req, res) => {
     try {
