@@ -83,6 +83,22 @@ async function ensureChatTable() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_research_candidates_status ON ai_research_candidates (status)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_research_candidates_created_at ON ai_research_candidates (created_at DESC)`);
 
+    // [2026-10] 로그인 "소속" 목록에 서울권 지역본부/지사 추가. 비밀번호(사용자/관리자 해시)는
+    // 기존 '서울강서지사'와 동일하게 복사한다. 이미 있는 소속은 건드리지 않으므로 서버가 다시
+    // 시작돼도 안전하다. 실패해도 서버 기동은 막지 않는다.
+    try {
+      for (const orgName of ["서울지역본부", "서울서부지사", "서울동부지사", "서울강동지사", "서울북부지사", "서울남서지사", "서울강남지사", "서울서초지사"]) {
+        await pool.query(
+          `INSERT INTO organizations (name, user_pw_hash, admin_pw_hash)
+           SELECT $1, user_pw_hash, admin_pw_hash FROM organizations WHERE name = '서울강서지사'
+           AND NOT EXISTS (SELECT 1 FROM organizations WHERE name = $1)`,
+          [orgName]
+        );
+      }
+    } catch (e) {
+      console.error("[소속 추가] 실패(서버 기동은 계속):", e);
+    }
+
     // [2026-09] 사용자별 질문/피드백 통계용. 로그인 정보(사번/이름/소속)가 있는 사용자만
     // 채워지고, 로그인 안 한 익명 사용자는 employee_id가 NULL로 남는다(강제하지 않음 —
     // 기존 사용 흐름을 막지 않기 위함).

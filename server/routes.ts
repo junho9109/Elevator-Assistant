@@ -144,6 +144,13 @@ ${realSignalSection}
   return row;
 }
 
+// 로그인 소속 목록 정렬: '서울지역본부'를 맨 위에 두고, 나머지는 가나다 내림차순
+function sortOrganizations(names: string[]): string[] {
+  const HEAD = "서울지역본부";
+  const rest = names.filter(n => n !== HEAD).sort((a, b) => b.localeCompare(a, "ko"));
+  return names.includes(HEAD) ? [HEAD, ...rest] : rest;
+}
+
 // 30분마다(+서버 기동 시 1회) 호출되는 풀 유지 관리 — 사용자가 배너를 열 때 AI 호출을 기다리지 않도록
 // 미리 재고를 채워두고, 오래되거나 다들 건너뛰는 질문은 자동으로 정리한다.
 async function maintainExpertQuestionPool(): Promise<void> {
@@ -2338,8 +2345,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/auth/organizations", async (req, res) => {
     try {
       const { pool } = await import("./db");
-      const rows = await pool.query("SELECT name FROM organizations ORDER BY name");
-      res.json(rows.rows.map((r: any) => r.name));
+      const rows = await pool.query("SELECT name FROM organizations");
+      res.json(sortOrganizations(rows.rows.map((r: any) => r.name)));
     } catch (e) {
       res.status(500).json([]);
     }
@@ -2512,8 +2519,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/auth/organizations", async (req, res) => {
     try {
       const { pool } = await import("./db");
-      const rows = await pool.query("SELECT name FROM organizations ORDER BY name");
-      res.json(rows.rows.map((r: any) => r.name));
+      const rows = await pool.query("SELECT name FROM organizations");
+      res.json(sortOrganizations(rows.rows.map((r: any) => r.name)));
     } catch (e) {
       res.status(500).json([]);
     }
