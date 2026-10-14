@@ -2321,7 +2321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tokens.map((token: string) =>
           firebaseAdmin.messaging().send({
             token,
-            notification: { title: title || "승벼리", body: body || "새 메시지가 있습니다." },
+            notification: { title: title || "검사통합검색앱", body: body || "새 메시지가 있습니다." },
             data: data || {},
             android: { priority: "high" },
           })
@@ -2495,7 +2495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tokens.map((token: string) =>
           firebaseAdmin.messaging().send({
             token,
-            notification: { title: title || "승벼리", body: body || "새 메시지가 있습니다." },
+            notification: { title: title || "검사통합검색앱", body: body || "새 메시지가 있습니다." },
             data: data || {},
             android: { priority: "high" },
           })

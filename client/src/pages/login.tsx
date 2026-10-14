@@ -81,7 +81,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         {/* 로고 */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-[#1e3a5f] rounded-2xl flex items-center justify-center text-3xl mx-auto mb-3">🛗</div>
-          <h1 className="text-xl font-bold text-[#1e3a5f]">AI 검사가이드</h1>
+          <h1 className="text-xl font-bold text-[#1e3a5f]">검사통합검색앱</h1>
         </div>
 
         {/* 로그인 카드 */}

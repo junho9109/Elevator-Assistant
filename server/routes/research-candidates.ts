@@ -52,7 +52,7 @@ export async function enrichOutOfScopeAnswer(userQuestion: string, originalAnswe
       model: "claude-sonnet-4-6",
       max_tokens: 1200,
       system: `당신은 승강기 안전검사 관련 공신력 있는 참고자료를 조사하는 리서치 보조원이다.
-아래 질문은 "AI 검사가이드" 앱의 자체 자료(검사기준 별표22, 판정지침, 기술자료, 현장메모)에서 답을 찾지 못했다.
+아래 질문은 "검사통합검색앱" 앱의 자체 자료(검사기준 별표22, 판정지침, 기술자료, 현장메모)에서 답을 찾지 못했다.
 웹 검색으로 이 질문에 도움이 될 공신력 있는 자료를 찾아라.
 
 ## 검색 범위 (반드시 지킬 것)

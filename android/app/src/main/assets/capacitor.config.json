@@ -1,6 +1,6 @@
 {
 	"appId": "com.junho.elevatorassistant",
-	"appName": "승벼리",
+	"appName": "검사통합검색앱",
 	"webDir": "dist/public",
 	"server": {
 		"androidScheme": "https",
