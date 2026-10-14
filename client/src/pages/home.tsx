@@ -2104,11 +2104,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   // 수정 후 승인 — 웹 검색 요약이 부정확할 때 고쳐서 그 자리에서 바로 승인한다.
   const [researchEditingId, setResearchEditingId] = useState<number | null>(null);
   const [researchEditText, setResearchEditText] = useState("");
+  const [researchEditSources, setResearchEditSources] = useState<{ title: string; url: string }[]>([]);
   const editApproveResearchCandidate = useMutation({
-    mutationFn: async ({ id, summary }: { id: number; summary: string }) => {
+    mutationFn: async ({ id, summary, sources }: { id: number; summary: string; sources: { title: string; url: string }[] }) => {
       const r = await fetch(`/api/ai-research-candidates/${id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ summary }),
+        body: JSON.stringify({ summary, sources }),
       });
       if (!r.ok) throw new Error();
       return r.json();
@@ -2116,7 +2117,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-research-candidates"] });
       setResearchEditingId(null);
-      toast({ title: "수정한 내용으로 승인했습니다." });
+      toast({ title: "수정한 내용으로 저장했습니다." });
     },
     onError: () => toast({ title: "처리에 실패했습니다.", variant: "destructive" }),
   });
@@ -4341,7 +4342,41 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                     ) : (
                       <p className="text-[12px] whitespace-pre-line mb-1.5">{c.summary}</p>
                     )}
-                    {sources.length > 0 && (
+                    {researchEditingId === c.id && (
+                      <div className="flex flex-col gap-1 mb-1.5">
+                        <p className="text-[11px] text-muted-foreground">출처 (주소는 http:// 또는 https://로 시작)</p>
+                        {researchEditSources.map((s, i) => (
+                          <div key={i} className="flex gap-1">
+                            <input
+                              value={s.title}
+                              onChange={e => setResearchEditSources(prev => prev.map((p, j) => j === i ? { ...p, title: e.target.value } : p))}
+                              placeholder="출처 이름"
+                              className="w-[35%] border border-border rounded-lg px-2 py-1 text-[11px] bg-card"
+                            />
+                            <input
+                              value={s.url}
+                              onChange={e => setResearchEditSources(prev => prev.map((p, j) => j === i ? { ...p, url: e.target.value } : p))}
+                              placeholder="https://"
+                              className="flex-1 min-w-0 border border-border rounded-lg px-2 py-1 text-[11px] bg-card"
+                            />
+                            <button
+                              onClick={() => setResearchEditSources(prev => prev.filter((_, j) => j !== i))}
+                              aria-label="출처 삭제"
+                              className="text-[11px] px-1.5 text-red-600"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => setResearchEditSources(prev => [...prev, { title: "", url: "" }])}
+                          className="self-start text-[11px] font-medium px-2.5 py-1 rounded-lg border border-border text-muted-foreground"
+                        >
+                          + 출처 추가
+                        </button>
+                      </div>
+                    )}
+                    {researchEditingId !== c.id && sources.length > 0 && (
                       <div className="flex flex-col gap-0.5 mb-1.5">
                         {sources.map((s, i) => (
                           <a
@@ -4360,7 +4395,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                       researchEditingId === c.id ? (
                         <div className="flex gap-1.5 mt-0.5">
                           <button
-                            onClick={() => editApproveResearchCandidate.mutate({ id: c.id, summary: researchEditText })}
+                            onClick={() => editApproveResearchCandidate.mutate({ id: c.id, summary: researchEditText, sources: researchEditSources })}
                             disabled={editApproveResearchCandidate.isPending || !researchEditText.trim()}
                             className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-green-200 text-green-600 dark:border-green-800 dark:text-green-400"
                           >
@@ -4383,7 +4418,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                             승인
                           </button>
                           <button
-                            onClick={() => { setResearchEditingId(c.id); setResearchEditText(c.summary || ""); }}
+                            onClick={() => { setResearchEditingId(c.id); setResearchEditText(c.summary || ""); setResearchEditSources(sources.map(s => ({ title: s.title || "", url: s.url || "" }))); }}
                             className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400"
                           >
                             수정
@@ -4399,7 +4434,33 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                       )
                     )}
                     {c.status === "approved" && (
-                      <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">승인됨 — 참고자료로 사용중</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">승인됨 — 참고자료로 사용중</span>
+                        {researchEditingId === c.id ? (
+                          <>
+                            <button
+                              onClick={() => editApproveResearchCandidate.mutate({ id: c.id, summary: researchEditText, sources: researchEditSources })}
+                              disabled={editApproveResearchCandidate.isPending || !researchEditText.trim()}
+                              className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-green-200 text-green-600 dark:border-green-800 dark:text-green-400"
+                            >
+                              저장
+                            </button>
+                            <button
+                              onClick={() => setResearchEditingId(null)}
+                              className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-border text-muted-foreground"
+                            >
+                              취소
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => { setResearchEditingId(c.id); setResearchEditText(c.summary || ""); setResearchEditSources(sources.map(s => ({ title: s.title || "", url: s.url || "" }))); }}
+                            className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400"
+                          >
+                            수정
+                          </button>
+                        )}
+                      </div>
                     )}
                     {c.status === "rejected" && (
                       <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">반려됨</span>

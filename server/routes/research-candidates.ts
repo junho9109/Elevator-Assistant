@@ -164,9 +164,27 @@ export function registerResearchCandidateRoutes(app: Express) {
       if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
       const summary = typeof req.body?.summary === "string" ? req.body.summary.trim() : "";
       if (!summary) return res.status(400).json({ error: "summary가 비어있습니다" });
+      // 출처는 선택 — 보내면 전체를 교체한다. url이 비었거나 http(s)가 아니면 해당 항목은 버린다.
+      let sourcesJson: string | null = null;
+      if (req.body?.sources !== undefined) {
+        if (!Array.isArray(req.body.sources)) return res.status(400).json({ error: "sources 형식이 잘못되었습니다" });
+        const cleaned = req.body.sources
+          .map((s: any) => ({
+            url: typeof s?.url === "string" ? s.url.trim() : "",
+            title: typeof s?.title === "string" ? s.title.trim().slice(0, 200) : "",
+          }))
+          .filter((s: { url: string }) => /^https?:\/\//i.test(s.url));
+        sourcesJson = JSON.stringify(cleaned);
+      }
       const result = await pool.query(
-        `UPDATE ai_research_candidates SET summary = $1, status = 'approved', reviewed_at = NOW() WHERE id = $2 RETURNING id`,
-        [summary, id]
+        `UPDATE ai_research_candidates
+            SET summary = $1,
+                sources = COALESCE($3::jsonb, sources),
+                status = 'approved',
+                reviewed_at = NOW()
+          WHERE id = $2 AND status IN ('pending_review', 'approved')
+          RETURNING id`,
+        [summary, id, sourcesJson]
       );
       if (result.rows.length === 0) return res.status(404).json({ error: "후보를 찾을 수 없습니다" });
       res.json({ ok: true });

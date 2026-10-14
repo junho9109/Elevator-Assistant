@@ -62,6 +62,39 @@ describe("외부자료 후보 수정 후 승인", () => {
     expect(check.rows[0].reviewed_at).toBeTruthy();
   });
 
+  it("이미 승인된 후보도 요약과 출처를 다시 수정할 수 있고, http(s)가 아닌 출처는 버려진다", async () => {
+    const res = await request(app)
+      .put(`/api/ai-research-candidates/${candidateId}`)
+      .send({
+        summary: "승인 후 재수정",
+        sources: [
+          { title: "법제처", url: "https://www.law.go.kr/x" },
+          { title: "잘못된 주소", url: "javascript:alert(1)" },
+          { title: "빈 주소", url: "" },
+        ],
+      });
+    expect(res.status).toBe(200);
+    const check = await pool.query(`SELECT status, summary, sources FROM ai_research_candidates WHERE id = $1`, [candidateId]);
+    expect(check.rows[0].status).toBe("approved");
+    expect(check.rows[0].summary).toBe("승인 후 재수정");
+    expect(check.rows[0].sources).toEqual([{ title: "법제처", url: "https://www.law.go.kr/x" }]);
+  });
+
+  it("sources를 보내지 않으면 기존 출처가 유지된다", async () => {
+    const res = await request(app).put(`/api/ai-research-candidates/${candidateId}`).send({ summary: "출처 유지 확인" });
+    expect(res.status).toBe(200);
+    const check = await pool.query(`SELECT sources FROM ai_research_candidates WHERE id = $1`, [candidateId]);
+    expect(check.rows[0].sources).toEqual([{ title: "법제처", url: "https://www.law.go.kr/x" }]);
+  });
+
+  it("반려된 후보는 수정으로 되살릴 수 없다(404)", async () => {
+    await pool.query(`UPDATE ai_research_candidates SET status = 'rejected' WHERE id = $1`, [candidateId]);
+    const res = await request(app).put(`/api/ai-research-candidates/${candidateId}`).send({ summary: "x" });
+    expect(res.status).toBe(404);
+    const check = await pool.query(`SELECT status FROM ai_research_candidates WHERE id = $1`, [candidateId]);
+    expect(check.rows[0].status).toBe("rejected");
+  });
+
   it("존재하지 않는 id면 404다", async () => {
     const res = await request(app).put(`/api/ai-research-candidates/999999999`).send({ summary: "x" });
     expect(res.status).toBe(404);
