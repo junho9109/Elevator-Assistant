@@ -3861,20 +3861,41 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
 
   app.get("/api/changelog", async (req, res) => {
     try {
-      // 업데이트 내역은 관리자에게만 보인다. 일반 이용자는 빈 목록으로 시작.
-      if (req.query.admin !== "true") return res.json([]);
+      // 관리자는 전체(공개 여부 표시 포함), 일반 이용자는 관리자가 공개로 켠 항목만.
+      const isAdminReq = req.query.admin === "true";
       const { db: clDb } = await import("./db");
       const { changelogCache } = await import("@shared/schema");
-      const { desc: clDesc, isNotNull } = await import("drizzle-orm");
+      const { desc: clDesc, isNotNull, and: clAnd, eq: clEq } = await import("drizzle-orm");
 
+      const cond = isAdminReq
+        ? isNotNull(changelogCache.displayText)
+        : clAnd(isNotNull(changelogCache.displayText), clEq(changelogCache.publicVisible, true));
       const visible = await clDb.select().from(changelogCache)
-        .where(isNotNull(changelogCache.displayText))
+        .where(cond)
         .orderBy(clDesc(changelogCache.commitDate))
         .limit(30);
 
       res.json(visible);
     } catch (e: any) {
       res.status(500).json({ error: e.message || "업데이트 내역을 불러오지 못했습니다." });
+    }
+  });
+
+  // 관리자: 업데이트 내역 항목별 일반 이용자 공개/숨김 전환
+  app.put("/api/changelog/:id/visibility", async (req, res) => {
+    try {
+      if (req.query.admin !== "true") return res.status(403).json({ error: "관리자만 변경할 수 있습니다" });
+      const id = parseInt(req.params.id, 10);
+      const visible = req.body?.visible;
+      if (!Number.isFinite(id) || typeof visible !== "boolean") return res.status(400).json({ error: "잘못된 요청" });
+      const { db: clDb } = await import("./db");
+      const { changelogCache } = await import("@shared/schema");
+      const { eq: clEq } = await import("drizzle-orm");
+      const [row] = await clDb.update(changelogCache).set({ publicVisible: visible }).where(clEq(changelogCache.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "항목을 찾을 수 없습니다" });
+      res.json(row);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "변경 실패" });
     }
   });
 

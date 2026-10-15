@@ -117,6 +117,9 @@ async function ensureChatTable() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_question_log_employee_id ON ai_question_log (employee_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_question_log_created_at ON ai_question_log (created_at DESC)`);
 
+    // 업데이트 내역: 항목별 일반 이용자 공개 여부(기본 비공개 = 관리자에게만 보임)
+    await pool.query(`ALTER TABLE changelog_cache ADD COLUMN IF NOT EXISTS public_visible BOOLEAN NOT NULL DEFAULT FALSE`);
+
     // ai_feedback(좋아요/아쉬워요)에도 동일한 취지로 사용자 컬럼 추가.
     // 기존 배포에 이미 테이블이 있으므로 ALTER로 컬럼만 보강한다(멱등).
     await pool.query(`ALTER TABLE ai_feedback ADD COLUMN IF NOT EXISTS employee_id VARCHAR(50)`);

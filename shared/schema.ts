@@ -523,6 +523,7 @@ export const changelogCache = pgTable("changelog_cache", {
   commitDate: timestamp("commit_date").notNull(),
   rawMessage: text("raw_message").notNull(),
   displayText: text("display_text"),  // null이면 이용자에게 보이지 않는(내부용) 커밋으로 판단됨
+  publicVisible: boolean("public_visible").notNull().default(false), // 관리자가 켠 항목만 일반 이용자에게 보임
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 export type ChangelogCache = typeof changelogCache.$inferSelect;

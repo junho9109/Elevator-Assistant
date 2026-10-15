@@ -1894,6 +1894,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const [changelog, setChangelog] = useState<any[] | null>(null);
   const [changelogLoading, setChangelogLoading] = useState(false);
 
+  const toggleChangelogVisible = async (id: number, visible: boolean) => {
+    setChangelog(prev => prev ? prev.map(c => c.id === id ? { ...c, publicVisible: visible } : c) : prev);
+    try {
+      const r = await fetch(`/api/changelog/${id}/visibility?admin=true`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visible }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setChangelog(prev => prev ? prev.map(c => c.id === id ? { ...c, publicVisible: !visible } : c) : prev);
+    }
+  };
+
   const fetchChangelog = async () => {
     setChangelogLoading(true);
     try {
@@ -3988,7 +4000,15 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                     {items.map((item: any) => (
                       <div key={item.id} className="flex gap-2 items-start">
                         <span className="text-blue-500 mt-0.5">·</span>
-                        <p className="text-[13px] leading-relaxed flex-1">{item.displayText}</p>
+                        <p className={`text-[13px] leading-relaxed flex-1 ${isAdminMode && !item.publicVisible ? "text-muted-foreground" : ""}`}>{item.displayText}</p>
+                        {isAdminMode && (
+                          <button
+                            onClick={() => toggleChangelogVisible(item.id, !item.publicVisible)}
+                            className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${item.publicVisible ? "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/20 dark:text-green-300" : "border-border text-muted-foreground"}`}
+                          >
+                            {item.publicVisible ? "공개" : "숨김"}
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
