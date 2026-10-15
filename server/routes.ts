@@ -3767,8 +3767,9 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
         costUsd: aiUsage.costUsd,
         createdAt: aiUsage.createdAt,
         employeeName: aiUsage.employeeName,
+        employeeId: aiUsage.employeeId,
       }).from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(10);
-      const recentLogs = recentLogsRaw.map(r => isAdmin ? r : { ...r, employeeName: null });
+      const recentLogs = recentLogsRaw.map(r => isAdmin ? r : { ...r, employeeName: null, employeeId: null });
 
       res.json({ totalQuestions, totalInput, totalOutput, totalCost: totalCost.toFixed(4), daily, recentLogs });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
@@ -3860,6 +3861,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
 
   app.get("/api/changelog", async (req, res) => {
     try {
+      // 업데이트 내역은 관리자에게만 보인다. 일반 이용자는 빈 목록으로 시작.
+      if (req.query.admin !== "true") return res.json([]);
       const { db: clDb } = await import("./db");
       const { changelogCache } = await import("@shared/schema");
       const { desc: clDesc, isNotNull } = await import("drizzle-orm");

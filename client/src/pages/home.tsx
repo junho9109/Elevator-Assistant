@@ -1649,6 +1649,15 @@ function DecelerationCalcCard() {
   );
 }
 
+// 관리자 화면용 표기: "이름(사번)". 사번이 없거나 이름과 같거나 이미 이름에 들어있으면 이름만 보인다.
+function formatNameWithId(name?: string | null, id?: string | null): string {
+  const n = (name || "").trim();
+  const i = (id || "").trim();
+  if (!n) return i;
+  if (!i || i === n || n.includes(i)) return n;
+  return `${n}(${i})`;
+}
+
 export default function Home({ defaultTab = "chat", role = "user", onLogout }: { defaultTab?: "chat" | "map"; role?: string; onLogout?: () => void }) {
   // [제거됨 — 2026-08-16] 예전엔 여기서 /api/standards(레거시 standards 테이블) + /api/std-overrides를
   // 병합해 모듈 전역 배열 STD_ITEMS를 채웠음. std_item_overrides가 표준화 자료의 단일 진실 소스가 된 뒤로는
@@ -1888,7 +1897,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const fetchChangelog = async () => {
     setChangelogLoading(true);
     try {
-      const r = await fetch("/api/changelog");
+      const r = await fetch(`/api/changelog${isAdminMode ? "?admin=true" : ""}`);
       if (r.ok) setChangelog(await r.json());
     } catch {}
     setChangelogLoading(false);
@@ -3668,7 +3677,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           </div>
           {defaultTab === "chat" && (
             <div className="flex items-center gap-2">
-              {role === "admin" && (
+              {role === "admin" && isAdminMode && (
                 <button
                   onClick={() => { setShowUsage(s => !s); if (!showUsage) fetchUsageStats(); }}
                   className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
@@ -3993,7 +4002,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       )}
 
       {/* AI 사용량 대시보드 */}
-      {showUsage && (
+      {showUsage && isAdminMode && (
         <div className="border-b border-border bg-card shrink-0 overflow-y-auto" style={{maxHeight: "70vh"}}>
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-blue-50 dark:bg-blue-900/20">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -4035,7 +4044,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                           </span>
                           {log.employeeName && (
                             <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
-                              {log.employeeName}
+                              {formatNameWithId(log.employeeName, log.employeeId)}
                             </span>
                           )}
                           <span className="text-[9px] text-muted-foreground ml-auto">
@@ -4125,7 +4134,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                               className={`w-full grid grid-cols-[1.3fr_0.6fr_0.6fr_1fr] gap-1.5 px-2.5 py-2 items-center text-left ${u.question_count === 0 ? "bg-amber-50/60 dark:bg-amber-900/10" : ""}`}
                             >
                               <div>
-                                <div className="text-[11px]">{u.employee_name || u.employee_id}</div>
+                                <div className="text-[11px]">{formatNameWithId(u.employee_name, u.employee_id)}</div>
                                 {u.team && <div className="text-[9px] text-muted-foreground">{u.team}</div>}
                               </div>
                               <span className="text-[11px] text-right">{u.question_count}</span>
