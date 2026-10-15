@@ -30,11 +30,13 @@ export function registerActivityLogRoutes(app: Express) {
       const { pool } = await import("../db");
       // 같은 사람이 같은 화면·항목을 30초 안에 다시 연 경우(탭 왔다갔다, 리렌더)는 한 번만 기록한다.
       await pool.query(
+        // 파라미터를 SELECT 목록과 비교식에서 함께 쓰면 PostgreSQL이 타입을 서로 다르게 추론해
+        // "inconsistent types deduced for parameter" 오류가 나므로 모두 ::text로 명시한다.
         `INSERT INTO activity_log (employee_id, employee_name, team, page, detail)
-         SELECT $1, $2, $3, $4, $5
+         SELECT $1::text, $2::text, $3::text, $4::text, $5::text
          WHERE NOT EXISTS (
            SELECT 1 FROM activity_log
-           WHERE employee_id = $1 AND page = $4 AND COALESCE(detail, '') = COALESCE($5, '')
+           WHERE employee_id = $1::text AND page = $4::text AND COALESCE(detail, '') = COALESCE($5::text, '')
              AND created_at > NOW() - INTERVAL '30 seconds'
          )`,
         [
@@ -47,7 +49,9 @@ export function registerActivityLogRoutes(app: Express) {
       );
       res.status(204).end();
     } catch (e) {
-      // 조회 기록 실패가 사용자 흐름에 영향을 주면 안 되므로 조용히 넘긴다.
+      // 조회 기록 실패가 사용자 흐름에 영향을 주면 안 되므로 응답은 정상(204)으로 하되,
+      // 원인 파악을 위해 서버 로그에는 남긴다(예전에는 완전히 삼켜서 저장 실패를 몰랐다).
+      console.error("[조회기록] 저장 실패:", (e as any)?.message || e);
       res.status(204).end();
     }
   });
