@@ -127,7 +127,9 @@ const defaultSender: MailSender = async (to, subject, text) => {
   const p = mailProvider();
   if (p === "smtp") return smtpSender(to, subject, text);
   if (p === "resend") return resendSender(to, subject, text);
-  throw noMailConfig("SMTP_USER, RESEND_API_KEY 환경변수가 서버에 전달되지 않음");
+  // 값은 절대 출력하지 않고, 비슷한 이름의 변수가 있는지(오타 확인용) 이름만 보여준다.
+  const similar = Object.keys(process.env).filter(k => /smtp|stmp|mail|resend|pass|gmail/i.test(k));
+  throw noMailConfig(`SMTP_USER, RESEND_API_KEY 환경변수가 서버에 전달되지 않음. 비슷한 이름의 변수: ${similar.length ? similar.join(", ") : "없음"}`);
 };
 
 let mailSender: MailSender = defaultSender;
