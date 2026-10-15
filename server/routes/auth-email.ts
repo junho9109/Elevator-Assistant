@@ -64,7 +64,7 @@ function hashCode(email: string, code: string): string {
 // ── 메일 발송 (테스트에서 교체 가능) ──
 export type MailSender = (to: string, subject: string, text: string) => Promise<void>;
 
-const noMailConfig = () => Object.assign(new Error("메일 발송 설정 없음"), { code: "NO_MAIL_CONFIG" });
+const noMailConfig = (detail = "") => Object.assign(new Error(`메일 발송 설정 없음${detail ? ` (${detail})` : ""}`), { code: "NO_MAIL_CONFIG" });
 
 // 발송 방식: MAIL_PROVIDER=smtp | resend. 지정하지 않으면 SMTP_USER가 있으면 smtp,
 // 아니면 RESEND_API_KEY가 있으면 resend. 나중에 회사 도메인을 Resend에 인증하면
@@ -81,7 +81,7 @@ let smtpTransporter: any = null;
 const smtpSender: MailSender = async (to, subject, text) => {
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-  if (!user || !pass) throw noMailConfig();
+  if (!user || !pass) throw noMailConfig(`SMTP_USER ${user ? "있음" : "없음"}, SMTP_PASS ${pass ? "있음" : "없음"}`);
   if (!smtpTransporter) {
     const nodemailer = await import("nodemailer");
     const port = parseInt(process.env.SMTP_PORT || "465", 10);
@@ -127,7 +127,7 @@ const defaultSender: MailSender = async (to, subject, text) => {
   const p = mailProvider();
   if (p === "smtp") return smtpSender(to, subject, text);
   if (p === "resend") return resendSender(to, subject, text);
-  throw noMailConfig();
+  throw noMailConfig("SMTP_USER, RESEND_API_KEY 환경변수가 서버에 전달되지 않음");
 };
 
 let mailSender: MailSender = defaultSender;
