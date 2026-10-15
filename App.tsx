@@ -70,10 +70,11 @@ function App() {
         .then(data => {
           if (data) {
             const rawName = (data.name || saved.name || "").trim();
-            const name = isDuplicateName(rawName) && saved.empId ? `${rawName}(${saved.empId})` : rawName;
+            const empId = (data.empId || saved.empId || "").trim();
+            const name = empId ? `${rawName}(${empId})` : rawName;
             setAuthToken(saved.token);
             setUserRole(name === "노준호" ? "admin" : (data.role || "user"));
-            setUserOrg(saved.org || data.org || "");
+            setUserOrg(data.org || saved.org || "");
             setUserName(name);
             // [2026-09] 같은 기기를 다른 사람이 이어서 쓰는 경우, 이전 사용자가 켜둔
             // 로컬 관리자모드(localStorage globalAdminMode)가 그대로 남아있으면 안 되므로
@@ -90,7 +91,8 @@ function App() {
 
   const handleLogout = () => {
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
-    localStorage.setItem("loginInfo", JSON.stringify({ org: saved.org, name: saved.name, empId: saved.empId, pw: saved.pw }));
+    // 로그아웃해도 이메일만 남겨 다음 로그인 때 입력을 줄인다(비밀번호는 저장하지 않음)
+    localStorage.setItem("loginInfo", JSON.stringify({ email: saved.email }));
     setAuthToken(null);
     setUserRole("user");
     setUserOrg("");

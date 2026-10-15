@@ -8,6 +8,7 @@ import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
 import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAnswer } from "./routes/research-candidates";
 import { registerUserStatsRoutes } from "./routes/user-stats";
 import { registerActivityLogRoutes } from "./routes/activity-log";
+import { registerAuthEmailRoutes } from "./routes/auth-email";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -326,6 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // [2026-10] 자료 조회 기록 (/api/activity-log, /api/activity-stats)
   registerActivityLogRoutes(app);
+  registerAuthEmailRoutes(app);
 
   app.get("/api/standards/:id", async (req, res) => {
     try {
@@ -2352,39 +2354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { org, name, password } = req.body;
-      if (!org || !name || !password) return res.status(400).json({ error: "소속, 이름, 비밀번호를 모두 입력하세요." });
-      const { pool } = await import("./db");
-      const rows = await pool.query("SELECT * FROM organizations WHERE name = $1", [org]);
-      if (rows.rows.length === 0) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
-      const org_row = rows.rows[0];
-      const bcrypt = await import("bcrypt");
-      const isUser = await bcrypt.default.compare(password, org_row.user_pw_hash);
-      const isAdmin = await bcrypt.default.compare(password, org_row.admin_pw_hash);
-      if (!isUser && !isAdmin) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
-      const role = isAdmin ? "admin" : "user";
-      const jwt = await import("jsonwebtoken");
-      const token = jwt.default.sign({ orgId: org_row.id, org, role, name }, process.env.JWT_SECRET || "elevator-secret-key", { expiresIn: "30d" });
-      res.json({ token, org, role, name });
-    } catch (e) {
-      res.status(500).json({ error: "서버 오류" });
-    }
-  });
-
-  app.get("/api/auth/verify", async (req, res) => {
-    try {
-      const auth = req.headers.authorization;
-      if (!auth) return res.status(401).json({ error: "인증 필요" });
-      const token = auth.replace("Bearer ", "");
-      const jwt = await import("jsonwebtoken");
-      const decoded = jwt.default.verify(token, process.env.JWT_SECRET || "elevator-secret-key");
-      res.json(decoded);
-    } catch (e) {
-      res.status(401).json({ error: "토큰 만료 또는 유효하지 않음" });
-    }
-  });
+  // 로그인/가입/비밀번호 재설정/토큰 검증은 server/routes/auth-email.ts (이메일 인증 방식)
 
   // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
   app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
@@ -2526,39 +2496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { org, name, password } = req.body;
-      if (!org || !name || !password) return res.status(400).json({ error: "소속, 이름, 비밀번호를 모두 입력하세요." });
-      const { pool } = await import("./db");
-      const rows = await pool.query("SELECT * FROM organizations WHERE name = $1", [org]);
-      if (rows.rows.length === 0) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
-      const org_row = rows.rows[0];
-      const bcrypt = await import("bcrypt");
-      const isUser = await bcrypt.default.compare(password, org_row.user_pw_hash);
-      const isAdmin = await bcrypt.default.compare(password, org_row.admin_pw_hash);
-      if (!isUser && !isAdmin) return res.status(401).json({ error: "소속 또는 비밀번호가 올바르지 않습니다." });
-      const role = isAdmin ? "admin" : "user";
-      const jwt = await import("jsonwebtoken");
-      const token = jwt.default.sign({ orgId: org_row.id, org, role, name }, process.env.JWT_SECRET || "elevator-secret-key", { expiresIn: "30d" });
-      res.json({ token, org, role, name });
-    } catch (e) {
-      res.status(500).json({ error: "서버 오류" });
-    }
-  });
-
-  app.get("/api/auth/verify", async (req, res) => {
-    try {
-      const auth = req.headers.authorization;
-      if (!auth) return res.status(401).json({ error: "인증 필요" });
-      const token = auth.replace("Bearer ", "");
-      const jwt = await import("jsonwebtoken");
-      const decoded = jwt.default.verify(token, process.env.JWT_SECRET || "elevator-secret-key");
-      res.json(decoded);
-    } catch (e) {
-      res.status(401).json({ error: "토큰 만료 또는 유효하지 않음" });
-    }
-  });
+  // 로그인/가입/비밀번호 재설정/토큰 검증은 server/routes/auth-email.ts (이메일 인증 방식)
 
   // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
   app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
