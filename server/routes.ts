@@ -9,6 +9,7 @@ import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAn
 import { registerUserStatsRoutes } from "./routes/user-stats";
 import { registerActivityLogRoutes } from "./routes/activity-log";
 import { registerAuthEmailRoutes } from "./routes/auth-email";
+import { ensurePushTokenColumn } from "./ensure-push-column";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -378,6 +379,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin password verification
+  // 무차별 대입 방지: IP당 15분에 5회까지만 틀릴 수 있다(서버 재시작 시 초기화되는 메모리 기반).
+  const adminPwFails = new Map<string, { count: number; first: number }>();
+  const ADMIN_PW_WINDOW_MS = 15 * 60 * 1000;
+  const ADMIN_PW_MAX_FAILS = 5;
   app.post("/api/admin/verify-password", async (req, res) => {
     try {
       const adminPassword = process.env.ADMIN_PASSWORD;
@@ -385,11 +390,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("ADMIN_PASSWORD environment variable is not set");
         return res.status(500).json({ success: false, error: "서버 설정 오류입니다." });
       }
-      
+
+      const ip = String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim() || "unknown";
+      const now = Date.now();
+      const rec = adminPwFails.get(ip);
+      if (rec && now - rec.first > ADMIN_PW_WINDOW_MS) adminPwFails.delete(ip);
+      const cur = adminPwFails.get(ip);
+      if (cur && cur.count >= ADMIN_PW_MAX_FAILS) {
+        return res.status(429).json({ success: false, error: "시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요." });
+      }
+
       const { password } = req.body;
       if (password === adminPassword) {
+        adminPwFails.delete(ip);
         res.json({ success: true });
       } else {
+        const next = cur ? { count: cur.count + 1, first: cur.first } : { count: 1, first: now };
+        adminPwFails.set(ip, next);
         res.status(401).json({ success: false, error: "잘못된 비밀번호입니다." });
       }
     } catch (error) {
@@ -1662,7 +1679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         admin.default.initializeApp({ credential: admin.default.credential.cert(serviceAccount) });
       }
       const { pool: pgPool } = await import("./db");
-      await pgPool.query(`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
+      await ensurePushTokenColumn(pgPool);
       const rows = await pgPool.query(`SELECT token FROM push_tokens WHERE employee_id = ANY($1)`, [employeeIds]);
       const tokens = rows.rows.map((r: any) => r.token).filter(Boolean);
       if (tokens.length === 0) return;
@@ -1822,68 +1839,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       res.status(400).json({ error: "Invalid judgment result data" });
     }
-  });
-
-
-  // PPE routes
-  app.get("/api/ppe", async (req, res) => {
-    try { res.json(await storage.getAllPpeItems()); } catch (error) { handleError(res, error, "Failed to fetch PPE items"); }
-  });
-  app.post("/api/ppe", async (req, res) => {
-    try { const d = insertPpeItemSchema.parse(req.body); res.status(201).json(await storage.createPpeItem(d)); } catch (error) { res.status(400).json({ error: "Invalid PPE data" }); }
-  });
-  app.delete("/api/ppe/:id", async (req, res) => {
-    try { await storage.deletePpeItem(parseInt(req.params.id)); res.status(204).send(); } catch (error) { res.status(500).json({ error: "Failed to delete PPE item" }); }
-  });
-
-  // Near miss routes
-  app.get("/api/near-misses", async (req, res) => {
-    try { res.json(await storage.getAllNearMisses()); } catch (error) { handleError(res, error, "Failed to fetch near misses"); }
-  });
-  app.post("/api/near-misses", async (req, res) => {
-    try { const d = insertNearMissSchema.parse(req.body); res.status(201).json(await storage.createNearMiss(d)); } catch (error) { res.status(400).json({ error: "Invalid near miss data" }); }
-  });
-  app.delete("/api/near-misses/:id", async (req, res) => {
-    try { await storage.deleteNearMiss(parseInt(req.params.id)); res.status(204).send(); } catch (error) { res.status(500).json({ error: "Failed to delete near miss" }); }
-  });
-
-  // Judgment results routes
-  app.get("/api/judgment-results/:sessionId", async (req, res) => {
-    try { res.json(await storage.getJudgmentResults(req.params.sessionId)); } catch (error) { handleError(res, error, "Failed to fetch judgment results"); }
-  });
-  app.post("/api/judgment-results", async (req, res) => {
-    try { const d = insertJudgmentResultSchema.parse(req.body); res.status(201).json(await storage.upsertJudgmentResult(d)); } catch (error) { res.status(400).json({ error: "Invalid judgment result data" }); }
-  });
-
-
-  // PPE routes
-  app.get("/api/ppe", async (req, res) => {
-    try { res.json(await storage.getAllPpeItems()); } catch (error) { handleError(res, error, "Failed to fetch PPE items"); }
-  });
-  app.post("/api/ppe", async (req, res) => {
-    try { const d = insertPpeItemSchema.parse(req.body); res.status(201).json(await storage.createPpeItem(d)); } catch (error) { res.status(400).json({ error: "Invalid PPE data" }); }
-  });
-  app.delete("/api/ppe/:id", async (req, res) => {
-    try { await storage.deletePpeItem(parseInt(req.params.id)); res.status(204).send(); } catch (error) { res.status(500).json({ error: "Failed to delete PPE item" }); }
-  });
-
-  // Near miss routes
-  app.get("/api/near-misses", async (req, res) => {
-    try { res.json(await storage.getAllNearMisses()); } catch (error) { handleError(res, error, "Failed to fetch near misses"); }
-  });
-  app.post("/api/near-misses", async (req, res) => {
-    try { const d = insertNearMissSchema.parse(req.body); res.status(201).json(await storage.createNearMiss(d)); } catch (error) { res.status(400).json({ error: "Invalid near miss data" }); }
-  });
-  app.delete("/api/near-misses/:id", async (req, res) => {
-    try { await storage.deleteNearMiss(parseInt(req.params.id)); res.status(204).send(); } catch (error) { res.status(500).json({ error: "Failed to delete near miss" }); }
-  });
-
-  // Judgment results routes
-  app.get("/api/judgment-results/:sessionId", async (req, res) => {
-    try { res.json(await storage.getJudgmentResults(req.params.sessionId)); } catch (error) { handleError(res, error, "Failed to fetch judgment results"); }
-  });
-  app.post("/api/judgment-results", async (req, res) => {
-    try { const d = insertJudgmentResultSchema.parse(req.body); res.status(201).json(await storage.upsertJudgmentResult(d)); } catch (error) { res.status(400).json({ error: "Invalid judgment result data" }); }
   });
 
 
@@ -2247,9 +2202,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to get setting" });
     }
   });
+  // 클라이언트가 실제로 저장하는 키만 허용(임의 키로 설정 테이블을 채우는 것 방지)
+  const WRITABLE_SETTING_KEYS = new Set(["structureImg", "cardOffsets"]);
   app.post("/api/settings", async (req, res) => {
     try {
       const { key, value } = req.body;
+      if (typeof key !== "string" || !WRITABLE_SETTING_KEYS.has(key) || typeof value !== "string") {
+        return res.status(400).json({ error: "허용되지 않는 설정입니다" });
+      }
       await storage.setSetting(key, value);
       res.json({ key, value });
     } catch (error) {
@@ -2304,7 +2264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { token, platform, employeeId } = req.body;
       if (!token) return res.status(400).json({ error: "토큰 없음" });
       const { pool: pgPool } = await import("./db");
-      await pgPool.query(`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
+      await ensurePushTokenColumn(pgPool);
       await pgPool.query(
         `INSERT INTO push_tokens (token, platform, employee_id, created_at)
          VALUES ($1, $2, $3, NOW())
@@ -2320,6 +2280,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // FCM 푸시 전송 (채팅 새 메시지)
   app.post("/api/push/send", async (req, res) => {
     try {
+      // 전 직원에게 알림이 가는 엔드포인트라 관리자 비밀번호 필요(앱 내부에서는 호출하지 않음).
+      const adminPw = process.env.ADMIN_PASSWORD;
+      if (!adminPw || req.headers["x-admin-password"] !== adminPw) {
+        return res.status(403).json({ error: "관리자만 사용할 수 있습니다" });
+      }
       const { title, body, data } = req.body;
       if (!firebaseAdmin) return res.status(500).json({ error: "FCM 미초기화" });
       const { pool: pgPool } = await import("./db");
@@ -2421,112 +2386,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(counts);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch comment counts" });
-    }
-  });
-
-  // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
-  // ── Firebase Admin SDK 초기화 ──────────────────────────────────
-
-  try {
-    const admin = await import("firebase-admin");
-    if (!admin.default.apps.length) {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_ADMINSDK || "{}");
-      admin.default.initializeApp({
-        credential: admin.default.credential.cert(serviceAccount),
-      });
-    }
-    firebaseAdmin = admin.default;
-  } catch (e) {
-    console.error("[FCM] Firebase Admin 초기화 실패:", e);
-  }
-
-  // FCM 토큰 등록
-  app.post("/api/push/register", async (req, res) => {
-    try {
-      const { token, platform, employeeId } = req.body;
-      if (!token) return res.status(400).json({ error: "토큰 없음" });
-      const { pool: pgPool } = await import("./db");
-      await pgPool.query(`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
-      await pgPool.query(
-        `INSERT INTO push_tokens (token, platform, employee_id, created_at)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (token) DO UPDATE SET platform = $2, employee_id = COALESCE($3, push_tokens.employee_id), updated_at = NOW()`,
-        [token, platform || "android", employeeId || null]
-      );
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ error: "등록 실패" });
-    }
-  });
-
-  // FCM 푸시 전송 (채팅 새 메시지)
-  app.post("/api/push/send", async (req, res) => {
-    try {
-      const { title, body, data } = req.body;
-      if (!firebaseAdmin) return res.status(500).json({ error: "FCM 미초기화" });
-      const { pool: pgPool } = await import("./db");
-      const rows = await pgPool.query(`SELECT token FROM push_tokens`);
-      const tokens = rows.rows.map((r: any) => r.token).filter(Boolean);
-      if (tokens.length === 0) return res.json({ sent: 0 });
-      const results = await Promise.allSettled(
-        tokens.map((token: string) =>
-          firebaseAdmin.messaging().send({
-            token,
-            notification: { title: title || "검사통합검색앱", body: body || "새 메시지가 있습니다." },
-            data: data || {},
-            android: { priority: "high" },
-          })
-        )
-      );
-      const sent = results.filter(r => r.status === "fulfilled").length;
-      res.json({ sent, total: tokens.length });
-    } catch (e) {
-      res.status(500).json({ error: "전송 실패" });
-    }
-  });
-
-  // ── 로그인 API ──────────────────────────────────────────────────
-  app.get("/api/auth/organizations", async (req, res) => {
-    try {
-      const { pool } = await import("./db");
-      const rows = await pool.query("SELECT name FROM organizations");
-      res.json(sortOrganizations(rows.rows.map((r: any) => r.name)));
-    } catch (e) {
-      res.status(500).json([]);
-    }
-  });
-
-  // 로그인/가입/비밀번호 재설정/토큰 검증은 server/routes/auth-email.ts (이메일 인증 방식)
-
-  // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
-  app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
-    try {
-      const { elvtrNo } = req.params;
-      const apiKey = process.env.ELEVATOR_API_KEY;
-      if (!apiKey) return res.status(500).json({ error: "API 키 없음" });
-
-      const url = `https://apis.data.go.kr/B553664/ElevatorInstallationService/getInstallationElvtrListV2?serviceKey=${encodeURIComponent(apiKey)}&elevator_no=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
-      const resp = await fetch(url);
-      const data = await resp.json();
-
-      const item = data?.response?.body?.items?.item;
-      if (!item) return res.status(404).json({ error: "승강기 정보 없음" });
-
-      const info = Array.isArray(item) ? item[0] : item;
-      res.json({
-        elvtrNo: info.elvtrNo,
-        buldNm: info.buldNm,
-        address: info.address1,
-        elvtrKindNm: info.elvtrKindNm,
-        elvtrSttsNm: info.elvtrSttsNm,
-        installationDe: info.installationDe,   // 설치일자
-        frstInstallationDe: info.frstInstallationDe, // 최초설치일자
-        hoistwyCnt: info.hoistwyCnt,
-        ratedLoadCap: info.ratedLoadCap,
-        ratedSpeed: info.ratedSpeed,
-      });
-    } catch (e) {
-      res.status(500).json({ error: "API 조회 실패" });
     }
   });
 
@@ -4223,7 +4082,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
   app.post("/api/inspection-revisions/bulk-seed", async (req, res) => {
     try {
       const { secret, revisions } = req.body;
-      if (secret !== "seed-2009-67") return res.status(403).json({ error: "forbidden" });
+      // 비밀값은 환경변수 SEED_SECRET으로만 받는다(미설정이면 이 엔드포인트는 항상 거부).
+      if (!process.env.SEED_SECRET || secret !== process.env.SEED_SECRET) return res.status(403).json({ error: "forbidden" });
       const db2 = (await import("./db")).db;
       const { inspectionItemRevisions } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");

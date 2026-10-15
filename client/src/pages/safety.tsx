@@ -189,7 +189,10 @@ const SEVERITY_COLOR: Record<number, string> = {
   1: "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400",
 };
 
-export default function SafetyPage({ org = "", name = "", role = "user" }: { org?: string; name?: string; role?: string }) {
+export default function SafetyPage({ org = "", name = "", role = "user", isActive = true }: { org?: string; name?: string; role?: string; isActive?: boolean }) {
+  // SwipeNavigator가 모든 탭을 계속 마운트해 두므로, 안전보건 탭이 보일 때만 팀원 입력을 폴링한다
+  // (안 볼 때는 중단 → DB 호출 급감, 탭에 다시 들어오면 즉시 갱신 후 2초 주기로 재개).
+  const pollMs: number | false = isActive ? 2000 : false;
   const { toast } = useToast();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"ppe"|"guide"|"nearmiss"|"risk">("ppe");
@@ -296,7 +299,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-assessments", branchName, activeRound],
     queryFn: async () => fetchJson(`/api/risk-assessments?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
-    refetchInterval: 1000, // 다른 팀원의 평가 입력을 새로고침 없이 실시간에 가깝게 반영
+    refetchInterval: pollMs, // 다른 팀원의 평가 입력을 새로고침 없이 실시간에 가깝게 반영
   });
   // 팀별 예시/선택 구조 — 소속 팀이 있을 때만 조회 (예시 항목 자체는 회차와 무관한 재사용 라이브러리)
   const { data: teamItems = [] } = useQuery<RiskHazardItem[]>({
@@ -308,7 +311,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-item-selections", myTeam, activeRound],
     queryFn: async () => fetchJson(`/api/risk-item-selections?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}`),
     enabled: ready && !!myTeam,
-    refetchInterval: 1000, // 다른 팀원이 방금 선택한 항목을 새로고침 없이 실시간에 가깝게 반영 (선택 시도 시엔 서버가 항상 최종 검증함)
+    refetchInterval: pollMs, // 다른 팀원이 방금 선택한 항목을 새로고침 없이 실시간에 가깝게 반영 (선택 시도 시엔 서버가 항상 최종 검증함)
   });
   // 회차 목록(정기+수시, 과거 회차 포함) — 공유 아카이브가 매년 누적되도록 회차를 선택해서 열람
   const { data: riskRoundsRaw = [] } = useQuery<string[]>({
@@ -331,7 +334,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-round-overrides", myTeam, activeRound],
     queryFn: async () => fetchJson(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=selection`),
     enabled: ready && !!myTeam,
-    refetchInterval: 1000,
+    refetchInterval: pollMs,
   });
   const roundForcedOpen = roundOverrides.length > 0;
   // 경험 여부 단계에서도 팀원 절반 이상이 답변을 완료하면 "무시하고 평가하기"로 넘어갈 수 있음
@@ -339,7 +342,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-round-overrides", "experience", myTeam, activeRound],
     queryFn: async () => fetchJson(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=experience`),
     enabled: ready && !!myTeam,
-    refetchInterval: 1000,
+    refetchInterval: pollMs,
   });
   const experiencePhaseForcedOpen = experienceOverrides.length > 0;
   // 중대성 평가 단계에서도 팀원 절반 이상이 완료하면 "무시하고 진행하기"로 결과 확인 단계로 넘어갈 수 있음 (휴가 등 미참석자 대응)
@@ -347,7 +350,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-round-overrides", "severity", myTeam, activeRound],
     queryFn: async () => fetchJson(`/api/risk-round-overrides?team=${encodeURIComponent(myTeam)}&round=${encodeURIComponent(activeRound)}&phase=severity`),
     enabled: ready && !!myTeam,
-    refetchInterval: 1000,
+    refetchInterval: pollMs,
   });
   const severityPhaseForcedOpen = severityOverrides.length > 0;
   // 회차 전체(팀 무관) 무시하고 진행하기 기록 — 결과확인 화면에서 다른 팀의 "제외된 팀원"까지 계산하기 위해 팀 필터 없이 조회
@@ -355,7 +358,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-round-overrides", "round", activeRound],
     queryFn: async () => fetchJson(`/api/risk-round-overrides?round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
-    refetchInterval: 1000,
+    refetchInterval: pollMs,
   });
   // 팀명을 넣으면 "무시하고 진행하기" 시점에 아직 완료하지 않았던(=제외된) 팀원 이름 집합을 반환 — 여러 단계에서 각각 제외되었어도 합쳐서 반환
   function excludedMembersFor(teamName: string): Set<string> {
@@ -368,14 +371,14 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-item-selections", "round", activeRound],
     queryFn: async () => fetchJson(`/api/risk-item-selections?round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
-    refetchInterval: 1000,
+    refetchInterval: pollMs,
   });
   // 결과 확인 — 평가 종료 후 각 팀(본인 팀 포함) 결과를 열람하고 확인했는지 기록
   const { data: resultConfirmations = [] } = useQuery<RiskResultConfirmation[]>({
     queryKey: ["/api/risk-result-confirmations", branchName, activeRound],
     queryFn: async () => fetchJson(`/api/risk-result-confirmations?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
-    refetchInterval: 1000,
+    refetchInterval: pollMs,
   });
   const myConfirmedTeams = useMemo(() => new Set(resultConfirmations.filter(c => c.employeeId === empId).map(c => c.team)), [resultConfirmations, empId]);
   const confirmTeamResult = useMutation({
@@ -390,7 +393,7 @@ export default function SafetyPage({ org = "", name = "", role = "user" }: { org
     queryKey: ["/api/risk-signatures", branchName, activeRound],
     queryFn: async () => fetchJson(`/api/risk-signatures?branchId=${encodeURIComponent(branchName)}&round=${encodeURIComponent(activeRound)}`),
     enabled: ready,
-    refetchInterval: 1000,
+    refetchInterval: pollMs,
   });
   const mySignature = useMemo(() => roundSignatures.find(s => s.employeeId === empId), [roundSignatures, empId]);
   const saveSignature = useMutation({

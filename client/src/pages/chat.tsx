@@ -51,7 +51,8 @@ function saveUserName(name: string) {
   localStorage.setItem("chat_username", name);
 }
 
-export default function ChatPage() {
+// isActive: SwipeNavigator가 모든 탭을 계속 마운트해 두므로, 지금 보고 있는 탭일 때만 폴링한다.
+export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [userName, setUserName] = useState(getUserName());
@@ -165,11 +166,20 @@ export default function ChatPage() {
     return () => window.removeEventListener("chatPrefill", handler);
   }, []);
 
+  // 최초 1회 불러오기(캐시 표시 + 최신 50개)
   useEffect(() => {
     fetchMsgs(true);
-    pollTimer.current = setInterval(() => fetchMsgs(false), 2000);
-    return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
   }, [fetchMsgs]);
+
+  // 폴링은 채팅 탭이 보일 때만, 앱이 화면에 떠 있을 때만 돈다.
+  // 탭에 다시 들어오면 즉시 한 번 따라잡고 폴링을 재개한다.
+  useEffect(() => {
+    if (!isActive) return;
+    const tick = () => { if (!document.hidden) fetchMsgs(false); };
+    tick();
+    pollTimer.current = setInterval(tick, 2000);
+    return () => { if (pollTimer.current) clearInterval(pollTimer.current); };
+  }, [fetchMsgs, isActive]);
 
   const msgListRef = useRef<HTMLDivElement>(null);
 

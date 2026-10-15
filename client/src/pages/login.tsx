@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { isDuplicateName, isValidEmployeeId } from "@/lib/teams";
+import { registerPushToken } from "@/lib/push";
 
 interface LoginPageProps {
   onLogin: (token: string, org: string, role: string, name: string) => void;
@@ -63,6 +64,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       token: autoLogin ? data.token : "",
       autoLogin,
     }));
+    registerPushToken();
     onLogin(data.token, data.org, finalName === "노준호" ? "admin" : data.role, finalName);
   };
 

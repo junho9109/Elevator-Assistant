@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { ensurePushTokenColumn } from "../ensure-push-column";
 
 // ── Firebase Admin SDK 초기화 (부정 피드백 누적 시 관리자 FCM 알림용) ──
 // routes.ts의 기존 초기화(2210줄 근처)와 동일한 패턴 — admin.apps.length로 중복
@@ -181,8 +182,8 @@ export function registerAiFeedbackRoutes(app: Express) {
       if (statusChangedToExcluded) {
         try {
           if (firebaseAdmin) {
-            await pool.query(`ALTER TABLE push_tokens ADD COLUMN IF NOT EXISTS employee_id varchar(50)`);
-            const tokenRows = await pool.query(`SELECT token FROM push_tokens WHERE employee_id = $1`, ["910919"]);
+            await ensurePushTokenColumn(pool);
+            const tokenRows = await pool.query(`SELECT token FROM push_tokens WHERE employee_id = ANY($1)`, [["910919", "노준호"]]);
             const tokens = tokenRows.rows.map((r: any) => r.token).filter(Boolean);
             await Promise.allSettled(
               tokens.map((token: string) =>

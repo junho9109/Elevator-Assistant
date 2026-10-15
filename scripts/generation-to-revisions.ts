@@ -135,7 +135,7 @@ function main() {
   }
 
   const payload = {
-    secret: "seed-2009-67",
+    secret: process.env.SEED_SECRET || "",
     revisions: records,
   };
 

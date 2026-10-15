@@ -3,7 +3,6 @@ import path from "node:path"; // 추가
 
 import express, { type Express, type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { seedStandardIndex, seedStdItems } from "./seed-standard-index";
 import { pool } from "./db";
 
 async function ensureChatTable() {

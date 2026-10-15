@@ -1008,7 +1008,8 @@ export default function MemoPage() {
   // 이미지 리사이즈 + 썸네일 생성
   const compressImage = (file: File, maxWidth: number, quality: number): Promise<Blob> => {
     return new Promise((resolve, reject) => {
-      const img = new Image();
+      // 주의: 위에서 lucide의 Image 아이콘을 import했으므로 그냥 Image를 쓰면 아이콘 컴포넌트가 잡힌다 → window.Image 사용
+      const img = new window.Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);

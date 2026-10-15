@@ -13,3 +13,17 @@ output.txt
 server/firebase-adminsdk.json
 android/app/google-services.json
 server/tmp-restore-override.json
+
+# 작업 중 생기는 임시/백업/일회성 파일 (이미 git에 올라간 파일에는 영향 없음)
+/_backup_*/
+/manual_input_*.sql
+/vitest.config.ts.timestamp-*
+/*.pptx
+/*.pptx.new
+/backup_*.csv
+/backup_*.sql
+/check_*tmp*
+/server/temp-*.json
+/server/temp-migration-data/
+/.local/
+/android/.idea/

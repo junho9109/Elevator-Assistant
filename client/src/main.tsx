@@ -3,6 +3,7 @@ import App from "../../App";
 import "./index.css";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { Capacitor } from "@capacitor/core";
+import { savePushToken, registerPushToken } from "@/lib/push";
 
 async function initPushNotifications() {
   if (!Capacitor.isNativePlatform()) return;
@@ -10,18 +11,9 @@ async function initPushNotifications() {
   if (permission.receive !== "granted") return;
   await PushNotifications.register();
   PushNotifications.addListener("registration", async (token) => {
-    try {
-      let employeeId: string | undefined;
-      try {
-        const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
-        employeeId = (saved.name || "").trim() || undefined;
-      } catch {}
-      await fetch("/api/push/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token.value, platform: "android", employeeId }),
-      });
-    } catch (e) {}
+    // 토큰을 보관하고 현재 로그인 정보로 등록(로그인 전이면 이름 없이 등록되고, 로그인 때 다시 등록된다)
+    savePushToken(token.value);
+    await registerPushToken();
   });
   // 포그라운드 알림 — 인앱 토스트 이벤트 발생
   PushNotifications.addListener("pushNotificationReceived", (notification) => {

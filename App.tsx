@@ -17,6 +17,7 @@ import NotFound from "@/pages/not-found";
 import SwipeNavigator from "@/components/SwipeNavigator";
 import { isDuplicateName } from "@/lib/teams";
 import { setGlobalAdminMode } from "@/lib/super-admin";
+import { registerPushToken } from "@/lib/push";
 
 function Router() {
   return (
@@ -76,6 +77,7 @@ function App() {
             setUserRole(name === "노준호" ? "admin" : (data.role || "user"));
             setUserOrg(data.org || saved.org || "");
             setUserName(name);
+            registerPushToken();
             // [2026-09] 같은 기기를 다른 사람이 이어서 쓰는 경우, 이전 사용자가 켜둔
             // 로컬 관리자모드(localStorage globalAdminMode)가 그대로 남아있으면 안 되므로
             // 로그인 확정 시점마다 본인 확인해서 아니면 강제로 끈다.
