@@ -156,6 +156,8 @@ async function ensureAuthTables(): Promise<void> {
           last_login_at TIMESTAMP
         )
       `);
+      // 사번은 사람 한 명을 가리키므로 중복 가입을 막는다(사번이 없는 예전 행은 제외).
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS ux_app_users_emp_id ON app_users (emp_id) WHERE emp_id IS NOT NULL`);
       await pool.query(`
         CREATE TABLE IF NOT EXISTS email_verifications (
           id SERIAL PRIMARY KEY,
@@ -310,6 +312,11 @@ export function registerAuthEmailRoutes(app: Express) {
       if (name.length > 50) return res.status(400).json({ error: "이름이 너무 깁니다." });
       const pwErr = passwordError(password);
       if (pwErr) return res.status(400).json({ error: pwErr });
+      // 사번은 모든 가입자에게 필수 — 이름이 같은 사람이 나중에 생겨도 로그에서 구분할 수 있게 한다.
+      if (!/^[0-9A-Za-z]{4,20}$/.test(empId)) {
+        return res.status(400).json({ error: "사번을 입력하세요. (숫자/영문 4~20자)" });
+      }
+      // 동명이인으로 등록된 이름은 등록된 사번과도 일치해야 한다.
       if (isDuplicateName(name) && !isValidEmployeeId(name, empId)) {
         return res.status(400).json({ error: "동명이인이 있습니다. 올바른 사번을 입력하세요." });
       }
@@ -319,12 +326,9 @@ export function registerAuthEmailRoutes(app: Express) {
       if (orgRow.rows.length === 0) return res.status(400).json({ error: "존재하지 않는 소속입니다." });
       const exists = await pool.query(`SELECT 1 FROM app_users WHERE email = $1`, [email]);
       if (exists.rows.length > 0) return res.status(409).json({ error: "이미 가입된 이메일입니다. 로그인하세요." });
-      const sameName = await pool.query(
-        `SELECT 1 FROM app_users WHERE name = $1 AND COALESCE(emp_id, '') = $2`,
-        [name, isDuplicateName(name) ? empId : ""]
-      );
-      if (sameName.rows.length > 0) {
-        return res.status(409).json({ error: "같은 이름으로 이미 가입된 계정이 있습니다. 관리자에게 문의하세요." });
+      const sameEmpId = await pool.query(`SELECT 1 FROM app_users WHERE emp_id = $1`, [empId]);
+      if (sameEmpId.rows.length > 0) {
+        return res.status(409).json({ error: "이미 가입된 사번입니다. 본인 계정이면 로그인하고, 아니면 관리자에게 문의하세요." });
       }
 
       const codeResult = await consumeCode(email, "signup", req.body?.code);
@@ -335,13 +339,16 @@ export function registerAuthEmailRoutes(app: Express) {
       const ins = await pool.query(
         `INSERT INTO app_users (email, org, name, emp_id, password_hash, is_admin, last_login_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING email, org, name, emp_id`,
-        [email, org, name, isDuplicateName(name) ? empId : null, hash, isAdmin]
+        [email, org, name, empId, hash, isAdmin]
       );
       const u = ins.rows[0];
       const role = isAdmin ? "admin" : "user";
       res.status(201).json({ token: issueToken(u, role), org: u.org, role, name: u.name, empId: u.emp_id || "", email: u.email });
     } catch (e: any) {
-      if (e?.code === "23505") return res.status(409).json({ error: "이미 가입된 이메일입니다. 로그인하세요." });
+      if (e?.code === "23505") {
+        const dupEmpId = String(e?.constraint || "").includes("emp_id");
+        return res.status(409).json({ error: dupEmpId ? "이미 가입된 사번입니다. 관리자에게 문의하세요." : "이미 가입된 이메일입니다. 로그인하세요." });
+      }
       console.error("[signup]", e);
       res.status(500).json({ error: "서버 오류" });
     }

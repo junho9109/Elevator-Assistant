@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { isDuplicateName } from "@/lib/teams";
+import { isDuplicateName, isValidEmployeeId } from "@/lib/teams";
 
 interface LoginPageProps {
   onLogin: (token: string, org: string, role: string, name: string) => void;
@@ -33,8 +33,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const needsEmpId = mode === "signup" && isDuplicateName(name);
-
   useEffect(() => {
     fetch("/api/auth/organizations").then(r => r.ok ? r.json() : Promise.reject()).then(setOrgs).catch(() => {});
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
@@ -54,7 +52,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const finishLogin = (data: any) => {
     const rawName = (data.name || "").trim();
     const empId = (data.empId || "").trim();
-    const finalName = empId ? `${rawName}(${empId})` : rawName;
+    // 화면/팀 명단에서 쓰는 이름 표기는 예전과 같게: 동명이인으로 등록된 이름만 "이름(사번)".
+    // 사번 자체는 loginInfo.empId에 항상 저장되어 로그의 식별값으로 쓰인다.
+    const finalName = isDuplicateName(rawName) && empId ? `${rawName}(${empId})` : rawName;
     localStorage.setItem("loginInfo", JSON.stringify({
       email: data.email || email.trim().toLowerCase(),
       org: data.org,
@@ -89,7 +89,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       if (password !== password2) { setError("비밀번호가 서로 다릅니다."); return; }
       if (mode === "signup") {
         if (!org || !name.trim()) { setError("소속과 이름을 입력하세요."); return; }
-        if (needsEmpId && !empIdInput.trim()) { setError("동명이인이 있습니다. 사번을 입력하세요."); return; }
+        if (!/^[0-9A-Za-z]{4,20}$/.test(empIdInput.trim())) { setError("사번을 입력하세요. (숫자/영문 4~20자)"); return; }
+        if (isDuplicateName(name) && !isValidEmployeeId(name, empIdInput)) { setError("동명이인이 있습니다. 올바른 사번을 입력하세요."); return; }
       }
     }
     setLoading(true);
@@ -100,7 +101,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         else finishLogin(data);
       } else if (mode === "signup") {
         const { ok, data } = await postJson("/api/auth/signup", {
-          email, code, org, name: name.trim(), empId: needsEmpId ? empIdInput.trim() : "", password,
+          email, code, org, name: name.trim(), empId: empIdInput.trim(), password,
         });
         if (!ok) { setError(data.error || "가입 실패"); }
         else finishLogin(data);
@@ -187,12 +188,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 <label className={labelCls}>이름</label>
                 <input type="text" value={name} onChange={e => { setName(e.target.value); setError(""); }} placeholder="이름을 입력하세요" className={inputCls} />
               </div>
-              {needsEmpId && (
-                <div className="mb-4">
-                  <label className={labelCls}>사번 (동명이인 구분)</label>
-                  <input type="text" value={empIdInput} onChange={e => { setEmpIdInput(e.target.value); setError(""); }} placeholder="사번을 입력하세요" className={inputCls} />
-                </div>
-              )}
+              <div className="mb-4">
+                <label className={labelCls}>사번</label>
+                <input type="text" inputMode="text" value={empIdInput} onChange={e => { setEmpIdInput(e.target.value); setError(""); }} placeholder="사번을 입력하세요" className={inputCls} />
+              </div>
             </>
           )}
 

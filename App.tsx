@@ -71,7 +71,7 @@ function App() {
           if (data) {
             const rawName = (data.name || saved.name || "").trim();
             const empId = (data.empId || saved.empId || "").trim();
-            const name = empId ? `${rawName}(${empId})` : rawName;
+            const name = isDuplicateName(rawName) && empId ? `${rawName}(${empId})` : rawName;
             setAuthToken(saved.token);
             setUserRole(name === "노준호" ? "admin" : (data.role || "user"));
             setUserOrg(data.org || saved.org || "");

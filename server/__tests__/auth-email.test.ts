@@ -14,6 +14,8 @@ const EMAIL = "__test_auth_1@koelsa.or.kr";
 const EMAIL2 = "__test_auth_2@koelsa.or.kr";
 const NAME = "__TEST_가입자__";
 const PW = "test-password-1";
+const EMP1 = "TESTEMP0001";
+const EMP2 = "TESTEMP0002";
 
 let lastCode = "";
 let sentCount = 0;
@@ -76,17 +78,34 @@ describe("이메일 인증 가입/로그인", () => {
     expect(lastCode).toMatch(/^\d{6}$/);
 
     const wrong = await request(app).post("/api/auth/signup").send({
-      email: EMAIL, code: lastCode === "000000" ? "111111" : "000000", org: orgName, name: NAME, password: PW,
+      email: EMAIL, code: lastCode === "000000" ? "111111" : "000000", org: orgName, name: NAME, empId: EMP1, password: PW,
     });
     expect(wrong.status).toBe(400);
 
-    const ok = await request(app).post("/api/auth/signup").send({
+    // 사번이 없으면 코드가 맞아도 가입할 수 없다(코드는 소모되지 않는다)
+    const noEmp = await request(app).post("/api/auth/signup").send({
       email: EMAIL, code: lastCode, org: orgName, name: NAME, password: PW,
+    });
+    expect(noEmp.status).toBe(400);
+    expect(noEmp.body.error).toMatch(/사번/);
+
+    const ok = await request(app).post("/api/auth/signup").send({
+      email: EMAIL, code: lastCode, org: orgName, name: NAME, empId: EMP1, password: PW,
     });
     expect(ok.status).toBe(201);
     expect(ok.body.token).toBeTruthy();
     expect(ok.body.name).toBe(NAME);
+    expect(ok.body.empId).toBe(EMP1);
     expect(ok.body.role).toBe("user");
+  });
+
+  it("같은 사번으로는 다른 이메일로 가입할 수 없다", async () => {
+    await request(app).post("/api/auth/signup/request").send({ email: EMAIL2 });
+    const r = await request(app).post("/api/auth/signup").send({
+      email: EMAIL2, code: lastCode, org: orgName, name: "__TEST_다른사람__", empId: EMP1, password: PW,
+    });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/사번/);
   });
 
   it("같은 코드는 한 번만 쓸 수 있다", async () => {
@@ -99,7 +118,7 @@ describe("이메일 인증 가입/로그인", () => {
   it("비밀번호가 8자 미만이면 가입할 수 없다", async () => {
     await request(app).post("/api/auth/signup/request").send({ email: EMAIL2 });
     const r = await request(app).post("/api/auth/signup").send({
-      email: EMAIL2, code: lastCode, org: orgName, name: "__TEST_두번째__", password: "short",
+      email: EMAIL2, code: lastCode, org: orgName, name: "__TEST_두번째__", empId: EMP2, password: "short",
     });
     expect(r.status).toBe(400);
   });
@@ -115,9 +134,9 @@ describe("이메일 인증 가입/로그인", () => {
     const real = lastCode;
     const bad = real === "123456" ? "654321" : "123456";
     for (let i = 0; i < 5; i++) {
-      await request(app).post("/api/auth/signup").send({ email: EMAIL2, code: bad, org: orgName, name: "__TEST_두번째__", password: PW });
+      await request(app).post("/api/auth/signup").send({ email: EMAIL2, code: bad, org: orgName, name: "__TEST_두번째__", empId: EMP2, password: PW });
     }
-    const r = await request(app).post("/api/auth/signup").send({ email: EMAIL2, code: real, org: orgName, name: "__TEST_두번째__", password: PW });
+    const r = await request(app).post("/api/auth/signup").send({ email: EMAIL2, code: real, org: orgName, name: "__TEST_두번째__", empId: EMP2, password: PW });
     expect(r.status).toBe(429);
   });
 
