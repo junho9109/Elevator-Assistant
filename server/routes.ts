@@ -82,10 +82,11 @@ async function generateOneExpertQuestion() {
 
 ## 실제 이용자 질문 (최우선 참고자료)
 아래는 실제 검사원들이 AI 검색에 물어봤지만 AI가 확신 있게 답하지 못한 진짜 질문들이다.
-완전히 새로운 상황을 상상해서 지어내지 말고, 이 중 하나를 골라 그 문체와 길이를 최대한
-그대로 유지한 채로 다듬어라. "일반화"한답시고 장황한 배경 설명과 조건을 덧붙여 원래보다
-길고 격식체로 늘리지 마라 — 오히려 원문 질문 자체가 이미 좋은 톤의 예시다. 주제만 이어받고,
-꼭 필요한 경우에만 "왜 애매한지"를 아주 짧게 보태라.
+완전히 새로운 상황을 상상해서 지어내지 말고, 이 중 하나를 골라 그 주제와 길이를 최대한
+유지한 채로 다듬어라. "일반화"한답시고 장황한 배경 설명과 조건을 덧붙여 원래보다 길게
+늘리지 마라. 주제만 이어받고, 꼭 필요한 경우에만 "왜 애매한지"를 아주 짧게 보태라.
+단, 원문이 반말이거나 말끝이 거칠어도 질문 문장은 반드시 공손한 존댓말(해요체, "~인가요?",
+"~하시나요?")로 바꿔서 써라.
 
 AI 답변이 부족했던 질문:
 ${negList}
@@ -98,7 +99,7 @@ ${oosList}`;
   }
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const response = await anthropic.messages.create({
+  const callModel = (extraNote: string) => anthropic.messages.create({
     model: "claude-sonnet-4-6",
     // [2026-09-30] 600 → 1200. 실제 이용자 질문 소재(realSignalSection)를 프롬프트에
     // 추가한 뒤 라이브에서 "SyntaxError: Unterminated string in JSON" 500 에러가
@@ -115,13 +116,15 @@ ${oosList}`;
 3. 아래 "이미 등록된 질문"과 주제가 겹치지 않게 한다.
 4. 예상 답변 4개는 실제 검사원들이 낼 법한, 서로 구별되는 현실적인 대응 방식이어야 한다(비슷비슷한 답 4개 금지).
 5. category는 "판정기준" | "현장경험" | "위험성평가" 중 하나로 분류한다.
-6. [2026-09-30] 문체와 길이 — 검사원이 현장에서 휴대폰으로 AI 검색창에 빠르게 타이핑하듯 짧고
-   구어체로 써라. "~할 때, ~인데, ~인 상황에서, ~까지 고려하면 어떻게 판정하시나요?"처럼 조건을
-   줄줄이 나열한 뒤 격식체로 끝맺는 보고서체·시험문제체는 금지한다. 목표는 1~2문장, 100자
-   안팎 — 판단이 애매하다는 요지만 짧게 던지고, 세부 조건은 예상 답변 4개 쪽에서 풀어내라.
-   (내용의 애매함 수준은 그대로 유지하되, 문장만 짧게: 예) "비상용엘리베이터 승강장문 헤더 위
-   전선 압착 연결, 방수 기준에 어긋나?", "카 상부 조명 켜지긴 하는데 너무 어두우면 조도계 없이
-   어떻게 판정해?")
+6. [2026-09-30] 문체와 길이 — 검사원이 현장에서 휴대폰으로 빠르게 읽을 수 있게 짧게 써라.
+   "~할 때, ~인데, ~인 상황에서, ~까지 고려하면 어떻게 판정하시나요?"처럼 조건을 줄줄이 나열한
+   보고서체·시험문제체는 금지한다. 목표는 1~2문장, 100자 안팎 — 판단이 애매하다는 요지만 짧게
+   던지고, 세부 조건은 예상 답변 4개 쪽에서 풀어내라.
+   [2026-10 추가] 말투는 반드시 공손한 존댓말(해요체)로 쓴다. 반말·명령체·단답("~해?", "~야?",
+   "~함?", "~인지")으로 끝내지 말고 "~인가요?", "~하시나요?", "~어떻게 하세요?"처럼 끝맺어라.
+   (좋은 예: "비상용엘리베이터 승강장문 헤더 위 전선 압착 연결은 방수 기준에 어긋나는 걸로 보시나요?",
+   "카 상부 조명이 켜지긴 하는데 너무 어두우면 조도계 없이 어떻게 판정하시나요?")
+   예상 답변 4개도 정중한 말투의 짧은 문장으로 쓴다.
 
 이미 등록된 질문:
 ${existingList}
@@ -129,11 +132,25 @@ ${realSignalSection}
 
 다른 설명 없이 아래 JSON 형식만 반환하라:
 {"content": "질문 내용", "presetAnswers": ["답변1","답변2","답변3","답변4"], "category": "판정기준"}`,
-    messages: [{ role: "user", content: "새 질문 1개를 만들어줘." }],
+    messages: [{ role: "user", content: "새 질문 1개를 만들어줘." + extraNote }],
   });
 
-  const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
-  const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+  const parseResponse = (response: Awaited<ReturnType<typeof callModel>>) => {
+    const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+    return JSON.parse(raw.replace(/```json|```/g, "").trim());
+  };
+  // 존댓말 여부 점검: 질문이 "~요 / ~니다 / ~니까"로 끝나지 않으면(반말·단답) 한 번 더 요청한다.
+  // 두 번째에도 어긋나면 그대로 저장한다(생성 자체가 실패하는 것보다 낫다).
+  const isPolite = (text: unknown) => typeof text === "string" && /(요|니다|니까)\s*[?.!]*\s*$/.test(text.trim());
+  let parsed = parseResponse(await callModel(""));
+  if (!isPolite(parsed?.content)) {
+    try {
+      const retry = parseResponse(await callModel("\n(이전 시도는 말투가 반말이었다. 반드시 \"~인가요?\", \"~하시나요?\" 같은 존댓말 질문으로 다시 만들어줘.)"));
+      if (isPolite(retry?.content)) parsed = retry;
+    } catch (e) {
+      console.error("[전문가질문생성] 존댓말 재시도 실패 — 첫 결과 사용:", e);
+    }
+  }
   if (!parsed.content || !Array.isArray(parsed.presetAnswers) || parsed.presetAnswers.length !== 4) {
     throw new Error("AI 응답 형식이 올바르지 않습니다.");
   }
