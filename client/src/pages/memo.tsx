@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Trash2, Image, Edit2, Save, X, Pencil, Square, Circle, ArrowRight, Minus, Undo, Palette, Settings, Lock, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Gavel } from "lucide-react";
+import ViewerCloseButton from "@/components/ViewerCloseButton";
 import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Stage, Layer, Line, Rect, Ellipse, Arrow, Image as KonvaImage } from "react-konva";
@@ -147,6 +148,7 @@ function ImageViewerComponent({
         cursor: imageViewer.zoom > 1 ? 'grab' : 'default',
       }}
       onClick={(e) => { e.stopPropagation(); }}
+      onPointerDown={(e) => { e.stopPropagation(); }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -155,19 +157,7 @@ function ImageViewerComponent({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000000 }}>
-        <a
-          href="#"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); closeImageViewer(); }}
-          style={{
-            width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(239,68,68,0.9)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-            textDecoration: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-          }}
-        >
-          <X style={{ width: 28, height: 28 }} />
-        </a>
-      </div>
+      <ViewerCloseButton className="absolute top-4 right-4 z-[1000000]" onClose={closeImageViewer} />
 
       <div style={{ 
         flex: 1, 

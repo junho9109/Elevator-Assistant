@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench, ArrowRightLeft, Flag } from "lucide-react";
+import ViewerCloseButton from "@/components/ViewerCloseButton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
@@ -183,6 +184,7 @@ function ImageViewerComponent({
         cursor: imageViewer.zoom > 1 ? 'grab' : 'default',
       }}
       onClick={(e) => { e.stopPropagation(); }}
+      onPointerDown={(e) => { e.stopPropagation(); }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -191,20 +193,7 @@ function ImageViewerComponent({
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-      {/* Close Button */}
-      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1000000 }}>
-        <a
-          href="#"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); closeImageViewer(); }}
-          style={{
-            width: 56, height: 56, borderRadius: '50%', backgroundColor: 'rgba(239,68,68,0.9)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-            textDecoration: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
-          }}
-        >
-          <X style={{ width: 28, height: 28 }} />
-        </a>
-      </div>
+      <ViewerCloseButton className="absolute top-4 right-4 z-[1000000]" onClose={closeImageViewer} />
 
       {/* Image */}
       <div style={{ 
