@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
 import Fuse from "fuse.js";
 import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check, Calculator, Flag, ChevronDown, ChevronUp } from "lucide-react";
+import ViewerCloseButton from "@/components/ViewerCloseButton";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
@@ -960,13 +961,13 @@ function TechPhotoSection({ itemKey }: { itemKey: string }) {
 
       {/* 이미지 뷰어 */}
       {viewer.open && photos.length > 0 && (
-        <div data-no-page-pinch="true" className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setViewer({ open: false, idx: 0 })}>
+        <div data-no-page-pinch="true" className="fixed inset-0 z-50 bg-black/90 flex flex-col" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setViewer({ open: false, idx: 0 }); }}>
           <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
             <span className="text-white text-xs">{viewer.idx + 1} / {photos.length}</span>
             <div className="flex items-center gap-3">
               <button className="text-red-400 text-xs px-2.5 py-1 border border-red-400/40 rounded-lg"
                 onClick={() => { setDeleteTarget(photos[viewer.idx].id); setPw(""); setPwErr(false); }}>삭제</button>
-              <button onClick={() => setViewer({ open: false, idx: 0 })} className="text-white/70 text-lg">✕</button>
+              <ViewerCloseButton onClose={() => setViewer({ open: false, idx: 0 })} />
             </div>
           </div>
           <div
@@ -1145,13 +1146,13 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 
       {/* 이미지 뷰어 */}
       {viewer.open && photos.length > 0 && (
-        <div data-no-page-pinch="true" className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setViewer({ open: false, idx: 0 })}>
+        <div data-no-page-pinch="true" className="fixed inset-0 z-50 bg-black/90 flex flex-col" onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setViewer({ open: false, idx: 0 }); }}>
           <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={e => e.stopPropagation()}>
             <span className="text-white text-xs">{viewer.idx + 1} / {photos.length}</span>
             <div className="flex items-center gap-3">
               <button className="text-red-400 text-xs px-2.5 py-1 border border-red-400/40 rounded-lg"
                 onClick={() => { setDeleteTarget(photos[viewer.idx].id); setPw(""); setPwErr(false); }}>삭제</button>
-              <button onClick={() => setViewer({ open: false, idx: 0 })} className="text-white/70 text-lg">✕</button>
+              <ViewerCloseButton onClose={() => setViewer({ open: false, idx: 0 })} />
             </div>
           </div>
           <div
@@ -2321,15 +2322,29 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const voiceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 아예 말을 시작 안 할 때의 전체 안전장치
   const voiceSilenceRef = useRef<ReturnType<typeof setTimeout> | null>(null); // 말이 끊긴 뒤 자동 종료용
 
+  // 현재 듣기 세션이 살아있는지 — 종료 후 늦게 도착하는 이벤트가 타이머를 다시 거는 것을 막는다
+  const voiceSessionRef = useRef<{ active: boolean } | null>(null);
+
   const stopVoiceInput = useCallback(async () => {
+    // [2026-10 수정] 예전에는 `await SpeechRecognition.stop()` 뒤에서 상태를 정리했는데,
+    // 이 플러그인의 Android stop()은 call.resolve()를 호출하지 않아 Promise가 영원히 끝나지 않는다.
+    // 그 결과 이 아래의 리스너 해제와 setIsListening(false)가 실행되지 않아 "자동으로 안 끊기는"
+    // 증상이 생겼다. → 화면 상태/타이머를 먼저 정리하고, stop()은 기다리지 않거나 시간제한을 둔다.
+    if (voiceSessionRef.current) voiceSessionRef.current.active = false;
+    voiceSessionRef.current = null;
     if (voiceTimeoutRef.current) { clearTimeout(voiceTimeoutRef.current); voiceTimeoutRef.current = null; }
     if (voiceSilenceRef.current) { clearTimeout(voiceSilenceRef.current); voiceSilenceRef.current = null; }
-    try { await SpeechRecognition.stop(); } catch {}
     const listeners = voiceListenersRef.current;
     voiceListenersRef.current = null;
+    setIsListening(false);
+    try {
+      await Promise.race([
+        SpeechRecognition.stop().catch(() => {}),
+        new Promise(resolve => setTimeout(resolve, 800)),
+      ]);
+    } catch {}
     try { await listeners?.partial?.remove(); } catch {}
     try { await listeners?.state?.remove(); } catch {}
-    setIsListening(false);
   }, []);
 
   const toggleVoiceInput = useCallback(async () => {
@@ -2352,7 +2367,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         toast({ title: "마이크 권한이 필요합니다.", variant: "destructive" });
         return;
       }
+      const session = { active: true };
+      voiceSessionRef.current = session;
       const partialListener = await SpeechRecognition.addListener("partialResults", (data: { matches: string[] }) => {
+        if (!session.active) return; // 이미 종료된 세션의 늦은 이벤트는 무시
         if (data.matches && data.matches[0]) setInputText(data.matches[0]);
         // 말이 들어올 때마다 "말 시작 안 함" 안전 타임아웃은 해제하고, "말이 끊김" 타이머를 새로 건다 —
         // 1.5초간 새 인식 결과가 없으면 사용자가 말을 마쳤다고 보고 자동으로 마이크를 끈다
@@ -2362,7 +2380,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       });
       // 네이티브에서 음성 인식이 자연 종료되면(무음 감지 등) listeningState:"stopped" 이벤트가 온다 — 이때 자동으로 마이크 상태를 정리
       const stateListener = await SpeechRecognition.addListener("listeningState", (data: { status: string }) => {
-        if (data.status === "stopped") stopVoiceInput();
+        if (session.active && data.status === "stopped") stopVoiceInput();
       });
       voiceListenersRef.current = { partial: partialListener, state: stateListener };
       setIsListening(true);
