@@ -63,6 +63,45 @@ export async function getExpertQuestionSeedMaterial(): Promise<{
   };
 }
 
+// 질문이 공손한 존댓말로 끝나는지(요 / 니다 / 니까) 간단히 점검
+function isPoliteKorean(text: unknown): boolean {
+  return typeof text === "string" && /(요|니다|니까)\s*[?.!]*\s*$/.test(text.trim());
+}
+
+// 이미 저장된 활성 질문 중 반말·단답인 것을 존댓말로 고쳐 쓴다(한 번에 최대 10개, 내용의 의미는 유지).
+// 새로 생성되는 질문은 생성 단계에서 존댓말로 만들지만, 예전에 만들어져 풀에 남아 있는 질문은
+// 재고가 충분하면 며칠씩 그대로 노출되므로 점검 때마다 정리한다. 이미 존댓말이면 AI를 부르지 않는다.
+async function politeNormalizeExpertQuestions(): Promise<void> {
+  if (!process.env.ANTHROPIC_API_KEY) return;
+  const { db } = await import("./db");
+  const { expertQuestions } = await import("@shared/schema");
+  const { eq } = await import("drizzle-orm");
+  const rows = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true));
+  const targets = rows.filter(q => !isPoliteKorean(q.content)).slice(0, 10);
+  if (targets.length === 0) return;
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  for (const q of targets) {
+    try {
+      const resp = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        messages: [{
+          role: "user",
+          content: `다음 질문을 공손한 존댓말(해요체) 질문 한 문장으로 고쳐 써 주세요. 의미와 길이는 그대로 유지하고, "~인가요?", "~하시나요?"처럼 끝내 주세요. 설명 없이 고친 질문만 출력하세요.\n\n${q.content}`,
+        }],
+      });
+      const block = resp.content[0];
+      const fixed = block && block.type === "text" ? block.text.trim().replace(/^["']|["']$/g, "") : "";
+      if (fixed && fixed.length <= 400 && isPoliteKorean(fixed)) {
+        await db.update(expertQuestions).set({ content: fixed }).where(eq(expertQuestions.id, q.id));
+        console.log(`[전문가질문풀] 존댓말로 정리: #${q.id}`);
+      }
+    } catch (e) {
+      console.error(`[전문가질문풀] 존댓말 정리 실패 #${q.id}:`, e);
+    }
+  }
+}
+
 // AI가 새 질문 + 예상 답변 4개를 생성해 DB에 저장 — 기존 질문과 겹치지 않도록 등록된 질문 목록을 함께 전달함
 async function generateOneExpertQuestion() {
   const { db } = await import("./db");
@@ -141,7 +180,7 @@ ${realSignalSection}
   };
   // 존댓말 여부 점검: 질문이 "~요 / ~니다 / ~니까"로 끝나지 않으면(반말·단답) 한 번 더 요청한다.
   // 두 번째에도 어긋나면 그대로 저장한다(생성 자체가 실패하는 것보다 낫다).
-  const isPolite = (text: unknown) => typeof text === "string" && /(요|니다|니까)\s*[?.!]*\s*$/.test(text.trim());
+  const isPolite = isPoliteKorean;
   let parsed = parseResponse(await callModel(""));
   if (!isPolite(parsed?.content)) {
     try {
@@ -186,6 +225,9 @@ async function maintainExpertQuestionPool(): Promise<void> {
     await db.delete(expertQuestions).where(inArray(expertQuestions.id, overSkippedIds));
     console.log(`[전문가질문풀] 무응답 ${EXPERT_QUESTION_SKIP_LIMIT}회 이상 질문 ${overSkippedIds.length}개 삭제`);
   }
+
+  // 1-2) 예전에 만들어져 남아 있는 반말 질문을 존댓말로 정리
+  try { await politeNormalizeExpertQuestions(); } catch (e) { console.error("[전문가질문풀] 존댓말 정리 중 오류:", e); }
 
   // 2) 재고 기준(5개) 미만이면 그만큼 채우고, 재고가 충분해도 가장 최근 질문이 하루 넘게 그대로면
   // 신선도 유지를 위해 1개를 추가로 채운다 — 사람 수는 많은데 질문 풀이 며칠째 그대로라 다들 같은 질문만
