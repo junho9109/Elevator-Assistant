@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench, ArrowRightLeft, Flag } from "lucide-react";
 import ViewerCloseButton from "@/components/ViewerCloseButton";
+import RevisionAttachments from "@/components/RevisionAttachments";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
@@ -1139,6 +1140,7 @@ export default function JudgmentPage() {
             expiryDate: rv.expiry_date || rv.expiryDate || "",
             introductionType: rv.introduction_type || rv.introductionType || "old",
             description: rv.description || "",
+            attachments: rv.attachments || null,
           });
         }
       }
@@ -2472,6 +2474,7 @@ export default function JudgmentPage() {
                                   <p className={`text-[10px] leading-relaxed whitespace-pre-wrap px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-600 border border-gray-100'}`}>
                                     {v.description || ""}
                                   </p>
+                                  <RevisionAttachments attachments={v.attachments} onOpenImage={openImageViewer} />
                                 </div>
                                 {typeof v.id === "number" && (
                                   <div className="flex flex-col gap-1 shrink-0 pt-0.5">

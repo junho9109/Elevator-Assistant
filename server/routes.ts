@@ -2153,7 +2153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         `SELECT item_id, introduction_type, effective_date, expiry_date, description
          FROM inspection_item_revisions
          WHERE introduction_type IN ('current', 'old', 'additional')
-           AND description ILIKE $1
+           AND (COALESCE(description,'') || COALESCE(E'\\n' || attachments_text,'')) ILIKE $1
          ORDER BY item_id, effective_date ASC NULLS FIRST
          LIMIT 300`,
         [`%${q}%`]
@@ -2843,7 +2843,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const typeFilter = requestEquipmentType ? ` AND equipment_type = $${uniqueRefs.length + 1}` : "";
           const typeParams = requestEquipmentType ? [...uniqueRefs, requestEquipmentType] : uniqueRefs;
           const revRows = await pgPool.query(
-            `SELECT item_id, introduction_type, effective_date, expiry_date, description, equipment_type
+            `SELECT item_id, introduction_type, effective_date, expiry_date, (description || COALESCE(E'\\n' || attachments_text, '')) AS description, equipment_type
              FROM inspection_item_revisions
              WHERE item_id IN (${placeholders})
              AND introduction_type IN ('current', 'old')
@@ -2955,7 +2955,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const idfParams = uniqueTokens.map(t => `%${t}%`);
           const perTokenCountSql = uniqueTokens
             .map((_, i) => `SELECT ${i} AS idx, COUNT(DISTINCT item_id) AS c FROM inspection_item_revisions
-               WHERE description ILIKE $${i + 1} AND introduction_type IN ('current', 'old') AND description IS NOT NULL AND TRIM(description) != ''`)
+               WHERE (COALESCE(description,'') || COALESCE(E'\\n' || attachments_text,'')) ILIKE $${i + 1} AND introduction_type IN ('current', 'old') AND description IS NOT NULL AND TRIM(description) != ''`)
             .join(" UNION ALL ");
           const countsResult = await kwPool.query(
             `SELECT -1 AS idx, COUNT(DISTINCT item_id) AS c FROM inspection_item_revisions
@@ -2973,12 +2973,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return docCount > 0 ? totalDocs / docCount : 0;
           });
 
-          const likeConds = uniqueTokens.map((_, i) => `description ILIKE $${i + 1}`).join(" OR ");
+          const likeConds = uniqueTokens.map((_, i) => `(COALESCE(description,'') || COALESCE(E'\\n' || attachments_text,'')) ILIKE $${i + 1}`).join(" OR ");
           const scoreExpr = uniqueTokens
-            .map((_, i) => `(CASE WHEN description ILIKE $${i + 1} THEN ${idfWeights[i].toFixed(4)} ELSE 0 END)`)
+            .map((_, i) => `(CASE WHEN (COALESCE(description,'') || COALESCE(E'\\n' || attachments_text,'')) ILIKE $${i + 1} THEN ${idfWeights[i].toFixed(4)} ELSE 0 END)`)
             .join(" + ");
           const kwRows = await kwPool.query(
-            `SELECT item_id, introduction_type, effective_date, expiry_date, description,
+            `SELECT item_id, introduction_type, effective_date, expiry_date, (description || COALESCE(E'\\n' || attachments_text, '')) AS description,
                     (${scoreExpr}) AS kw_score
              FROM inspection_item_revisions
              WHERE (${likeConds})

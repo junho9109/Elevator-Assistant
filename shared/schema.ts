@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, serial, timestamp, integer, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, serial, timestamp, integer, boolean, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -383,6 +383,11 @@ export const inspectionItemRevisions = pgTable("inspection_item_revisions", {
   effectiveDate: varchar("effective_date", { length: 20 }),
   expiryDate: varchar("expiry_date", { length: 20 }),
   introductionType: varchar("introduction_type", { length: 20 }),
+  // 조문에 딸린 표·그림(연혁집 PDF). 표는 구조화 데이터, 그림은 이미지 파일 경로 + 검색용 글자.
+  // [{ kind:'table'|'figure', caption, images?:string[], table?:{rows:[[{t,r,c,rs,cs,img?}]]}, search }]
+  attachments: jsonb("attachments"),
+  // attachments 안의 표 글자·그림 글자를 검색(ILIKE)용으로 이어붙인 텍스트
+  attachmentsText: text("attachments_text"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
