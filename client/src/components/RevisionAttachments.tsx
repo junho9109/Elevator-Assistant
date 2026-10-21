@@ -4,6 +4,7 @@ export interface RevisionAttachment {
   caption?: string;
   images?: string[];
   table?: { rows: { t: string; r: number; c: number; rs: number; cs: number; img?: string }[][] } | null;
+  notes?: string;
   search?: string;
 }
 
@@ -59,6 +60,7 @@ export default function RevisionAttachments({ attachments, onOpenImage }: Props)
               </table>
             </div>
           )}
+          {a.notes && <p className="mt-0.5 text-[9px] text-gray-600 whitespace-pre-line">{a.notes}</p>}
         </div>
       ))}
     </div>
