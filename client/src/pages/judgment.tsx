@@ -1104,7 +1104,9 @@ export default function JudgmentPage() {
     // 현재 선택된 승강기 종류에 맞는 대분류 범위로 매칭한다 (번호 자체는 equipmentType으로
     // DB에서도 분리 저장되므로, 여기서는 정규식이 놓치지 않도록 범위만 넓게 잡으면 된다).
     const refNumRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
-    const refMatches = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${refNumRange})\\.\\d+(?:\\.\\d+)*`, "g")) || [];
+    // 에스컬레이터는 "부속서 Ⅰ.2.1" 처럼 로마자 부속서 조문도 인용하므로 함께 잡는다 (연혁 item_id도 "Ⅰ.2.1" 형식).
+    const refExtra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
+    const refMatches = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${refNumRange})\\.\\d+(?:\\.\\d+)*${refExtra}`, "g")) || [];
     // 본문에 번호가 안 적혀 있어 정규식으로 못 잡는 예외 항목은 수동으로 추가
     const uniqueRefs = [...new Set([...refMatches, ...(EXTRA_REF_IDS[item.id] || [])])];
     if (uniqueRefs.length > 0) {
@@ -1823,8 +1825,11 @@ export default function JudgmentPage() {
     // 연혁 뱃지 — 승강기 종류별 안전기준 참조 조문이 있고(엘리베이터 6~17장, 에스컬레이터 5~7장)
     // 연혁 데이터가 있을 때 표시. revisionCounts는 이미 현재 equipmentType으로 스코핑되어 있다.
     const badgeNumRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
-    const refRevisionExists = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${badgeNumRange})\\.\\d+(?:\\.\\d+)*`, "g"))?.some(
-      (ref: string) => revisionCounts[ref] && revisionCounts[ref] > 0
+    const badgeExtra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
+    const refRevisionExists = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${badgeNumRange})\\.\\d+(?:\\.\\d+)*${badgeExtra}`, "g"))?.some(
+      (ref: string) => (revisionCounts[ref] && revisionCounts[ref] > 0) ||
+        // 대분류만 인용된 경우(예: "Ⅰ.4")에도 하위 조문 연혁이 있으면 표시 — 상세 화면이 하위 조문까지 보여주므로 일치시킨다.
+        Object.keys(revisionCounts).some((k) => k.startsWith(ref + "."))
     ) || false;
     const directRevision = new RegExp(`^(?:${badgeNumRange})\\.`).test(item.id) && !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
     const hasRevisionData = directRevision || refRevisionExists;
