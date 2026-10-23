@@ -2,6 +2,11 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import Anthropic from "@anthropic-ai/sdk";
+
+// [2026-10-23] AI 답변 그림·표 출력용 — 조문 연혁 행에 붙은 첨부(그림/표)를 "[[첨부:행id:번호]] 종류 캡션" 한 줄씩의
+// 안내 문구로 만들어 AI 컨텍스트에 함께 넘긴다. AI는 필요할 때 이 표시를 답변에 그대로 쓰고, 클라이언트가
+// 표시를 실제 그림·표로 바꿔 그린다. (description에는 섞지 않는다 — 카드 화면에 표시가 노출되지 않게 별도 컬럼으로 반환)
+const ATT_TAG_SQL = `COALESCE((SELECT string_agg('[[첨부:' || inspection_item_revisions.id || ':' || (t.n - 1) || ']] (' || CASE WHEN t.a->>'kind' = 'table' THEN '표' ELSE '그림' END || ') ' || COALESCE(NULLIF(t.a->>'caption',''), left(COALESCE(t.a->>'search',''), 40)), E'\\n' ORDER BY t.n) FROM jsonb_array_elements(CASE WHEN jsonb_typeof(inspection_item_revisions.attachments) = 'array' THEN inspection_item_revisions.attachments ELSE '[]'::jsonb END) WITH ORDINALITY AS t(a, n)), '')`;
 import { storage } from "./storage";
 import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema } from "@shared/schema";
 import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
@@ -1928,6 +1933,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to fetch revisions" });
     }
   });
+  // [2026-10-23] AI 답변에 쓰인 "[[첨부:행id:번호]]" 표시를 실제 그림·표로 바꿔 그릴 때 조회한다.
+  // 읽기 전용이며 연혁 화면에 이미 공개된 첨부와 같은 데이터다. 없는 id/번호는 404 → 클라이언트가 조용히 무시한다.
+  app.get("/api/revision-attachment/:id/:idx", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const idx = parseInt(req.params.idx, 10);
+      if (!Number.isInteger(id) || !Number.isInteger(idx) || id < 0 || idx < 0) return res.status(400).json({ error: "잘못된 요청" });
+      const { pool: attPool } = await import("./db");
+      const r = await attPool.query(`SELECT attachments FROM inspection_item_revisions WHERE id = $1`, [id]);
+      const arr = r.rows[0]?.attachments;
+      if (!Array.isArray(arr) || !arr[idx]) return res.status(404).json({ error: "첨부 없음" });
+      res.json(arr[idx]);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch attachment" });
+    }
+  });
   app.post("/api/inspection-revisions", async (req, res) => {
     try {
       if (!checkRevisionPassword(req, res)) return;
@@ -2843,7 +2864,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const typeFilter = requestEquipmentType ? ` AND equipment_type = $${uniqueRefs.length + 1}` : "";
           const typeParams = requestEquipmentType ? [...uniqueRefs, requestEquipmentType] : uniqueRefs;
           const revRows = await pgPool.query(
-            `SELECT item_id, introduction_type, effective_date, expiry_date, (description || COALESCE(E'\\n' || attachments_text, '')) AS description, equipment_type
+            `SELECT item_id, introduction_type, effective_date, expiry_date, (description || COALESCE(E'\\n' || attachments_text, '')) AS description, equipment_type,
+                    ${ATT_TAG_SQL} AS att_tag
              FROM inspection_item_revisions
              WHERE item_id IN (${placeholders})
              AND introduction_type IN ('current', 'old')
@@ -2979,7 +3001,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .join(" + ");
           const kwRows = await kwPool.query(
             `SELECT item_id, introduction_type, effective_date, expiry_date, (description || COALESCE(E'\\n' || attachments_text, '')) AS description,
-                    (${scoreExpr}) AS kw_score
+                    (${scoreExpr}) AS kw_score, ${ATT_TAG_SQL} AS att_tag
              FROM inspection_item_revisions
              WHERE (${likeConds})
                AND introduction_type IN ('current', 'old')
@@ -3142,7 +3164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const dateInfo = r.introduction_type === 'current'
               ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
               : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
-            return `[${r.item_id}] ${dateInfo}\n${r.description}`;
+            return `[${r.item_id}] ${dateInfo}\n${r.description}${r.att_tag ? "\n" + r.att_tag : ""}`;
           }).join("\n\n");
           sections.push(`[${docLabelOf(eqType)} 조문 개정연혁 — 언제 어떻게 바뀌었는지]\n` + revText);
         }
@@ -3168,7 +3190,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const dateInfo = r.introduction_type === 'current'
               ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
               : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
-            return `[${r.item_id}] ${dateInfo}\n${r.description}`;
+            return `[${r.item_id}] ${dateInfo}\n${r.description}${r.att_tag ? "\n" + r.att_tag : ""}`;
           }).join("\n\n");
           sections.push("[키워드 매칭 조문 연혁]\n" + revText);
 
@@ -3240,6 +3262,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                    앱 자체 검사기준 아님)"이라고 명시하고, 승강기 검사기준인 것처럼 단정하지 않는다.
 
 ★ 메모/외부검색 자료가 검사기준과 다르면 검사기준이 정답이다.
+
+## 그림·표 첨부 표시 규칙
+- 위 조문 연혁에 "[[첨부:숫자:숫자]] (그림|표) 이름" 형태의 줄이 있으면, 그 조문에 실제 그림·표가 있다는 뜻이다.
+- 질문에 답하는 데 그림이나 표가 직접 도움이 될 때만(예: 치수·도면·표의 수치를 설명할 때) 해당 설명 바로 뒤 새 줄에 그 표시를 한 글자도 바꾸지 말고 그대로 한 줄로 쓴다. 한 답변에 최대 3개.
+- 컨텍스트에 없는 표시를 새로 만들거나 숫자를 바꾸지 마라. 필요 없으면 쓰지 마라. 표시를 쓴 뒤 "그림을 보세요" 식의 중복 설명은 하지 않는다.
 ★ 키워드가 비슷해도 질문의 맥락과 다른 메모·외부검색 자료는 무시한다.
 
 ## 자료가 부족할 때 처리 순서 (중요 — 절대 바로 포기하지 말 것)

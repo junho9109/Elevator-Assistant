@@ -23,7 +23,25 @@ import {
 import type { Standard, Hotspot, TechnicalMaterial } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
+import AiAttachment, { splitAttachmentMarkers } from "@/components/AiAttachment";
+
+const AI_MD_COMPONENTS: Components = {
+                          h1: ({children}) => <p className="font-bold text-base mb-1">{children}</p>,
+                          h2: ({children}) => <p className="font-bold text-sm mt-2 mb-1">{children}</p>,
+                          h3: ({children}) => <p className="font-semibold text-sm mt-1.5 mb-0.5">{children}</p>,
+                          strong: ({children}) => <strong className="font-semibold">{children}</strong>,
+                          ul: ({children}) => <ul className="list-disc pl-4 my-1 space-y-0.5">{children}</ul>,
+                          ol: ({children}) => <ol className="list-decimal pl-4 my-1 space-y-0.5">{children}</ol>,
+                          li: ({children}) => <li className="text-sm">{children}</li>,
+                          p: ({children}) => <p className="mb-1 last:mb-0">{children}</p>,
+                          table: ({children}) => <div className="overflow-x-auto my-1.5"><table className="text-xs border-collapse w-full">{children}</table></div>,
+                          th: ({children}) => <th className="border border-border px-2 py-1 bg-muted font-semibold text-left">{children}</th>,
+                          td: ({children}) => <td className="border border-border px-2 py-1">{children}</td>,
+                          code: ({children}) => <code className="bg-muted px-1 rounded text-xs font-mono">{children}</code>,
+                          hr: () => <hr className="border-border my-2" />,
+                        };
+
 
 // [2026-09] AI 채팅 답변 아래 "참고 자료" 카드 표시 여부. 카드가 실제 인용 정확도를
 // 반영하지 못한다는 피드백으로 비활성화. AI 프롬프트 컨텍스트(context 객체)와는
@@ -4606,25 +4624,17 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                       : "bg-card border border-border rounded-tl-sm"
                   }`}>
                     {msg.role === "assistant" ? (
-                      <ReactMarkdown
-                        components={{
-                          h1: ({children}) => <p className="font-bold text-base mb-1">{children}</p>,
-                          h2: ({children}) => <p className="font-bold text-sm mt-2 mb-1">{children}</p>,
-                          h3: ({children}) => <p className="font-semibold text-sm mt-1.5 mb-0.5">{children}</p>,
-                          strong: ({children}) => <strong className="font-semibold">{children}</strong>,
-                          ul: ({children}) => <ul className="list-disc pl-4 my-1 space-y-0.5">{children}</ul>,
-                          ol: ({children}) => <ol className="list-decimal pl-4 my-1 space-y-0.5">{children}</ol>,
-                          li: ({children}) => <li className="text-sm">{children}</li>,
-                          p: ({children}) => <p className="mb-1 last:mb-0">{children}</p>,
-                          table: ({children}) => <div className="overflow-x-auto my-1.5"><table className="text-xs border-collapse w-full">{children}</table></div>,
-                          th: ({children}) => <th className="border border-border px-2 py-1 bg-muted font-semibold text-left">{children}</th>,
-                          td: ({children}) => <td className="border border-border px-2 py-1">{children}</td>,
-                          code: ({children}) => <code className="bg-muted px-1 rounded text-xs font-mono">{children}</code>,
-                          hr: () => <hr className="border-border my-2" />,
-                        }}
-                      >
-                        {msg.content}
-                      </ReactMarkdown>
+                      <>
+                        {splitAttachmentMarkers(msg.content).map((part, pi) =>
+                          part.type === "att" ? (
+                            <AiAttachment key={pi} id={part.id} idx={part.idx} />
+                          ) : (
+                            <ReactMarkdown key={pi} components={AI_MD_COMPONENTS}>
+                              {part.text}
+                            </ReactMarkdown>
+                          )
+                        )}
+                      </>
                     ) : (
                       msg.content.split('\n').map((line, i) => (
                         <span key={i}>{i > 0 && <br />}{line}</span>
