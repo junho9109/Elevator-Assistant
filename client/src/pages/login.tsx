@@ -22,6 +22,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [orgs, setOrgs] = useState<string[]>([]);
   const [email, setEmail] = useState("");
   const [loginEmpId, setLoginEmpId] = useState("");
+  const [loginOrg, setLoginOrg] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -40,6 +41,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
     if (saved.email) setEmail(saved.email);
     if (saved.empId) setLoginEmpId(saved.empId);
+    if (saved.org) setLoginOrg(saved.org); // 마지막으로 로그인한 소속을 미리 선택
   }, []);
 
   const switchMode = (m: Mode) => {
@@ -95,6 +97,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const submit = async () => {
     setError(""); setInfo("");
     if (mode === "login") {
+      if (!loginOrg) { setError("소속을 선택하세요."); return; }
       if (!loginEmpId.trim() || !password) { setError("사번과 비밀번호를 입력하세요."); return; }
     } else {
       if (!codeSent) { setError("먼저 인증코드를 받으세요."); return; }
@@ -110,7 +113,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true);
     try {
       if (mode === "login") {
-        const { ok, data } = await postJson("/api/auth/login", { empId: loginEmpId.trim(), password });
+        const { ok, data } = await postJson("/api/auth/login", { empId: loginEmpId.trim(), org: loginOrg, password });
         if (!ok) { setError(data.error || "로그인 실패"); }
         else finishLogin(data);
       } else if (mode === "signup") {
@@ -159,6 +162,20 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               />
             </div>
           ) : (
+            <>
+            {mode === "login" && (
+              <div className="mb-4">
+                <label className={labelCls}>소속</label>
+                <select
+                  value={loginOrg}
+                  onChange={e => { setLoginOrg(e.target.value); setError(""); }}
+                  className={`${inputCls} appearance-none`}
+                >
+                  <option value="">소속을 선택하세요</option>
+                  {orgs.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+            )}
             <div className="mb-4">
               <label className={labelCls}>사번</label>
               <input
@@ -172,6 +189,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                 disabled={mode === "reset" && codeSent}
               />
             </div>
+            </>
           )}
 
           {mode !== "login" && (

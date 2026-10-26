@@ -150,6 +150,16 @@ describe("이메일 인증 가입/로그인", () => {
     expect(none.status).toBe(401);
   });
 
+  it("로그인: 선택한 소속이 등록 소속과 같으면 성공, 다르면 403, 소속 미전달은 호환상 성공", async () => {
+    const same = await request(app).post("/api/auth/login").send({ empId: EMP1, org: orgName, password: PW });
+    expect(same.status).toBe(200);
+    const diff = await request(app).post("/api/auth/login").send({ empId: EMP1, org: "__다른소속__", password: PW });
+    expect(diff.status).toBe(403);
+    expect(diff.body.error).toContain("소속");
+    const none = await request(app).post("/api/auth/login").send({ empId: EMP1, password: PW });
+    expect(none.status).toBe(200);
+  });
+
   it("로그인에 5번 실패하면 잠기고 맞는 비밀번호도 429", async () => {
     for (let i = 0; i < 5; i++) {
       await request(app).post("/api/auth/login").send({ empId: EMP1, password: "wrong-password" });

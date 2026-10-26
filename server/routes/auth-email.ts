@@ -371,6 +371,9 @@ export function registerAuthEmailRoutes(app: Express) {
       await ensureAuthTables();
       const empId = normalizeEmpId(req.body?.empId);
       const password = req.body?.password;
+      // 로그인 화면에서 고른 소속 — 비밀번호 확인 후 가입 때 등록한 소속과 비교한다.
+      // (소속 선택이 없는 예전 클라이언트 호환을 위해 값이 없으면 비교를 건너뜀)
+      const orgInput = typeof req.body?.org === "string" ? req.body.org.trim() : "";
       if (!empId || typeof password !== "string" || !password) {
         return res.status(400).json({ error: "사번과 비밀번호를 입력하세요." });
       }
@@ -386,6 +389,9 @@ export function registerAuthEmailRoutes(app: Express) {
       if (!u || !ok) {
         recordFail(lockKey);
         return res.status(401).json({ error: "사번 또는 비밀번호가 올바르지 않습니다." });
+      }
+      if (orgInput && orgInput !== u.org) {
+        return res.status(403).json({ error: "선택한 소속이 가입 시 등록한 소속과 다릅니다." });
       }
       loginFails.delete(lockKey);
       await pool.query(`UPDATE app_users SET last_login_at = NOW() WHERE id = $1`, [u.id]);
