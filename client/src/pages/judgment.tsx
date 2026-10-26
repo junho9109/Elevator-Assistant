@@ -1597,49 +1597,16 @@ export default function JudgmentPage() {
   // T < P            : "not-applicable" (조문 도입 전, 해당없음 고정)
   // P ≤ T < L        : "previous" (옛 기준 시기, 종전 가능 안내)
   // T ≥ L            : "applicable" (현행 시기, 직접 평가)
-  const getItemStatusDetail = (item: InspectionItem): { status: "applicable" | "previous" | "not-applicable"; unknownStart: boolean } => {
-    const itemReferenceDate = getReferenceDateForItem(item.id);
-    if (!itemReferenceDate) return { status: "applicable", unknownStart: false };
-
-    const edit = customEdits[item.id];
-
-    // [v3] retroactive 항목: 시점 무관 항상 검사 대상
-    const enforcementType = (edit as any)?.enforcementType;
-    if (enforcementType === 'retroactive') {
-      return { status: "applicable", unknownStart: false };
-    }
-
-    // expiryDate: 만료된 항목
-    if (item.expiryDate) {
-      const expiryDate = new Date(item.expiryDate);
-      if (itemReferenceDate > expiryDate) return { status: "not-applicable", unknownStart: false };
-    }
-
-    // [v4] P (가장 오래된 날짜) 비교
-    if (!item.effectiveDate) return { status: "applicable", unknownStart: false };
-    const P = new Date(item.effectiveDate);
-
-    if (itemReferenceDate < P) {
-      return { status: "not-applicable", unknownStart: false };  // 조문 도입 전
-    }
-
-    // [v4] 최근 개정일 L 계산 (standard_dates 중 가장 최근)
-    const standardDates: string[] = (edit as any)?.standardDates || [];
-    let L = P;  // 기본값 (개정 이력 없으면 P = L)
-    for (const dateStr of standardDates) {
-      const d = new Date(dateStr);
-      if (d > L) L = d;
-    }
-
-    // P ≤ T < L: 옛 기준 시기 (종전 가능)
-    if (itemReferenceDate < L) {
-      return { status: "previous", unknownStart: false };
-    }
-
-    // [v6] DB 연혁집 종전 데이터 기반 판정
-    const refMatches = (item.text || "").match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
-    const directRef = /^(?:6|7|8|9|1[0-7])\./.test(item.id) ? [item.id] : [];
-    const allRefs = [...new Set([...refMatches, ...directRef])];
+  // [종전 원칙] 항목이 인용한 조문 번호(본문 인용 + 내용 일치로 수동 연결한 번호)에
+  // 종전 연혁이 "직접" 있고 기준일이 그 구간 안이면 종전. 승강기 종류별 조문 번호 체계를 따른다.
+  //  - 엘리베이터: 6~17장 / 에스컬레이터: 5~7장, Ⅰ.x  (연혁 뱃지와 동일 규칙)
+  //  - 시작일 없는 종전("이전 건축허가분")은 종전으로 보되 unknownStart=true
+  const matchPreviousByRefs = (item: InspectionItem, itemReferenceDate: Date): { status: "previous"; unknownStart: boolean } | null => {
+    const numRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
+    const extra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
+    const refMatches = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${numRange})\\.\\d+(?:\\.\\d+)*${extra}`, "g")) || [];
+    const directRef = new RegExp(`^(?:${numRange})\\.`).test(item.id) ? [item.id] : [];
+    const allRefs = [...new Set([...refMatches, ...directRef, ...(EXTRA_REF_IDS[item.id] || [])])];
     let unknownStartMatch = false;
     for (const ref of allRefs) {
       const range = (previousRanges as any)[ref];
@@ -1659,9 +1626,52 @@ export default function JudgmentPage() {
         unknownStartMatch = true;
       }
     }
+    return unknownStartMatch ? { status: "previous", unknownStart: true } : null;
+  };
 
-    // 시작일 없는 종전 기준에 해당하면 종전(시작일 확인 불가)
-    if (unknownStartMatch) return { status: "previous", unknownStart: true };
+  const getItemStatusDetail = (item: InspectionItem): { status: "applicable" | "previous" | "not-applicable"; unknownStart: boolean } => {
+    const itemReferenceDate = getReferenceDateForItem(item.id);
+    if (!itemReferenceDate) return { status: "applicable", unknownStart: false };
+
+    const edit = customEdits[item.id];
+
+    // [v3] retroactive 항목: 시점 무관 항상 검사 대상
+    const enforcementType = (edit as any)?.enforcementType;
+    if (enforcementType === 'retroactive') {
+      return { status: "applicable", unknownStart: false };
+    }
+
+    // expiryDate: 만료된 항목
+    if (item.expiryDate) {
+      const expiryDate = new Date(item.expiryDate);
+      if (itemReferenceDate > expiryDate) return { status: "not-applicable", unknownStart: false };
+    }
+
+    // [v4] P (가장 오래된 날짜) 비교
+    // 도입일(effectiveDate)이 없는 항목도 인용 조문의 종전 연혁이 있으면 종전으로 판정
+    if (!item.effectiveDate) return matchPreviousByRefs(item, itemReferenceDate) || { status: "applicable", unknownStart: false };
+    const P = new Date(item.effectiveDate);
+
+    if (itemReferenceDate < P) {
+      return { status: "not-applicable", unknownStart: false };  // 조문 도입 전
+    }
+
+    // [v4] 최근 개정일 L 계산 (standard_dates 중 가장 최근)
+    const standardDates: string[] = (edit as any)?.standardDates || [];
+    let L = P;  // 기본값 (개정 이력 없으면 P = L)
+    for (const dateStr of standardDates) {
+      const d = new Date(dateStr);
+      if (d > L) L = d;
+    }
+
+    // P ≤ T < L: 옛 기준 시기 (종전 가능)
+    if (itemReferenceDate < L) {
+      return { status: "previous", unknownStart: false };
+    }
+
+    // [v6] DB 연혁집 종전 데이터 기반 판정 — 인용 조문 번호에 직접 종전 연혁이 있을 때
+    const byRefs = matchPreviousByRefs(item, itemReferenceDate);
+    if (byRefs) return byRefs;
 
     // T ≥ L: 현행 시기
     return { status: "applicable", unknownStart: false };
