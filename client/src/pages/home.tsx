@@ -385,7 +385,7 @@ function scoreMatch(
 }
 
 
-type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
+type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; retry?: boolean; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article" | "technical"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
 
@@ -2420,9 +2420,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     }
   }, [isListening, toast, stopVoiceInput]);
 
-  const sendMessage = useCallback(async (text: string, forcedEquipmentType?: "엘리베이터" | "에스컬레이터") => {
+  const sendMessage = useCallback(async (text: string, forcedEquipmentType?: "엘리베이터" | "에스컬레이터", modeOverride?: "fast" | "precise") => {
     if (!text.trim()) return;
-    const userMsg: Message = { role: "user", content: text, time: formatTime() };
+    // [2026-10] 빠른 답변이 마음에 들지 않을 때 같은 질문을 정밀 답변으로 다시 묻는 경우 modeOverride="precise".
+    // 하단 모드 토글(chatMode)은 건드리지 않고 이번 한 번만 적용한다.
+    const effMode: "fast" | "precise" = modeOverride ?? chatMode;
+    const userMsg: Message = { role: "user", content: text, time: formatTime(), ...(modeOverride ? { retry: true } : {}) };
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
 
@@ -2602,7 +2605,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     // AI API 호출
     try {
       // 대화 히스토리 구성 (최근 8개)
-      const historyMsgs = messages
+      // 재질문이면 방금 받은 빠른 답변(질문+답변 한 쌍)을 히스토리에서 빼서 정밀 답변이 그 답에 끌려가지 않게 한다.
+      const historyMsgs = (modeOverride ? messages.slice(0, -2) : messages)
         .slice(-8)
         .filter(m => m.role === "user" || m.role === "assistant")
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
@@ -2629,7 +2633,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       // ★ Rerank — Sonnet으로 정밀 관련성 판단 (Haiku→Sonnet 업그레이드)
       // 빠른 답변 모드는 속도가 최우선이라 이 별도 Claude 왕복(rerank)을 생략하고
       // 위에서 이미 점수 기준으로 걸러진 contextResults를 그대로 쓴다.
-      if (chatMode === "precise") try {
+      if (effMode === "precise") try {
         const candidates = contextResults.slice(0, 15).map((r, i) => ({
           id: String(i),
           title: r.title,
@@ -2818,7 +2822,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: historyMsgs, context, mode: chatMode,
+          messages: historyMsgs, context, mode: effMode,
           // [2026-09-29] 질문이 명확히 엘리베이터/에스컬레이터 중 하나로 판별된 경우에만
           // 서버에 전달한다. "ambiguous"까지 넘기면 서버가 그 값을 곧이곧대로 필터 조건에
           // 써버릴 위험이 있어(잘못 판별 시 있어야 할 문서까지 걸러짐), 판별이 애매한
@@ -2843,7 +2847,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         // usedSources/articleCards 등 카드 연동용 메타데이터가 함께 온다.
         setMessages(prev => {
           placeholderIdx.current = prev.length;
-          return [...prev, { role: "assistant", content: "", time: formatTime(), mode: chatMode }];
+          return [...prev, { role: "assistant", content: "", time: formatTime(), mode: effMode }];
         });
 
         const reader = resp.body.getReader();
@@ -2884,7 +2888,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
 
         data = donePayload
           ? { ...donePayload, reply: donePayload.reply !== undefined && donePayload.reply !== "" ? donePayload.reply : streamedText }
-          : { reply: streamedText, usedSources: [], articleCards: [], mode: chatMode };
+          : { reply: streamedText, usedSources: [], articleCards: [], mode: effMode };
       } else {
         data = await resp.json();
       }
@@ -4617,7 +4621,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   </div>
                 )}
                 <div className={`max-w-[80%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1.5`}>
-                  {msg.content && (
+                  {msg.role === "user" && msg.retry && (
+                    <div className="text-[11px] text-muted-foreground px-1">↳ 정밀 답변으로 다시 묻기</div>
+                  )}
+                  {msg.content && !(msg.role === "user" && msg.retry) && (
                   <div className={`rounded-2xl px-3 py-2.5 text-sm leading-relaxed ${
                     msg.role === "user"
                       ? "bg-primary text-primary-foreground rounded-tr-sm whitespace-pre-line"
@@ -4678,6 +4685,15 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   </div>
                   {msg.role === "assistant" && msg.content && i > 0 && messages[i-1]?.role === "user" && (
                     <div className="w-full">
+                      {msg.mode === "fast" && i === messages.length - 1 && !isTyping && (
+                        <button
+                          onClick={() => sendMessage(messages[i-1].content, undefined, "precise")}
+                          className="w-full flex items-center justify-center gap-1.5 text-[12px] font-semibold text-blue-600 border border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700 dark:text-blue-400 rounded-xl py-2 mb-1.5"
+                        >
+                          <Lightbulb className="w-3.5 h-3.5" />
+                          정밀 답변으로 다시 묻기
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           const q = messages[i-1].content;
