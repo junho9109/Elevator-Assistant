@@ -4966,13 +4966,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 <button
                   onClick={() => setShowQuickCalcMenu(s => !s)}
                   title="빠른 계산"
-                  className={`h-full px-2.5 flex items-center justify-center rounded-lg border transition-colors ${
+                  className={`h-full px-2 flex items-center justify-center gap-1 rounded-lg border text-[11px] max-[330px]:text-[10px] max-[330px]:px-1.5 whitespace-nowrap transition-colors ${
                     showQuickCalcMenu
                       ? "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700 text-blue-600 dark:text-blue-400"
                       : "border-border text-muted-foreground"
                   }`}
                 >
-                  <Calculator className="h-4 w-4" />
+                  <Calculator className="h-3.5 w-3.5" />빠른 계산
                 </button>
                 {showQuickCalcMenu && (
                   <>
