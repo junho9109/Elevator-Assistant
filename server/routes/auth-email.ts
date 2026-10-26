@@ -47,6 +47,18 @@ export function normalizeEmail(raw: unknown): string {
   return typeof raw === "string" ? raw.trim().toLowerCase() : "";
 }
 
+export function normalizeEmpId(raw: unknown): string {
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+// ab***@koelsa.or.kr 형태로 일부만 보여준다.
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) return "";
+  const keep = local.slice(0, 2);
+  return `${keep}${"*".repeat(Math.max(local.length - keep.length, 3))}@${domain}`;
+}
+
 export function isAllowedEmail(email: string): boolean {
   const m = /^[a-z0-9._%+\-]+@([a-z0-9.\-]+)$/.exec(email);
   if (!m || email.length > 200) return false;
@@ -357,24 +369,25 @@ export function registerAuthEmailRoutes(app: Express) {
   app.post("/api/auth/login", async (req, res) => {
     try {
       await ensureAuthTables();
-      const email = normalizeEmail(req.body?.email);
+      const empId = normalizeEmpId(req.body?.empId);
       const password = req.body?.password;
-      if (!email || typeof password !== "string" || !password) {
-        return res.status(400).json({ error: "이메일과 비밀번호를 입력하세요." });
+      if (!empId || typeof password !== "string" || !password) {
+        return res.status(400).json({ error: "사번과 비밀번호를 입력하세요." });
       }
-      if (isLocked(email)) {
+      const lockKey = `emp:${empId}`;
+      if (isLocked(lockKey)) {
         return res.status(429).json({ error: `로그인 시도가 너무 많습니다. ${LOGIN_LOCK_MIN}분 후 다시 시도하세요.` });
       }
       const { pool } = await import("../db");
-      const rows = await pool.query(`SELECT * FROM app_users WHERE email = $1`, [email]);
+      const rows = await pool.query(`SELECT * FROM app_users WHERE emp_id = $1`, [empId]);
       const u = rows.rows[0];
       // 계정이 없어도 같은 비용의 비교를 해서 응답 시간으로 가입 여부가 드러나지 않게 한다.
       const ok = await bcrypt.compare(password, u?.password_hash || "$2b$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi");
       if (!u || !ok) {
-        recordFail(email);
-        return res.status(401).json({ error: "이메일 또는 비밀번호가 올바르지 않습니다." });
+        recordFail(lockKey);
+        return res.status(401).json({ error: "사번 또는 비밀번호가 올바르지 않습니다." });
       }
-      loginFails.delete(email);
+      loginFails.delete(lockKey);
       await pool.query(`UPDATE app_users SET last_login_at = NOW() WHERE id = $1`, [u.id]);
       const role = roleOf(u);
       res.json({ token: issueToken(u, role), org: u.org, role, name: u.name, empId: u.emp_id || "", email: u.email });
@@ -387,16 +400,19 @@ export function registerAuthEmailRoutes(app: Express) {
   app.post("/api/auth/password-reset/request", async (req, res) => {
     try {
       await ensureAuthTables();
-      const email = normalizeEmail(req.body?.email);
-      if (!isAllowedEmail(email)) return res.status(400).json({ error: "올바른 회사 이메일을 입력하세요." });
+      const empId = normalizeEmpId(req.body?.empId);
+      if (!empId) return res.status(400).json({ error: "사번을 입력하세요." });
       const { pool } = await import("../db");
-      const exists = await pool.query(`SELECT 1 FROM app_users WHERE email = $1`, [email]);
-      if (exists.rows.length > 0) {
+      const rows = await pool.query(`SELECT email FROM app_users WHERE emp_id = $1`, [empId]);
+      let maskedEmail = "";
+      if (rows.rows.length > 0) {
+        const email = rows.rows[0].email as string;
         const err = await sendCode(email, "reset");
         if (err) return res.status(err.status).json({ error: err.error });
+        maskedEmail = maskEmail(email);
       }
-      // 가입 여부와 관계없이 같은 응답
-      res.json({ ok: true, expiresInMinutes: CODE_TTL_MIN });
+      // 가입 여부와 관계없이 같은 형태로 응답 (가입된 경우에만 가려진 이메일이 들어간다)
+      res.json({ ok: true, expiresInMinutes: CODE_TTL_MIN, maskedEmail });
     } catch (e) {
       console.error("[reset/request]", e);
       res.status(500).json({ error: "서버 오류" });
@@ -406,18 +422,19 @@ export function registerAuthEmailRoutes(app: Express) {
   app.post("/api/auth/password-reset", async (req, res) => {
     try {
       await ensureAuthTables();
-      const email = normalizeEmail(req.body?.email);
+      const empId = normalizeEmpId(req.body?.empId);
       const pwErr = passwordError(req.body?.password);
-      if (!isAllowedEmail(email)) return res.status(400).json({ error: "올바른 회사 이메일을 입력하세요." });
+      if (!empId) return res.status(400).json({ error: "사번을 입력하세요." });
       if (pwErr) return res.status(400).json({ error: pwErr });
       const { pool } = await import("../db");
-      const exists = await pool.query(`SELECT id FROM app_users WHERE email = $1`, [email]);
+      const exists = await pool.query(`SELECT id, email FROM app_users WHERE emp_id = $1`, [empId]);
       if (exists.rows.length === 0) return res.status(400).json({ error: "인증코드가 없거나 만료되었습니다. 코드를 다시 요청하세요." });
+      const email = exists.rows[0].email as string;
       const codeResult = await consumeCode(email, "reset", req.body?.code);
       if (!codeResult.ok) return res.status(codeResult.status).json({ error: codeResult.error });
       const hash = await bcrypt.hash(req.body.password as string, 10);
-      await pool.query(`UPDATE app_users SET password_hash = $1 WHERE email = $2`, [hash, email]);
-      loginFails.delete(email);
+      await pool.query(`UPDATE app_users SET password_hash = $1 WHERE id = $2`, [hash, exists.rows[0].id]);
+      loginFails.delete(`emp:${empId}`);
       res.json({ ok: true });
     } catch (e) {
       console.error("[reset]", e);

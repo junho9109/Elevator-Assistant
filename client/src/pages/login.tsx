@@ -21,6 +21,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [mode, setMode] = useState<Mode>("login");
   const [orgs, setOrgs] = useState<string[]>([]);
   const [email, setEmail] = useState("");
+  const [loginEmpId, setLoginEmpId] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -38,6 +39,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     fetch("/api/auth/organizations").then(r => r.ok ? r.json() : Promise.reject()).then(setOrgs).catch(() => {});
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
     if (saved.email) setEmail(saved.email);
+    if (saved.empId) setLoginEmpId(saved.empId);
   }, []);
 
   const switchMode = (m: Mode) => {
@@ -69,13 +71,23 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   };
 
   const requestCode = async () => {
-    if (!email.trim()) { setError("이메일을 입력하세요."); return; }
+    if (mode === "reset") {
+      if (!loginEmpId.trim()) { setError("사번을 입력하세요."); return; }
+    } else if (!email.trim()) { setError("이메일을 입력하세요."); return; }
     setLoading(true); setError(""); setInfo("");
     try {
       const url = mode === "signup" ? "/api/auth/signup/request" : "/api/auth/password-reset/request";
-      const { ok, data } = await postJson(url, { email });
+      const { ok, data } = await postJson(url, mode === "reset" ? { empId: loginEmpId.trim() } : { email });
       if (!ok) { setError(data.error || "인증코드 발송 실패"); }
-      else { setCodeSent(true); setInfo(`인증코드를 메일로 보냈습니다. ${data.expiresInMinutes ?? 10}분 안에 입력하세요.`); }
+      else {
+        setCodeSent(true);
+        const min = data.expiresInMinutes ?? 10;
+        setInfo(mode === "reset"
+          ? (data.maskedEmail
+              ? `가입 이메일(${data.maskedEmail})로 인증코드를 보냈습니다. ${min}분 안에 입력하세요.`
+              : `가입된 사번이면 가입 이메일로 인증코드를 보냈습니다. ${min}분 안에 입력하세요.`)
+          : `인증코드를 메일로 보냈습니다. ${min}분 안에 입력하세요.`);
+      }
     } catch { setError("서버 연결 오류"); }
     setLoading(false);
   };
@@ -83,7 +95,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const submit = async () => {
     setError(""); setInfo("");
     if (mode === "login") {
-      if (!email.trim() || !password) { setError("이메일과 비밀번호를 입력하세요."); return; }
+      if (!loginEmpId.trim() || !password) { setError("사번과 비밀번호를 입력하세요."); return; }
     } else {
       if (!codeSent) { setError("먼저 인증코드를 받으세요."); return; }
       if (!code.trim()) { setError("인증코드를 입력하세요."); return; }
@@ -98,7 +110,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setLoading(true);
     try {
       if (mode === "login") {
-        const { ok, data } = await postJson("/api/auth/login", { email, password });
+        const { ok, data } = await postJson("/api/auth/login", { empId: loginEmpId.trim(), password });
         if (!ok) { setError(data.error || "로그인 실패"); }
         else finishLogin(data);
       } else if (mode === "signup") {
@@ -108,7 +120,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         if (!ok) { setError(data.error || "가입 실패"); }
         else finishLogin(data);
       } else {
-        const { ok, data } = await postJson("/api/auth/password-reset", { email, code, password });
+        const { ok, data } = await postJson("/api/auth/password-reset", { empId: loginEmpId.trim(), code, password });
         if (!ok) { setError(data.error || "비밀번호 변경 실패"); }
         else { switchMode("login"); setInfo("비밀번호를 변경했습니다. 새 비밀번호로 로그인하세요."); }
       }
@@ -132,19 +144,35 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             {mode === "login" ? "로그인" : mode === "signup" ? "이메일 인증으로 가입" : "비밀번호 재설정"}
           </p>
 
-          <div className="mb-4">
-            <label className={labelCls}>회사 이메일</label>
-            <input
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              value={email}
-              onChange={e => { setEmail(e.target.value); setError(""); }}
-              placeholder={`아이디${EMAIL_DOMAIN_HINT}`}
-              className={inputCls}
-              disabled={mode !== "login" && codeSent}
-            />
-          </div>
+          {mode === "signup" ? (
+            <div className="mb-4">
+              <label className={labelCls}>회사 이메일</label>
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError(""); }}
+                placeholder={`아이디${EMAIL_DOMAIN_HINT}`}
+                className={inputCls}
+                disabled={codeSent}
+              />
+            </div>
+          ) : (
+            <div className="mb-4">
+              <label className={labelCls}>사번</label>
+              <input
+                type="text"
+                inputMode="text"
+                autoComplete="username"
+                value={loginEmpId}
+                onChange={e => { setLoginEmpId(e.target.value); setError(""); }}
+                placeholder="사번을 입력하세요"
+                className={inputCls}
+                disabled={mode === "reset" && codeSent}
+              />
+            </div>
+          )}
 
           {mode !== "login" && (
             <div className="mb-4">
@@ -257,7 +285,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <div className="flex justify-between mt-4 text-[12px] text-muted-foreground">
             {mode === "login" ? (
               <>
-                <button onClick={() => switchMode("signup")} className="underline">이메일로 가입</button>
+                <button onClick={() => switchMode("signup")} className="underline">회원가입</button>
                 <button onClick={() => switchMode("reset")} className="underline">비밀번호를 잊으셨나요?</button>
               </>
             ) : (

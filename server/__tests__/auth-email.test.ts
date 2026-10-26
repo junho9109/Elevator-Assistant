@@ -141,25 +141,25 @@ describe("이메일 인증 가입/로그인", () => {
   });
 
   it("로그인: 맞는 비밀번호는 성공, 틀리면 401", async () => {
-    const ok = await request(app).post("/api/auth/login").send({ email: EMAIL, password: PW });
+    const ok = await request(app).post("/api/auth/login").send({ empId: EMP1, password: PW });
     expect(ok.status).toBe(200);
     expect(ok.body.name).toBe(NAME);
-    const bad = await request(app).post("/api/auth/login").send({ email: EMAIL, password: "wrong-password" });
+    const bad = await request(app).post("/api/auth/login").send({ empId: EMP1, password: "wrong-password" });
     expect(bad.status).toBe(401);
-    const none = await request(app).post("/api/auth/login").send({ email: "__test_auth_none@koelsa.or.kr", password: PW });
+    const none = await request(app).post("/api/auth/login").send({ empId: "TESTNONE9999", password: PW });
     expect(none.status).toBe(401);
   });
 
   it("로그인에 5번 실패하면 잠기고 맞는 비밀번호도 429", async () => {
     for (let i = 0; i < 5; i++) {
-      await request(app).post("/api/auth/login").send({ email: EMAIL, password: "wrong-password" });
+      await request(app).post("/api/auth/login").send({ empId: EMP1, password: "wrong-password" });
     }
-    const r = await request(app).post("/api/auth/login").send({ email: EMAIL, password: PW });
+    const r = await request(app).post("/api/auth/login").send({ empId: EMP1, password: PW });
     expect(r.status).toBe(429);
   });
 
   it("verify: 발급한 토큰은 통과, 이메일 없는 예전 토큰은 401", async () => {
-    const login = await request(app).post("/api/auth/login").send({ email: EMAIL, password: PW });
+    const login = await request(app).post("/api/auth/login").send({ empId: EMP1, password: PW });
     const good = await request(app).get("/api/auth/verify").set("Authorization", `Bearer ${login.body.token}`);
     expect(good.status).toBe(200);
     expect(good.body.email).toBe(EMAIL);
@@ -171,21 +171,23 @@ describe("이메일 인증 가입/로그인", () => {
 
   it("비밀번호 재설정: 코드 확인 후 새 비밀번호로 로그인된다", async () => {
     await skipCooldown(EMAIL);
-    const r1 = await request(app).post("/api/auth/password-reset/request").send({ email: EMAIL });
+    const r1 = await request(app).post("/api/auth/password-reset/request").send({ empId: EMP1 })
+    expect(r1.body.maskedEmail).toMatch(/^__\*+@koelsa\.or\.kr$/);
     expect(r1.status).toBe(200);
     expect(lastCode).toMatch(/^\d{6}$/);
-    const r2 = await request(app).post("/api/auth/password-reset").send({ email: EMAIL, code: lastCode, password: "new-password-2" });
+    const r2 = await request(app).post("/api/auth/password-reset").send({ empId: EMP1, code: lastCode, password: "new-password-2" });
     expect(r2.status).toBe(200);
-    const oldPw = await request(app).post("/api/auth/login").send({ email: EMAIL, password: PW });
+    const oldPw = await request(app).post("/api/auth/login").send({ empId: EMP1, password: PW });
     expect(oldPw.status).toBe(401);
-    const newPw = await request(app).post("/api/auth/login").send({ email: EMAIL, password: "new-password-2" });
+    const newPw = await request(app).post("/api/auth/login").send({ empId: EMP1, password: "new-password-2" });
     expect(newPw.status).toBe(200);
   });
 
-  it("가입되지 않은 이메일로 재설정을 요청해도 같은 응답이고 메일은 가지 않는다", async () => {
+  it("가입되지 않은 사번으로 재설정을 요청해도 같은 응답이고 메일은 가지 않는다", async () => {
     const before = sentCount;
-    const r = await request(app).post("/api/auth/password-reset/request").send({ email: "__test_auth_ghost@koelsa.or.kr" });
+    const r = await request(app).post("/api/auth/password-reset/request").send({ empId: "TESTGHOST999" });
     expect(r.status).toBe(200);
+    expect(r.body.maskedEmail).toBe("");
     expect(sentCount).toBe(before);
   });
 });
