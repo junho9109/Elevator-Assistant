@@ -549,7 +549,7 @@ export default function JudgmentPage() {
   // 조문번호가 종류마다 다른 안전기준 문서를 가리키므로(예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문)
   // 반드시 현재 선택된 equipmentType으로 걸러서 사용해야 한다.
   const [revisionCountsByType, setRevisionCountsByType] = useState<Record<string, Record<string, number>>>({});
-  const [previousRangesByType, setPreviousRangesByType] = useState<Record<string, Record<string, { minDate: string; maxExpiry: string }>>>({});
+  const [previousRangesByType, setPreviousRangesByType] = useState<Record<string, Record<string, { minDate: string | null; maxExpiry: string; unknownStart?: boolean; unknownStartExpiry?: string }>>>({});
   const [refRevisions, setRefRevisions] = useState<{refId: string; versions: any[]}[]>([]);
   // 연혁 이동/삭제 (관리자 모드) — 잘못 매핑된 연혁을 다른 조문으로 옮기거나 지운다.
   const [moveRevisionTarget, setMoveRevisionTarget] = useState<{ id: number; currentRefId: string } | null>(null);
@@ -1597,30 +1597,30 @@ export default function JudgmentPage() {
   // T < P            : "not-applicable" (조문 도입 전, 해당없음 고정)
   // P ≤ T < L        : "previous" (옛 기준 시기, 종전 가능 안내)
   // T ≥ L            : "applicable" (현행 시기, 직접 평가)
-  const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => {
+  const getItemStatusDetail = (item: InspectionItem): { status: "applicable" | "previous" | "not-applicable"; unknownStart: boolean } => {
     const itemReferenceDate = getReferenceDateForItem(item.id);
-    if (!itemReferenceDate) return "applicable";
+    if (!itemReferenceDate) return { status: "applicable", unknownStart: false };
 
     const edit = customEdits[item.id];
 
     // [v3] retroactive 항목: 시점 무관 항상 검사 대상
     const enforcementType = (edit as any)?.enforcementType;
     if (enforcementType === 'retroactive') {
-      return "applicable";
+      return { status: "applicable", unknownStart: false };
     }
 
     // expiryDate: 만료된 항목
     if (item.expiryDate) {
       const expiryDate = new Date(item.expiryDate);
-      if (itemReferenceDate > expiryDate) return "not-applicable";
+      if (itemReferenceDate > expiryDate) return { status: "not-applicable", unknownStart: false };
     }
 
     // [v4] P (가장 오래된 날짜) 비교
-    if (!item.effectiveDate) return "applicable";
+    if (!item.effectiveDate) return { status: "applicable", unknownStart: false };
     const P = new Date(item.effectiveDate);
 
     if (itemReferenceDate < P) {
-      return "not-applicable";  // 조문 도입 전
+      return { status: "not-applicable", unknownStart: false };  // 조문 도입 전
     }
 
     // [v4] 최근 개정일 L 계산 (standard_dates 중 가장 최근)
@@ -1633,26 +1633,41 @@ export default function JudgmentPage() {
 
     // P ≤ T < L: 옛 기준 시기 (종전 가능)
     if (itemReferenceDate < L) {
-      return "previous";
+      return { status: "previous", unknownStart: false };
     }
 
     // [v6] DB 연혁집 종전 데이터 기반 판정
     const refMatches = (item.text || "").match(/(?<![\d.])(?:6|7|8|9|1[0-7])\.\d+(?:\.\d+)*/g) || [];
     const directRef = /^(?:6|7|8|9|1[0-7])\./.test(item.id) ? [item.id] : [];
     const allRefs = [...new Set([...refMatches, ...directRef])];
+    let unknownStartMatch = false;
     for (const ref of allRefs) {
       const range = (previousRanges as any)[ref];
       if (!range) continue;
-      const minDate = new Date(range.minDate);
       const maxExpiry = range.maxExpiry ? new Date(range.maxExpiry) : new Date("2022-03-01");
+      // 시작일 없는 종전("OOOO-MM-DD 이전 건축허가분"뿐): 만료일 이전이면 종전, 시작일은 확인 불가로 표시
+      if (!range.minDate) {
+        if (itemReferenceDate <= maxExpiry) unknownStartMatch = true;
+        continue;
+      }
+      const minDate = new Date(range.minDate);
       if (itemReferenceDate >= minDate && itemReferenceDate <= maxExpiry) {
-        return "previous";
+        return { status: "previous", unknownStart: false };
+      }
+      // 시작일 있는 연혁 앞에 "이전 건축허가분"(시작일 없음)이 따로 있으면 그 만료일 이전도 종전(시작일 확인 불가)
+      if (range.unknownStartExpiry && itemReferenceDate <= new Date(range.unknownStartExpiry)) {
+        unknownStartMatch = true;
       }
     }
 
+    // 시작일 없는 종전 기준에 해당하면 종전(시작일 확인 불가)
+    if (unknownStartMatch) return { status: "previous", unknownStart: true };
+
     // T ≥ L: 현행 시기
-    return "applicable";
+    return { status: "applicable", unknownStart: false };
   };
+
+  const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => getItemStatusDetail(item).status;
 
   // ═══════════════════════════════════════════════════════════════════
   // [v5] getAutoResults - 안내된 옵션 모두 자동 선택 (배열 반환)
@@ -1789,7 +1804,7 @@ export default function JudgmentPage() {
     return m ? `${+m[1]}년 ${+m[2]}월 ${+m[3]}일` : iso;
   };
 
-  const renderResultButton = (itemId: string, resultType: ResultType, status: "applicable" | "previous" | "not-applicable", autoResults: ResultType[]) => {
+  const renderResultButton = (itemId: string, resultType: ResultType, status: "applicable" | "previous" | "not-applicable", autoResults: ResultType[], unknownStart = false) => {
     const userResults = results[itemId];
     const hasUserChoice = userResults !== undefined;
     const isSelected = hasUserChoice 
@@ -1805,9 +1820,14 @@ export default function JudgmentPage() {
       : resultType;
 
     if (isSelected) {
+      // 종전 시작일을 확인할 수 없는 종전(자동 선택)은 주황 점선으로 구분해 연혁 확인을 유도한다.
+      const unknownPrev = resultType === "종전" && unknownStart && isAutoSelected;
       return (
         <button
-          className={cn(baseClasses, "bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-600")}
+          title={unknownPrev ? "종전 기준 시작일 확인 불가 (이전 건축허가분) — 연혁 확인" : undefined}
+          className={cn(baseClasses, unknownPrev
+            ? "bg-amber-100 text-amber-700 border-amber-500 border-dashed dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-600"
+            : "bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-600")}
           onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
           data-testid={`result-${itemId}-${resultType}`}
         >
@@ -1835,7 +1855,9 @@ export default function JudgmentPage() {
 
   const renderItem = (originalItem: InspectionItem) => {
     const item = getItemWithEdits(originalItem);
-    const status = getItemStatus(item);
+    const statusDetail = getItemStatusDetail(item);
+    const status = statusDetail.status;
+    const prevUnknownStart = statusDetail.unknownStart;
     const autoResults = getAutoResults(item);  // [v5] 다중 선택용 배열
     const hasCustomEdit = !!(serverEdits && serverEdits.some((e: any) => e.itemId === item.id));
     // 연혁 뱃지 — 승강기 종류별 안전기준 참조 조문이 있고(엘리베이터 6~17장, 에스컬레이터 5~7장)
@@ -1915,7 +1937,7 @@ export default function JudgmentPage() {
             <div className="w-9 flex justify-center">{renderResultButton(item.id, "부적합", status, autoResults)}</div>
             <div className="w-9 flex justify-center">{renderResultButton(item.id, "시정권고", status, autoResults)}</div>
             <div className="w-9 flex justify-center">{renderResultButton(item.id, "해당없음", status, autoResults)}</div>
-            <div className="w-9 flex justify-center">{renderResultButton(item.id, "종전", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "종전", status, autoResults, prevUnknownStart)}</div>
           </div>
           {isAdminMode && item.id.startsWith("custom-") && (
             <button

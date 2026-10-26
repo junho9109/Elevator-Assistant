@@ -2445,7 +2445,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             AND effective_date IS NOT NULL
             GROUP BY equipment_type, item_id`
       );
-      const result: Record<string, Record<string, { minDate: string; maxExpiry: string }>> = {};
+      const result: Record<string, Record<string, { minDate: string | null; maxExpiry: string; unknownStart?: boolean; unknownStartExpiry?: string }>> = {};
       (rows.rows || rows).forEach((r: any) => {
         const eqType = r.equipment_type || "엘리베이터";
         if (!result[eqType]) result[eqType] = {};
@@ -2453,6 +2453,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           minDate: r.min_date,
           maxExpiry: r.max_expiry,
         };
+      });
+      // 종전 기준이 "OOOO-MM-DD 이전 건축허가분"뿐이라 시작일(effective_date)이 없는 항목:
+      // 시작일은 알 수 없지만 만료일 이전은 종전이므로 minDate=null, unknownStart=true로 함께 내려준다.
+      const noStart = await db.execute(
+        sql`SELECT equipment_type, item_id, MAX(expiry_date) as max_expiry
+            FROM inspection_item_revisions
+            WHERE introduction_type = 'old'
+            AND effective_date IS NULL
+            AND expiry_date IS NOT NULL
+            GROUP BY equipment_type, item_id`
+      );
+      (noStart.rows || noStart).forEach((r: any) => {
+        const eqType = r.equipment_type || "엘리베이터";
+        if (!result[eqType]) result[eqType] = {};
+        const exist = result[eqType][r.item_id];
+        if (exist) {
+          // 시작일 있는 연혁도 함께 있는 항목: 가장 오래된 "이전 건축허가분"의 만료일을 별도로 내려준다.
+          exist.unknownStartExpiry = r.max_expiry;
+          return;
+        }
+        result[eqType][r.item_id] = { minDate: null, maxExpiry: r.max_expiry, unknownStart: true };
       });
       res.json(result);
     } catch (e) {
