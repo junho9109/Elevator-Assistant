@@ -1105,7 +1105,7 @@ export default function SafetyPage({ org = "", name = "", role = "user", isActiv
   }
 
   const guides = [
-    { id:"cpr", title:"심폐소생술 (CPR)", icon:"❤️", video:"https://www.youtube.com/embed/2ZIdOeTZRMk", content:`【심폐소생술 전 확인사항】
+    { id:"cpr", title:"심폐소생술 (CPR)", icon:"❤️", video:"https://www.youtube.com/embed/2ZIdOeTZRMk", videoLabel:"교육 영상 (보건복지부·소방청)", videoTitle:"심폐소생술 교육 영상", content:`【심폐소생술 전 확인사항】
 
 1️⃣ 현장 안전 확인
 • 환자에게 접근 전 현장이 안전한지 판단
@@ -1142,7 +1142,7 @@ export default function SafetyPage({ org = "", name = "", role = "user", isActiv
 • 2분마다 교대하며 구급대원 올 때까지 반복
 
 출처: 보건복지부·질병관리본부·소방청·대한심폐소생협회` },
-    { id:"fall", title:"추락 사고 응급처치", icon:"🚨", content:`【추락 사고 처치】\n\n⚠️ 척추 손상 의심 시 절대 이동 금지\n\n1️⃣ 현장 안전 확인 후 119 신고\n2️⃣ 의식·호흡 확인\n3️⃣ 의식 없고 호흡 없으면 → CPR 실시\n4️⃣ 출혈 시 → 깨끗한 천으로 압박지혈\n5️⃣ 골절 의심 시 → 부목으로 고정` },
+    { id:"fall", title:"추락·골절 사고 응급처치", icon:"🚨", video:"https://www.youtube.com/embed/ZWkVO1wed3c", videoLabel:"교육 영상 (농촌진흥청 농업인안전365 · 골절 손상 응급처치)", videoTitle:"골절 손상 응급처치 교육 영상", content:`【추락·골절 사고 처치】\n\n⚠️ 척추 손상 의심 시 절대 이동 금지\n\n1️⃣ 현장 안전 확인 후 119 신고\n2️⃣ 의식·호흡 확인\n   · 의식 없고 호흡 없으면 → CPR 실시\n3️⃣ 출혈 시 → 깨끗한 천으로 압박지혈\n4️⃣ 환자 안정\n   · 다친 부위를 무리하게 움직이지 않도록 주의합니다.\n   · 환자가 편안한 자세로 쉴 수 있도록 유도합니다.\n5️⃣ 압박 및 고정\n   · 부목과 붕대 등을 사용하여 손상 부위를 안정적으로 압박·고정합니다.\n   · 통증을 줄여 주고 다친 부위의 추가 변형을 방지합니다.\n6️⃣ 들어 올리기\n   · 응급처치가 끝난 뒤, 다친 부위를 쿠션이나 베개 위에 올려 높게 받쳐 줍니다.` },
     { id:"electric", title:"감전 사고 응급처치", icon:"⚡", content:`【감전 사고 처치】\n\n⚠️ 직접 접촉 금지! 2차 감전 위험\n\n1️⃣ 전원 차단 (주개폐기 OFF)\n2️⃣ 119 신고\n3️⃣ 절연 도구로 환자 분리\n4️⃣ 의식·호흡 확인\n5️⃣ 호흡 없으면 → CPR 실시\n6️⃣ 화상 부위 → 냉수로 15~20분 냉각` },
     { id:"cut", title:"절상/열상 응급처치", icon:"🩹", content:`【절상/열상 처치】\n\n1️⃣ 장갑 착용 후 처치\n2️⃣ 깨끗한 천·거즈로 상처 압박\n3️⃣ 5~10분간 지속 압박\n4️⃣ 출혈 심하면 → 심장보다 높이\n5️⃣ 지혈 후 → 소독제 처리\n\n⚠️ 이물질이 박힌 경우 제거하지 말 것` },
     { id:"fire", title:"화재 발생 시 대처", icon:"🔥", content:`【화재 대처】\n\n1️⃣ "불이야!" 외치기\n2️⃣ 119 신고\n3️⃣ 초기 소화 판단\n\n【소화기 PASS】\nP - 안전핀 뽑기\nA - 노즐 불쪽으로\nS - 레버 꽉 쥐기\nS - 빗자루처럼 쓸기\n\n4️⃣ 대피 시 젖은 수건으로 코·입 막기\n5️⃣ 엘리베이터 금지 → 계단 이용` },
@@ -1217,14 +1217,14 @@ export default function SafetyPage({ org = "", name = "", role = "user", isActiv
                   <div className="border-t bg-gray-50">
                     {(g as any).video && (
                       <div className="px-4 pt-4">
-                        <p className="text-xs font-medium text-gray-500 mb-2">📹 교육 영상 (보건복지부·소방청)</p>
+                        <p className="text-xs font-medium text-gray-500 mb-2">📹 {(g as any).videoLabel || "교육 영상"}</p>
                         <div className="relative w-full rounded-xl overflow-hidden bg-black" style={{paddingTop:"56.25%"}}>
                           <iframe
                             src={(g as any).video}
                             className="absolute inset-0 w-full h-full"
                             allow="autoplay"
                             allowFullScreen
-                            title="심폐소생술 교육 영상"
+                            title={(g as any).videoTitle || g.title}
                           />
                         </div>
                       </div>
