@@ -6,6 +6,7 @@ import Fuse from "fuse.js";
 import { Search, Plus, X, Calendar, Pencil, Trash2, Settings, ImageIcon, Send, Bot, User, Zap, Lightbulb, ZoomIn, ZoomOut, Mic, MicOff, MessageCircle, Check, Calculator, Flag, ChevronDown, ChevronUp } from "lucide-react";
 import ViewerCloseButton from "@/components/ViewerCloseButton";
 import { Capacitor } from "@capacitor/core";
+import { NativeAsk } from "@/lib/nativeAsk";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { useToast } from "@/hooks/use-toast";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
@@ -3030,6 +3031,38 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     }
     setIsTyping(false);
   }, [accidentStats, standards, messages, chatMode, INSPECTION_CONTENT, INSPECTION_CONTENT_ESCALATOR]);
+
+  // [2026-10] 안드로이드 알림창/빠른 설정 타일에서 입력한 질문 수신 — AI 검색 화면으로 이동해 바로 질문한다.
+  // 질문은 네이티브(NativeAskPlugin)가 보관하고 있다가 여기서 가져간다(앱이 꺼져 있다 켜진 경우 포함).
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
+  useEffect(() => {
+    if (defaultTab !== "chat" || !Capacitor.isNativePlatform()) return;
+    let removed = false;
+    let handle: { remove: () => Promise<void> } | null = null;
+    const pull = async () => {
+      try {
+        const { text } = await NativeAsk.getPending();
+        const q = (text || "").trim();
+        if (!q) return;
+        window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 0 } }));
+        sendMessageRef.current(q);
+      } catch {
+        // 네이티브 플러그인이 없는 구버전 앱이면 조용히 무시
+      }
+    };
+    const onVisible = () => { if (document.visibilityState === "visible") pull(); };
+    pull();
+    document.addEventListener("visibilitychange", onVisible);
+    NativeAsk.addListener("ask", pull)
+      .then(h => { if (removed) h.remove(); else handle = h; })
+      .catch(() => {});
+    return () => {
+      removed = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      handle?.remove();
+    };
+  }, [defaultTab]);
 
   // 리더라인 설정 (카드 오프셋 저장값 우선, 없으면 자동 계산)
   const getCardOffset = useCallback((hotspot: Hotspot, canvasW: number, canvasH: number) => {

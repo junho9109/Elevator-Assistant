@@ -4,4 +4,14 @@
     <string name="title_activity_main">검사통합검색앱</string>
     <string name="package_name">com.junho.elevatorassistant</string>
     <string name="custom_url_scheme">com.junho.elevatorassistant</string>
+    <string name="quick_ask_title">AI 질문</string>
+    <string name="quick_ask_hint">마이크를 눌러 말하거나 아래에서 글자로 입력하세요</string>
+    <string name="quick_ask_mic_desc">음성으로 질문</string>
+    <string name="quick_ask_text_action">텍스트로 질문</string>
+    <string name="quick_ask_input_label">질문을 입력하세요</string>
+    <string name="quick_ask_channel">빠른 AI 질문</string>
+    <string name="quick_ask_channel_desc">알림창에서 바로 AI 검색에 질문합니다</string>
+    <string name="quick_ask_voice_prompt">질문을 말씀해 주세요</string>
+    <string name="quick_ask_voice_unavailable">음성 인식을 사용할 수 없습니다. 알림창의 \'텍스트로 질문\'을 이용해 주세요.</string>
+    <string name="quick_ask_tile_label">AI 질문</string>
 </resources>
