@@ -22,7 +22,6 @@ function todayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-const ADMIN_PASSWORD = "910919";
 const NOTICE_DATE_KEY = "precisionInspectionNoticeDate";
 
 // ══════════════════════════════════════════════════════════════
