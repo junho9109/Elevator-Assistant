@@ -467,19 +467,16 @@ interface CustomItemEdit {
 
 type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
 
-type EquipmentType = "엘리베이터" | "에스컬레이터" | "덤웨이터" | "휠체어리프트";
+type EquipmentType = "엘리베이터" | "에스컬레이터";
 type ElevatorSubType = "전기식(MR)" | "전기식(MRL)" | "유압식" | "경사형";
-type EscalatorSubType = "에스컬레이터" | "무빙워크";
-type WheelchairLiftSubType = "수직형" | "경사형";
+type EscalatorSubType = "에스컬레이터";
 
 // 세부 종류 노출 목록 — 전기식(MRL)·유압식·경사형은 준비되는 대로 아래 배열에 다시 추가할 것
 // (내부 값 "전기식(MR)"은 데이터 태그("엘리베이터-전기식(MR)")와의 호환을 위해 그대로 유지,
 //  화면 표시 라벨만 SUBTYPE_LABELS에서 "전기식"으로 바꿔서 보여줌)
 const EQUIPMENT_SUBTYPES: Record<EquipmentType, string[]> = {
   "엘리베이터": ["전기식(MR)"],
-  "에스컬레이터": ["에스컬레이터", "무빙워크"],
-  "덤웨이터": [],
-  "휠체어리프트": ["수직형", "경사형"]
+  "에스컬레이터": ["에스컬레이터"],
 };
 
 // 세부 종류 표시용 라벨 (내부 값은 EQUIPMENT_SUBTYPES/데이터 태그와 동일하게 유지)
@@ -1561,8 +1558,6 @@ export default function JudgmentPage() {
   const sectionPrefix = useMemo(() => {
     if (equipmentType === "엘리베이터") return subType === "경사형" ? "2" : "1";
     if (equipmentType === "에스컬레이터") return "3";
-    if (equipmentType === "덤웨이터") return "4";
-    if (equipmentType === "휠체어리프트") return subType === "경사형" ? "6" : "5";
     return "1";
   }, [equipmentType, subType]);
 
@@ -2096,8 +2091,6 @@ export default function JudgmentPage() {
                 <SelectContent>
                   <SelectItem value="엘리베이터">엘리베이터</SelectItem>
                   <SelectItem value="에스컬레이터">에스컬레이터</SelectItem>
-                  <SelectItem value="덤웨이터">덤웨이터</SelectItem>
-                  <SelectItem value="휠체어리프트">휠체어리프트</SelectItem>
                 </SelectContent>
               </Select>
             </div>
