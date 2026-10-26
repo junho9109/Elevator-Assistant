@@ -3,6 +3,7 @@ import { trackActivity } from "@/lib/activity";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, Search, X, FileCheck, Pencil, Settings, Lock, Plus, Info, ZoomIn, ZoomOut, History, ArrowRightLeft, Trash2 } from "lucide-react";
+import ViewerCloseButton from "@/components/ViewerCloseButton";
 import { Button } from "@/components/ui/button";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
@@ -286,7 +287,7 @@ function TreeNode({ sec, map, depth, activeKey, onSelect, onInteract }: {
               className="shrink-0 p-0.5 -m-0.5"
               aria-label={open ? "하위 항목 접기" : "하위 항목 펼치기"}
             >
-              {open ? <ChevronDown size={12} className="text-muted-foreground" /> : <ChevronRight size={12} className="text-muted-foreground" />}
+              {open ? <ChevronDown size={12} className="text-blue-600" /> : <ChevronRight size={12} className="text-blue-600" />}
             </button>
           )
           : <span className="w-3" />}
@@ -418,7 +419,7 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
 
         {/* 사진 전체화면 뷰어 — body에 직접 렌더링 (SwipeNavigator의 pinch-zoom transform 컨테이너를 벗어나야 태블릿에서 fixed 위치가 정상 동작함) */}
         {photoViewer.open && photos.length > 0 && createPortal(
-          <div data-no-page-pinch="true" className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={() => setPhotoViewer({ open: false, idx: 0 })}>
+          <div data-no-page-pinch="true" className="fixed inset-0 z-50 bg-black/90 flex flex-col" onPointerDown={ev => ev.stopPropagation()} onClick={ev => { ev.stopPropagation(); setPhotoViewer({ open: false, idx: 0 }); }}>
             <div className="flex items-center justify-between px-4 py-3 shrink-0" onClick={ev => ev.stopPropagation()}>
               <span className="text-white text-xs">{photoViewer.idx + 1} / {photos.length}</span>
               <div className="flex items-center gap-3">
@@ -432,7 +433,7 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
                     }}
                   >삭제</button>
                 )}
-                <button onClick={() => setPhotoViewer({ open: false, idx: 0 })} className="text-white/70 text-lg">✕</button>
+                <ViewerCloseButton onClose={() => setPhotoViewer({ open: false, idx: 0 })} />
               </div>
             </div>
             <div
