@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { isAdminIdentity } from "./admin-identity";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import Anthropic from "@anthropic-ai/sdk";
@@ -1134,7 +1135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/ppe", async (req, res) => {
     try {
       const { employeeId, employeeName, admin } = req.query as { employeeId?: string; employeeName?: string; admin?: string };
-      const isAdmin = admin === "true" || (employeeId === "910919" && employeeName === "노준호");
+      const isAdmin = admin === "true" || isAdminIdentity(employeeId, employeeName);
       const items = await storage.getAllPpeItems();
       if (isAdmin) {
         res.json(items);
@@ -1443,7 +1444,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { eq } = await import("drizzle-orm");
       const id = parseInt(req.params.id);
       const { employeeId, employeeName, admin } = req.query as { employeeId?: string; employeeName?: string; admin?: string };
-      const isAdmin = admin === "true" || (employeeId === "910919" && employeeName === "노준호");
+      const isAdmin = admin === "true" || isAdminIdentity(employeeId, employeeName);
       const [item] = await db.select().from(riskHazardItems).where(eq(riskHazardItems.id, id));
       if (!item) return res.status(404).json({ error: "Not found" });
       if (!isAdmin && item.registeredById !== employeeId) {
@@ -3690,7 +3691,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
       const { employeeId: reqEmployeeId, employeeName: reqEmployeeName, admin } = req.query as {
         employeeId?: string; employeeName?: string; admin?: string;
       };
-      const isAdmin = admin === "true" || (reqEmployeeId === "910919" && reqEmployeeName === "노준호");
+      const isAdmin = admin === "true" || isAdminIdentity(reqEmployeeId, reqEmployeeName);
 
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);

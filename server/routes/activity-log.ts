@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { isAdminIdentity } from "../admin-identity";
 
 // ── 자료 조회 기록 API ──────────────────────────────────────────────
 // [2026-10] AI 질문 없이 자료만 조회하는 이용자가 있는지 파악하기 위한 활동 로그.
@@ -16,7 +17,7 @@ const ALLOWED_PAGES = new Set([
 
 function isAdminRequest(req: any): boolean {
   const { admin, employeeId, employeeName } = req.query as { admin?: string; employeeId?: string; employeeName?: string };
-  return admin === "true" || (employeeId === "910919" && employeeName === "노준호");
+  return admin === "true" || isAdminIdentity(employeeId, employeeName);
 }
 
 export function registerActivityLogRoutes(app: Express) {

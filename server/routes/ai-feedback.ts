@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { ADMIN_EMP_IDS, ADMIN_NAME } from "../admin-identity";
 import { ensurePushTokenColumn } from "../ensure-push-column";
 
 // ── Firebase Admin SDK 초기화 (부정 피드백 누적 시 관리자 FCM 알림용) ──
@@ -202,7 +203,7 @@ export function registerAiFeedbackRoutes(app: Express) {
         try {
           if (firebaseAdmin) {
             await ensurePushTokenColumn(pool);
-            const tokenRows = await pool.query(`SELECT token FROM push_tokens WHERE employee_id = ANY($1)`, [["910919", "노준호"]]);
+            const tokenRows = await pool.query(`SELECT token FROM push_tokens WHERE employee_id = ANY($1)`, [[...ADMIN_EMP_IDS, ADMIN_NAME]]);
             const tokens = tokenRows.rows.map((r: any) => r.token).filter(Boolean);
             await Promise.allSettled(
               tokens.map((token: string) =>
