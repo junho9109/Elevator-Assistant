@@ -178,6 +178,24 @@ async function ensureChatTable() {
     // 순수 추가 컬럼이라 되돌릴 때도 DROP COLUMN 한 줄이면 충분하다.
     await pool.query(`ALTER TABLE ai_answer_pool ADD COLUMN IF NOT EXISTS last_reviewed_at TIMESTAMP`);
 
+    // [2026-10] 되묻기 학습 — "질문 뜻이 달랐어요"로 아쉬워요가 제출된 질문 묶음은 다음에 비슷한 질문이 오면
+    // 답변 전에 먼저 되묻는다. clarify_status: 'none'(기본) / 'on'(되묻기 대상) / 'off'(관리자가 해제 — 다시 켜지지 않음).
+    // 순수 추가 컬럼·테이블이라 되돌릴 때는 DROP COLUMN / DROP TABLE 이면 충분하다.
+    await pool.query(`ALTER TABLE ai_answer_pool ADD COLUMN IF NOT EXISTS clarify_status VARCHAR(10) DEFAULT 'none' NOT NULL`);
+    await pool.query(`ALTER TABLE ai_answer_pool ADD COLUMN IF NOT EXISTS clarify_votes INTEGER DEFAULT 0 NOT NULL`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_clarify_choices (
+        id SERIAL PRIMARY KEY,
+        pool_id INTEGER,
+        question TEXT NOT NULL,
+        option_label TEXT NOT NULL,
+        option_ref TEXT,
+        employee_id VARCHAR(50),
+        created_at TIMESTAMP DEFAULT NOW() NOT NULL
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_clarify_choices_pool ON ai_clarify_choices (pool_id)`);
+
     // [2026-10-01] 연혁 "확인 요청" 신고 — 검사기준 연혁(특히 과거 문서에서 사람이 수동으로
     // 매핑한 항목)은 실제 현장 전문가가 봤을 때 "이 매핑이 이상하다"고 느낄 수 있다.
     // 관리자뿐 아니라 일반 이용자도 특정 연혁 항목을 신고할 수 있게 하고, 관리자가

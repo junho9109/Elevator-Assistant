@@ -386,9 +386,34 @@ function scoreMatch(
 }
 
 
-type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; retry?: boolean; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
+// [2026-10] 되묻기 — 아쉬워요 "질문 뜻이 달랐어요"로 학습된 질문이 다시 오면 답변 전에 선택지를 보여준다.
+type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: { label: string; ref: string }[] };
+type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; retry?: boolean; clarify?: ClarifyPrompt; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article" | "technical"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
+
+// 되묻기 선택지 — 검색 결과 중 안전기준 "조문 번호"형 항목을 장(章)·절 묶음(예: 9.8, 16.1)별로 나눠 최대 3개.
+// 설비종류별 조문 장 범위(엘리베이터 6~17장, 에스컬레이터 5~7장)에 맞는 번호만 쓰고, 검사가이드 번호(1.x)·섹션 제목은 제외한다.
+function buildClarifyOptions(results: SearchResult[], equipment: "엘리베이터" | "에스컬레이터"): { label: string; ref: string }[] {
+  const chapterOk = equipment === "에스컬레이터" ? /^(5|6|7)$/ : /^(6|7|8|9|1[0-7])$/;
+  const seen = new Set<string>();
+  const out: { label: string; ref: string }[] = [];
+  for (const r of [...results].sort((a, b) => (b.score || 0) - (a.score || 0))) {
+    if (r.type !== "inspection") continue;
+    if ((r.content || "").startsWith("검사기준 섹션")) continue;
+    const ref = (r.query || "").trim();
+    if (!/^\d+(?:\.\d+)+$/.test(ref)) continue;
+    const parts = ref.split(".");
+    if (!chapterOk.test(parts[0])) continue;
+    const group = parts.slice(0, 2).join(".");
+    if (seen.has(group)) continue;
+    seen.add(group);
+    const body = (r.title || "").replace(/^\[[^\]]*\]\s*/, "").replace(new RegExp("^" + ref.replace(/\./g, "\\.") + "\\s*"), "").trim();
+    out.push({ label: `${ref} ${body.slice(0, 28)}`.trim(), ref });
+    if (out.length >= 3) break;
+  }
+  return out;
+}
 
 // ==================== 검색결과 아코디언 ====================
 type CatGroup = { key: string; label: string; color: string; bg: string; dot: string; items: SearchResult[] };
@@ -1239,7 +1264,7 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 // ── AI 답변 피드백 버튼 ───────────────────────────────────────
 const FEEDBACK_SECTIONS = ["판정 기준", "관련 조문", "관련 표준화", "검사 시 유의사항", "계산 과정", "전체 답변"];
 const FEEDBACK_REASONS_POS = ["조문 근거가 정확함", "판정 기준이 명확함", "실무에 바로 도움됨", "종전/현행 차이 설명이 명확함", "계산 과정이 이해하기 쉬움", "간결하고 핵심만 담음"];
-const FEEDBACK_REASONS_NEG = ["조문 근거가 틀리거나 부정확함", "판정 기준이 잘못됨", "불필요한 내용이 많음", "설명이 이해하기 어려움", "질문과 관련 없는 답변"];
+const FEEDBACK_REASONS_NEG = ["조문 근거가 틀리거나 부정확함", "판정 기준이 잘못됨", "불필요한 내용이 많음", "설명이 이해하기 어려움", "질문과 관련 없는 답변", "질문 뜻이 달랐어요"];
 
 function FeedbackModal({ rating, onSubmit, onSkip, onClose }: { rating: 1 | -1; onSubmit: (sections: string[], reasons: string[], comment: string) => void; onSkip: () => void; onClose: () => void }) {
   const [sections, setSections] = React.useState<string[]>([]);
@@ -2075,6 +2100,23 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     },
     enabled: showAiFeedbackPanel,
   });
+  // [2026-10] 되묻기 켜기/끄기 (관리자) — 끄면 이후 아쉬워요가 와도 다시 켜지지 않는다.
+  const setClarifyCluster = useMutation({
+    mutationFn: async ({ id, enabled }: { id: number; enabled: boolean }) => {
+      const r = await fetch(`/api/ai-feedback/clusters/${id}/clarify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!r.ok) throw new Error();
+      return r.json();
+    },
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-feedback/clusters"] });
+      toast({ title: v.enabled ? "되묻기를 켰습니다." : "되묻기를 해제했습니다." });
+    },
+    onError: () => toast({ title: "되묻기 설정에 실패했습니다.", variant: "destructive" }),
+  });
   const excludeAiFeedbackCluster = useMutation({
     mutationFn: async (id: number) => {
       const r = await fetch(`/api/ai-feedback/clusters/${id}/exclude`, { method: "POST" });
@@ -2421,7 +2463,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     }
   }, [isListening, toast, stopVoiceInput]);
 
-  const sendMessage = useCallback(async (text: string, forcedEquipmentType?: "엘리베이터" | "에스컬레이터", modeOverride?: "fast" | "precise") => {
+  const sendMessage = useCallback(async (text: string, forcedEquipmentType?: "엘리베이터" | "에스컬레이터", modeOverride?: "fast" | "precise", skipClarify?: boolean) => {
     if (!text.trim()) return;
     // [2026-10] 빠른 답변이 마음에 들지 않을 때 같은 질문을 정밀 답변으로 다시 묻는 경우 modeOverride="precise".
     // 하단 모드 토글(chatMode)은 건드리지 않고 이번 한 번만 적용한다.
@@ -2500,7 +2542,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
     // ⑩ Query Rewriting(서버 API, Haiku) + 채팅 메시지 검색 — 서로 독립적이므로 병렬 실행
     // (예전엔 Query Rewriting을 먼저 끝까지 기다린 뒤에야 채팅 검색을 시작해 두 번의
     // 네트워크 왕복이 그대로 더해졌음)
-    const [qrQueries, chatMsgsRaw] = await Promise.all([
+    const [qrQueries, chatMsgsRaw, clarifyPoolId] = await Promise.all([
       (async (): Promise<string[]> => {
         try {
           const qrRes = await fetch("/api/query-rewrite", {
@@ -2521,6 +2563,26 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           if (chatRes.ok) return await chatRes.json();
         } catch {}
         return [];
+      })(),
+      // [2026-10] 되묻기 대상 질문인지 확인(다른 조회와 병렬이라 보통 추가 지연이 없다). 실패·지연 시 정상 답변으로 진행.
+      (async (): Promise<number | null> => {
+        if (skipClarify || modeOverride) return null;
+        try {
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 2500);
+          const cr = await fetch("/api/clarify-check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: text }),
+            signal: ctl.signal,
+          });
+          clearTimeout(timer);
+          if (cr.ok) {
+            const cd = await cr.json();
+            if (cd?.clarify && typeof cd.poolId === "number") return cd.poolId as number;
+          }
+        } catch {}
+        return null;
       })(),
     ]);
     const searchQueries: string[] = qrQueries.length > 0
@@ -2557,6 +2619,23 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         }))
         .sort((a, b) => (b.score || 0) - (a.score || 0));
       if (merged.length > 0) results = merged;
+    }
+
+    // [2026-10] 되묻기 — 비슷한 질문에서 "질문 뜻이 달랐어요"가 제출된 적이 있으면 답변 전에 먼저 선택지를 보여준다.
+    // 선택지가 2개 미만이면(되물을 거리가 없으면) 되묻지 않고 정상 답변한다.
+    if (clarifyPoolId) {
+      const clarifyEquipment: "엘리베이터" | "에스컬레이터" = equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터";
+      const clarifyOptions = buildClarifyOptions(results, clarifyEquipment);
+      if (clarifyOptions.length >= 2) {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: "질문 뜻을 정확히 확인하고 싶어요. 어떤 내용을 찾으시나요?",
+          time: formatTime(),
+          clarify: { poolId: clarifyPoolId, question: text, equipmentType: clarifyEquipment, options: clarifyOptions },
+        }]);
+        setIsTyping(false);
+        return;
+      }
     }
 
     // ── 채팅 메시지 검색 결과 처리 (위에서 이미 병렬로 조회됨, 별도 보관 — UI 표시용)
@@ -2609,7 +2688,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       // 재질문이면 방금 받은 빠른 답변(질문+답변 한 쌍)을 히스토리에서 빼서 정밀 답변이 그 답에 끌려가지 않게 한다.
       const historyMsgs = (modeOverride ? messages.slice(0, -2) : messages)
         .slice(-8)
-        .filter(m => m.role === "user" || m.role === "assistant")
+        .filter(m => (m.role === "user" || m.role === "assistant") && !m.clarify)
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
       historyMsgs.push({ role: "user", content: text });
 
@@ -2659,7 +2738,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
         }
       } catch {}
 
-      // 1) 검사기준(별표22) — 최대 2개 (score 높은 순), 항목당 600자
+      // 1) 검사기준(별표22) — 최대 6개 (score 높은 순), 항목당 900자
+      // [2026-10] 예전엔 2개·600자라 여러 조항에 걸친 주제 질문(예: 비상정지장치)에서 답이 단편적이었다.
       // [2026-09] SearchResult에는 원래 source 필드가 없어(searchAllData가 채운 적 없음)
       // "r.source !== 'standards_db'" 조건이 사실상 항상 참이라 아무것도 걸러내지 못하던
       // 죽은 코드였다(tsc가 Property 'source' does not exist on type 'SearchResult'로 지적).
@@ -2671,7 +2751,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
       // 에스컬레이터(별표24) 조문이 검색돼도 AI가 "[별표22] X.X" 형식으로 없는 조문을 인용하는
       // 사고가 있었다(2026-09-29 AI검색 오답 사례).
       const docLabel = equipmentType === "에스컬레이터" ? "별표24" : "별표22";
-      const inspCtx = stdResults.slice(0, 2).map(r => {
+      const inspCtx = stdResults.slice(0, 6).map(r => {
         // 날짜 데이터 포함 — inspection-content.json의 effectiveDate/revisions
         const inspEntry = (activeInspectionContent as any)[r.query || ""];
         const effectiveDate = inspEntry?.effectiveDate
@@ -2684,7 +2764,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
           title: r.title,
           ref: r.query || "",
           docLabel,
-          content: r.content.slice(0, 600) + dateInfo,
+          content: r.content.slice(0, 900) + dateInfo,
         };
       }).filter(c => c.content);
 
@@ -4349,6 +4429,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                       <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">👍{c.thumbsUp ?? c.thumbs_up} 👎{c.thumbsDown ?? c.thumbs_down}</span>
                     </div>
                     <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-md mb-1.5 ${statusMeta.cls}`}>{statusMeta.label}</span>
+                    {c.clarify_status === "on" && (
+                      <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md mb-1.5 ml-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">되묻기 대상 · 표시 {c.clarify_votes}</span>
+                    )}
+                    {c.clarify_status === "off" && (
+                      <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md mb-1.5 ml-1 border border-border text-muted-foreground">되묻기 해제됨</span>
+                    )}
                     <p className="text-[11px] text-muted-foreground mb-1.5 line-clamp-2">최근 답변: {c.answer}</p>
                     {negReasons.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-1.5">
@@ -4361,6 +4447,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                       <p className="text-[11px] text-muted-foreground italic mb-1.5">
                         {comments.map((cm, i) => `"${cm}"`).join(" · ")}
                       </p>
+                    )}
+                    {Array.isArray(c.clarifyChoices) && c.clarifyChoices.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground mb-1.5">
+                        선택 분포: {c.clarifyChoices.map((x: any) => `${x.label} ${x.cnt}`).join(" · ")}
+                      </p>
+                    )}
+                    {(c.clarify_status === "on" || c.clarify_status === "off") && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setClarifyCluster.mutate({ id: c.id, enabled: c.clarify_status === "off" }); }}
+                        disabled={setClarifyCluster.isPending}
+                        className="mt-0.5 mr-1.5 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-400"
+                      >
+                        {c.clarify_status === "on" ? "되묻기 해제" : "되묻기 다시 켜기"}
+                      </button>
                     )}
                     {c.status !== "excluded" && (
                       <button
@@ -4691,6 +4791,37 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                   {msg.calcCard === "DECELERATION" && (
                     <DecelerationCalcCard />
                   )}
+                  {msg.clarify && i === messages.length - 1 && (
+                    <div className="flex flex-col gap-1.5 mt-0.5">
+                      {msg.clarify.options.map((o) => (
+                        <button
+                          key={o.ref}
+                          onClick={() => {
+                            const c = msg.clarify!;
+                            // 선택 기록(관리자 패널 선택 분포용) — 실패해도 답변 흐름에는 영향 없음
+                            fetch("/api/clarify-choice", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ poolId: c.poolId, question: c.question, optionLabel: o.label, optionRef: o.ref, employeeId: empIdentity?.empId || undefined }),
+                            }).catch(() => {});
+                            sendMessage(`${c.question} (${o.label} 기준)`, c.equipmentType, undefined, true);
+                          }}
+                          className="text-left text-xs font-medium border border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:border-blue-700 dark:text-blue-400 rounded-xl px-3 py-2"
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => {
+                          const c = msg.clarify!;
+                          sendMessage(c.question, c.equipmentType, undefined, true);
+                        }}
+                        className="text-left text-xs font-medium border border-border rounded-xl px-3 py-2 text-muted-foreground"
+                      >
+                        그 밖의 내용 — 이 질문 그대로 답변 받기
+                      </button>
+                    </div>
+                  )}
                   {msg.needsEquipmentChoice && msg.pendingQuestion && (
                     <div className="flex gap-2 mt-0.5">
                       <button
@@ -4716,7 +4847,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                       </span>
                     )}
                   </div>
-                  {msg.role === "assistant" && msg.content && i > 0 && messages[i-1]?.role === "user" && (
+                  {msg.role === "assistant" && msg.content && !msg.clarify && i > 0 && messages[i-1]?.role === "user" && (
                     <div className="w-full">
                       {msg.mode === "fast" && i === messages.length - 1 && !isTyping && (
                         <button

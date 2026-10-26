@@ -130,6 +130,9 @@ async function applyFeedbackToPoolWithEmbedding(pool: any, question: string, ans
   return { poolId, thumbsUp, thumbsDown, newStatus, matchedExisting: !!matched, statusChangedToExcluded };
 }
 
+// [2026-10] 아쉬워요 이유 중 이 문구가 포함되면 "질문이 모호했다"는 신호로 보고, 그 질문 묶음을 되묻기 대상으로 표시한다.
+const CLARIFY_REASON = "질문 뜻이 달랐어요";
+
 export function registerAiFeedbackRoutes(app: Express) {
   // 유사 질문 검색 — approved 답변 중 가장 유사한 것 반환
   app.post("/api/ai-similar-answers", async (req, res) => {
@@ -175,7 +178,23 @@ export function registerAiFeedbackRoutes(app: Express) {
       );
 
       // 2) answer_pool 업데이트 — 질문 임베딩 유사도로 클러스터링해서 누적 (공유 헬퍼 사용)
-      const { thumbsUp, thumbsDown, newStatus, statusChangedToExcluded } = await applyFeedbackToPool(pool, question, answer, rating);
+      const { poolId: fbPoolId, thumbsUp, thumbsDown, newStatus, statusChangedToExcluded } = await applyFeedbackToPool(pool, question, answer, rating);
+
+      // 2-1) "질문 뜻이 달랐어요" — 1건만 제출돼도 이 질문 묶음을 되묻기 대상('on')으로 표시한다.
+      //      관리자가 해제('off')한 묶음은 다시 켜지 않는다.
+      if (rating === -1 && Array.isArray(reasons) && reasons.includes(CLARIFY_REASON) && fbPoolId) {
+        try {
+          await pool.query(
+            `UPDATE ai_answer_pool
+             SET clarify_votes = clarify_votes + 1,
+                 clarify_status = CASE WHEN clarify_status = 'off' THEN 'off' ELSE 'on' END
+             WHERE id = $1`,
+            [fbPoolId]
+          );
+        } catch (e) {
+          console.error("[되묻기 표시] 실패(피드백 저장은 정상):", e);
+        }
+      }
 
       // 3) 클러스터가 새로 제외(excluded) 상태로 전환되는 순간 관리자(노준호, 사번 910919)에게만 FCM 알림
       //    — 예전엔 push_tokens 전체(전 직원)에게 보내고 있었음. AI 피드백 관리는 관리자 업무이므로 한정.
@@ -277,7 +296,7 @@ export function registerAiFeedbackRoutes(app: Express) {
       const unreadTotal = unreadResult.rows[0]?.unread ?? 0;
 
       const clusterRows = await pool.query(
-        `SELECT id, question, answer, thumbs_up, thumbs_down, status, created_at, updated_at, last_reviewed_at
+        `SELECT id, question, answer, thumbs_up, thumbs_down, status, created_at, updated_at, last_reviewed_at, clarify_status, clarify_votes
          FROM ai_answer_pool
          ${whereClause}
          ORDER BY updated_at DESC
@@ -298,7 +317,13 @@ export function registerAiFeedbackRoutes(app: Express) {
             [c.question]
           );
           const isUnread = !c.last_reviewed_at || new Date(c.updated_at) > new Date(c.last_reviewed_at);
-          return { ...c, recentFeedback: feedbackRows.rows, isUnread };
+          const choiceRows = await pool.query(
+            `SELECT option_label AS label, COUNT(*)::int AS cnt
+             FROM ai_clarify_choices WHERE pool_id = $1
+             GROUP BY option_label ORDER BY cnt DESC LIMIT 5`,
+            [c.id]
+          );
+          return { ...c, recentFeedback: feedbackRows.rows, isUnread, clarifyChoices: choiceRows.rows };
         })
       );
 
@@ -335,6 +360,69 @@ export function registerAiFeedbackRoutes(app: Express) {
       res.json({ ok: true, count: result.rows.length });
     } catch (e: any) {
       res.status(500).json({ error: e.message || "일괄 읽음 처리 실패" });
+    }
+  });
+
+  // [2026-10] 되묻기 대상 확인 — 새 질문이 "되묻기 대상" 질문 묶음과 같은 취지인지 확인한다.
+  // 질문을 임베딩해 answer_pool 클러스터링과 같은 기준(유사도 0.88)으로 가장 가까운 묶음을 찾고,
+  // 그 묶음이 clarify_status='on'이면 되묻기가 필요하다고 알려 준다. 실패하면 조용히 false(정상 답변 진행).
+  app.post("/api/clarify-check", async (req, res) => {
+    try {
+      const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
+      if (!question) return res.json({ clarify: false });
+      const embedding = await getEmbedding(question);
+      if (!embedding) return res.json({ clarify: false });
+      const { pool } = await import("../db");
+      const vecStr = `[${embedding.join(",")}]`;
+      const nearest = await pool.query(
+        `SELECT id, clarify_status, 1 - (embedding <=> $1::vector) AS similarity
+         FROM ai_answer_pool WHERE embedding IS NOT NULL
+         ORDER BY embedding <=> $1::vector LIMIT 1`,
+        [vecStr]
+      );
+      const row = nearest.rows[0];
+      if (row && Number(row.similarity) >= CLUSTER_SIMILARITY_THRESHOLD && row.clarify_status === "on") {
+        return res.json({ clarify: true, poolId: row.id });
+      }
+      res.json({ clarify: false });
+    } catch (e) {
+      res.json({ clarify: false });
+    }
+  });
+
+  // [2026-10] 되묻기에서 사용자가 고른 선택지 기록 — 관리자 패널의 "선택 분포" 표시용.
+  app.post("/api/clarify-choice", async (req, res) => {
+    try {
+      const { poolId, question, optionLabel, optionRef, employeeId } = req.body || {};
+      if (typeof question !== "string" || typeof optionLabel !== "string" || !question || !optionLabel) {
+        return res.status(400).json({ error: "잘못된 요청" });
+      }
+      const { pool } = await import("../db");
+      await pool.query(
+        `INSERT INTO ai_clarify_choices (pool_id, question, option_label, option_ref, employee_id) VALUES ($1, $2, $3, $4, $5)`,
+        [Number.isFinite(Number(poolId)) ? Number(poolId) : null, question.slice(0, 500), optionLabel.slice(0, 200), typeof optionRef === "string" ? optionRef.slice(0, 50) : null, typeof employeeId === "string" ? employeeId.slice(0, 50) : null]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: "선택 기록 실패" });
+    }
+  });
+
+  // 관리자 모드: 되묻기 켜기/끄기 ('off'는 이후 아쉬워요가 와도 다시 켜지지 않는다)
+  app.post("/api/ai-feedback/clusters/:id/clarify", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const enabled = req.body?.enabled === true;
+      const { pool } = await import("../db");
+      const result = await pool.query(
+        `UPDATE ai_answer_pool SET clarify_status = $1 WHERE id = $2 RETURNING id`,
+        [enabled ? "on" : "off", id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "클러스터를 찾을 수 없습니다" });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "되묻기 설정 실패" });
     }
   });
 
