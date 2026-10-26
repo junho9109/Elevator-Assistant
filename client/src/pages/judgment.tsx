@@ -52,6 +52,11 @@ const EXTRA_REF_IDS: Record<string, string[]> = {
   "1.3.2-가": ["6.5.7.2"],
   // "부속서 Ⅳ"로만 인용되어 정규식으로 조문번호를 못 잡는 예외 항목
   "1.7.2-다": ["10.2.2.1.3"],
+  // 본문에 조문번호가 없는 텍스트형 세부 항목 — 내용이 대응하는 안전기준 조문을 수동 연결
+  "1.5.1.1-나": ["9.1.3"],
+  "1.5.3-다": ["9.6.4"],
+  "1.9.2-가": ["14.6.5"],
+  "1.14-가": ["5.2", "5.3"],
 };
 
 // Image Viewer State
@@ -1826,7 +1831,10 @@ export default function JudgmentPage() {
     // 연혁 데이터가 있을 때 표시. revisionCounts는 이미 현재 equipmentType으로 스코핑되어 있다.
     const badgeNumRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
     const badgeExtra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
-    const refRevisionExists = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${badgeNumRange})\\.\\d+(?:\\.\\d+)*${badgeExtra}`, "g"))?.some(
+    const refRevisionExists = [
+      ...((item.text || "").match(new RegExp(`(?<![\\d.])(?:${badgeNumRange})\\.\\d+(?:\\.\\d+)*${badgeExtra}`, "g")) || []),
+      ...(EXTRA_REF_IDS[item.id] || []),
+    ].some(
       (ref: string) => (revisionCounts[ref] && revisionCounts[ref] > 0) ||
         // 대분류만 인용된 경우(예: "Ⅰ.4")에도 하위 조문 연혁이 있으면 표시 — 상세 화면이 하위 조문까지 보여주므로 일치시킨다.
         Object.keys(revisionCounts).some((k) => k.startsWith(ref + "."))
