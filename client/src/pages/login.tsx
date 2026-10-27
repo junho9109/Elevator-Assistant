@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { isDuplicateName, isValidEmployeeId } from "@/lib/teams";
 import { registerPushToken } from "@/lib/push";
+import { Eye, EyeOff } from "lucide-react";
 
 interface LoginPageProps {
   onLogin: (token: string, org: string, role: string, name: string) => void;
@@ -256,8 +257,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   placeholder="비밀번호를 입력하세요"
                   className={`${inputCls} pr-10 ${error && mode === "login" ? "border-red-400" : ""}`}
                 />
-                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-base">
-                  {showPw ? "🙈" : "👁"}
+                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-label={showPw ? "비밀번호 숨기기" : "비밀번호 보기"}>
+                  {showPw ? <EyeOff className="h-[17px] w-[17px]" strokeWidth={1.8} /> : <Eye className="h-[17px] w-[17px]" strokeWidth={1.8} />}
                 </button>
               </div>
             </div>
