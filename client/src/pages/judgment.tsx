@@ -2484,8 +2484,8 @@ export default function JudgmentPage() {
                 <div className="space-y-6 pr-4">
                   {/* 참조 조문 연혁 섹션 */}
                   {refRevisions.length > 0 && (
-                    <div className="border border-amber-200 dark:border-amber-800 rounded-xl p-3 bg-amber-50 dark:bg-amber-900/10 mb-4">
-                      <p className="text-xs font-semibold text-gray-900 dark:text-amber-300 mb-2">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</p>
+                    <div className="border border-indigo-200 dark:border-indigo-700 rounded-xl p-3 bg-indigo-50 dark:bg-indigo-900/20 mb-4">
+                      <p className="text-xs font-semibold text-indigo-950 dark:text-indigo-200 mb-2">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</p>
                       <div className="space-y-3">
                         {refRevisions.map(({ refId, versions }) => {
                           // "추가 종전 기준"(introductionType === 'additional')은 시간순 계보와 무관한
@@ -2518,7 +2518,7 @@ export default function JudgmentPage() {
                                             : '종전'}
                                     </p>
                                     {isApplied && (
-                                      <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                                      <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700">
                                         📍 적용 중
                                       </span>
                                     )}
@@ -2557,7 +2557,7 @@ export default function JudgmentPage() {
                                         }
                                         flagRevision.mutate({ id: v.id, note: note.trim() });
                                       }}
-                                      className="w-6 h-6 flex items-center justify-center rounded-md border border-amber-200 text-amber-600 hover:bg-amber-50"
+                                      className="w-6 h-6 flex items-center justify-center rounded-md border border-indigo-200 text-indigo-600 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
                                     ><Flag size={11} /></button>
                                   </div>
                                 )}
@@ -2567,9 +2567,9 @@ export default function JudgmentPage() {
                           return (
                             <div key={refId}>
                               <div className="flex items-center gap-2 mb-1.5">
-                                <span className="text-[10px] font-bold text-gray-900 dark:text-amber-300">[별표22] {refId}</span>
+                                <span className="text-[10px] font-bold text-indigo-900 dark:text-indigo-200">[별표22] {refId}</span>
                                 {referenceDate && (
-                                  <span className="text-[9px] text-amber-600 dark:text-amber-400">
+                                  <span className="text-[9px] text-indigo-700 dark:text-indigo-300">
                                     ({installType === "수시교체" && detailItem
                                       ? (replacedItemIds.has(detailItem.id) ? inspectionDate : permitDate)
                                       : (permitDate || inspectionDate)} 기준)
@@ -2580,7 +2580,7 @@ export default function JudgmentPage() {
                                 {mainVersions.map((v: any, i: number) => renderVersionRow(v, i, mainVersions))}
                               </div>
                               {additionalVersions.length > 0 && (
-                                <div className="mt-2 pt-2 border-t border-dashed border-amber-200 dark:border-amber-800">
+                                <div className="mt-2 pt-2 border-t border-dashed border-indigo-200 dark:border-indigo-700">
                                   <p className="text-[9px] font-bold text-gray-400 mb-1.5">➕ 추가 종전 기준</p>
                                   <div className="space-y-1.5">
                                     {additionalVersions.map((v: any, i: number) => renderVersionRow(v, i, additionalVersions))}
