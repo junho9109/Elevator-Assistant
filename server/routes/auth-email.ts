@@ -448,6 +448,55 @@ export function registerAuthEmailRoutes(app: Express) {
     }
   });
 
+  // 본인 소속 변경 — 로그인 토큰 + 비밀번호 재확인. 변경 기록(account_changes)은 있으면 남기고,
+  // 표가 아직 없어도 변경 자체는 성공한다(기록 실패는 서버 로그에만 남김).
+  app.post("/api/auth/change-org", async (req, res) => {
+    try {
+      await ensureAuthTables();
+      const auth = req.headers.authorization;
+      if (!auth) return res.status(401).json({ error: "다시 로그인해 주세요." });
+      let decoded: any;
+      try { decoded = jwt.verify(auth.replace("Bearer ", ""), jwtSecret()); } catch { return res.status(401).json({ error: "다시 로그인해 주세요." }); }
+      if (!decoded?.email) return res.status(401).json({ error: "다시 로그인해 주세요." });
+      const newOrg = typeof req.body?.org === "string" ? req.body.org.trim() : "";
+      const password = req.body?.password;
+      if (!newOrg) return res.status(400).json({ error: "변경할 소속을 선택해 주세요." });
+      if (typeof password !== "string" || !password) return res.status(400).json({ error: "비밀번호를 입력하세요." });
+      const { pool } = await import("../db");
+      const rows = await pool.query(`SELECT * FROM app_users WHERE email = $1`, [decoded.email]);
+      const u = rows.rows[0];
+      if (!u) return res.status(401).json({ error: "계정을 찾을 수 없습니다." });
+      const lockKey = `emp:${u.emp_id || u.email}`;
+      if (isLocked(lockKey)) {
+        return res.status(429).json({ error: `시도가 너무 많습니다. ${LOGIN_LOCK_MIN}분 후 다시 시도하세요.` });
+      }
+      const ok = await bcrypt.compare(password, u.password_hash);
+      if (!ok) {
+        recordFail(lockKey);
+        return res.status(401).json({ error: "비밀번호가 올바르지 않습니다." });
+      }
+      loginFails.delete(lockKey);
+      if (newOrg === u.org) return res.status(400).json({ error: "현재 소속과 같습니다. 변경할 소속을 선택해 주세요." });
+      const orgRow = await pool.query(`SELECT 1 FROM organizations WHERE name = $1`, [newOrg]);
+      if (orgRow.rows.length === 0) return res.status(400).json({ error: "존재하지 않는 소속입니다." });
+      const oldOrg = u.org;
+      await pool.query(`UPDATE app_users SET org = $1 WHERE id = $2`, [newOrg, u.id]);
+      try {
+        await pool.query(
+          `INSERT INTO account_changes (emp_id, name, kind, from_value, to_value, by_emp_id, by_name) VALUES ($1, $2, 'org_change', $3, $4, $1, $2)`,
+          [u.emp_id || "", u.name, oldOrg, newOrg]
+        );
+      } catch (e) {
+        console.warn("[change-org] 변경 기록 저장 실패(표 없음?):", (e as any)?.message);
+      }
+      const updated = { ...u, org: newOrg };
+      res.json({ ok: true, org: newOrg, previousOrg: oldOrg, token: issueToken(updated, roleOf(updated)) });
+    } catch (e) {
+      console.error("[change-org]", e);
+      res.status(500).json({ error: "서버 오류" });
+    }
+  });
+
   app.get("/api/auth/verify", async (req, res) => {
     try {
       await ensureAuthTables();

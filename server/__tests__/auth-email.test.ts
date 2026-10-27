@@ -160,6 +160,27 @@ describe("이메일 인증 가입/로그인", () => {
     expect(none.status).toBe(200);
   });
 
+  it("소속 변경: 비밀번호가 맞으면 변경되고 새 토큰이 나온다, 틀리거나 같은 소속이면 거절", async () => {
+    const login = await request(app).post("/api/auth/login").send({ empId: EMP1, password: PW });
+    expect(login.status).toBe(200);
+    const token = login.body.token;
+    const orgs = (await request(app).get("/api/auth/organizations")).body as string[];
+    const other = orgs.find(o => o !== orgName);
+    if (!other) return; // 다른 소속이 없으면 건너뜀
+    const bad = await request(app).post("/api/auth/change-org").set("Authorization", `Bearer ${token}`).send({ org: other, password: "wrong-password" });
+    expect(bad.status).toBe(401);
+    const same = await request(app).post("/api/auth/change-org").set("Authorization", `Bearer ${token}`).send({ org: orgName, password: PW });
+    expect(same.status).toBe(400);
+    const noauth = await request(app).post("/api/auth/change-org").send({ org: other, password: PW });
+    expect(noauth.status).toBe(401);
+    const ok = await request(app).post("/api/auth/change-org").set("Authorization", `Bearer ${token}`).send({ org: other, password: PW });
+    expect(ok.status).toBe(200);
+    expect(ok.body.org).toBe(other);
+    expect(ok.body.previousOrg).toBe(orgName);
+    const v = await request(app).get("/api/auth/verify").set("Authorization", `Bearer ${ok.body.token}`);
+    expect(v.body.org).toBe(other);
+  });
+
   it("로그인에 5번 실패하면 잠기고 맞는 비밀번호도 429", async () => {
     for (let i = 0; i < 5; i++) {
       await request(app).post("/api/auth/login").send({ empId: EMP1, password: "wrong-password" });

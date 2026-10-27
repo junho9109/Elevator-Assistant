@@ -105,6 +105,14 @@ function App() {
     setGlobalAdminMode(false);
   };
 
+  // 본인 소속 변경 후: 화면의 소속과 새 토큰(새 소속이 담김)을 바로 반영한다.
+  const handleOrgChanged = (org: string, token: string) => {
+    const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+    localStorage.setItem("loginInfo", JSON.stringify({ ...saved, org, token: saved.autoLogin ? token : "" }));
+    setUserOrg(org);
+    setAuthToken(token);
+  };
+
   if (isChecking) return null;
 
   if (!authToken) {
@@ -132,7 +140,7 @@ function App() {
         <Toaster />
         <SwipeNavigator
           pages={[
-            <Home key="home" role={userRole} onLogout={handleLogout} />,
+            <Home key="home" role={userRole} onLogout={handleLogout} authToken={authToken} onOrgChanged={handleOrgChanged} />,
             <TechnicalDataPage key="technical" />,
             <JudgmentPage key="judgment" />,
             <InspectionStandardsPage key="inspection-standards" />,

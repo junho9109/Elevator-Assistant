@@ -26,6 +26,7 @@ import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import ReactMarkdown, { type Components } from "react-markdown";
 import AiAttachment, { splitAttachmentMarkers } from "@/components/AiAttachment";
+import MyInfoDialog from "@/components/my-info-dialog";
 
 const AI_MD_COMPONENTS: Components = {
                           h1: ({children}) => <p className="font-bold text-base mb-1">{children}</p>,
@@ -1703,7 +1704,7 @@ function formatNameWithId(name?: string | null, id?: string | null): string {
   return `${n}(${i})`;
 }
 
-export default function Home({ defaultTab = "chat", role = "user", onLogout }: { defaultTab?: "chat" | "map"; role?: string; onLogout?: () => void }) {
+export default function Home({ defaultTab = "chat", role = "user", onLogout, authToken, onOrgChanged }: { defaultTab?: "chat" | "map"; role?: string; onLogout?: () => void; authToken?: string; onOrgChanged?: (org: string, token: string) => void }) {
   // [제거됨 — 2026-08-16] 예전엔 여기서 /api/standards(레거시 standards 테이블) + /api/std-overrides를
   // 병합해 모듈 전역 배열 STD_ITEMS를 채웠음. std_item_overrides가 표준화 자료의 단일 진실 소스가 된 뒤로는
   // 이 로직이 버그였음: STD_ITEMS는 컴포넌트 상태가 아닌 모듈 전역 mutable 배열이라 populate돼도
@@ -1850,6 +1851,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
   const chatInputRef = useRef<HTMLInputElement>(null);
 
   // 탭
+  const [showMyInfo, setShowMyInfo] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "map">(defaultTab as "chat" | "map");
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
 
@@ -3891,6 +3893,17 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout }: {
                 >
                   AI 학습 관리
                 </button>
+              )}
+              {authToken && onOrgChanged && (
+                <button
+                  onClick={() => setShowMyInfo(true)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted"
+                >
+                  내 정보
+                </button>
+              )}
+              {showMyInfo && authToken && onOrgChanged && (
+                <MyInfoDialog authToken={authToken} onClose={() => setShowMyInfo(false)} onOrgChanged={onOrgChanged} />
               )}
               <button
                 onClick={() => { if (onLogout) onLogout(); }}
