@@ -2526,6 +2526,9 @@ export default function JudgmentPage() {
                                   <p className={`text-[10px] leading-relaxed whitespace-pre-wrap px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-600 border border-gray-100'}`}>
                                     {v.description || ""}
                                   </p>
+                                  {v.source && (
+                                    <p className="text-[9.5px] text-indigo-700 dark:text-indigo-300 mt-0.5 px-1">출처: {v.source}</p>
+                                  )}
                                   <RevisionAttachments attachments={v.attachments} onOpenImage={openImageViewer} />
                                 </div>
                                 {typeof v.id === "number" && (

@@ -388,6 +388,8 @@ export const inspectionItemRevisions = pgTable("inspection_item_revisions", {
   attachments: jsonb("attachments"),
   // attachments 안의 표 글자·그림 글자를 검색(ILIKE)용으로 이어붙인 텍스트
   attachmentsText: text("attachments_text"),
+  // [2026-10-27] 화면에 보일 짧은 출처 문구(예: "고시 제98-75호 부칙", "연혁집 p.51"). 비어 있으면 표시 안 함.
+  source: varchar("source", { length: 100 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
