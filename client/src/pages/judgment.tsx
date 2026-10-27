@@ -2484,8 +2484,8 @@ export default function JudgmentPage() {
                 <div className="space-y-6 pr-4">
                   {/* 참조 조문 연혁 섹션 */}
                   {refRevisions.length > 0 && (
-                    <div className="border border-indigo-200 dark:border-indigo-700 rounded-xl p-3 bg-indigo-50 dark:bg-indigo-900/20 mb-4">
-                      <p className="text-xs font-semibold text-indigo-950 dark:text-indigo-200 mb-2">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</p>
+                    <div className="border border-slate-400 rounded-xl p-3 bg-slate-50 mb-4">
+                      <p className="text-[13px] font-bold text-slate-900 mb-2">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</p>
                       <div className="space-y-3">
                         {refRevisions.map(({ refId, versions }) => {
                           // "추가 종전 기준"(introductionType === 'additional')은 시간순 계보와 무관한
@@ -2508,7 +2508,7 @@ export default function JudgmentPage() {
                                 </div>
                                 <div className="flex-1">
                                   <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                                    <p className={`text-[9px] font-bold ${isApplied ? 'text-blue-600' : 'text-gray-400'}`}>
+                                    <p className={`text-[11px] font-bold ${isApplied ? 'text-blue-700' : 'text-slate-500'}`}>
                                       {isCurrent
                                         ? `현행 · ${v.effectiveDate || '2022-03-02'} 시행`
                                         : v.effectiveDate
@@ -2518,16 +2518,16 @@ export default function JudgmentPage() {
                                             : '종전'}
                                     </p>
                                     {isApplied && (
-                                      <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700">
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-700 text-white">
                                         📍 적용 중
                                       </span>
                                     )}
                                   </div>
-                                  <p className={`text-[10px] leading-relaxed whitespace-pre-wrap px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-blue-900 border border-blue-100' : 'bg-white text-gray-600 border border-gray-100'}`}>
+                                  <p className={`text-[11.5px] leading-relaxed whitespace-pre-wrap px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-slate-900 border border-blue-300' : 'bg-white text-slate-700 border border-slate-300'}`}>
                                     {v.description || ""}
                                   </p>
                                   {v.source && (
-                                    <p className="text-[9.5px] text-indigo-700 dark:text-indigo-300 mt-0.5 px-1">출처: {v.source}</p>
+                                    <p className="text-[10.5px] text-slate-600 mt-0.5 px-1">출처: {v.source}</p>
                                   )}
                                   <RevisionAttachments attachments={v.attachments} onOpenImage={openImageViewer} />
                                 </div>
@@ -2570,9 +2570,9 @@ export default function JudgmentPage() {
                           return (
                             <div key={refId}>
                               <div className="flex items-center gap-2 mb-1.5">
-                                <span className="text-[10px] font-bold text-indigo-900 dark:text-indigo-200">[별표22] {refId}</span>
+                                <span className="text-[11.5px] font-bold text-slate-800">[별표22] {refId}</span>
                                 {referenceDate && (
-                                  <span className="text-[9px] text-indigo-700 dark:text-indigo-300">
+                                  <span className="text-[11px] text-slate-600">
                                     ({installType === "수시교체" && detailItem
                                       ? (replacedItemIds.has(detailItem.id) ? inspectionDate : permitDate)
                                       : (permitDate || inspectionDate)} 기준)
@@ -2583,8 +2583,8 @@ export default function JudgmentPage() {
                                 {mainVersions.map((v: any, i: number) => renderVersionRow(v, i, mainVersions))}
                               </div>
                               {additionalVersions.length > 0 && (
-                                <div className="mt-2 pt-2 border-t border-dashed border-indigo-200 dark:border-indigo-700">
-                                  <p className="text-[9px] font-bold text-gray-400 mb-1.5">➕ 추가 종전 기준</p>
+                                <div className="mt-2 pt-2 border-t border-dashed border-slate-300">
+                                  <p className="text-[10px] font-bold text-slate-500 mb-1.5">➕ 추가 종전 기준</p>
                                   <div className="space-y-1.5">
                                     {additionalVersions.map((v: any, i: number) => renderVersionRow(v, i, additionalVersions))}
                                   </div>
