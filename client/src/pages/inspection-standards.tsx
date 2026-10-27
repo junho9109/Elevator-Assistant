@@ -11,7 +11,11 @@ import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 import { fetchJson } from "@/lib/queryClient";
 
-type Entry = { text?: string; title?: string; source?: string; };
+// 원문 표(칸 병합 포함)·그림(출처 표기 포함) — 세대별 고시 JSON에서만 선택적으로 쓴다.
+type EntryTableCell = { t: string; rs?: number; cs?: number };
+type EntryTable = { caption?: string | null; rows: EntryTableCell[][] };
+type EntryFigure = { caption?: string; src: string; source?: string };
+type Entry = { text?: string; title?: string; source?: string; tables?: EntryTable[]; figures?: EntryFigure[] };
 
 // ── 현행(별표22) 데이터 — DB(inspection_base_items)가 단일 진실 소스 ──────
 // 정적 JSON을 빌드에 번들링하지 않고, 화면 진입 시 API로 조회한다.
@@ -152,7 +156,7 @@ function baseItemsToMap(rows: any[], equipmentType: string = "엘리베이터"):
 // client/src/data/generations/ 폴더에 {연도}-{고시번호}.json 형식의 파일을 넣으면
 // 별도 코드 수정 없이 "문서" 드롭다운에 별표22/판정지침과 나란히 하나씩 추가된다.
 // 각 파일 형식: { meta: { id, title, effectiveDate, source, note }, items: { [key]: { title, text } } }
-type GenerationMeta = { id: string; title: string; effectiveDate: string; source?: string; note?: string };
+type GenerationMeta = { id: string; title: string; effectiveDate: string; source?: string; note?: string; originalFile?: { label: string; href: string } };
 type GenerationDoc = { meta: GenerationMeta; items: Record<string, Entry> };
 
 const generationModules = import.meta.glob("@/data/generations/*.json", { eager: true }) as Record<string, { default?: GenerationDoc } & GenerationDoc>;
@@ -533,7 +537,47 @@ function GenerationDetail({ id, gen, onClose, isAdminMode, onAddRevision }: {
               : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>;
           })()}
         </div>
+        {e.tables?.map((tb, ti) => (
+          <div key={ti} className="overflow-x-auto">
+            {tb.caption && <p className="text-xs font-semibold text-center mb-1">{tb.caption}</p>}
+            <table className="w-full border-collapse text-[11px]">
+              <tbody>
+                {tb.rows.map((r, ri) => (
+                  <tr key={ri}>
+                    {r.map((c, ci) => (
+                      <td
+                        key={ci}
+                        rowSpan={c.rs}
+                        colSpan={c.cs}
+                        className={`border border-border px-1.5 py-1 align-middle whitespace-pre-wrap leading-relaxed ${ri === 0 ? "bg-muted/60 text-center font-medium" : ""}`}
+                      >
+                        {c.t}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+        {e.figures?.map((f, fi) => (
+          <div key={fi} className="space-y-1">
+            {f.caption && <p className="text-xs font-semibold text-center">{f.caption}</p>}
+            <img src={f.src} alt={f.caption || "그림"} className="mx-auto max-w-full rounded-lg border border-border bg-white" />
+            {f.source && <p className="text-[10px] text-muted-foreground text-center">출처: {f.source}</p>}
+          </div>
+        ))}
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {gen.meta.title} · {gen.meta.source || gen.meta.effectiveDate}</p>
+        {gen.meta.originalFile && (
+          <a
+            href={gen.meta.originalFile.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-blue-600 underline"
+          >
+            📄 {gen.meta.originalFile.label} 열기
+          </a>
+        )}
       </div>
     </div>
   );
@@ -848,6 +892,16 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                     ? "판정지침"
                     : `${activeGeneration ? activeGeneration.meta.title : (isDbDoc(selectedDoc) ? DOCUMENTS.find(d => d.id === selectedDoc)?.label || "현행" : "현행")} · ${activeTotalCount}개 조문`}
                 </p>
+                {activeGeneration?.meta.originalFile && (
+                  <a
+                    href={activeGeneration.meta.originalFile.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-blue-600 underline"
+                  >
+                    📄 {activeGeneration.meta.originalFile.label} 열기
+                  </a>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
