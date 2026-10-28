@@ -50,6 +50,8 @@ function dayAfter(dateStr: string): string {
 // key: 검사항목 id, value: 강제로 표시할 참조 조문번호 목록.
 const EXTRA_REF_IDS: Record<string, string[]> = {
   "1.3.2-가": ["6.5.7.2"],
+  // 균형추·평형추 상부틈새 — 본문에 조문번호가 없어 연결되지 않던 항목(표 1 끝단 위치 + 균형추/평형추 레일 연장 길이)
+  "1.3.2-나": ["6.5.6.1.1", "6.5.6.2", "6.5.6.3.2", "6.5.6.4.2"],
   // "부속서 Ⅳ"로만 인용되어 정규식으로 조문번호를 못 잡는 예외 항목
   "1.7.2-다": ["10.2.2.1.3"],
   // "위의 가) 검사 후, 정상 운행에 지장이 없는지" — 본문에 조문번호가 없어 연혁이 연결되지 않던 항목
@@ -1183,6 +1185,8 @@ export default function JudgmentPage() {
         for (const rv of data) {
           const actualId: string | undefined = rv.item_id || rv.itemId;
           if (!actualId) continue;
+          // 본문이 비어 있고 첨부도 없는 행은 "화면에서만 숨김" 처리된 행(원문은 검색용 칸에 보관)이므로 표시하지 않는다.
+          if (!(rv.description || "").trim() && !rv.attachments) continue;
           if (typeof rv.id === "number") {
             if (seenRowIds.has(rv.id)) continue;
             seenRowIds.add(rv.id);
@@ -1227,7 +1231,7 @@ export default function JudgmentPage() {
       const dbRevRes = await fetch(`/api/inspection-revisions/${encodeURIComponent(item.id)}?equipmentType=${encodeURIComponent(equipmentType)}`);
       const dbRevRaw = dbRevRes.ok ? await dbRevRes.json() : [];
       // DB snake_case → camelCase 변환
-      const dbRevData = dbRevRaw.map((r: any) => ({
+      const dbRevData = dbRevRaw.filter((r: any) => (r.description || "").trim() || r.attachments).map((r: any) => ({
         id: r.id,
         effectiveDate: r.effective_date || r.effectiveDate || "",
         expiryDate: r.expiry_date || r.expiryDate || "",
