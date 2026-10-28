@@ -60,6 +60,7 @@ const EXTRA_REF_IDS: Record<string, string[]> = {
   "1.5.1.1-가": ["부속서 Ⅳ"],
   // 틈새(어린이 손끼임) — 본문의 "7.6.2.2.1자)" 중 자) 하나만 보이도록 연혁을 "7.6.2.2.1 자)"로 분리(아래 REF_EXCLUDE_IDS와 짝)
   "1.4.3-다": ["7.6.2.2.1 자)"],
+  "1.3.6-다": ["7.6.2.2.1 자)"],
   // 로봇 탑승용 엘리베이터 안전성 평가서 — 본문에 조문번호가 없어 연혁이 연결되지 않던 항목(14.11 다)에 해당)
   "1.4.5-다": ["14.11"],
   // 본문에 조문번호가 없는 텍스트형 세부 항목 — 내용이 대응하는 안전기준 조문을 수동 연결
@@ -87,6 +88,7 @@ const EXTRA_REF_IDS: Record<string, string[]> = {
 // (본문이 상위 조문 전체를 인용하지만 실제로는 일부 항목만 해당할 때, 위 EXTRA_REF_IDS의 분리 조문으로 대체한다.)
 const REF_EXCLUDE_IDS: Record<string, string[]> = {
   "1.4.3-다": ["7.6.2.2.1"],
+  "1.3.6-다": ["7.6.2.2.1"],
 };
 const excludeRefs = (itemId: string, refs: string[]): string[] => {
   const ex = REF_EXCLUDE_IDS[itemId];
