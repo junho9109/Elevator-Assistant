@@ -618,7 +618,7 @@ export const INSPECTION_DATA_MR: InspectionSection[] = [
           },
           {
             id: "1.4.4-카",
-            text: "카 승강장문의 닫힘 및 잠금 상태를 입증하는 장치는「엘리베이터 안전기준」7.10에 따라 적합한지 확인한다.",
+            text: "카) 승강장문의 닫힘 및 잠금 상태를 입증하는 장치는「엘리베이터 안전기준」7.10에 따라 적합한지 확인한다.",
             result: null,
             effectiveDate: "2013-09-15"
           },
