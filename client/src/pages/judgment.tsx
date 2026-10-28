@@ -201,6 +201,9 @@ function ImageViewerComponent({
         display: 'flex',
         flexDirection: 'column',
         touchAction: 'none',
+        // Radix Dialog(상세보기)가 열려 있으면 body에 pointer-events:none을 걸어, body에 직접 붙는 이 뷰어도
+        // 클릭이 먹히지 않고 뒤의 상세 창으로 통과한다 → 반드시 auto로 되돌려야 닫기 버튼이 뷰어 안에서 처리된다.
+        pointerEvents: 'auto',
         cursor: imageViewer.zoom > 1 ? 'grab' : 'default',
       }}
       onClick={(e) => { e.stopPropagation(); }}
