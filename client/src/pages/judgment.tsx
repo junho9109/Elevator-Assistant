@@ -58,6 +58,8 @@ const EXTRA_REF_IDS: Record<string, string[]> = {
   "1.5.4-나": ["9.3.1"],
   // "부속서 Ⅳ"로만 인용된 로프의 마모 및 파손상태 — 연혁은 item_id "부속서 Ⅳ"로 저장(연혁집 p.328~329)
   "1.5.1.1-가": ["부속서 Ⅳ"],
+  // 틈새(어린이 손끼임) — 본문의 "7.6.2.2.1자)" 중 자) 하나만 보이도록 연혁을 "7.6.2.2.1 자)"로 분리(아래 REF_EXCLUDE_IDS와 짝)
+  "1.4.3-다": ["7.6.2.2.1 자)"],
   // 로봇 탑승용 엘리베이터 안전성 평가서 — 본문에 조문번호가 없어 연혁이 연결되지 않던 항목(14.11 다)에 해당)
   "1.4.5-다": ["14.11"],
   // 본문에 조문번호가 없는 텍스트형 세부 항목 — 내용이 대응하는 안전기준 조문을 수동 연결
@@ -79,6 +81,16 @@ const EXTRA_REF_IDS: Record<string, string[]> = {
   "3.7.10-가": ["5.12.2.7.7"],
   "3.10.1-가": ["5.4.1.2.2", "5.4.1.2.3", "5.4.2.1.3"],
   "3.11-가": ["5.1", "6.1"],
+};
+
+// 본문 정규식으로 자동 추출된 조문번호 중 연혁 연결에서 "제외"할 번호.
+// (본문이 상위 조문 전체를 인용하지만 실제로는 일부 항목만 해당할 때, 위 EXTRA_REF_IDS의 분리 조문으로 대체한다.)
+const REF_EXCLUDE_IDS: Record<string, string[]> = {
+  "1.4.3-다": ["7.6.2.2.1"],
+};
+const excludeRefs = (itemId: string, refs: string[]): string[] => {
+  const ex = REF_EXCLUDE_IDS[itemId];
+  return ex ? refs.filter(r => !ex.includes(r)) : refs;
 };
 
 // Image Viewer State
@@ -1146,7 +1158,7 @@ export default function JudgmentPage() {
     const refExtra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
     const refMatches = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${refNumRange})\\.\\d+(?:\\.\\d+)*${refExtra}`, "g")) || [];
     // 본문에 번호가 안 적혀 있어 정규식으로 못 잡는 예외 항목은 수동으로 추가
-    const uniqueRefs = [...new Set([...refMatches, ...(EXTRA_REF_IDS[item.id] || [])])];
+    const uniqueRefs = excludeRefs(item.id, [...new Set([...refMatches, ...(EXTRA_REF_IDS[item.id] || [])])]);
     if (uniqueRefs.length > 0) {
       const refResults = await Promise.all(
         uniqueRefs.map(async (refId) => {
@@ -1626,7 +1638,7 @@ export default function JudgmentPage() {
     const extra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
     const refMatches = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${numRange})\\.\\d+(?:\\.\\d+)*${extra}`, "g")) || [];
     const directRef = new RegExp(`^(?:${numRange})\\.`).test(item.id) ? [item.id] : [];
-    const allRefs = [...new Set([...refMatches, ...directRef, ...(EXTRA_REF_IDS[item.id] || [])])];
+    const allRefs = excludeRefs(item.id, [...new Set([...refMatches, ...directRef, ...(EXTRA_REF_IDS[item.id] || [])])]);
     let unknownStartMatch = false;
     for (const ref of allRefs) {
       const range = (previousRanges as any)[ref];
@@ -1894,10 +1906,10 @@ export default function JudgmentPage() {
     // 연혁 데이터가 있을 때 표시. revisionCounts는 이미 현재 equipmentType으로 스코핑되어 있다.
     const badgeNumRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
     const badgeExtra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
-    const refRevisionExists = [
+    const refRevisionExists = excludeRefs(item.id, [
       ...((item.text || "").match(new RegExp(`(?<![\\d.])(?:${badgeNumRange})\\.\\d+(?:\\.\\d+)*${badgeExtra}`, "g")) || []),
       ...(EXTRA_REF_IDS[item.id] || []),
-    ].some(
+    ]).some(
       (ref: string) => (revisionCounts[ref] && revisionCounts[ref] > 0) ||
         // 대분류만 인용된 경우(예: "Ⅰ.4")에도 하위 조문 연혁이 있으면 표시 — 상세 화면이 하위 조문까지 보여주므로 일치시킨다.
         Object.keys(revisionCounts).some((k) => k.startsWith(ref + "."))
