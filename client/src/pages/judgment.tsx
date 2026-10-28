@@ -375,7 +375,7 @@ function PhotoList({
             <>
               {/* Left side: reorder buttons */}
               {photos.length > 1 && (
-                <div className="absolute top-2 left-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-2 left-2 flex flex-col gap-1">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -401,7 +401,7 @@ function PhotoList({
                 </div>
               )}
               {/* Right side: edit/delete buttons */}
-              <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-2 right-2 flex gap-1">
                 <input
                   ref={(el) => { replaceInputRefs.current[photo.id] = el; }}
                   type="file"
@@ -428,6 +428,7 @@ function PhotoList({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!window.confirm("이 사진을 삭제할까요?")) return;
                     onDeletePhoto(photo.id);
                   }}
                   className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
@@ -721,8 +722,17 @@ export default function JudgmentPage() {
     });
   };
 
+  // 사진 뷰어를 닫은 시각 — 닫기 클릭이 뒤의 상세 창에 "바깥 클릭"으로 전달돼 상세 창까지 닫히는 것을 막는 데 사용
+  const viewerClosedAtRef = useRef(0);
   const closeImageViewer = () => {
+    viewerClosedAtRef.current = Date.now();
     setImageViewer(prev => ({ ...prev, isOpen: false, panX: 0, panY: 0 }));
+  };
+  const keepDetailOpenWhileViewer = (e: { target: EventTarget | null; preventDefault: () => void; detail?: { originalEvent?: Event } }) => {
+    const t = (e.detail?.originalEvent?.target ?? e.target) as HTMLElement | null;
+    if (imageViewer.isOpen || Date.now() - viewerClosedAtRef.current < 600 || t?.closest?.("#image-viewer-portal")) {
+      e.preventDefault();
+    }
   };
 
   // Drag to scroll handlers
@@ -2319,7 +2329,10 @@ export default function JudgmentPage() {
           setIsDetailDialogOpen(open);
           if (!open) setEditSectionExpanded(false);
         }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onOpenAutoFocus={e => e.preventDefault()}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onOpenAutoFocus={e => e.preventDefault()}
+          onPointerDownOutside={keepDetailOpenWhileViewer as any}
+          onInteractOutside={keepDetailOpenWhileViewer as any}
+          onFocusOutside={keepDetailOpenWhileViewer as any}>
           <DialogHeader className="shrink-0">
             <DialogTitle className="text-base">
               항목 상세보기
