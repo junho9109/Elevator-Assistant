@@ -184,6 +184,13 @@ export const stdItemOverrides = pgTable("std_item_overrides", {
   installInspectionDate: varchar("install_inspection_date", { length: 20 }), // 설치검사일
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   manuallyEdited: boolean("manually_edited").default(false),  // 수동 수정 여부
+  // ── 표준화 대통합 반영용 (2026-10-28) ──
+  figures: text("figures"),                 // 표준화 내용 안의 그림·표 이미지 목록 (JSON 문자열: [{src,w,h,caption}])
+  revNote: text("rev_note"),                // 개정 표시 (예: "23년 제1차")
+  revText: text("rev_text"),                // 개정 후 내용
+  pdfPage: integer("pdf_page"),             // 대통합 PDF 쪽
+  seq: integer("seq"),                      // 대통합 PDF 순서
+  origin: varchar("origin", { length: 20 }), // 자료 출처 구분 ('대통합')
 });
 
 export const insertStdItemOverrideSchema = createInsertSchema(stdItemOverrides).omit({ id: true, updatedAt: true });

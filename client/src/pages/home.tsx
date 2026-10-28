@@ -27,6 +27,7 @@ import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import ReactMarkdown, { type Components } from "react-markdown";
 import AiAttachment, { splitAttachmentMarkers } from "@/components/AiAttachment";
 import MyInfoDialog from "@/components/my-info-dialog";
+import UserAdminDialog from "@/components/user-admin-dialog";
 
 const AI_MD_COMPONENTS: Components = {
                           h1: ({children}) => <p className="font-bold text-base mb-1">{children}</p>,
@@ -1835,6 +1836,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       typeTag: ov.typeTag || "",
       category: normalizeCat(ov.category || "기타", hotspotLabels),
       manuallyEdited: ov.manuallyEdited || false,
+      // 대통합 반영: 개정 표시·개정 후 내용·그림(JSON)
+      revNote: ov.revNote || "",
+      revText: ov.revText || "",
+      figures: (() => {
+        try { const f = ov.figures ? JSON.parse(ov.figures) : []; return Array.isArray(f) ? f as { src: string; w?: number; h?: number; caption?: string }[] : []; }
+        catch { return [] as { src: string; w?: number; h?: number; caption?: string }[]; }
+      })(),
     }));
   }, [stdOverrides, hotspots]);
   const createStandard = useCreateStandard();
@@ -1852,6 +1860,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
 
   // 탭
   const [showMyInfo, setShowMyInfo] = useState(false);
+  const [showUserAdmin, setShowUserAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "map">(defaultTab as "chat" | "map");
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
 
@@ -3894,6 +3903,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                   AI 학습 관리
                 </button>
               )}
+              {isAdminMode && authToken && (
+                <button
+                  onClick={() => setShowUserAdmin(true)}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-medium"
+                >
+                  사용자 관리
+                </button>
+              )}
               {authToken && onOrgChanged && (
                 <button
                   onClick={() => setShowMyInfo(true)}
@@ -3901,6 +3918,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                 >
                   내 정보
                 </button>
+              )}
+              {showUserAdmin && authToken && (
+                <UserAdminDialog authToken={authToken} onClose={() => setShowUserAdmin(false)} />
               )}
               {showMyInfo && authToken && onOrgChanged && (
                 <MyInfoDialog authToken={authToken} onClose={() => setShowMyInfo(false)} onOrgChanged={onOrgChanged} />
@@ -5383,6 +5403,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                               {((item as any).manuallyEdited || headerOv?.manuallyEdited) && (
                                 <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">수정됨</span>
                               )}
+                              {(item as any).revNote && (
+                                <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-700 text-white">개정됨</span>
+                              )}
                             </div>
                             <div className="text-[11px] text-muted-foreground">{headerOv?.source || item.source}</div>
                           </div>
@@ -5461,6 +5484,24 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                             <div className="space-y-1.5">
                               <p className="text-xs font-bold text-muted-foreground tracking-wide">표준화</p>
                               <p className="text-[11px] text-foreground leading-relaxed border-l-2 border-amber-400 pl-2 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: dispConclusion }} />
+                            </div>
+                          )}
+                          {(item as any).revNote && (
+                            <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] leading-relaxed text-amber-900">
+                              <p className="font-bold">개정됨 · {(item as any).revNote}에 변동</p>
+                              {(item as any).revText && <p className="whitespace-pre-wrap mt-1">{(item as any).revText}</p>}
+                            </div>
+                          )}
+                          {((item as any).figures || []).length > 0 && (
+                            <div className="space-y-2">
+                              {((item as any).figures as { src: string; caption?: string }[]).map((f, fi) => (
+                                <div key={fi} className="bg-card border border-border rounded-lg p-1.5">
+                                  <a href={f.src} target="_blank" rel="noreferrer">
+                                    <img src={f.src} alt={f.caption || "표준화 그림"} loading="lazy" className="w-full h-auto block rounded" />
+                                  </a>
+                                  {f.caption && <p className="text-[10.5px] text-muted-foreground mt-1">{f.caption}</p>}
+                                </div>
+                              ))}
                             </div>
                           )}
                           {dispDates.length > 0 && (
