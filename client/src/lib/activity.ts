@@ -8,7 +8,12 @@ export type ActivityPage =
   | "AI검색" | "표준화&기술자료" | "검사가이드" | "검사기준"
   | "정밀안전검사" | "메모" | "안전보건" | "채팅";
 
+// 접속 신호(presence)가 "지금 보는 화면"을 알려 주기 위해 마지막으로 기록한 화면을 보관한다.
+let lastPage = "";
+export function getLastActivityPage() { return lastPage; }
+
 export function trackActivity(page: string, detail?: string) {
+  lastPage = page;
   try {
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
     const employeeId = saved.empId || saved.name;

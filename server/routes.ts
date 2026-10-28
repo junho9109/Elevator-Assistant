@@ -14,6 +14,7 @@ import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
 import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAnswer } from "./routes/research-candidates";
 import { registerUserStatsRoutes } from "./routes/user-stats";
 import { registerActivityLogRoutes } from "./routes/activity-log";
+import { registerPresenceRoutes } from "./routes/presence";
 import { registerAuthEmailRoutes } from "./routes/auth-email";
 import { ensurePushTokenColumn } from "./ensure-push-column";
 
@@ -393,6 +394,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // [2026-10] 자료 조회 기록 (/api/activity-log, /api/activity-stats)
   registerActivityLogRoutes(app);
+  registerPresenceRoutes(app);
   registerAuthEmailRoutes(app);
 
   app.get("/api/standards/:id", async (req, res) => {

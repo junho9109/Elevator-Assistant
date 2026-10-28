@@ -4,6 +4,7 @@ import "./index.css";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { Capacitor } from "@capacitor/core";
 import { savePushToken, registerPushToken } from "@/lib/push";
+import { startPresence } from "@/lib/presence";
 
 async function initPushNotifications() {
   if (!Capacitor.isNativePlatform()) return;
@@ -31,6 +32,7 @@ async function initPushNotifications() {
 }
 
 initPushNotifications();
+startPresence();
 
 const rootElement = document.getElementById("root");
 if (rootElement) {

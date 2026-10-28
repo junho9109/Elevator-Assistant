@@ -1881,8 +1881,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         const r2 = await fetch("/api/activity-stats?admin=true");
         if (r2.ok) setActivityStats(await r2.json());
       } catch {}
+      await fetchPresence();
     }
     setUsageLoading(false);
+  };
+
+  // 지금 접속 중인 이용자 (관리자 전용, 사용량 창을 열어 둔 동안 30초마다 갱신)
+  const [presence, setPresence] = useState<{ count: number; users: { employeeId: string; name?: string; team?: string; page?: string; secondsAgo: number }[] } | null>(null);
+  const fetchPresence = async () => {
+    try {
+      const r = await fetch("/api/presence?admin=true", { cache: "no-store" });
+      if (r.ok) setPresence(await r.json());
+    } catch {}
   };
 
   // 이용자별 활동 섹션 상태 (관리자 전용)
@@ -2019,6 +2029,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
   const [deleteConfirm, setDeleteConfirm] = useState<Standard | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
+
+  // 접속 중 목록 자동 갱신 (사용량 창이 열려 있고 관리자 모드일 때만)
+  useEffect(() => {
+    if (!showUsage || !isAdminMode) return;
+    const id = window.setInterval(fetchPresence, 30_000);
+    return () => window.clearInterval(id);
+  }, [showUsage, isAdminMode]);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   useEffect(() => {
@@ -4293,6 +4310,32 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 이용자 좋아요/아쉬워요 피드백 CSV 다운로드
               </a>
+
+              {/* 지금 접속 중 (관리자 전용) */}
+              {isAdminMode && presence && (
+                <div className="border-t border-dashed border-border pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-medium text-green-700 dark:text-green-400 flex items-center gap-1.5">
+                      <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+                      지금 접속 중 {presence.count}명
+                      <span className="text-[9px] font-normal text-muted-foreground">· 30초마다 갱신</span>
+                    </span>
+                    <button onClick={fetchPresence} className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground">새로고침</button>
+                  </div>
+                  {presence.users.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">최근 2분 안에 접속 신호가 온 이용자가 없습니다.</p>
+                  ) : (
+                    <div className="border border-border rounded-lg divide-y divide-border">
+                      {presence.users.map(u => (
+                        <div key={u.employeeId} className="flex items-center justify-between px-2.5 py-1.5 text-[11px]">
+                          <span className="font-medium">{u.name || u.employeeId}<span className="text-muted-foreground font-normal"> {u.team ? `· ${u.team}` : ""}</span></span>
+                          <span className="text-muted-foreground">{u.page || "-"} · {u.secondsAgo < 60 ? "방금" : `${Math.floor(u.secondsAgo / 60)}분 전`}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 이용자별 활동 — AI 질문 없이 자료만 조회하는 사람 파악용 (관리자 전용) */}
               {isAdminMode && activityStats && (
