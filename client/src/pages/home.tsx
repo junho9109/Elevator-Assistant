@@ -4266,7 +4266,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                             {new Date(log.createdAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                           </span>
                           {(log.employeeName || log.employeeId) ? (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-600 text-white shadow-sm">
                               {formatNameWithId(log.employeeName, log.employeeId)}
                             </span>
                           ) : (
@@ -4286,11 +4286,22 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                           {isOpen ? "답변 숨기기" : "답변 보기"}
                         </button>
                         {isOpen && (
-                          <div className="mt-1.5 bg-secondary rounded-md px-2.5 py-2">
+                          <div className="mt-1.5">
                             {isAnswerLoading ? (
                               <p className="text-[10px] text-muted-foreground">불러오는 중…</p>
                             ) : (
-                              <p className="text-[11px] whitespace-pre-wrap leading-relaxed text-muted-foreground">{answerText}</p>
+                              // 채팅 화면과 같은 방식(마크다운 + 첨부 그림·표)으로 그려서 이용자가 실제로 본 답변과 똑같이 보이게 한다.
+                              <div className="rounded-xl bg-card border border-border px-3 py-2.5 text-sm leading-relaxed">
+                                {splitAttachmentMarkers(answerText || "").map((part, pi) =>
+                                  part.type === "att" ? (
+                                    <AiAttachment key={pi} id={part.id} idx={part.idx} />
+                                  ) : (
+                                    <ReactMarkdown key={pi} components={AI_MD_COMPONENTS}>
+                                      {part.text}
+                                    </ReactMarkdown>
+                                  )
+                                )}
+                              </div>
                             )}
                           </div>
                         )}

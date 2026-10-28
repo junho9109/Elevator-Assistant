@@ -3365,7 +3365,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const stream = anthropic.messages.stream({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 1200,
+          // [2026-10] 1200 → 4000: 긴 답변이 중간에 끊기는 문제 해결(출력 상한만 높이며, 짧은 답은 그대로 짧다)
+          max_tokens: 4000,
           system: `당신은 승강기 안전검사 현장 전문가다. 제공된 어플 내부 자료만 근거로 답한다.
 
 ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
@@ -3382,7 +3383,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
         // ── 정밀 답변: 에이전트1 초안 + 에이전트2 독립 재검증(병렬) → 불일치 시에만 에이전트3 중재 ──
         const MODEL = { agent1: "claude-sonnet-4-6", agent2: "claude-sonnet-4-6", compare: "claude-sonnet-4-6", agent3: "claude-sonnet-4-6" };
         // thinking 사용 시 사고 토큰도 max_tokens에 포함되므로 여유를 둔다
-        const agentMaxTokens = 3000;
+        // [2026-10] 3000 → 8000: 사고(thinking) 토큰이 답변 몫을 잠식해 답변이 끊기는 문제 해결
+        const agentMaxTokens = 8000;
         const thinkingParam = { thinking: { type: "adaptive" as const } };
 
         [agent1, agent2] = await Promise.all([
@@ -3737,7 +3739,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
         createdAt: aiUsage.createdAt,
         employeeName: aiUsage.employeeName,
         employeeId: aiUsage.employeeId,
-      }).from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(10);
+      }).from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(30);
       const recentLogs = recentLogsRaw.map(r => isAdmin ? r : { ...r, employeeName: null, employeeId: null });
 
       res.json({ totalQuestions, totalInput, totalOutput, totalCost: totalCost.toFixed(4), daily, recentLogs });
