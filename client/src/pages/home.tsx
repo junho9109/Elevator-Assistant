@@ -4265,10 +4265,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                           <span className="text-[10px] text-muted-foreground">
                             {new Date(log.createdAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                           </span>
-                          {log.employeeName && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                          {(log.employeeName || log.employeeId) ? (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
                               {formatNameWithId(log.employeeName, log.employeeId)}
                             </span>
+                          ) : (
+                            // 질문자 저장 기능 도입(2026-10) 이전 로그이거나 로그인 정보 없이 질문한 경우
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">질문자 미기록</span>
                           )}
                           <span className="text-[9px] text-muted-foreground ml-auto">
                             {(log.inputTokens + log.outputTokens).toLocaleString()}tok · ${parseFloat(log.costUsd).toFixed(4)}
