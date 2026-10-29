@@ -1,6 +1,6 @@
 import React from "react";
 import { searchEraDocs } from "@/lib/eraSearch";
-import { matchGlossary, glossaryQueries, glossaryHintNote, setLearnedGlossary } from "@/lib/fieldGlossary";
+import { matchGlossary, glossaryQueries, glossaryHintNote, setLearnedGlossary, findBranchPrompt } from "@/lib/fieldGlossary";
 import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
@@ -403,7 +403,7 @@ function scoreMatch(
 
 
 // [2026-10] 되묻기 — 아쉬워요 "질문 뜻이 달랐어요"로 학습된 질문이 다시 오면 답변 전에 선택지를 보여준다.
-type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: { label: string; ref: string; ask?: string }[] };
+type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: { label: string; ref: string; ask?: string }[]; next?: { content: string; options: { label: string; ref: string; ask?: string }[]; skipLabel?: string }; skipLabel?: string };
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; retry?: boolean; clarify?: ClarifyPrompt; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article" | "technical"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
@@ -2844,6 +2844,41 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       try {
         const srcOn = getGlobalAdminMode() && localStorage.getItem("clarifySource") === "1";
         const explicitType = /검사\s*기준|안전\s*기준|별표\s*\d+|표준화|판정\s*지침|\(.*기준으로\)/.test(text);
+        // 위치·설치연도 되묻기 — 사전의 갈림길(예: 인터폰=피트/카 상부/…)과, 판정 질문인데 설치연도가 없는 경우.
+        if (srcOn) {
+          const eqType: "엘리베이터" | "에스컬레이터" = equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터";
+          const loc = findBranchPrompt(text, matchGlossary(text));
+          const judgeAsk = /판정|지적|불합격|조건부|부적합|합격/.test(text) || facetData?.intent === "판정";
+          const hasYear = !!facetData?.year || /(19|20)\d{2}|\d{2}\s*년|건축\s*허가|종전|현행|신법|구법|설치\s*일|검사기준\s*적용/.test(text);
+          if (hasYear) (window as any).__yearTs = Date.now();
+          const recentYear = Date.now() - ((window as any).__yearTs || 0) < 30 * 60 * 1000;
+          const askedRecently = Date.now() - ((window as any).__askedYearTs || 0) < 10 * 60 * 1000;
+          const askYear = judgeAsk && !hasYear && !recentYear && !askedRecently;
+          const yearNext = askYear ? {
+            content: "설치연도(또는 건축허가 시점)에 따라 기준이 달라져요. 언제쯤 설치된 승강기인가요?",
+            skipLabel: "모르겠어요 — 시점별로 구분해서 답변 받기",
+            options: [
+              { label: "2022년 이후 설치", ref: "yr:2022", ask: "설치연도 2022년 이후" },
+              { label: "2019~2021년 설치", ref: "yr:2019", ask: "설치연도 2019~2021년" },
+              { label: "2013~2018년 설치", ref: "yr:2013", ask: "설치연도 2013~2018년" },
+              { label: "2012년 이전 설치", ref: "yr:2012", ask: "설치연도 2012년 이전" },
+            ],
+          } : undefined;
+          if (loc || yearNext) {
+            if (yearNext) (window as any).__askedYearTs = Date.now();
+            const msg = loc
+              ? { content: loc.title, options: loc.options.map(o => ({ label: o.label, ref: "loc:" + o.label, ask: o.ask })), skipLabel: "잘 모르겠어요 — 모두 구분해서 답변 받기" }
+              : { content: yearNext!.content, options: yearNext!.options, skipLabel: yearNext!.skipLabel };
+            setMessages(prev => [...prev, {
+              role: "assistant",
+              content: msg.content,
+              time: formatTime(),
+              clarify: { poolId: 0, question: text, equipmentType: eqType, options: msg.options, skipLabel: msg.skipLabel, ...(loc && yearNext ? { next: yearNext } : {}) },
+            }]);
+            setIsTyping(false);
+            return;
+          }
+        }
         if (srcOn && !explicitType) {
           const sorted = [...results].sort((a, b) => (b.score || 0) - (a.score || 0));
           const insp = sorted.find(r => r.type === "inspection" && /^\d+(?:\.\d+)+/.test((r.query || "").trim()) && !(r.content || "").startsWith("검사기준 섹션"));
@@ -3105,11 +3140,35 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         secondaryTerms.forEach(t => { if (t && combined.includes(t.toLowerCase())) score += 10; });
         return { title: sec.title, bodyText, score };
       }).filter(e => e.score >= 40).sort((a, b) => b.score - a.score);
-      const verdictCtx = verdictScored.slice(0, 2).map(e => ({
+      const verdictCtx0 = verdictScored.slice(0, 2).map(e => ({
         priority: "판정지침",
         title: e.title,
         content: e.bodyText.slice(0, 600),
       })).filter(c => c.content);
+      // [판정 질문] 불합격 여부를 가리려면 "불합격 사유 전체 목록"이 필요하다. 평소처럼 600자로 자르면 목록의 대부분이 빠져
+      // AI가 "목록에 있는지 확인 불가"로 얼버무리므로, 판정 질문이면 제4조(판정 구조)·별표1·해당 설비의 별표2(정밀이면 별표3)를 전체 전달한다.
+      let verdictCtx = verdictCtx0;
+      try {
+        const judgeQ = /판정|지적|불합격|조건부|부적합|시정|합격/.test(text) || facetData?.intent === "판정";
+        if (facetOn && judgeQ) {
+          const sfx = /유압/.test(text) ? "유압식" : /에스컬|무빙워크/.test(text) || equipmentType === "에스컬레이터" ? "에스컬레이터" : /덤웨이터/.test(text) ? "덤웨이터" : /소형/.test(text) ? "소형" : /수직형/.test(text) ? "수직형" : /경사형/.test(text) ? "경사형" : "전기식";
+          const prec = /정밀/.test(text) && ["전기식", "유압식", "소형", "덤웨이터", "에스컬레이터"].includes(sfx);
+          const listKey = prec ? `별표3_${sfx}` : `별표2_${sfx}`;
+          const full: { priority: string; title: string; content: string }[] = [];
+          const bodySec = getJudgmentSectionAI("본문");
+          if (bodySec?.type === "text") {
+            const t = bodySec.text || "";
+            const i3 = t.indexOf("제3조"), i5 = t.indexOf("제5조");
+            if (i3 >= 0 && i5 > i3) full.push({ priority: "판정지침", title: "판정지침 제3~4조 (검사결과 판정 구조: 합격·불합격·조건부합격)", content: t.slice(i3, i5).trim() });
+          }
+          const b1 = getJudgmentSectionAI("별표1");
+          if (b1) full.push({ priority: "판정지침", title: "[별표1] 불합격 사유 전체 목록 (검사 착수 전·인적 위해) — 여기에 없으면 이 목록의 불합격 사유가 아님", content: judgmentSectionToText(b1) });
+          const lst = getJudgmentSectionAI(listKey);
+          if (lst) full.push({ priority: "판정지침", title: `${lst.title} 불합격 사유 전체 목록 — 여기에 없으면 이 목록의 불합격 사유가 아님`, content: judgmentSectionToText(lst).slice(0, 9000) });
+          const have = new Set(full.map(f => f.title));
+          verdictCtx = [...full.filter(f => f.content), ...verdictCtx0.filter(v => !have.has(v.title) && !full.some(f => f.title.startsWith(v.title)))].slice(0, 5);
+        }
+      } catch {}
 
       // 3) 채팅 참고 — 최대 2개, 항목당 150자 (실무 참고용)
       const chatCtx = chatResults.slice(0, 2).map(r => ({
@@ -5172,7 +5231,16 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify({ poolId: c.poolId, question: c.question, optionLabel: o.label, optionRef: o.ref, employeeId: empIdentity?.empId || undefined }),
                             }).catch(() => {});
-                            sendMessage(o.ask ? `${c.question} (${o.ask})` : `${c.question} (${o.label} 기준)`, c.equipmentType, undefined, true);
+                            const nextQ = o.ask !== undefined ? (o.ask ? `${c.question} (${o.ask})` : c.question) : `${c.question} (${o.label} 기준)`;
+                            if (c.next) {
+                              // 위치를 고른 뒤 설치연도도 필요하면 이어서 묻는다(새 답변 호출 없이 말풍선만 추가).
+                              setMessages(prev => [...prev, {
+                                role: "assistant", content: c.next!.content, time: formatTime(),
+                                clarify: { poolId: 0, question: nextQ, equipmentType: c.equipmentType, options: c.next!.options, skipLabel: c.next!.skipLabel },
+                              }]);
+                              return;
+                            }
+                            sendMessage(nextQ, c.equipmentType, undefined, true);
                           }}
                           className="text-left text-xs font-medium border border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:border-blue-700 dark:text-blue-400 rounded-xl px-3 py-2"
                         >
@@ -5186,7 +5254,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                         }}
                         className="text-left text-xs font-medium border border-border rounded-xl px-3 py-2 text-muted-foreground"
                       >
-                        {msg.clarify.poolId === 0 ? "모두 종합해서 답변 받기" : "그 밖의 내용 — 이 질문 그대로 답변 받기"}
+                        {msg.clarify.skipLabel || (msg.clarify.poolId === 0 ? "모두 종합해서 답변 받기" : "그 밖의 내용 — 이 질문 그대로 답변 받기")}
                       </button>
                     </div>
                   )}
