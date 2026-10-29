@@ -5748,9 +5748,15 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                               {(item as any).revText && <p className="whitespace-pre-wrap mt-1">{(item as any).revText}</p>}
                             </div>
                           )}
-                          {((item as any).figures || []).length > 0 && (
+                          {/* 원본 파일(PDF 등) — figures JSON 중 kind:"file" 항목. 1998 고시의 "원본 파일 열기"와 같은 방식 */}
+                          {((item as any).figures as { src: string; caption?: string; kind?: string }[] | undefined || []).filter(f => f.kind === "file").map((f, fi) => (
+                            <a key={"file" + fi} href={f.src} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 underline">
+                              📄 {f.caption || "원본 파일"} 열기
+                            </a>
+                          ))}
+                          {((item as any).figures || []).filter((f: any) => f.kind !== "file").length > 0 && (
                             <div className="space-y-2">
-                              {((item as any).figures as { src: string; caption?: string }[]).map((f, fi) => (
+                              {((item as any).figures as { src: string; caption?: string; kind?: string }[]).filter(f => f.kind !== "file").map((f, fi) => (
                                 <div key={fi} className="bg-card border border-border rounded-lg p-1.5">
                                   <a href={f.src} target="_blank" rel="noreferrer">
                                     <img src={f.src} alt={f.caption || "표준화 그림"} loading="lazy" className="w-full h-auto block rounded" />
