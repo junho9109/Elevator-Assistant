@@ -403,7 +403,9 @@ function scoreMatch(
 
 
 // [2026-10] 되묻기 — 아쉬워요 "질문 뜻이 달랐어요"로 학습된 질문이 다시 오면 답변 전에 선택지를 보여준다.
-type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: { label: string; ref: string; ask?: string }[]; queue?: { content: string; options: { label: string; ref: string; ask?: string }[]; skipLabel?: string }[]; skipLabel?: string };
+type ClarifyOpt = { label: string; ref: string; ask?: string; eq?: "엘리베이터" | "에스컬레이터" };
+type ClarifyStep = { content: string; options: ClarifyOpt[]; skipLabel?: string; optionsByEq?: Record<"엘리베이터" | "에스컬레이터", ClarifyOpt[]> };
+type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: ClarifyOpt[]; queue?: ClarifyStep[]; skipLabel?: string };
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; retry?: boolean; clarify?: ClarifyPrompt; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article" | "technical"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
@@ -2838,29 +2840,74 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       }
     }
 
-    // [관리자 테스트] 자료 종류 선택 되묻기 — 검사기준·표준화·판정지침 후보가 비슷한 비중으로 나오고, 질문에 자료 종류 지정이 없을 때
-    // 어느 자료를 중심으로 답할지 버튼으로 묻는다. 버튼을 누르면 그 자료를 지정한 질문으로 다시 답변한다(되묻기는 질문당 1회).
+    // [관리자 테스트] 단계별 되묻기 — 큰 틀(자료 종류) → 설비 → 위치 → (판정 질문이면) 검사 종류 → 설치연도 순서로,
+    // 필요한 것만 한 번씩 묻는다. 처음부터 조문 제목을 보여주지 않는다. 마지막 선택에서 한 번만 답변을 만든다.
     if (facetOn && !skipClarify && !modeOverride) {
       try {
         const srcOn = getGlobalAdminMode() && localStorage.getItem("clarifySource") === "1";
-        const explicitType = /검사\s*기준|안전\s*기준|별표\s*\d+|표준화|판정\s*지침|\(.*기준으로\)/.test(text);
-        // 위치·설치연도 되묻기 — 사전의 갈림길(예: 인터폰=피트/카 상부/…)과, 판정 질문인데 설치연도가 없는 경우.
         if (srcOn) {
-          const eqType: "엘리베이터" | "에스컬레이터" = equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터";
-          const loc = findBranchPrompt(text, matchGlossary(text));
+          const W = window as any;
+          const within = (k: string, ms: number) => Date.now() - (W[k] || 0) < ms;
+          const eqNow: "엘리베이터" | "에스컬레이터" = equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터";
+          const gHits = matchGlossary(text);
+          const explicitType = /검사\s*기준|안전\s*기준|별표\s*\d+|표준화|판정\s*지침|\(.*기준으로\)/.test(text);
+
+          // 1) 큰 틀 — 검사기준 / 표준화 / 판정지침 중 후보가 비슷한 비중으로 여럿일 때만
+          let srcStep: ClarifyStep | null = null;
+          if (!explicitType && !within("__srcTs", 10 * 60 * 1000)) {
+            const sorted = [...results].sort((a, b) => (b.score || 0) - (a.score || 0));
+            const top = (t: string) => sorted.find(r => r.type === t && (r.score || 0) >= 150);
+            const insp = top("inspection"), std = top("standard"), jud = top("judgment");
+            const cands = [insp, std, jud].filter((r): r is SearchResult => !!r);
+            if (cands.length >= 2) {
+              const sc = cands.map(r => r.score || 0);
+              if (Math.min(...sc) / Math.max(...sc) >= 0.8) {
+                const opts: ClarifyOpt[] = [];
+                if (insp) opts.push({ label: "검사기준 (조문)", ref: "src:inspection", ask: "검사기준 기준으로" });
+                if (std) opts.push({ label: "표준화 (검사업무 표준화 결정)", ref: "src:standard", ask: "표준화 기준으로" });
+                if (jud) opts.push({ label: "판정지침 (합격·불합격·조건부 판정)", ref: "src:judgment", ask: "판정지침 기준으로" });
+                srcStep = { content: "어떤 자료를 중심으로 찾아볼까요?", skipLabel: "모두 종합해서 답변 받기", options: opts };
+              }
+            }
+          }
+
+          // 2) 설비 — 질문에 설비 단서가 전혀 없을 때(사전에 걸린 현장 용어는 엘리베이터로 본다)
+          if (equipmentType !== "ambiguous") W.__eqTs = Date.now();
+          let eqStep: ClarifyStep | null = null;
+          if (!forcedEquipmentType && equipmentType === "ambiguous" && gHits.length === 0 && !within("__eqTs", 30 * 60 * 1000)) {
+            eqStep = {
+              content: "어떤 승강기인가요?",
+              skipLabel: "잘 모르겠어요 — 엘리베이터로 찾기",
+              options: [
+                { label: "엘리베이터", ref: "eq:elevator", ask: "", eq: "엘리베이터" },
+                { label: "에스컬레이터·무빙워크", ref: "eq:escalator", ask: "", eq: "에스컬레이터" },
+              ],
+            };
+          }
+
+          // 3) 위치 — 사전의 갈림길(인터폰 등)이 있으면 그것, 없으면 위치가 중요한 주제(조명 등)일 때 큰 위치부터
+          let locStep: ClarifyStep | null = null;
+          const loc = findBranchPrompt(text, gHits);
+          if (loc) {
+            locStep = { content: loc.title, skipLabel: "잘 모르겠어요 — 모두 구분해서 답변 받기", options: loc.options.map(o => ({ label: o.label, ref: "loc:" + o.label, ask: o.ask })) };
+          } else {
+            const hasLocWord = /기계실|기계류|풀리실|승강로|피트|카\s*(상부|내|안|위|바닥|문)|승강장|출입문|조작반|트러스|핸드레일|난간|스텝|콤|인레트|옥외/.test(text);
+            const locTopic = /조명|조도|비상등|스위치|콘센트|환기|통풍|온도|출입문|출입|바닥|소음|표지|경고|표시|배수|누수|방화|접근|사다리|난간|청소/.test(text);
+            if (!hasLocWord && locTopic && !within("__locTs", 5 * 60 * 1000)) {
+              const mk = (arr: [string, string][]): ClarifyOpt[] => arr.map(([label, ask]) => ({ label, ref: "loc:" + label, ask }));
+              const eleOpts = mk([["기계실·기계류 공간", "기계실 기계류 공간"], ["승강로", "승강로"], ["피트", "피트"], ["카 상부", "카 상부"], ["카 내", "카 내"], ["승강장·출입문", "승강장 출입문"]]);
+              const escOpts = mk([["상·하부 승강장(기계실 포함)", "상·하부 승강장 기계실"], ["트러스 내부", "트러스 내부"], ["핸드레일·난간", "핸드레일 난간"], ["스텝·콤(승객 탑승부)", "스텝 콤"]]);
+              locStep = { content: "어느 위치에 대한 내용인가요?", skipLabel: "잘 모르겠어요 — 위치별로 구분해서 답변 받기", options: eleOpts, optionsByEq: { 엘리베이터: eleOpts, 에스컬레이터: escOpts } };
+            }
+          }
+
+          // 4) 검사 종류 · 5) 설치연도 — 판정 질문일 때만
           const judgeAsk = /판정|지적|불합격|조건부|부적합|합격/.test(text) || facetData?.intent === "판정";
           const hasYear = !!facetData?.year || /(19|20)\d{2}|\d{2}\s*년|건축\s*허가|종전|현행|신법|구법|설치\s*일|검사기준\s*적용/.test(text);
-          if (hasYear) (window as any).__yearTs = Date.now();
-          const recentYear = Date.now() - ((window as any).__yearTs || 0) < 30 * 60 * 1000;
-          const askedRecently = Date.now() - ((window as any).__askedYearTs || 0) < 10 * 60 * 1000;
-          const askYear = judgeAsk && !hasYear && !recentYear && !askedRecently;
-          // 검사 종류(완성·정기·수시·정밀안전) — 판정 질문인데 종류가 없고 최근에 말하지도 않았으면 묻는다. 임의로 가정하지 않는다.
+          if (hasYear) W.__yearTs = Date.now();
           const hasKind = /완성\s*검사|설치\s*검사|정기\s*검사|수시\s*검사|정밀\s*안전|정밀\s*검사|정밀(?!\s*도)|완성|정기|수시/.test(text);
-          if (hasKind) (window as any).__kindTs = Date.now();
-          const recentKind = Date.now() - ((window as any).__kindTs || 0) < 30 * 60 * 1000;
-          const askedKindRecently = Date.now() - ((window as any).__askedKindTs || 0) < 10 * 60 * 1000;
-          const askKind = judgeAsk && !hasKind && !recentKind && !askedKindRecently;
-          const kindStep = askKind ? {
+          if (hasKind) W.__kindTs = Date.now();
+          const kindStep: ClarifyStep | null = judgeAsk && !hasKind && !within("__kindTs", 30 * 60 * 1000) && !within("__askedKindTs", 10 * 60 * 1000) ? {
             content: "어떤 검사에서 나온 내용인가요? 검사 종류에 따라 판정이 달라요.",
             skipLabel: "모르겠어요 — 검사 종류별로 구분해서 답변 받기",
             options: [
@@ -2870,7 +2917,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
               { label: "정밀안전검사", ref: "kind:precision", ask: "정밀안전검사" },
             ],
           } : null;
-          const yearStep = askYear ? {
+          const yearStep: ClarifyStep | null = judgeAsk && !hasYear && !within("__yearTs", 30 * 60 * 1000) && !within("__askedYearTs", 10 * 60 * 1000) ? {
             content: "설치연도(또는 건축허가 시점)에 따라 기준이 달라져요. 언제쯤 설치된 승강기인가요?",
             skipLabel: "모르겠어요 — 시점별로 구분해서 답변 받기",
             options: [
@@ -2880,56 +2927,21 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
               { label: "2012년 이전 설치", ref: "yr:2012", ask: "설치연도 2012년 이전" },
             ],
           } : null;
-          const locStep = loc ? { content: loc.title, skipLabel: "잘 모르겠어요 — 모두 구분해서 답변 받기", options: loc.options.map(o => ({ label: o.label, ref: "loc:" + o.label, ask: o.ask })) } : null;
-          const steps = [locStep, kindStep, yearStep].filter((x): x is NonNullable<typeof x> => !!x);
+
+          const steps = [srcStep, eqStep, locStep, kindStep, yearStep].filter((x): x is ClarifyStep => !!x);
           if (steps.length > 0) {
-            if (yearStep) (window as any).__askedYearTs = Date.now();
-            if (kindStep) (window as any).__askedKindTs = Date.now();
+            if (yearStep) W.__askedYearTs = Date.now();
+            if (kindStep) W.__askedKindTs = Date.now();
+            if (locStep) W.__locTs = Date.now();
             const [first, ...rest] = steps;
             setMessages(prev => [...prev, {
               role: "assistant",
               content: first.content,
               time: formatTime(),
-              clarify: { poolId: 0, question: text, equipmentType: eqType, options: first.options, skipLabel: first.skipLabel, ...(rest.length > 0 ? { queue: rest } : {}) },
+              clarify: { poolId: 0, question: text, equipmentType: eqNow, options: first.options, skipLabel: first.skipLabel, ...(rest.length > 0 ? { queue: rest } : {}) },
             }]);
             setIsTyping(false);
             return;
-          }
-        }
-        if (srcOn && !explicitType) {
-          const sorted = [...results].sort((a, b) => (b.score || 0) - (a.score || 0));
-          const insp = sorted.find(r => r.type === "inspection" && /^\d+(?:\.\d+)+/.test((r.query || "").trim()) && !(r.content || "").startsWith("검사기준 섹션"));
-          const std = sorted.find(r => r.type === "standard");
-          const jud = sorted.find(r => r.type === "judgment");
-          const cands = [insp, std, jud].filter((r): r is SearchResult => !!r && (r.score || 0) >= 150);
-          const kinds = new Set(cands.map(r => r.type));
-          if (insp && std && kinds.size >= 2) {
-            const sc = cands.map(r => r.score || 0);
-            const ratio = Math.min(...sc) / Math.max(...sc);
-            if (ratio >= 0.8) {
-              const strip = (t: string) => (t || "").replace(/^\[[^\]]*\]\s*/, "").trim();
-              const opts: { label: string; ref: string; ask?: string }[] = [];
-              for (const r of cands) {
-                if (r.type === "inspection") {
-                  const ref = (r.query || "").trim();
-                  opts.push({ label: `검사기준 ${ref} ${strip(r.title).replace(new RegExp("^" + ref.replace(/\./g, "\\.") + "\\s*"), "").slice(0, 26)}`.trim(), ref: "src:inspection:" + ref, ask: `검사기준 ${ref} 기준으로` });
-                } else if (r.type === "standard") {
-                  opts.push({ label: `표준화: ${strip(r.title).slice(0, 34)}`, ref: "src:standard", ask: `표준화 "${strip(r.title).slice(0, 40)}" 기준으로` });
-                } else if (r.type === "judgment") {
-                  opts.push({ label: `판정지침: ${strip(r.title).slice(0, 30)}`, ref: "src:judgment", ask: `판정지침 "${strip(r.title).slice(0, 30)}" 기준으로` });
-                }
-              }
-              if (opts.length >= 2) {
-                setMessages(prev => [...prev, {
-                  role: "assistant",
-                  content: "관련 자료가 여러 종류로 찾아졌어요. 어느 자료를 중심으로 답변할까요?",
-                  time: formatTime(),
-                  clarify: { poolId: 0, question: text, equipmentType: equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터", options: opts },
-                }]);
-                setIsTyping(false);
-                return;
-              }
-            }
           }
         }
       } catch {}
@@ -5249,16 +5261,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                               body: JSON.stringify({ poolId: c.poolId, question: c.question, optionLabel: o.label, optionRef: o.ref, employeeId: empIdentity?.empId || undefined }),
                             }).catch(() => {});
                             const nextQ = o.ask !== undefined ? (o.ask ? `${c.question} (${o.ask})` : c.question) : `${c.question} (${o.label} 기준)`;
+                            const newEq = o.eq || c.equipmentType;
+                            if (o.ref.startsWith("src:")) (window as any).__srcTs = Date.now();
+                            if (o.eq) (window as any).__eqTs = Date.now();
                             if (c.queue && c.queue.length > 0) {
-                              // 위치·검사 종류·설치연도 중 더 물을 것이 남았으면 이어서 묻는다(새 답변 호출 없이 말풍선만 추가).
+                              // 큰 틀 → 설비 → 위치 → 검사 종류 → 설치연도 중 더 물을 것이 남았으면 이어서 묻는다(새 답변 호출 없이 말풍선만 추가).
                               const [nx, ...restQ] = c.queue;
+                              const nxOpts = nx.optionsByEq ? nx.optionsByEq[newEq] : nx.options;
                               setMessages(prev => [...prev, {
                                 role: "assistant", content: nx.content, time: formatTime(),
-                                clarify: { poolId: 0, question: nextQ, equipmentType: c.equipmentType, options: nx.options, skipLabel: nx.skipLabel, ...(restQ.length > 0 ? { queue: restQ } : {}) },
+                                clarify: { poolId: 0, question: nextQ, equipmentType: newEq, options: nxOpts, skipLabel: nx.skipLabel, ...(restQ.length > 0 ? { queue: restQ } : {}) },
                               }]);
                               return;
                             }
-                            sendMessage(nextQ, c.equipmentType, undefined, true);
+                            sendMessage(nextQ, newEq, undefined, true);
                           }}
                           className="text-left text-xs font-medium border border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:border-blue-700 dark:text-blue-400 rounded-xl px-3 py-2"
                         >
