@@ -1308,7 +1308,7 @@ function GlossaryAdminPanel({ empId, empName }: { empId: string; empName: string
       </button>
       {open && (
         <div className="mt-2 space-y-1.5">
-          <p className="text-[10px] text-muted-foreground leading-relaxed">재질문으로 표현이 바뀐 짝을 자동으로 모읍니다. 서로 다른 3명 이상·누적 4점 이상이면 자동 적용되고(👎 받은 질문 후 재질문은 2점), 여기서 끄거나 지울 수 있습니다. 관리자 테스트 모드에서만 답변에 반영됩니다.</p>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">재질문으로 표현이 바뀐 짝을 자동으로 모읍니다. 서로 다른 3명 이상·누적 4점 이상이면 자동 적용되고(👎 받은 질문 후 재질문은 2점), 여기서 끄거나 지울 수 있습니다. 모든 이용자의 답변에 반영됩니다.</p>
           {rows.length === 0 && <p className="text-[11px] text-muted-foreground py-2">아직 학습된 항목이 없습니다</p>}
           {rows.map((r) => (
             <div key={r.id} className="rounded-lg bg-muted/40 px-2.5 py-1.5">
@@ -2098,8 +2098,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
   useEffect(() => {
     try {
       const v = new URLSearchParams(window.location.search).get("facet");
-      if (v === "1" && getGlobalAdminMode()) { localStorage.setItem("facetSearch", "1"); toast({ title: "가지 검색 테스트: 켜짐 (관리자 전용)" }); }
-      else if (v === "0") { localStorage.removeItem("facetSearch"); toast({ title: "가지 검색 테스트: 꺼짐" }); }
+      if (v === "1" && getGlobalAdminMode()) { localStorage.removeItem("facetSearch"); toast({ title: "가지 검색·현장 용어 사전: 켜짐 (기본값)" }); }
+      else if (v === "0" && getGlobalAdminMode()) { localStorage.setItem("facetSearch", "off"); toast({ title: "가지 검색·현장 용어 사전: 꺼짐 (이 기기, 관리자 전용 스위치)" }); }
     } catch {}
   }, []);
 
@@ -2651,7 +2651,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     // ⑩ Query Rewriting(서버 API, Haiku) + 채팅 메시지 검색 — 서로 독립적이므로 병렬 실행
     // (예전엔 Query Rewriting을 먼저 끝까지 기다린 뒤에야 채팅 검색을 시작해 두 번의
     // 네트워크 왕복이 그대로 더해졌음)
-    const facetOn = (() => { try { return getGlobalAdminMode() && localStorage.getItem("facetSearch") === "1"; } catch { return false; } })();
+    // [2026-10-29] 전체 이용자 적용 — 기본 켜짐. 관리자가 ?facet=0 으로 이 기기에서만 끌 수 있다(문제 발생 시 확인용).
+    const facetOn = (() => { try { return localStorage.getItem("facetSearch") !== "off"; } catch { return true; } })();
     const [qrQueries, chatMsgsRaw, clarifyPoolId, facetData] = await Promise.all([
       (async (): Promise<string[]> => {
         try {
