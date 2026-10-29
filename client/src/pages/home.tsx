@@ -2897,6 +2897,23 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       // ③ score 임계값 상향 — 130 미만 제외 (관련성 낮은 카드 제거)
       const filteredResults = hardFiltered.filter(r => (r.score || 0) >= 130);
       let contextResults = filteredResults.length > 0 ? filteredResults : hardFiltered.slice(0, 4);
+      // [관리자 테스트] 현장 용어 사전에 걸린 기준 용어(예: 인터폰→비상통화장치)의 표준화는 다른 검색어 변동(AI 재작성 편차)에
+      // 밀려 빠지지 않도록 직접 검색해 최대 3개까지 보장 추가한다(기존 결과는 그대로 두고 "추가"만 한다).
+      if (facetOn && glossaryTerms.length > 0) {
+        const have = new Set(contextResults.map(r => `${r.type}:${r.title.slice(0, 30)}`));
+        const add: SearchResult[] = [];
+        for (const gq of glossaryTerms) {
+          for (const r of searchAllData(gq, standards, stdOverrides, activeInspectionContent)) {
+            if (r.type !== "standard") continue;
+            const key = `${r.type}:${r.title.slice(0, 30)}`;
+            if (have.has(key) || (r.score || 0) < 130) continue;
+            have.add(key);
+            add.push(r);
+          }
+        }
+        add.sort((x, y) => (y.score || 0) - (x.score || 0));
+        if (add.length > 0) contextResults = [...contextResults, ...add.slice(0, 3)];
+      }
 
       // ★ Rerank — Sonnet으로 정밀 관련성 판단 (Haiku→Sonnet 업그레이드)
       // 빠른 답변 모드는 속도가 최우선이라 이 별도 Claude 왕복(rerank)을 생략하고
