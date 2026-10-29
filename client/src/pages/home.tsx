@@ -403,7 +403,7 @@ function scoreMatch(
 
 
 // [2026-10] 되묻기 — 아쉬워요 "질문 뜻이 달랐어요"로 학습된 질문이 다시 오면 답변 전에 선택지를 보여준다.
-type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: { label: string; ref: string }[] };
+type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: { label: string; ref: string; ask?: string }[] };
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; retry?: boolean; clarify?: ClarifyPrompt; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article" | "technical"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
@@ -2098,6 +2098,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
   useEffect(() => {
     try {
       const v = new URLSearchParams(window.location.search).get("facet");
+      { const cv = new URLSearchParams(window.location.search).get("clarify"); if (cv === "1" && getGlobalAdminMode()) { localStorage.setItem("clarifySource", "1"); toast({ title: "자료 선택 되묻기 테스트: 켜짐 (관리자 전용)" }); } else if (cv === "0") { localStorage.removeItem("clarifySource"); toast({ title: "자료 선택 되묻기 테스트: 꺼짐" }); } }
       if (v === "1" && getGlobalAdminMode()) { localStorage.removeItem("facetSearch"); toast({ title: "가지 검색·현장 용어 사전: 켜짐 (기본값)" }); }
       else if (v === "0" && getGlobalAdminMode()) { localStorage.setItem("facetSearch", "off"); toast({ title: "가지 검색·현장 용어 사전: 꺼짐 (이 기기, 관리자 전용 스위치)" }); }
     } catch {}
@@ -2572,10 +2573,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     // [현장 질문 사전 자가 학습] 같은 사용자가 15분 안에 질문을 바꿔 다시 물으면 서버에 신호만 보낸다(응답 대기 없음).
     try {
       const lq = (window as any).__lastQ as { t: string; ts: number } | undefined;
-      if (lq && !modeOverride && lq.t !== text && Date.now() - lq.ts < 15 * 60 * 1000) {
+      if (lq && !modeOverride && !skipClarify && lq.t !== text && Date.now() - lq.ts < 15 * 60 * 1000) {
         fetch("/api/field-glossary/signal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prev: lq.t, next: text, employeeId: empIdentity?.empId || undefined }) }).catch(() => {});
       }
-      if (!modeOverride) (window as any).__lastQ = { t: text, ts: Date.now() };
+      if (!modeOverride && !skipClarify) (window as any).__lastQ = { t: text, ts: Date.now() };
     } catch {}
     const userMsg: Message = { role: "user", content: text, time: formatTime(), ...(modeOverride ? { retry: true } : {}) };
     setMessages(prev => [...prev, userMsg]);
@@ -2821,6 +2822,51 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         setIsTyping(false);
         return;
       }
+    }
+
+    // [관리자 테스트] 자료 종류 선택 되묻기 — 검사기준·표준화·판정지침 후보가 비슷한 비중으로 나오고, 질문에 자료 종류 지정이 없을 때
+    // 어느 자료를 중심으로 답할지 버튼으로 묻는다. 버튼을 누르면 그 자료를 지정한 질문으로 다시 답변한다(되묻기는 질문당 1회).
+    if (facetOn && !skipClarify && !modeOverride) {
+      try {
+        const srcOn = getGlobalAdminMode() && localStorage.getItem("clarifySource") === "1";
+        const explicitType = /검사\s*기준|안전\s*기준|별표\s*\d+|표준화|판정\s*지침|\(.*기준으로\)/.test(text);
+        if (srcOn && !explicitType) {
+          const sorted = [...results].sort((a, b) => (b.score || 0) - (a.score || 0));
+          const insp = sorted.find(r => r.type === "inspection" && /^\d+(?:\.\d+)+/.test((r.query || "").trim()) && !(r.content || "").startsWith("검사기준 섹션"));
+          const std = sorted.find(r => r.type === "standard");
+          const jud = sorted.find(r => r.type === "judgment");
+          const cands = [insp, std, jud].filter((r): r is SearchResult => !!r && (r.score || 0) >= 150);
+          const kinds = new Set(cands.map(r => r.type));
+          if (insp && std && kinds.size >= 2) {
+            const sc = cands.map(r => r.score || 0);
+            const ratio = Math.min(...sc) / Math.max(...sc);
+            if (ratio >= 0.8) {
+              const strip = (t: string) => (t || "").replace(/^\[[^\]]*\]\s*/, "").trim();
+              const opts: { label: string; ref: string; ask?: string }[] = [];
+              for (const r of cands) {
+                if (r.type === "inspection") {
+                  const ref = (r.query || "").trim();
+                  opts.push({ label: `검사기준 ${ref} ${strip(r.title).replace(new RegExp("^" + ref.replace(/\./g, "\\.") + "\\s*"), "").slice(0, 26)}`.trim(), ref: "src:inspection:" + ref, ask: `검사기준 ${ref} 기준으로` });
+                } else if (r.type === "standard") {
+                  opts.push({ label: `표준화: ${strip(r.title).slice(0, 34)}`, ref: "src:standard", ask: `표준화 "${strip(r.title).slice(0, 40)}" 기준으로` });
+                } else if (r.type === "judgment") {
+                  opts.push({ label: `판정지침: ${strip(r.title).slice(0, 30)}`, ref: "src:judgment", ask: `판정지침 "${strip(r.title).slice(0, 30)}" 기준으로` });
+                }
+              }
+              if (opts.length >= 2) {
+                setMessages(prev => [...prev, {
+                  role: "assistant",
+                  content: "관련 자료가 여러 종류로 찾아졌어요. 어느 자료를 중심으로 답변할까요?",
+                  time: formatTime(),
+                  clarify: { poolId: 0, question: text, equipmentType: equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터", options: opts },
+                }]);
+                setIsTyping(false);
+                return;
+              }
+            }
+          }
+        }
+      } catch {}
     }
 
     // ── 채팅 메시지 검색 결과 처리 (위에서 이미 병렬로 조회됨, 별도 보관 — UI 표시용)
@@ -5094,12 +5140,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                           onClick={() => {
                             const c = msg.clarify!;
                             // 선택 기록(관리자 패널 선택 분포용) — 실패해도 답변 흐름에는 영향 없음
-                            fetch("/api/clarify-choice", {
+                            if (c.poolId > 0) fetch("/api/clarify-choice", {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify({ poolId: c.poolId, question: c.question, optionLabel: o.label, optionRef: o.ref, employeeId: empIdentity?.empId || undefined }),
                             }).catch(() => {});
-                            sendMessage(`${c.question} (${o.label} 기준)`, c.equipmentType, undefined, true);
+                            sendMessage(o.ask ? `${c.question} (${o.ask})` : `${c.question} (${o.label} 기준)`, c.equipmentType, undefined, true);
                           }}
                           className="text-left text-xs font-medium border border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:border-blue-700 dark:text-blue-400 rounded-xl px-3 py-2"
                         >
@@ -5113,7 +5159,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                         }}
                         className="text-left text-xs font-medium border border-border rounded-xl px-3 py-2 text-muted-foreground"
                       >
-                        그 밖의 내용 — 이 질문 그대로 답변 받기
+                        {msg.clarify.poolId === 0 ? "모두 종합해서 답변 받기" : "그 밖의 내용 — 이 질문 그대로 답변 받기"}
                       </button>
                     </div>
                   )}
