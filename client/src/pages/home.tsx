@@ -2915,6 +2915,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         add.sort((x, y) => (y.score || 0) - (x.score || 0));
         if (add.length > 0) contextResults = [...contextResults, ...add.slice(0, 3)];
       }
+      // [표준화 최소 보장] 점수 130 미만이라 표준화가 하나도 못 들어온 경우(질문 표현이 표준화 제목과 달라도),
+      // 이미 필터를 통과한 후보 중 점수 90 이상인 표준화 최대 2개를 추가한다. 관련 없으면 AI가 무시하도록 규칙이 있다.
+      if (facetOn && !contextResults.some(r => r.type === "standard")) {
+        const stdMin = hardFiltered.filter(r => r.type === "standard" && (r.score || 0) >= 90).slice(0, 2);
+        if (stdMin.length > 0) contextResults = [...contextResults, ...stdMin];
+      }
 
       // ★ Rerank — Sonnet으로 정밀 관련성 판단 (Haiku→Sonnet 업그레이드)
       // 빠른 답변 모드는 속도가 최우선이라 이 별도 Claude 왕복(rerank)을 생략하고
