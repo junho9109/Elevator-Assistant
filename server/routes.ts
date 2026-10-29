@@ -2671,6 +2671,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           chatCtx?: { priority: string; content: string; note: string }[];
           memoCtx?: { title: string; content: string }[];
           precisionCtx?: { situation: string; judgment: string; basis: string; source: string }[];
+          eraCtx?: { docTitle: string; effectiveDate: string; ref: string; title: string; content: string }[];
         };
       };
 
@@ -2834,6 +2835,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (context.verdictCtx?.length) {
           sections.push("[2순위] 판정지침\n" +
             context.verdictCtx.map(c => `■ ${c.title}\n${c.content}`).join("\n\n"));
+        }
+        if (context.eraCtx?.length) {
+          sections.push("[종전 참고] 설치연도가 오래된 질문을 위해 앱에 있는 가장 가까운 시기의 옛 고시에서 찾은 조문 (설치 당시 기준과 같다는 보장 없음)\n" +
+            context.eraCtx.map(c => `■ ${c.docTitle} (${c.effectiveDate} 시행) ${c.ref} ${c.title}\n${c.content}`).join("\n\n"));
         }
         if (context.techCtx?.length) {
           sections.push("[3순위] 표준화\n" +
@@ -3329,6 +3334,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
    - 공식과 무관한 변수는 절대 묻지 않는다
 3. 측정값을 받으면 자료의 공식에 대입하여 계산하고 적합/부적합 판정을 내린다
 4. 계산 과정과 결과를 명확히 보여준다
+
+## [종전 참고] 사용 방법
+- [종전 참고]가 있으면 질문의 설치연도에 가장 가까운 시기의 옛 고시 조문이다. 현행 기준과 나란히 "현행 / 종전(고시명, 시행일)" 형태로 보여주고, 종전 수치가 질문 상황에 맞는지 비교한다.
+- 반드시 "앱에 있는 가장 가까운 시기의 고시이며 설치 당시 기준과 다를 수 있다"고 표시하고, 인용은 [고시명 조문번호] 형식으로 한다. 검사기준을 대체하는 근거로 단정하지 않는다.
+- 내용이 질문과 직접 관련이 없으면 억지로 쓰지 않고 "종전 해당 조문을 찾지 못했다"고 한다.
+
+## 적합/조건부/불합격 판정 방식 (판정을 묻는 질문일 때)
+등급은 다음 순서로 따진다. 각 단계의 근거를 자료에서 찾아 보여준다.
+1. 적용 기준 정하기 — 설치·건축허가·검사기준 적용 시점에 따라 종전/현행 중 어느 기준인지 먼저 정한다. 종전 기준이 적용되면 그 시점의 요구치와 비교하며, 현행 요구치에 못 미쳐도 종전 기준을 충족하면 지적 대상이 아니다(예: 오래된 설치분의 조도가 현행 기준보다 낮아도 당시 기준을 충족하면 해당 없음).
+2. 기준 충족 여부 — 해당 기준(종전 또는 현행)에 적합한지 확인한다. 충족하면 적합이다.
+3. 부적합일 때 등급 — [판정지침]에 열거된 불합격 사유에 해당하면 불합격이다. 부적합이지만 불합격 사유에 해당하지 않으면 불합격이 아니라 조건부이다.
+- 불합격 사유에 열거돼 있지 않다는 이유로 "조건부 기준이 자료에 없다"고 답하지 않는다. 대신 어떤 불합격 사유와 비교했는지 보이고, 해당하지 않으므로 조건부로 보인다고 안내한다.
+- 판정지침 항목과 일치 여부가 애매하면 단정하지 말고 비교한 항목을 보여준다.
+- 조건부의 보완기간은 [판정지침]에 명시된 경우가 아니면 언급하지 않는다.
+- 이 판정 방식은 참고용이다. 판정을 낸 답변의 끝에는 "위 판정은 자료를 바탕으로 한 참고용 안내이며, 최종 판정은 판정지침 원문과 현장 상황을 확인해 주세요." 한 줄을 덧붙인다.
 
 ## 답변 규칙
 - 결론을 첫 줄에 (판정/핵심 수치/날짜)

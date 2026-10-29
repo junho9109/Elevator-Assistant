@@ -1,4 +1,5 @@
 import React from "react";
+import { searchEraDocs } from "@/lib/eraSearch";
 import { matchGlossary, glossaryQueries, glossaryHintNote, setLearnedGlossary } from "@/lib/fieldGlossary";
 import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
@@ -2968,7 +2969,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         ...crossRefItems.filter(cr => !contextResults.find(r => r.title === cr.title)),
       ];
       const techResultsU = facetOn ? techResults.filter((r, i, arr) => arr.findIndex(x => x.title === r.title) === i) : techResults;
-      const techCtx = techResultsU.slice(0, facetOn ? 5 : 3).map((r, ti) => {
+      const techCtx = techResultsU.slice(0, facetOn ? 8 : 3).map((r, ti) => {
         const std = STD_ITEMS.find(s => s.title === r.title);
         const ov = stdOverrides?.find((o: any) => o.title === r.title);
         const title = ov?.overrideTitle || std?.title || ov?.title || r.title;
@@ -2989,7 +2990,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           inspectionYear: (ov as any)?.inspectionYear || "",
           installInspectionDate: (ov as any)?.installInspectionDate || "",
         };
-      }).filter(c => c.basis || c.conclusion);
+      }).filter(c => c.basis || c.conclusion)
+        .filter((c, i, arr) => !facetOn || arr.findIndex(x => x.title === c.title && x.source === c.source) === i)
+        .slice(0, facetOn ? 5 : 3);
 
       // 2.6) 기술자료 — 표준화(std_item_overrides)와 완전히 별도의 데이터소스(technical_materials).
       // 표준화처럼 검사기준 조문 교차참조는 없으므로, 질문 키워드와 제목/본문/카테고리를
@@ -3048,11 +3051,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       const hasPrecisionQ = precisionKeywords.some(k => qLower.includes(k));
       const precisionCtx = hasPrecisionQ ? PRECISION_RULES_SUMMARY : [];
 
-      const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx };
+      // [관리자 테스트] 종전 기준 검색 — 설치연도가 오래된 질문이면 세대별 고시(1997·1998)에서 관련 조문을 찾아 참고로 전달
+      let eraCtx: { docTitle: string; effectiveDate: string; ref: string; title: string; content: string }[] = [];
+      if (facetOn) {
+        try {
+          eraCtx = await searchEraDocs(Number(facetData?.year), [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2)]);
+        } catch {}
+      }
+      const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx, ...(eraCtx.length > 0 ? { eraCtx } : {}) };
       // [관리자 테스트] 비교용 — AI에게 전달되는 자료 목록을 window에 남긴다(관리자 스위치와 무관하게 제목만, 화면 표시 없음).
       try {
         (window as any).__lastCtx = {
-          facetOn, facets: facetData, searchQueries, glossary: glossaryHits.map(g => g.id),
+          facetOn, facets: facetData, searchQueries, era: eraCtx.map(e => e.docTitle.slice(0, 20) + " " + e.ref + " " + e.title.slice(0, 20)), glossary: glossaryHits.map(g => g.id),
           insp: inspCtx.map(c => c.ref + " " + c.title.slice(0, 30)),
           tech: techCtx.map(c => c.title.slice(0, 40) + " | " + c.source + " | 결정" + (c.conclusion || "").length + "자"),
           verdict: verdictCtx.map(c => c.title.slice(0, 40)),
