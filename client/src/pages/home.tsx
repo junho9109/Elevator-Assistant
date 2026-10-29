@@ -202,6 +202,18 @@ function extractKeyTerms(question: string): string[] {
 }
 
 // 주/보조 키워드 분리 — 주 키워드(명사): 검색 필터, 보조 키워드(동사/형용사): 의도 파악
+// [2026-10-29 관리자 테스트] 가지 검색(관점별 분해) — 관리자 전용 스위치(localStorage "facetSearch"=1)로만 켜진다.
+// 설치연도 → 종전/현행 판단 안내문(코드로 계산, AI 추측 아님). 건축허가일은 보통 설치 1~3년 전이므로 경계 근처는 확인 요청.
+function buildEraNote(year: number | null | undefined): string {
+  if (!year || year < 1980 || year > 2100) return "";
+  let era: string;
+  if (year <= 2012) era = "2013.9.15 이전 건축허가분 종전기준 가능성이 큼";
+  else if (year <= 2018) era = "2013.9.15~2019.3.28 이전 건축허가분 종전기준(구 별표19) 대상 가능성이 큼";
+  else if (year <= 2021) era = "2019.3.28 이후~2022.3.2 이전 건축허가분 구간일 수 있음(현행/종전 경계 확인 필요)";
+  else era = "2022.3.2 이후 건축허가분 현행 기준 가능성이 큼";
+  return `\n\n[시점 참고(자동 계산)] 질문에 설치/적용 연도 ${year}년이 있습니다. ${era}. 건축허가일(또는 검사기준 적용일)이 확인되지 않았다면 사용자에게 확인을 요청하고, 종전/현행을 구분해서 답하세요.`;
+}
+
 function splitKeywords(question: string): { primary: string[]; secondary: string[] } {
   const timingWords = ['적용','시행','언제','부터','이후','시기','일자','날짜','기준','건축허가','의무'];
   const criteriaWords = ['기준','판정','방법','확인','검사','치수','수치','이상','이하','미만','초과'];
@@ -2029,6 +2041,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
   const [deleteConfirm, setDeleteConfirm] = useState<Standard | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
+  // [관리자 테스트] ?facet=1 로 접속하면 가지 검색 테스트 켜짐, ?facet=0 이면 꺼짐(관리자 모드일 때만 효력).
+  useEffect(() => {
+    try {
+      const v = new URLSearchParams(window.location.search).get("facet");
+      if (v === "1" && getGlobalAdminMode()) { localStorage.setItem("facetSearch", "1"); toast({ title: "가지 검색 테스트: 켜짐 (관리자 전용)" }); }
+      else if (v === "0") { localStorage.removeItem("facetSearch"); toast({ title: "가지 검색 테스트: 꺼짐" }); }
+    } catch {}
+  }, []);
 
   // 접속 중 목록 자동 갱신 (사용량 창이 열려 있고 관리자 모드일 때만)
   useEffect(() => {
@@ -2570,7 +2590,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     // ⑩ Query Rewriting(서버 API, Haiku) + 채팅 메시지 검색 — 서로 독립적이므로 병렬 실행
     // (예전엔 Query Rewriting을 먼저 끝까지 기다린 뒤에야 채팅 검색을 시작해 두 번의
     // 네트워크 왕복이 그대로 더해졌음)
-    const [qrQueries, chatMsgsRaw, clarifyPoolId] = await Promise.all([
+    const facetOn = (() => { try { return getGlobalAdminMode() && localStorage.getItem("facetSearch") === "1"; } catch { return false; } })();
+    const [qrQueries, chatMsgsRaw, clarifyPoolId, facetData] = await Promise.all([
       (async (): Promise<string[]> => {
         try {
           const qrRes = await fetch("/api/query-rewrite", {
@@ -2612,10 +2633,38 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         } catch {}
         return null;
       })(),
+      // [관리자 테스트] 질문을 관점(대상/증상/의도/연도)으로 분해 — 스위치가 꺼져 있으면 호출하지 않는다.
+      (async (): Promise<any | null> => {
+        if (!facetOn) return null;
+        try {
+          const fr = await fetch("/api/query-facets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: text }),
+          });
+          if (fr.ok) return (await fr.json()).facets || null;
+        } catch {}
+        return null;
+      })(),
     ]);
-    const searchQueries: string[] = qrQueries.length > 0
-      ? [text, ...qrQueries.filter((q: string) => q !== text)]
-      : [text];
+    // 가지 검색 추가 질의 — 원 질문 검색은 그대로 두고 "추가"만 한다(기존 결과를 잃지 않음).
+    const facetTerms: string[] = facetData ? [...(facetData.targets || []), ...(facetData.symptoms || [])].filter((t: any) => typeof t === "string" && t.length >= 2) : [];
+    const facetQueries: string[] = (() => {
+      if (!facetData) return [];
+      const tg: string[] = (facetData.targets || []).filter((t: any) => typeof t === "string" && t.length >= 2).slice(0, 3);
+      const sy: string[] = (facetData.symptoms || []).filter((t: any) => typeof t === "string" && t.length >= 2).slice(0, 3);
+      const out: string[] = [];
+      for (const t of tg) {
+        out.push(t, `${t} 표준화`);
+        for (const y of sy) out.push(`${t} ${y}`);
+        if (facetData.intent === "판정") out.push(`${t} 판정`);
+      }
+      return Array.from(new Set(out)).slice(0, 10);
+    })();
+    const searchQueries: string[] = (() => {
+      const base = qrQueries.length > 0 ? [text, ...qrQueries.filter((q: string) => q !== text)] : [text];
+      return Array.from(new Set([...base, ...facetQueries]));
+    })();
 
     // 판별된(또는 강제 지정된) 설비종류에 맞는 검사기준 검색 풀을 선택한다.
     // "엘리베이터"/강제엘리베이터 → 기존 엘리베이터 맵, "에스컬레이터"/강제에스컬레이터 → 에스컬레이터 맵,
@@ -2718,12 +2767,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         .slice(-8)
         .filter(m => (m.role === "user" || m.role === "assistant") && !m.clarify)
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
-      historyMsgs.push({ role: "user", content: text });
+      historyMsgs.push({ role: "user", content: text + (facetOn ? buildEraNote(facetData?.year) : "") });
 
       // ── 우선순위별 컨텍스트 구성 ──
 
       // ② 주/보조 키워드 분리 + 핵심 개념 하드 필터
-      const { primary: primaryTerms, secondary: secondaryTerms } = splitKeywords(text);
+      const { primary: primaryTerms0, secondary: secondaryTerms } = splitKeywords(text);
+      const primaryTerms = facetOn && facetTerms.length > 0 ? Array.from(new Set([...primaryTerms0, ...facetTerms])) : primaryTerms0;
       const coreTerms = primaryTerms; // Rerank용 핵심어
 
       const hardFiltered = primaryTerms.length > 0
@@ -2808,20 +2858,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         ...contextResults.filter(r => r.type === "standard"),
         ...crossRefItems.filter(cr => !contextResults.find(r => r.title === cr.title)),
       ];
-      const techCtx = techResults.slice(0, 3).map(r => {
+      const techCtx = techResults.slice(0, facetOn ? 5 : 3).map((r, ti) => {
         const std = STD_ITEMS.find(s => s.title === r.title);
         const ov = stdOverrides?.find((o: any) => o.title === r.title);
         const title = ov?.overrideTitle || std?.title || ov?.title || r.title;
         // DB 오버라이드 우선 — 최신 수정값 반영
         const ref   = ov?.ref   || std?.ref   || "";
-        const basis = (ov?.basis || std?.basis || "").slice(0, 300);
+        const basis = (ov?.basis || std?.basis || "").slice(0, facetOn && ti < 2 ? 600 : 300);
         const conclusionRaw = ov?.conclusion || std?.conclusion || "";
         return {
           priority: "기술자료(표준화)",
           title,
           ref,
           basis,
-          conclusion: conclusionRaw.length > 10 ? conclusionRaw.slice(0, 600) : "",
+          conclusion: conclusionRaw.length > 10 ? conclusionRaw.slice(0, facetOn && ti < 2 ? 3000 : 600) : "",
           source: ov?.source || std?.source || "",
           // 건축허가일/검사기준적용일/검사일 — std_item_overrides에만 있는 필드(레거시 STD_ITEMS엔 없음)
           permitDate: (ov as any)?.permitDate || "",
@@ -2889,6 +2939,15 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       const precisionCtx = hasPrecisionQ ? PRECISION_RULES_SUMMARY : [];
 
       const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx };
+      // [관리자 테스트] 비교용 — AI에게 전달되는 자료 목록을 window에 남긴다(관리자 스위치와 무관하게 제목만, 화면 표시 없음).
+      try {
+        (window as any).__lastCtx = {
+          facetOn, facets: facetData, searchQueries,
+          insp: inspCtx.map(c => c.ref + " " + c.title.slice(0, 30)),
+          tech: techCtx.map(c => c.title.slice(0, 40) + " | " + c.source + " | 결정" + (c.conclusion || "").length + "자"),
+          verdict: verdictCtx.map(c => c.title.slice(0, 40)),
+        };
+      } catch {}
 
       // AI가 실제로 참고한 항목을 SearchResult로 변환 (카드 표시용)
       const contextUsed: SearchResult[] = [

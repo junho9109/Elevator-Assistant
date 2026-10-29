@@ -3688,6 +3688,35 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
     }
   });
 
+  // [2026-10-29 관리자 테스트] 질문을 관점으로 분해 — 가지 검색용. 원 질문은 그대로 두고 추가 검색어 생성에만 쓰인다.
+  app.post("/api/query-facets", async (req, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) return res.json({ facets: null });
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model: "claude-haiku-5-5",
+        max_tokens: 800,
+        output_config: { effort: "low" },
+        system: `승강기 검사 질문을 관점별로 분해한다. 질문에 없는 내용은 절대 추가하지 않는다. JSON 객체만 반환한다.
+{"targets":["설비·부품 명사 1~3개(예: 문닫힘안전장치, 피트 사다리)"],"symptoms":["상태·조건·증상 0~3개(예: 센서, 비접촉식, 미작동)"],"intent":"판정|기준|표준화|연혁|적용시기|정보|기타 중 하나","year":설치/적용 연도(4자리 숫자) 또는 null}`,
+        messages: [{ role: "user", content: question }],
+      } as any);
+      const block = (response.content as any[]).find((b: any) => b.type === "text");
+      const raw = block ? String(block.text).trim() : "{}";
+      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      const yr = Number(parsed.year);
+      res.json({ facets: {
+        targets: Array.isArray(parsed.targets) ? parsed.targets.map(String).slice(0, 3) : [],
+        symptoms: Array.isArray(parsed.symptoms) ? parsed.symptoms.map(String).slice(0, 3) : [],
+        intent: typeof parsed.intent === "string" ? parsed.intent : "기타",
+        year: Number.isFinite(yr) && yr > 1980 && yr < 2100 ? yr : null,
+      } });
+    } catch (e) {
+      res.json({ facets: null });
+    }
+  });
+
   // ==================== AI 사용량 통계 ====================
   app.get("/api/ai-usage/stats", async (req, res) => {
     try {
