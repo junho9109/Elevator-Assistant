@@ -2879,7 +2879,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
 
       // ② 주/보조 키워드 분리 + 핵심 개념 하드 필터
       const { primary: primaryTerms0, secondary: secondaryTerms } = splitKeywords(text);
-      const primaryTerms = facetOn && facetTerms.length > 0 ? Array.from(new Set([...primaryTerms0, ...facetTerms])) : primaryTerms0;
+      const glossaryTerms: string[] = facetOn ? glossaryQueries(glossaryHits) : [];
+      const primaryTerms = facetOn && (facetTerms.length > 0 || glossaryTerms.length > 0) ? Array.from(new Set([...primaryTerms0, ...facetTerms, ...glossaryTerms])) : primaryTerms0;
       const coreTerms = primaryTerms; // Rerank용 핵심어
 
       const hardFiltered = primaryTerms.length > 0
