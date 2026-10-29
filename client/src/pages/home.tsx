@@ -1,4 +1,5 @@
 import React from "react";
+import { matchGlossary, glossaryQueries, glossaryHintNote, setLearnedGlossary } from "@/lib/fieldGlossary";
 import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import defaultStructureImg from "@assets/structure_new.jpg";
@@ -1280,6 +1281,57 @@ const FEEDBACK_SECTIONS = ["판정 기준", "관련 조문", "관련 표준화",
 const FEEDBACK_REASONS_POS = ["조문 근거가 정확함", "판정 기준이 명확함", "실무에 바로 도움됨", "종전/현행 차이 설명이 명확함", "계산 과정이 이해하기 쉬움", "간결하고 핵심만 담음"];
 const FEEDBACK_REASONS_NEG = ["조문 근거가 틀리거나 부정확함", "판정 기준이 잘못됨", "불필요한 내용이 많음", "설명이 이해하기 어려움", "질문과 관련 없는 답변", "질문 뜻이 달랐어요", "📩 앱에 자료가 없어요 (등록 요청)"];
 
+// [현장 질문 사전] 자가 학습 목록 — 관리자 전용. 재질문 신호로 쌓인 "현장 표현 → 기준 용어" 후보를 켜고 끄고 지운다.
+function GlossaryAdminPanel({ empId, empName }: { empId: string; empName: string }) {
+  const [open, setOpen] = React.useState(false);
+  const [rows, setRows] = React.useState<any[]>([]);
+  const [busy, setBusy] = React.useState(false);
+  const q = `employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}`;
+  const load = React.useCallback(async () => {
+    try { const r = await fetch(`/api/field-glossary/admin?${q}`); if (r.ok) setRows(await r.json()); } catch {}
+  }, [q]);
+  React.useEffect(() => { if (open) load(); }, [open, load]);
+  const act = async (id: number, action: string, extra: any = {}) => {
+    setBusy(true);
+    try {
+      await fetch(`/api/field-glossary/${id}/update`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: empId, employeeName: empName, action, ...extra }) });
+      await load();
+    } catch {}
+    setBusy(false);
+  };
+  const label: Record<string, string> = { active: "적용중", pending: "학습중", rejected: "꺼짐" };
+  return (
+    <div className="px-3 py-2 border-b border-border">
+      <button onClick={() => setOpen(!open)} className="text-[11px] font-semibold text-blue-700 dark:text-blue-400">
+        🧠 현장 용어 학습 {open ? "▲" : "▼"}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          <p className="text-[10px] text-muted-foreground leading-relaxed">재질문으로 표현이 바뀐 짝을 자동으로 모읍니다. 서로 다른 3명 이상·누적 4점 이상이면 자동 적용되고(👎 받은 질문 후 재질문은 2점), 여기서 끄거나 지울 수 있습니다. 관리자 테스트 모드에서만 답변에 반영됩니다.</p>
+          {rows.length === 0 && <p className="text-[11px] text-muted-foreground py-2">아직 학습된 항목이 없습니다</p>}
+          {rows.map((r) => (
+            <div key={r.id} className="rounded-lg bg-muted/40 px-2.5 py-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] font-medium">{r.term} → {r.stdTerms.join(", ")}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.status === "active" ? "bg-green-100 text-green-700" : r.status === "rejected" ? "bg-red-100 text-red-700" : "border border-border text-muted-foreground"}`}>{label[r.status] || r.status}</span>
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-[10px] text-muted-foreground">재질문 {r.reask}회 · 👎후 {r.neg}회 · {r.users}명 · 점수 {r.evidence}</span>
+                <span className="flex gap-2 text-[10px]">
+                  {r.status !== "active" && <button disabled={busy} onClick={() => act(r.id, "active")} className="text-green-700">적용</button>}
+                  {r.status === "active" && <button disabled={busy} onClick={() => act(r.id, "rejected")} className="text-amber-700">끄기</button>}
+                  <button disabled={busy} onClick={() => { const v = window.prompt("기준 용어(쉼표로 구분)", r.stdTerms.join(", ")); if (v) act(r.id, "edit", { stdTerms: v.split(",").map((x: string) => x.trim()) }); }} className="text-blue-700">수정</button>
+                  <button disabled={busy} onClick={() => { if (window.confirm("삭제할까요?")) act(r.id, "delete"); }} className="text-red-600">삭제</button>
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FeedbackModal({ rating, onSubmit, onSkip, onClose }: { rating: 1 | -1; onSubmit: (sections: string[], reasons: string[], comment: string) => void; onSkip: () => void; onClose: () => void }) {
   const [sections, setSections] = React.useState<string[]>([]);
   const [reasons, setReasons] = React.useState<string[]>([]);
@@ -2516,6 +2568,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     // [2026-10] 빠른 답변이 마음에 들지 않을 때 같은 질문을 정밀 답변으로 다시 묻는 경우 modeOverride="precise".
     // 하단 모드 토글(chatMode)은 건드리지 않고 이번 한 번만 적용한다.
     const effMode: "fast" | "precise" = modeOverride ?? chatMode;
+    // [현장 질문 사전 자가 학습] 같은 사용자가 15분 안에 질문을 바꿔 다시 물으면 서버에 신호만 보낸다(응답 대기 없음).
+    try {
+      const lq = (window as any).__lastQ as { t: string; ts: number } | undefined;
+      if (lq && !modeOverride && lq.t !== text && Date.now() - lq.ts < 15 * 60 * 1000) {
+        fetch("/api/field-glossary/signal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prev: lq.t, next: text, employeeId: empIdentity?.empId || undefined }) }).catch(() => {});
+      }
+      if (!modeOverride) (window as any).__lastQ = { t: text, ts: Date.now() };
+    } catch {}
     const userMsg: Message = { role: "user", content: text, time: formatTime(), ...(modeOverride ? { retry: true } : {}) };
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
@@ -2690,6 +2750,16 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       const extra = Array.from(new Set(out)).filter(q => !searchQueries.includes(q)).slice(0, 14);
       searchQueries.push(...extra);
     }
+    // [관리자 테스트] 현장 질문 사전 — 현장 표현에 연결된 기준 용어를 "추가" 검색어로만 쓴다.
+    if (facetOn && !(window as any).__glossaryLoaded) {
+      (window as any).__glossaryLoaded = true;
+      try { const gr = await fetch("/api/field-glossary/active"); if (gr.ok) setLearnedGlossary(await gr.json()); } catch {}
+    }
+    const glossaryHits = facetOn ? matchGlossary(text) : [];
+    if (glossaryHits.length > 0) {
+      const gq = glossaryQueries(glossaryHits).filter(q => !searchQueries.includes(q)).slice(0, 8);
+      searchQueries.push(...gq);
+    }
     if (searchQueries.length > 1) {
       const multiResults: Map<string, { result: SearchResult; hitCount: number; maxScore: number }> = new Map();
       for (const q of searchQueries) {
@@ -2803,7 +2873,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         .slice(-8)
         .filter(m => (m.role === "user" || m.role === "assistant") && !m.clarify)
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
-      historyMsgs.push({ role: "user", content: text + (facetOn ? buildEraNote(facetData?.year) : "") });
+      historyMsgs.push({ role: "user", content: text + (facetOn ? buildEraNote(facetData?.year) + glossaryHintNote(glossaryHits) : "") });
 
       // ── 우선순위별 컨텍스트 구성 ──
 
@@ -2981,7 +3051,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       // [관리자 테스트] 비교용 — AI에게 전달되는 자료 목록을 window에 남긴다(관리자 스위치와 무관하게 제목만, 화면 표시 없음).
       try {
         (window as any).__lastCtx = {
-          facetOn, facets: facetData, searchQueries,
+          facetOn, facets: facetData, searchQueries, glossary: glossaryHits.map(g => g.id),
           insp: inspCtx.map(c => c.ref + " " + c.title.slice(0, 30)),
           tech: techCtx.map(c => c.title.slice(0, 40) + " | " + c.source + " | 결정" + (c.conclusion || "").length + "자"),
           verdict: verdictCtx.map(c => c.title.slice(0, 40)),
@@ -4562,6 +4632,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
               </button>
             )}
           </div>
+          <GlossaryAdminPanel empId={empIdentity.empId} empName={empIdentity.empName} />
           <div className="px-3 py-2 border-b border-border">
             <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">
               좋아요가 많은 답변은 유사 질문에 자동으로 참고되고, 아쉬워요가 많은 답변은 자동으로 참고 목록에서 빠집니다.

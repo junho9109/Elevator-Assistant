@@ -11,6 +11,7 @@ const ATT_TAG_SQL = `COALESCE((SELECT string_agg('[[첨부:' || inspection_item_
 import { storage } from "./storage";
 import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema } from "@shared/schema";
 import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
+import { registerFieldGlossaryRoutes } from "./routes/field-glossary";
 import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAnswer } from "./routes/research-candidates";
 import { registerUserStatsRoutes } from "./routes/user-stats";
 import { registerActivityLogRoutes } from "./routes/activity-log";
@@ -388,6 +389,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // [2026-09] "자료 범위 밖" 답변 → 웹 검색 보강 → 관리자 승인 파이프라인 API
   // (/api/ai-research-candidates, /api/ai-research-candidates/:id/approve, /reject)
   registerResearchCandidateRoutes(app);
+  // [2026-10-29] 현장 질문 사전 자가 학습(재질문 신호 → 후보 → 자동/관리자 활성)
+  registerFieldGlossaryRoutes(app);
 
   // [2026-09] 사용자별 질문/피드백 통계 API (/api/user-stats)
   registerUserStatsRoutes(app);
