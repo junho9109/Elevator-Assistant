@@ -403,7 +403,7 @@ function scoreMatch(
 
 
 // [2026-10] 되묻기 — 아쉬워요 "질문 뜻이 달랐어요"로 학습된 질문이 다시 오면 답변 전에 선택지를 보여준다.
-type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: { label: string; ref: string; ask?: string }[]; next?: { content: string; options: { label: string; ref: string; ask?: string }[]; skipLabel?: string }; skipLabel?: string };
+type ClarifyPrompt = { poolId: number; question: string; equipmentType: "엘리베이터" | "에스컬레이터"; options: { label: string; ref: string; ask?: string }[]; queue?: { content: string; options: { label: string; ref: string; ask?: string }[]; skipLabel?: string }[]; skipLabel?: string };
 type Message = { role: "user" | "assistant"; content: string; time: string; searchResults?: SearchResult[]; calcCard?: string; elevatorData?: any; safetyPoints?: any[]; isElevatorQuery?: boolean; mode?: "fast" | "precise"; retry?: boolean; clarify?: ClarifyPrompt; elapsedMs?: number; needsEquipmentChoice?: boolean; pendingQuestion?: string; };
 type ArticleVersion = { type: "current" | "old"; effectiveDate?: string; expiryDate?: string; description: string; };
 type SearchResult = { type: "standard" | "inspection" | "judgment" | "chat" | "article" | "technical"; title: string; content: string; query: string; score?: number; priority?: number; versions?: ArticleVersion[]; chatMeta?: { id: number; userName: string; createdAt: string; replyToUser?: string | null; replyToContent?: string | null; hasImage?: boolean; }; };
@@ -2854,7 +2854,23 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           const recentYear = Date.now() - ((window as any).__yearTs || 0) < 30 * 60 * 1000;
           const askedRecently = Date.now() - ((window as any).__askedYearTs || 0) < 10 * 60 * 1000;
           const askYear = judgeAsk && !hasYear && !recentYear && !askedRecently;
-          const yearNext = askYear ? {
+          // 검사 종류(완성·정기·수시·정밀안전) — 판정 질문인데 종류가 없고 최근에 말하지도 않았으면 묻는다. 임의로 가정하지 않는다.
+          const hasKind = /완성\s*검사|설치\s*검사|정기\s*검사|수시\s*검사|정밀\s*안전|정밀\s*검사|정밀(?!\s*도)|완성|정기|수시/.test(text);
+          if (hasKind) (window as any).__kindTs = Date.now();
+          const recentKind = Date.now() - ((window as any).__kindTs || 0) < 30 * 60 * 1000;
+          const askedKindRecently = Date.now() - ((window as any).__askedKindTs || 0) < 10 * 60 * 1000;
+          const askKind = judgeAsk && !hasKind && !recentKind && !askedKindRecently;
+          const kindStep = askKind ? {
+            content: "어떤 검사에서 나온 내용인가요? 검사 종류에 따라 판정이 달라요.",
+            skipLabel: "모르겠어요 — 검사 종류별로 구분해서 답변 받기",
+            options: [
+              { label: "완성(설치)검사", ref: "kind:complete", ask: "완성검사" },
+              { label: "정기검사", ref: "kind:regular", ask: "정기검사" },
+              { label: "수시검사", ref: "kind:special", ask: "수시검사" },
+              { label: "정밀안전검사", ref: "kind:precision", ask: "정밀안전검사" },
+            ],
+          } : null;
+          const yearStep = askYear ? {
             content: "설치연도(또는 건축허가 시점)에 따라 기준이 달라져요. 언제쯤 설치된 승강기인가요?",
             skipLabel: "모르겠어요 — 시점별로 구분해서 답변 받기",
             options: [
@@ -2863,17 +2879,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
               { label: "2013~2018년 설치", ref: "yr:2013", ask: "설치연도 2013~2018년" },
               { label: "2012년 이전 설치", ref: "yr:2012", ask: "설치연도 2012년 이전" },
             ],
-          } : undefined;
-          if (loc || yearNext) {
-            if (yearNext) (window as any).__askedYearTs = Date.now();
-            const msg = loc
-              ? { content: loc.title, options: loc.options.map(o => ({ label: o.label, ref: "loc:" + o.label, ask: o.ask })), skipLabel: "잘 모르겠어요 — 모두 구분해서 답변 받기" }
-              : { content: yearNext!.content, options: yearNext!.options, skipLabel: yearNext!.skipLabel };
+          } : null;
+          const locStep = loc ? { content: loc.title, skipLabel: "잘 모르겠어요 — 모두 구분해서 답변 받기", options: loc.options.map(o => ({ label: o.label, ref: "loc:" + o.label, ask: o.ask })) } : null;
+          const steps = [locStep, kindStep, yearStep].filter((x): x is NonNullable<typeof x> => !!x);
+          if (steps.length > 0) {
+            if (yearStep) (window as any).__askedYearTs = Date.now();
+            if (kindStep) (window as any).__askedKindTs = Date.now();
+            const [first, ...rest] = steps;
             setMessages(prev => [...prev, {
               role: "assistant",
-              content: msg.content,
+              content: first.content,
               time: formatTime(),
-              clarify: { poolId: 0, question: text, equipmentType: eqType, options: msg.options, skipLabel: msg.skipLabel, ...(loc && yearNext ? { next: yearNext } : {}) },
+              clarify: { poolId: 0, question: text, equipmentType: eqType, options: first.options, skipLabel: first.skipLabel, ...(rest.length > 0 ? { queue: rest } : {}) },
             }]);
             setIsTyping(false);
             return;
@@ -5232,11 +5249,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                               body: JSON.stringify({ poolId: c.poolId, question: c.question, optionLabel: o.label, optionRef: o.ref, employeeId: empIdentity?.empId || undefined }),
                             }).catch(() => {});
                             const nextQ = o.ask !== undefined ? (o.ask ? `${c.question} (${o.ask})` : c.question) : `${c.question} (${o.label} 기준)`;
-                            if (c.next) {
-                              // 위치를 고른 뒤 설치연도도 필요하면 이어서 묻는다(새 답변 호출 없이 말풍선만 추가).
+                            if (c.queue && c.queue.length > 0) {
+                              // 위치·검사 종류·설치연도 중 더 물을 것이 남았으면 이어서 묻는다(새 답변 호출 없이 말풍선만 추가).
+                              const [nx, ...restQ] = c.queue;
                               setMessages(prev => [...prev, {
-                                role: "assistant", content: c.next!.content, time: formatTime(),
-                                clarify: { poolId: 0, question: nextQ, equipmentType: c.equipmentType, options: c.next!.options, skipLabel: c.next!.skipLabel },
+                                role: "assistant", content: nx.content, time: formatTime(),
+                                clarify: { poolId: 0, question: nextQ, equipmentType: c.equipmentType, options: nx.options, skipLabel: nx.skipLabel, ...(restQ.length > 0 ? { queue: restQ } : {}) },
                               }]);
                               return;
                             }
