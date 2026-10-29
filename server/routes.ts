@@ -3304,6 +3304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
        사항입니다. [자료에서 확인된 위임 법령·기관명이 있으면 그 이름]에서 확인이
        필요합니다." 위임 법령·기관명을 모르면 "관련 법령·기관 확인이 필요합니다"로
        마무리하고, 근거 없이 추측한 법령명을 지어내지 않는다.
+       "자료가 없다"고 답할 때는 마지막 줄에 "필요한 자료라면 아래 👎 아쉬워요에서 '앱에 자료가 없어요'를 선택해 등록을 요청해 주세요."를 덧붙인다.
 
 ## 승강기번호 분석 (최우선 처리)
 [승강기 정보 - XXXXXXX] 가 컨텍스트에 있는 경우 반드시 다음을 수행한다:
@@ -3364,9 +3365,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (res as any).flushHeaders?.();
 
         const stream = anthropic.messages.stream({
-          model: "claude-haiku-4-5-20251001",
-          // [2026-10] 1200 → 4000: 긴 답변이 중간에 끊기는 문제 해결(출력 상한만 높이며, 짧은 답은 그대로 짧다)
-          max_tokens: 4000,
+          // [2026-10-29] Haiku 4.5 → Haiku 5.5. 5.5는 기본으로 사고(thinking)가 켜지고 사고 토큰도 max_tokens에 포함되므로 4000 → 8000
+          model: "claude-haiku-5-5",
+          max_tokens: 8000,
           system: `당신은 승강기 안전검사 현장 전문가다. 제공된 어플 내부 자료만 근거로 답한다.
 
 ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
@@ -3381,7 +3382,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
         reply = getText(agent1);
       } else {
         // ── 정밀 답변: 에이전트1 초안 + 에이전트2 독립 재검증(병렬) → 불일치 시에만 에이전트3 중재 ──
-        const MODEL = { agent1: "claude-sonnet-4-6", agent2: "claude-sonnet-4-6", compare: "claude-sonnet-4-6", agent3: "claude-sonnet-4-6" };
+        // [2026-10-29] Sonnet 4.6 → Sonnet 5.5
+        const MODEL = { agent1: "claude-sonnet-5-5", agent2: "claude-sonnet-5-5", compare: "claude-sonnet-5-5", agent3: "claude-sonnet-5-5" };
         // thinking 사용 시 사고 토큰도 max_tokens에 포함되므로 여유를 둔다
         // [2026-10] 3000 → 8000: 사고(thinking) 토큰이 답변 몫을 잠식해 답변이 끊기는 문제 해결
         const agentMaxTokens = 8000;
@@ -3402,7 +3404,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
           // ── 에이전트2 — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
           anthropic.messages.create({
             model: MODEL.agent2,
-            max_tokens: 400,
+            max_tokens: 800,
+            thinking: { type: "between_tools" },
             system: `승강기 안전검사 전문 분석가(에이전트2)다. 제공된 자료만으로 이 질문의 결론을 처음부터 독립적으로 도출해라. 다른 사람의 답은 본 적이 없다.
 
 자료 신뢰도 순서: [검사기준] > [판정지침] > [기술자료] > [현장메모]
@@ -3417,7 +3420,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
 }
 다른 텍스트 없이 JSON만.${contextText}${memoSection}${researchSection}${expertSection}`,
             messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
-          }),
+          } as any),
         ]);
         const agent1Text = getText(agent1);
         const agent1Match = agent1Text.match(/^\[핵심결론\]\s*(.+)$/m);
@@ -3433,7 +3436,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
         // ── 일치 여부 판정 (경량 비교) ───────────────────────────
         compare = await anthropic.messages.create({
           model: MODEL.compare,
-          max_tokens: 200,
+          max_tokens: 400,
+          thinking: { type: "between_tools" },
           system: `두 결론이 실질적으로 같은 판정/수치를 말하는지 비교해라. 표현이 달라도 같은 판정이면 일치로 본다.
 아래 JSON만 반환해라.
 { "일치여부": true|false, "불일치_사유": "구체적 차이점 또는 null" }
@@ -3442,7 +3446,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
             role: "user",
             content: `결론A(에이전트1): "${agent1Summary}"\n결론B(에이전트2): "${agent2Data.독립결론 || ""}"`,
           }],
-        });
+        } as any);
         let compareData: any = { 일치여부: true, 불일치_사유: null };
         try {
           const raw3 = getText(compare) || "{}";
@@ -3482,6 +3486,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
           "claude-opus-4-8": { in: 5, out: 25 },
           "claude-sonnet-4-6": { in: 3, out: 15 },
           "claude-haiku-4-5-20251001": { in: 1, out: 5 },
+          "claude-haiku-5-5": { in: 0.1, out: 0.5 },
+          "claude-sonnet-5-5": { in: 2, out: 10 },
         };
         const calls = [agent1, agent2, compare, agent3].filter(Boolean) as any[];
         let inputTok = 0, outputTok = 0, cost = 0;

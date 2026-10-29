@@ -1266,7 +1266,7 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
 // ── AI 답변 피드백 버튼 ───────────────────────────────────────
 const FEEDBACK_SECTIONS = ["판정 기준", "관련 조문", "관련 표준화", "검사 시 유의사항", "계산 과정", "전체 답변"];
 const FEEDBACK_REASONS_POS = ["조문 근거가 정확함", "판정 기준이 명확함", "실무에 바로 도움됨", "종전/현행 차이 설명이 명확함", "계산 과정이 이해하기 쉬움", "간결하고 핵심만 담음"];
-const FEEDBACK_REASONS_NEG = ["조문 근거가 틀리거나 부정확함", "판정 기준이 잘못됨", "불필요한 내용이 많음", "설명이 이해하기 어려움", "질문과 관련 없는 답변", "질문 뜻이 달랐어요"];
+const FEEDBACK_REASONS_NEG = ["조문 근거가 틀리거나 부정확함", "판정 기준이 잘못됨", "불필요한 내용이 많음", "설명이 이해하기 어려움", "질문과 관련 없는 답변", "질문 뜻이 달랐어요", "📩 앱에 자료가 없어요 (등록 요청)"];
 
 function FeedbackModal({ rating, onSubmit, onSkip, onClose }: { rating: 1 | -1; onSubmit: (sections: string[], reasons: string[], comment: string) => void; onSkip: () => void; onClose: () => void }) {
   const [sections, setSections] = React.useState<string[]>([]);
@@ -2115,13 +2115,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
 
   // ── AI 피드백 현황: 읽기 전용 모니터링 패널 (좋아요/아쉬워요로 자동 분류된 상태를 그대로 보여줌) ──
   const [showAiFeedbackPanel, setShowAiFeedbackPanel] = useState(false);
-  const [aiFeedbackStatusFilter, setAiFeedbackStatusFilter] = useState<"전체" | "excluded" | "pending" | "approved">("전체");
+  const [aiFeedbackStatusFilter, setAiFeedbackStatusFilter] = useState<"전체" | "excluded" | "pending" | "approved" | "request">("전체");
   const [aiFeedbackLimit, setAiFeedbackLimit] = useState(50);
   const { data: aiFeedbackData, isLoading: aiFeedbackLoading } = useQuery<{ clusters: any[]; total: number; limit: number; offset: number; unreadTotal: number }>({
     queryKey: ["/api/ai-feedback/clusters", aiFeedbackStatusFilter, aiFeedbackLimit],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (aiFeedbackStatusFilter !== "전체") params.set("status", aiFeedbackStatusFilter);
+      if (aiFeedbackStatusFilter !== "전체" && aiFeedbackStatusFilter !== "request") params.set("status", aiFeedbackStatusFilter);
       params.set("limit", String(aiFeedbackLimit));
       const r = await fetch(`/api/ai-feedback/clusters?${params.toString()}`);
       return r.json();
@@ -4474,6 +4474,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                 ["excluded", "제외됨"],
                 ["pending", "학습중"],
                 ["approved", "참고 답변"],
+                ["request", "📩 자료 요청"],
               ] as const).map(([val, label]) => (
                 <button
                   key={val}
@@ -4488,10 +4489,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           <div className="max-h-[420px] overflow-y-auto px-3 py-2 space-y-2">
             {aiFeedbackLoading ? (
               <div className="px-4 py-6 text-center text-xs text-muted-foreground">불러오는 중...</div>
-            ) : (aiFeedbackData?.clusters || []).length === 0 ? (
+            ) : (aiFeedbackData?.clusters || []).filter((c: any) => aiFeedbackStatusFilter !== "request" || (c.recentFeedback || []).some((f: any) => f.rating === -1 && (f.reasons || []).includes("📩 앱에 자료가 없어요 (등록 요청)"))).length === 0 ? (
               <div className="px-4 py-6 text-center text-xs text-muted-foreground">해당 조건의 데이터가 없습니다</div>
             ) : (
-              (aiFeedbackData?.clusters || []).map((c: any) => {
+              (aiFeedbackData?.clusters || []).filter((c: any) => aiFeedbackStatusFilter !== "request" || (c.recentFeedback || []).some((f: any) => f.rating === -1 && (f.reasons || []).includes("📩 앱에 자료가 없어요 (등록 요청)"))).map((c: any) => {
                 const statusMeta =
                   c.status === "excluded"
                     ? { label: "참고 목록에서 제외됨", cls: "bg-red-500 text-white" }
