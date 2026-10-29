@@ -2649,22 +2649,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     ]);
     // 가지 검색 추가 질의 — 원 질문 검색은 그대로 두고 "추가"만 한다(기존 결과를 잃지 않음).
     const facetTerms: string[] = facetData ? [...(facetData.targets || []), ...(facetData.symptoms || [])].filter((t: any) => typeof t === "string" && t.length >= 2) : [];
-    const facetQueries: string[] = (() => {
-      if (!facetData) return [];
-      const tg: string[] = (facetData.targets || []).filter((t: any) => typeof t === "string" && t.length >= 2).slice(0, 3);
-      const sy: string[] = (facetData.symptoms || []).filter((t: any) => typeof t === "string" && t.length >= 2).slice(0, 3);
-      const out: string[] = [];
-      for (const t of tg) {
-        out.push(t, `${t} 표준화`);
-        for (const y of sy) out.push(`${t} ${y}`);
-        if (facetData.intent === "판정") out.push(`${t} 판정`);
-      }
-      return Array.from(new Set(out)).slice(0, 10);
-    })();
-    const searchQueries: string[] = (() => {
-      const base = qrQueries.length > 0 ? [text, ...qrQueries.filter((q: string) => q !== text)] : [text];
-      return Array.from(new Set([...base, ...facetQueries]));
-    })();
+    // [v2] 가지 검색 추가 질의는 원 질문 검색 결과를 본 뒤(아래) 만든다 — 대상 단어가 실제 결과에 있는지 확인하기 위해.
+    const searchQueries: string[] = qrQueries.length > 0 ? [text, ...qrQueries.filter((q: string) => q !== text)] : [text];
 
     // 판별된(또는 강제 지정된) 설비종류에 맞는 검사기준 검색 풀을 선택한다.
     // "엘리베이터"/강제엘리베이터 → 기존 엘리베이터 맵, "에스컬레이터"/강제에스컬레이터 → 에스컬레이터 맵,
@@ -2673,6 +2659,37 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
 
     // ⑦ 멀티 쿼리 검색 — 각 검색어로 검색 후 교집합 우선
     let results = searchAllData(text, standards, stdOverrides, activeInspectionContent);
+    // [v2 관리자 테스트] 가지 검색 — 원 질문 검색과 기존 질의는 그대로 두고 "추가"만 한다.
+    let facetBoostTerms: string[] = [];
+    if (facetOn && facetData) {
+      const nz = (x: string) => (x || "").toLowerCase().replace(/\s+/g, "");
+      const okStr = (t: any) => typeof t === "string" && t.trim().length >= 2;
+      const tgAll: string[] = (facetData.targets || []).filter(okStr).slice(0, 3);
+      const syAll: string[] = (facetData.symptoms || []).filter(okStr).slice(0, 3);
+      // 대상 검증 — 원 질문 검색 상위 10개 결과 본문에 실제로 등장하는 대상만 "강한 검색어"로 쓴다. 없으면 전부 사용(놓치지 않기).
+      const topText = results.slice(0, 10).map(r => nz(r.title + " " + r.content));
+      const tgOk = tgAll.filter(t => topText.some(tx => tx.includes(nz(t))));
+      const tgStrong = tgOk.length > 0 ? tgOk : tgAll;
+      const tgWeak = tgAll.filter(t => !tgStrong.includes(t));
+      const out: string[] = [];
+      for (const t of tgStrong) {
+        out.push(t, `${t} 표준화`);
+        for (const y of syAll) out.push(`${t} ${y}`);
+        if (facetData.intent === "판정") out.push(`${t} 판정`);
+      }
+      // 연도 — 표준화 출처 표기("(16년 제3차)")에 맞는 형태를 모두 시도(AI 검색어 표기 변동 보완)
+      const yr = Number(facetData.year);
+      if (Number.isFinite(yr) && yr > 1980 && yr < 2100) {
+        const yy = String(yr).slice(2);
+        out.push(String(yr), `${yy}년 제`);
+        for (const t of tgStrong.slice(0, 2)) out.push(`${t} ${yr}`, `${t} ${yy}년`);
+      }
+      // 대상이 전혀 없으면(대상 미분류 질문) 증상 단어를 후보 검색어로 사용
+      if (tgAll.length === 0) for (const y of syAll) out.push(y);
+      facetBoostTerms = [...syAll, ...tgWeak];
+      const extra = Array.from(new Set(out)).filter(q => !searchQueries.includes(q)).slice(0, 14);
+      searchQueries.push(...extra);
+    }
     if (searchQueries.length > 1) {
       const multiResults: Map<string, { result: SearchResult; hitCount: number; maxScore: number }> = new Map();
       for (const q of searchQueries) {
@@ -2696,6 +2713,25 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         }))
         .sort((a, b) => (b.score || 0) - (a.score || 0));
       if (merged.length > 0) results = merged;
+    }
+    // [v2] 단독 단어(증상 등)는 새 후보를 끌어오지 않고, 이미 찾은 후보의 순위만 올린다.
+    if (facetOn && facetBoostTerms.length > 0 && results.length > 0) {
+      const nz2 = (x: string) => (x || "").toLowerCase().replace(/\s+/g, "");
+      results = results
+        .map(r => {
+          const tx = nz2(r.title + " " + r.content);
+          const hit = facetBoostTerms.filter(t => tx.includes(nz2(t))).length;
+          return hit > 0 ? { ...r, score: (r.score || 0) + 15 * hit } : r;
+        })
+        .sort((a, b) => (b.score || 0) - (a.score || 0));
+    }
+    // [v2] 결과가 너무 적으면(대상 미분류 등) 단독 단어도 후보로 사용 — 질문 일부를 놓치지 않기 위한 안전장치
+    if (facetOn && facetData && results.length < 3) {
+      for (const t of facetBoostTerms) {
+        const extraRes = searchAllData(t, standards, stdOverrides, activeInspectionContent);
+        const have = new Set(results.map(r => `${r.type}:${r.title.slice(0, 30)}`));
+        results = [...results, ...extraRes.filter(r => !have.has(`${r.type}:${r.title.slice(0, 30)}`))];
+      }
     }
 
     // [2026-10] 되묻기 — 비슷한 질문에서 "질문 뜻이 달랐어요"가 제출된 적이 있으면 답변 전에 먼저 선택지를 보여준다.
@@ -2779,8 +2815,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       const hardFiltered = primaryTerms.length > 0
         ? results.filter(r => {
             const combined = (r.title + " " + r.content).toLowerCase();
+            const combinedNs = facetOn ? combined.replace(/\s+/g, "") : "";
             // 주 키워드 중 하나라도 포함된 항목만 통과 (보조 키워드는 의도 파악용)
-            return primaryTerms.some(term => combined.includes(term.toLowerCase()));
+            // [v2] 관리자 테스트: 공백 차이("문닫힘 안전장치" vs "문닫힘안전장치")를 무시하고 비교
+            return primaryTerms.some(term => combined.includes(term.toLowerCase()) || (facetOn && combinedNs.includes(term.toLowerCase().replace(/\s+/g, ""))));
           })
         : results;
 
@@ -2858,7 +2896,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         ...contextResults.filter(r => r.type === "standard"),
         ...crossRefItems.filter(cr => !contextResults.find(r => r.title === cr.title)),
       ];
-      const techCtx = techResults.slice(0, facetOn ? 5 : 3).map((r, ti) => {
+      const techResultsU = facetOn ? techResults.filter((r, i, arr) => arr.findIndex(x => x.title === r.title) === i) : techResults;
+      const techCtx = techResultsU.slice(0, facetOn ? 5 : 3).map((r, ti) => {
         const std = STD_ITEMS.find(s => s.title === r.title);
         const ov = stdOverrides?.find((o: any) => o.title === r.title);
         const title = ov?.overrideTitle || std?.title || ov?.title || r.title;
