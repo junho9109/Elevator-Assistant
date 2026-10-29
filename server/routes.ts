@@ -3934,6 +3934,24 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
     }
   });
 
+  // 관리자: 업데이트 내역 문구 수정(이용자에게 보이는 displayText만 바꾼다. 원본 커밋 메시지·공개 여부는 그대로)
+  app.put("/api/changelog/:id/text", async (req, res) => {
+    try {
+      if (req.query.admin !== "true") return res.status(403).json({ error: "관리자만 변경할 수 있습니다" });
+      const id = parseInt(req.params.id, 10);
+      const raw = typeof req.body?.text === "string" ? req.body.text.replace(/\s+/g, " ").trim() : "";
+      if (!Number.isFinite(id) || raw.length < 2 || raw.length > 200) return res.status(400).json({ error: "문구는 2~200자로 입력해 주세요" });
+      const { db: clDb } = await import("./db");
+      const { changelogCache } = await import("@shared/schema");
+      const { eq: clEq } = await import("drizzle-orm");
+      const [row] = await clDb.update(changelogCache).set({ displayText: raw }).where(clEq(changelogCache.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "항목을 찾을 수 없습니다" });
+      res.json(row);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "변경 실패" });
+    }
+  });
+
   // ==================== 채팅 ====================
   const { db: chatDb } = await import("./db");
   const { chatMessages: chatMsgsTable } = await import("@shared/schema");

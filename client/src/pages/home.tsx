@@ -2037,6 +2037,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     }
   };
 
+  // 관리자 전용: 업데이트 내역 문구 수정(공개/숨김 버튼 옆 ✏️)
+  const [clEditId, setClEditId] = useState<number | null>(null);
+  const [clEditText, setClEditText] = useState("");
+  const saveChangelogText = async (id: number) => {
+    const text = clEditText.replace(/\s+/g, " ").trim();
+    if (text.length < 2) { toast({ title: "문구를 2자 이상 입력해 주세요", variant: "destructive" }); return; }
+    try {
+      const r = await fetch(`/api/changelog/${id}/text?admin=true`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      if (!r.ok) throw new Error();
+      setChangelog(prev => prev ? prev.map(c => c.id === id ? { ...c, displayText: text } : c) : prev);
+      setClEditId(null);
+    } catch { toast({ title: "문구 저장에 실패했습니다", variant: "destructive" }); }
+  };
+
   const fetchChangelog = async () => {
     setChangelogLoading(true);
     try {
@@ -4452,7 +4466,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                     {items.map((item: any) => (
                       <div key={item.id} className="flex gap-2 items-start">
                         <span className="text-blue-500 mt-0.5">·</span>
-                        <p className={`text-[13px] leading-relaxed flex-1 ${isAdminMode && !item.publicVisible ? "text-muted-foreground" : ""}`}>{item.displayText}</p>
+                        {isAdminMode && clEditId === item.id ? (
+                          <div className="flex-1 flex flex-col gap-1">
+                            <textarea value={clEditText} onChange={(e) => setClEditText(e.target.value)} rows={2} maxLength={200} className="w-full text-[13px] border border-border rounded-lg p-1.5 bg-background" />
+                            <div className="flex gap-2 text-[11px]">
+                              <button onClick={() => saveChangelogText(item.id)} className="text-blue-700 font-medium">저장</button>
+                              <button onClick={() => setClEditId(null)} className="text-muted-foreground">취소</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className={`text-[13px] leading-relaxed flex-1 ${isAdminMode && !item.publicVisible ? "text-muted-foreground" : ""}`}>{item.displayText}</p>
+                        )}
+                        {isAdminMode && clEditId !== item.id && (
+                          <button onClick={() => { setClEditId(item.id); setClEditText(item.displayText || ""); }} className="shrink-0 text-[11px] text-muted-foreground" title="문구 수정">✏️</button>
+                        )}
                         {isAdminMode && (
                           <button
                             onClick={() => toggleChangelogVisible(item.id, !item.publicVisible)}
@@ -5802,7 +5829,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                           )}
                           {/* 원본 파일(PDF 등) — figures JSON 중 kind:"file" 항목. 1998 고시의 "원본 파일 열기"와 같은 방식 */}
                           {((item as any).figures as { src: string; caption?: string; kind?: string }[] | undefined || []).filter(f => f.kind === "file").map((f, fi) => (
-                            <a key={"file" + fi} href={f.src} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 underline">
+                            // 앱(웹뷰)에서는 target=_blank·PDF 직접 표시가 안 되므로, 다른 주소로 이동하는 링크(기기 기본 브라우저로 열림)인 Google 문서 뷰어를 쓴다.
+                            <a key={"file" + fi}
+                              href={Capacitor.isNativePlatform() && /\.pdf$/i.test(f.src) ? `https://docs.google.com/gview?url=${encodeURIComponent(window.location.origin + f.src)}` : f.src}
+                              {...(Capacitor.isNativePlatform() ? {} : { target: "_blank", rel: "noopener noreferrer" })}
+                              className="inline-flex items-center gap-1 text-xs text-blue-600 underline">
                               📄 {f.caption || "원본 파일"} 열기
                             </a>
                           ))}
