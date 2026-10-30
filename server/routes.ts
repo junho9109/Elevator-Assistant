@@ -3599,8 +3599,14 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
           outputTok += outTok;
           cost += (inTok * price.in + outTok * price.out) / 1_000_000;
         }
+        // [2026-10-30] 로그에는 사용자가 실제로 입력한 질문만 저장한다. 클라이언트가 AI에게 보내려고 질문 뒤에
+        // 자동으로 붙이는 보조 문구("[현장 용어 참고…]", "[시점 참고(자동 계산)]")는 잘라낸다.
+        // 글자수 제한은 200자 → 2000자로 늘렸다(답변은 제한 없이 전문 저장).
         const question = Array.isArray(messages) && messages.length > 0
-          ? String(messages[messages.length - 1]?.content || "").slice(0, 200)
+          ? String(messages[messages.length - 1]?.content || "")
+              .replace(/\n\n\[(?:현장 용어 참고|시점 참고)[\s\S]*$/, "")
+              .trim()
+              .slice(0, 2000)
           : "";
         await uDb.insert(aiUsage).values({
           question,
@@ -3874,7 +3880,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
         createdAt: aiUsage.createdAt,
         employeeName: aiUsage.employeeName,
         employeeId: aiUsage.employeeId,
-      }).from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(30);
+      }).from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(100);
       const recentLogs = recentLogsRaw.map(r => isAdmin ? r : { ...r, employeeName: null, employeeId: null });
 
       res.json({ totalQuestions, totalInput, totalOutput, totalCost: totalCost.toFixed(4), daily, recentLogs });
