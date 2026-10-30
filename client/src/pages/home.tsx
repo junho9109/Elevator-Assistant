@@ -3123,7 +3123,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         ...crossRefItems.filter(cr => !contextResults.find(r => r.title === cr.title)),
       ];
       const techResultsU = facetOn ? techResults.filter((r, i, arr) => arr.findIndex(x => x.title === r.title) === i) : techResults;
-      const techCtx = techResultsU.slice(0, facetOn ? 8 : 3).map((r, ti) => {
+      // [2026-10-30] "기준"만 물은 질문에는 시험 순서·측정 요령 같은 "검사방법" 성격의 표준화를 AI에 넘기지 않는다.
+      // (프롬프트 규칙만으로는 모델이 따르지 않아 섞여 나오는 일이 반복돼 컨텍스트 단계에서 제외)
+      const askMethod = /방법|시험|측정|점검|확인|입력|절차|어떻게|순서|판정|합격|불합격|조건부|지적|서류/.test(text);
+      const methodTitle = /검사\s*방법|측정\s*방법|시험\s*방법|점검\s*방법|측정\s*요령|시험\s*요령|전산\s*입력|입력\s*방법/;
+      const techResultsF = (facetOn && !askMethod) ? techResultsU.filter(r => !methodTitle.test(r.title)) : techResultsU;
+      const techCtx = techResultsF.slice(0, facetOn ? 8 : 3).map((r, ti) => {
         const std = STD_ITEMS.find(s => s.title === r.title);
         const ov = stdOverrides?.find((o: any) => o.title === r.title);
         const title = ov?.overrideTitle || std?.title || ov?.title || r.title;
