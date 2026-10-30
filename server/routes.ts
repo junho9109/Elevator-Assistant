@@ -2890,9 +2890,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const refMatchesCtx = ((context as any)?.inspCtx || []).flatMap((c: any) =>
             Array.from(String(c?.content || "").matchAll(/안전기준」?\s*((?:1[0-7]|[1-9])\.\d+(?:\.\d+)+)/g)).map((m: any) => m[1])
           ).slice(0, 3);
-          const refMatches = [...refMatchesQ, ...refMatchesCtx];
+          // [2026-10-30] 에스컬레이터 부속서 조문은 연혁 item_id가 "Ⅰ.2.4"(로마자) 형식이라 위 숫자 정규식에 안 잡힌다.
+          // 질문·검사항목 본문의 "부속서 Ⅰ.2.4" 인용과, "삼각부/3각부" 질문(→ 부속서 Ⅰ.2.4)도 함께 조회한다.
+          const romanRe = /부속서\s*([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]\.\d+(?:\.\d+)*)/g;
+          const romanRefs: string[] = [
+            ...Array.from(String(userQuestion).matchAll(romanRe)).map((m: any) => m[1]),
+            ...((context as any)?.inspCtx || []).flatMap((c: any) =>
+              Array.from(String(c?.content || "").matchAll(romanRe)).map((m: any) => m[1])
+            ).slice(0, 3),
+            ...(/삼각부|3\s*각부/.test(String(userQuestion)) ? ["Ⅰ.2.4"] : []),
+          ];
+          const refMatches = [...refMatchesQ, ...refMatchesCtx, ...romanRefs];
           if (refMatches.length === 0) return null;
-          const uniqueRefs = [...new Set(refMatches)].slice(0, 5) as string[];
+          const uniqueRefs = [...new Set(refMatches)].slice(0, 6) as string[];
           const { pool: pgPool } = await import("./db");
           const placeholders = uniqueRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
           // [2026-09-29] 조문번호(item_id)는 엘리베이터(별표22)/에스컬레이터(별표24) 문서마다
@@ -3293,7 +3303,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 2. 한 항목은 한 줄이다(길어도 두 줄). 조문번호는 줄 끝 대괄호에만 둔다. 가)·나)·다)… 항목이 4개 이상인 조문은 원문을 옮겨 적지 말고 항목별 핵심 단어만 한 줄로 요약한다(예: "**5개 요건**: 문 자동 개방 · 10초 후 재닫힘 · 전문가 복귀 · 전원 복구 시 자동 복귀 · 비상전원 용량").
 3. 시기별로 다르면 "- **시기**: 내용" 한 줄씩 쓰고, 내용이 같으면 한 줄로 합친다. "1. 2. 3." 번호 대제목은 쓰지 않는다.
 4. 질문이 묻지 않은 것은 쓰지 않는다. "기준"을 물으면 판정 등급·검사방법(시험 순서·측정 요령)·질문과 무관한 표준화를 쓰지 않는다. 기준·적용 시기·해석을 바꾸는 표준화만 "제목(회차): 한 문장"으로 쓴다.
-5. 질문에 직접 답하는 조문이 앱에 없으면 첫 줄에 "○○을 정한 조문은 앱에 없습니다"라고 쓰고, 확인된 가장 가까운 내용만 최대 2줄 쓴다. 무관한 부품·표준화로 분량을 채우지 않고, 답이 없는 자리에 "원문 확인 필요" 같은 문장을 덧붙이지 않는다.
+5. "언제부터/적용일/시기"를 묻는 질문은, 질문한 행위(예: 시험)의 시기를 직접 정한 조문이 없더라도 그 부품·장치의 설치 의무 시작일 등 자료에 있는 날짜를 첫 줄에 "○○.○○.○○ 이후 건축허가분부터 …"처럼 먼저 쓴다. 그 날짜가 질문이 묻는 시기의 가장 가까운 답이기 때문이다. "정한 조문이 없다"로 첫 줄을 시작하지 않는다.
+   그 외에 질문에 직접 답하는 조문이 앱에 없으면 첫 줄에 "○○을 정한 조문은 앱에 없습니다"라고 쓰고, 확인된 가장 가까운 내용만 최대 2줄 쓴다. 무관한 부품·표준화로 분량을 채우지 않고, 답이 없는 자리에 "원문 확인 필요" 같은 문장을 덧붙이지 않는다.
 6. 되묻기는 마지막에 최대 2개, 가장 크게 갈리는 것만, 이유를 붙여 쓴다. 이미 답한 내용을 되풀이하지 않는다.
 7. 증상만 말한 질문에는 판정부터 쓰지 않고 "이 증상과 관련된 기준은 ○○입니다"로 시작한다.
 8. 근거(📌)는 실제로 답에 쓴 자료만 적는다.
@@ -3431,6 +3442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 □ 한 항목이 한 줄이고, 가)~마) 원문을 그대로 옮기지 않았는가? 번호 대제목(1. 2. 3.)이 없는가?
 □ 시기별 내용은 "- **시기**: 내용"이고, 같은 내용을 반복하지 않았는가?
 □ 질문이 묻지 않은 판정·검사방법·무관한 표준화·"원문 확인 필요"를 넣지 않았는가?
+□ "언제부터/시기"를 물었다면 첫 줄에 자료에 있는 가장 가까운 날짜(설치 의무 시작일 등)를 먼저 썼는가?
 □ 직접 답하는 조문이 앱에 없으면 그 사실을 첫 줄에 쓰고 억지로 채우지 않았는가?
 □ 되묻기는 마지막에 2개 이하인가?`;
 
