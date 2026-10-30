@@ -2947,9 +2947,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const baseItemTask = (async (): Promise<any[] | null> => {
         try {
           const refMatches = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g);
-          if (!refMatches || refMatches.length === 0) return null;
-          const uniqueRefs = [...new Set(refMatches)].slice(0, 3) as string[];
           const { pool: biPool } = await import("./db");
+          if (!refMatches || refMatches.length === 0) {
+            // [2026-10-30] 조문번호 없이 용어로만 묻는 질문("핸드레일 시스템", "자동차용 진입방지대")은
+            // 조문 원문을 전혀 못 찾아 5.12.2.7.13(손잡이의 속도 편차 감지), 7.16(자동차 진입방지장치)이
+            // 답변에 연결되지 않았다. 원문(text/section_title)을 용어로 직접 검색한다.
+            // 희귀한 단어(IDF)가 하나라도 걸린 조문만 통과시켜 흔한 단어만으로 무관한 조문이 붙지 않게 한다.
+            const KW_STOP = new Set(["관련", "대해", "대한", "알려줘", "무엇", "어떻게", "해야", "하는지", "확인", "경우", "있는지", "해줘",
+              "그리고", "되나요", "되는지", "인가요", "입니다", "엘리베이터", "에스컬레이터", "승강기", "기준", "조문", "규정", "조항",
+              "적용", "시점", "시기", "언제", "표준화", "시스템", "설치", "의무", "필요", "현장", "용어", "참고", "시점참고"]);
+            const JOSA_B = /(으로써|으로서|이라고|라고|에서|으로|까지|부터|보다|처럼|는|은|를|을|의|이|가|에|와|과|도|만)$/;
+            const ALIAS: Record<string, string[]> = {
+              핸드레일: ["손잡이"], 손잡이: ["핸드레일"],
+              진입방지대: ["진입방지"], 진입방지턱: ["진입방지"], 자동차용: ["자동차"],
+            };
+            const cleaned = userQuestion.replace(/\n\n\[(?:현장 용어 참고|시점 참고)[\s\S]*$/, "");
+            const toks = [...new Set((cleaned.match(/[가-힣A-Za-z0-9]+/g) || [])
+              .map((t: string) => (t.length >= 3 ? (t.replace(JOSA_B, "").length >= 2 ? t.replace(JOSA_B, "") : t) : t))
+              .filter((t: string) => t.length >= 2 && !KW_STOP.has(t)))].slice(0, 5) as string[];
+            if (toks.length === 0) return null;
+            const groups = toks.map(t => [t, ...(ALIAS[t] || [])]);
+            const eqParam = requestEquipmentType ? [requestEquipmentType] : [];
+            const eqCond = requestEquipmentType ? ` AND standard_equipment_type = $1` : "";
+            const matchOf = (g: string[], base: number) =>
+              "(" + g.map((_, j) => `(COALESCE(section_title,'') || ' ' || COALESCE(text,'')) ILIKE $${base + j}`).join(" OR ") + ")";
+            // 토큰별 등장 조문 수(희귀도)
+            const flatParams = groups.flat().map(w => `%${w}%`);
+            let off = eqParam.length + 1;
+            const cntSql = groups.map((g, i) => {
+              const s = `SELECT ${i} AS idx, COUNT(*) AS c FROM inspection_base_items WHERE ${matchOf(g, off)}${eqCond}`;
+              off += g.length;
+              return s;
+            }).join(" UNION ALL ");
+            const totalRes = await biPool.query(`SELECT COUNT(*) AS c FROM inspection_base_items WHERE TRUE${eqCond}`, eqParam);
+            const cntRes = await biPool.query(cntSql, [...eqParam, ...flatParams]);
+            const total = Number(totalRes.rows[0]?.c) || 1;
+            const cnt = new Map<number, number>(cntRes.rows.map((r: any) => [Number(r.idx), Number(r.c)]));
+            const w = groups.map((_, i) => (cnt.get(i) || 0) > 0 ? total / (cnt.get(i) as number) : 0);
+            // 가장 희귀한 토큰이 전체 조문의 3% 초과로 흔하면(= 변별력 없음) 포기
+            const maxW = Math.max(...w);
+            if (maxW === 0 || maxW < 15) return null;
+            off = eqParam.length + 1;
+            const scoreSql = groups.map((g, i) => {
+              const s = `(CASE WHEN ${matchOf(g, off)} THEN ${w[i].toFixed(3)} ELSE 0 END)`;
+              off += g.length;
+              return s;
+            }).join(" + ");
+            const likeAny = groups.map((g, i) => matchOf(g, eqParam.length + 1 + groups.slice(0, i).reduce((a, x) => a + x.length, 0))).join(" OR ");
+            const res = await biPool.query(
+              `SELECT item_id, section_id, section_title, text, sort_order, standard_equipment_type, (${scoreSql}) AS sc
+               FROM inspection_base_items
+               WHERE (${likeAny})${eqCond}
+               ORDER BY sc DESC, item_id LIMIT 12`,
+              [...eqParam, ...flatParams]
+            );
+            // 가장 희귀한 토큰(maxW)에 해당하는 점수 이상인 조문만 — 흔한 단어만 걸린 조문 제외
+            const good = (res.rows as any[]).filter(r => Number(r.sc) >= maxW * 0.99).slice(0, 6);
+            return good.length > 0 ? good.map(r => ({ ...r, text: String(r.text || "").slice(0, 900) })) : null;
+          }
+          const uniqueRefs = [...new Set(refMatches)].slice(0, 3) as string[];
           // [2026-09-29] articleTask와 동일한 이유로 설비종류가 명확하면(requestEquipmentType)
           // standard_equipment_type으로 좁혀서 조회한다. 예전엔 이 필터가 아예 없어서, 질문
           // 번호가 엘리베이터·에스컬레이터 양쪽 문서에 다 있으면 서로 다른 문서 내용이 하나로
