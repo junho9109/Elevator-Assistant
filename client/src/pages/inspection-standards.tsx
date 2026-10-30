@@ -128,8 +128,8 @@ function PipeTableView({ parsed }: { parsed: ParsedTableBody }) {
 }
 
 const DOC_SOURCE_LABEL: Record<string, string> = {
-  엘리베이터: "별표22 엘리베이터 안전기준 KC2050-51:2022",
-  에스컬레이터: "별표24 에스컬레이터 안전기준 KC2050-53:2022",
+  엘리베이터: "[별표22] 엘리베이터 안전기준 · KC2050-51:2022",
+  에스컬레이터: "[별표24] 에스컬레이터 안전기준 · KC2050-53:2022",
 };
 
 // standardEquipmentType(승강기 종류)별로 소스를 구분한다. 별표22_유효항목.json 화이트리스트는
@@ -177,14 +177,29 @@ const JUDGMENT_SECTIONS = JUDGMENT_DATA as unknown as Record<string, JudgmentSec
 // 있는 세대별 고시(1997, 2009, 2012...)가 연도 오름차순으로 하나씩 별도 문서 항목으로 자동 추가된다.
 const GEN_DOC_PREFIX = "gen:";
 const DOCUMENTS = [
-  { id: "byulpyo22", label: "별표22 검사기준 (KC2050-51:2022)" },
-  { id: "escalator22", label: "별표24 에스컬레이터 안전기준 (KC2050-53:2022)" },
-  { id: "judgment2016", label: "판정지침 2016.12.23" },
+  { id: "byulpyo22", label: "[별표22] 엘리베이터 안전기준 · KC2050-51:2022" },
+  { id: "escalator22", label: "[별표24] 에스컬레이터 안전기준 · KC2050-53:2022" },
+  { id: "judgment2016", label: "[판정지침] 승강기 검사결과 판정지침 · 2016.12.23" },
   ...GENERATIONS.map(g => ({
     id: `${GEN_DOC_PREFIX}${g.meta.id}`,
-    label: `${g.meta.effectiveDate.slice(0, 4)} · ${g.meta.title}`,
+    label: g.meta.title,
   })),
 ];
+
+// 판정지침 섹션 제목 표준형 — DB/JSON에 저장된 제목이 제각각이라 키 기준으로 일관되게 만든다.
+const JP_EQUIP_NAME: Record<string, string> = {
+  전기식: "전기식 엘리베이터", 유압식: "유압식 엘리베이터", 에스컬레이터: "에스컬레이터·무빙워크",
+  덤웨이터: "덤웨이터", 소형: "소형 엘리베이터", 수직형: "수직형 휠체어리프트", 경사형: "경사형 휠체어리프트",
+};
+function stdJudgmentTitle(key: string): string | null {
+  if (key === "본문") return "[판정지침] 승강기 검사결과 판정지침 · 2016.12.23";
+  if (key === "별표1") return "[판정지침 별표1] 공통 · 완성·정기·수시·정밀안전검사";
+  const m = key.match(/^별표([23])_(.+)$/);
+  if (m && JP_EQUIP_NAME[m[2]]) {
+    return `[판정지침 별표${m[1]}] ${JP_EQUIP_NAME[m[2]]} · ${m[1] === "2" ? "완성·정기·수시검사" : "정밀안전검사"}`;
+  }
+  return null;
+}
 type DocId = string;
 
 // 문서 id → DB standardEquipmentType 매핑 (DB 기반 문서에만 해당)
@@ -842,7 +857,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
     Object.keys(JUDGMENT_SECTIONS).forEach((key) => {
       const sec = getJudgmentSection(key);
       if (!sec) return;
-      const secLabel = (sec.title || key).replace(/\[별표\d+\]\s*/, "");
+      const secLabel = (stdJudgmentTitle(key) || sec.title || key).replace(/^\[판정지침(?: 별표\d+)?\]\s*/, "");
       if (sec.type === "text") {
         const hay = `${sec.title || ""}\n${sec.text || ""}`;
         if (hay.toLowerCase().includes(kw)) {
@@ -1252,15 +1267,15 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
 
   const groups = [
     { label: "본문", keys: allKeys.filter(k => k === "본문") },
-    { label: "별표1-완성·정기·수시·정밀안전검사 불합격항목", keys: allKeys.filter(k => k === "별표1") },
-    { label: "별표2-완성·정기·수시검사 불합격 항목", keys: allKeys.filter(k => k.startsWith("별표2_")) },
-    { label: "별표3-정밀안전검사 불합격 항목", keys: allKeys.filter(k => k.startsWith("별표3_")) },
+    { label: "별표1 · 완성·정기·수시·정밀안전검사 불합격 항목", keys: allKeys.filter(k => k === "별표1") },
+    { label: "별표2 · 완성·정기·수시검사 불합격 항목", keys: allKeys.filter(k => k.startsWith("별표2_")) },
+    { label: "별표3 · 정밀안전검사 불합격 항목", keys: allKeys.filter(k => k.startsWith("별표3_")) },
     ...(customKeys.filter(k => !["본문","별표1"].includes(k) && !k.startsWith("별표2_") && !k.startsWith("별표3_")).length > 0
       ? [{ label: "추가 항목", keys: customKeys.filter(k => !["본문","별표1"].includes(k) && !k.startsWith("별표2_") && !k.startsWith("별표3_")) }]
       : []),
   ];
 
-  const getTitle = (key: string) => overrides[key]?.title || JUDGMENT_SECTIONS[key]?.title || key;
+  const getTitle = (key: string) => stdJudgmentTitle(key) || overrides[key]?.title || JUDGMENT_SECTIONS[key]?.title || key;
   const getSection = (key: string): JudgmentSection | null => {
     const base = JUDGMENT_SECTIONS[key];
     const ov = overrides[key];
@@ -1363,7 +1378,7 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
             <div key={g.label} className="mb-1">
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide px-2 py-1.5">{g.label}</p>
               {g.keys.map(key => {
-                const label = getTitle(key).replace(/\[별표\d+\]\s*/, "").replace(/\s*—.*$/, "").trim();
+                const label = getTitle(key).replace(/^\[판정지침(?: 별표\d+)?\]\s*/, "").trim();
                 return (
                   <button key={key} onClick={() => { setSel(key); setEditMode(false); }}
                     className={`w-full text-left text-xs leading-relaxed px-3 py-2.5 rounded-lg transition-colors mb-0.5 ${
@@ -1388,7 +1403,7 @@ function JudgmentDocView({ isAdminMode, jumpToKey, onJumpApplied }: { isAdminMod
                 ? <input className="w-full text-sm font-medium border border-border rounded-lg px-2 py-1 bg-card" value={editTitle} onChange={e => setEditTitle(e.target.value)} />
                 : <p className="text-sm font-medium leading-snug">{curTitle}</p>
               }
-              <p className="text-[10px] text-muted-foreground mt-0.5">📌 승강기 검사결과 판정지침 (2016.12.23 제정)</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">📌 [판정지침] 승강기 검사결과 판정지침 · 2016.12.23</p>
             </div>
             <div className="flex gap-1 shrink-0">
               {isAdminMode && !editMode && (
