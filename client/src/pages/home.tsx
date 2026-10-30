@@ -2114,7 +2114,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
   useEffect(() => {
     try {
       const v = new URLSearchParams(window.location.search).get("facet");
-      { const cv = new URLSearchParams(window.location.search).get("clarify"); if (cv === "1" && getGlobalAdminMode()) { localStorage.setItem("clarifySource", "1"); toast({ title: "자료 선택 되묻기 테스트: 켜짐 (관리자 전용)" }); } else if (cv === "0") { localStorage.removeItem("clarifySource"); toast({ title: "자료 선택 되묻기 테스트: 꺼짐" }); } }
+      { // [2026-10-30] 단계별 되묻기(자료 선택 버튼)는 이제 모든 이용자 기본값 켜짐. 관리자만 ?clarify=0 으로 이 기기에서 끌 수 있고 ?clarify=1 로 다시 켠다.
+        const cv = new URLSearchParams(window.location.search).get("clarify");
+        if (cv === "1" && getGlobalAdminMode()) { localStorage.removeItem("clarifySource"); toast({ title: "자료 선택 되묻기: 켜짐 (기본값)" }); }
+        else if (cv === "0" && getGlobalAdminMode()) { localStorage.setItem("clarifySource", "off"); toast({ title: "자료 선택 되묻기: 꺼짐 (이 기기, 관리자 전용 스위치)" }); } }
       if (v === "1" && getGlobalAdminMode()) { localStorage.removeItem("facetSearch"); toast({ title: "가지 검색·현장 용어 사전: 켜짐 (기본값)" }); }
       else if (v === "0" && getGlobalAdminMode()) { localStorage.setItem("facetSearch", "off"); toast({ title: "가지 검색·현장 용어 사전: 꺼짐 (이 기기, 관리자 전용 스위치)" }); }
     } catch {}
@@ -2850,7 +2853,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     // 필요한 것만 한 번씩 묻는다. 처음부터 조문 제목을 보여주지 않는다. 마지막 선택에서 한 번만 답변을 만든다.
     if (facetOn && !skipClarify && !modeOverride) {
       try {
-        const srcOn = getGlobalAdminMode() && localStorage.getItem("clarifySource") === "1";
+        const srcOn = localStorage.getItem("clarifySource") !== "off";
         if (srcOn) {
           const W = window as any;
           const within = (k: string, ms: number) => Date.now() - (W[k] || 0) < ms;
