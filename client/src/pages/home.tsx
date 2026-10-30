@@ -2629,7 +2629,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     // AI를 호출하지 않고 선택 버튼을 먼저 보여준다.
     const equipmentType: EquipmentDetection = forcedEquipmentType || detectEquipmentType(text);
     const looksLikeStandardsQuestion = /검사\s*기준|안전\s*기준|별표\s*22|별표\s*24|기준\s*몇|조문|규정/.test(text);
-    if (!forcedEquipmentType && equipmentType === "ambiguous" && looksLikeStandardsQuestion) {
+    // [2026-10-30] 착공신고필증·적용일 입력 같은 전산/서류 절차 질문은 설비(엘리베이터/에스컬레이터)와 무관하므로 설비를 되묻지 않는다.
+    const isProceduralQuestion = /착공\s*신고|적용일|전산|입력|접수|신청서|서류|업무\s*시스템|건축\s*허가일|공사\s*계약/.test(text);
+    if (!forcedEquipmentType && equipmentType === "ambiguous" && looksLikeStandardsQuestion && !isProceduralQuestion) {
       setMessages(prev => [...prev, {
         role: "assistant",
         content: "엘리베이터와 에스컬레이터 중 어느 쪽 검사기준을 찾으시나요?",
@@ -2643,7 +2645,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
 
     // 사고 통계 질문 처리 (기존 로직 유지)
     const q = text.toLowerCase();
-    if ((q.includes("사고") || q.includes("통계") || q.includes("연도별")) && accidentStats.yearly.length > 0) {
+    // [2026-10-30] 사고 통계 바로가기는 "통계/현황/건수"를 직접 묻는 질문에만 반응한다.
+    // 예전엔 "사고"·"연도별"만 들어 있어도(예: "인터록 기준 연도별로 알려줘") 검사기준 질문이 통계 카드로 가로채졌다.
+    const statsIntent = /통계|(사고|재해)\s*(현황|건수|발생\s*(건수|현황|통계)|몇\s*건)/.test(q);
+    const looksLikeStandardsQ = /기준|판정|표준화|검사|조문|규정|연혁|설치|합격|부적합|조건부|적용/.test(q);
+    if (statsIntent && !looksLikeStandardsQ && !(q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.yearly.length > 0) {
       const latest = accidentStats.yearly[accidentStats.yearly.length - 1];
       const prev = accidentStats.yearly[accidentStats.yearly.length - 2];
       if (latest) {
@@ -2653,7 +2659,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         return;
       }
     }
-    if ((q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.age.length > 0) {
+    if (statsIntent && !looksLikeStandardsQ && (q.includes("연령") || q.includes("나이") || q.includes("고령")) && accidentStats.age.length > 0) {
       const latest = accidentStats.age[accidentStats.age.length - 1];
       const tot = parseInt(latest.tot);
       const child = parseInt(latest.old14_lss);
