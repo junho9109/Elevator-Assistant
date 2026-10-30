@@ -2899,6 +2899,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               Array.from(String(c?.content || "").matchAll(romanRe)).map((m: any) => m[1])
             ).slice(0, 3),
             ...(/삼각부|3\s*각부/.test(String(userQuestion)) ? ["Ⅰ.2.4"] : []),
+            // [2026-10-30] 부속서 전체(예: "부속서 Ⅲ", "부속서 Ⅴ")의 연혁 행은 item_id가 "부속서 Ⅲ" 형식이다.
+            ...Array.from(String(userQuestion).matchAll(/부속서\s*([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])(?![.\d])/g)).map((m: any) => `부속서 ${m[1]}`),
           ];
           const refMatches = [...refMatchesQ, ...refMatchesCtx, ...romanRefs];
           if (refMatches.length === 0) return null;
