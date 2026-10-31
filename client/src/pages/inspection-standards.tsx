@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
+import { Capacitor } from "@capacitor/core";
 import { trackActivity } from "@/lib/activity";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -25,6 +26,14 @@ type Entry = { text?: string; title?: string; source?: string; tables?: EntryTab
 // 976개 정식 조문번호와 겹치지 않는 잡음 행(예: 엉뚱한 내용의 "1.1")이 섞여있을 수 있어,
 // 정식 조문번호 목록(별표22_유효항목.json)에 있는 것만 화면에 표시한다.
 const VALID_IDS = new Set(VALID_BYULPYO22_IDS as string[]);
+
+// 원본 파일 링크: 앱(웹뷰)에서는 새 탭이 닫히지 않으므로 PDF는 Google 문서 뷰어(기기 기본 브라우저)로 연다. home.tsx의 "원본 파일 열기"와 동일 방식.
+function originalFileLinkProps(href: string): { href: string; target?: string; rel?: string } {
+  if (Capacitor.isNativePlatform()) {
+    return { href: /\.pdf$/i.test(href) ? `https://docs.google.com/gview?url=${encodeURIComponent(window.location.origin + href)}` : href };
+  }
+  return { href, target: "_blank", rel: "noopener noreferrer" };
+}
 
 function stripIdPrefix(itemId: string, raw: string): string {
   const t = (raw || "").trim();
@@ -585,9 +594,7 @@ function GenerationDetail({ id, gen, onClose, isAdminMode, onAddRevision }: {
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {gen.meta.title} · {gen.meta.source || gen.meta.effectiveDate}</p>
         {gen.meta.originalFile && (
           <a
-            href={gen.meta.originalFile.href}
-            target="_blank"
-            rel="noopener noreferrer"
+            {...originalFileLinkProps(gen.meta.originalFile.href)}
             className="inline-flex items-center gap-1 text-xs text-blue-600 underline"
           >
             📄 {gen.meta.originalFile.label} 열기
@@ -909,9 +916,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                 </p>
                 {activeGeneration?.meta.originalFile && (
                   <a
-                    href={activeGeneration.meta.originalFile.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    {...originalFileLinkProps(activeGeneration.meta.originalFile.href)}
                     className="text-[11px] text-blue-600 underline"
                   >
                     📄 {activeGeneration.meta.originalFile.label} 열기

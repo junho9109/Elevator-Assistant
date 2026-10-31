@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><title>내부고객 만족도 평가 보고서(예시)</title>
+<style>
+body{font-family:"Noto Sans KR","Malgun Gothic",sans-serif;max-width:900px;margin:24px auto;padding:0 16px;color:#222;line-height:1.55}
+h1{font-size:24px;margin-bottom:4px}h2{font-size:18px;border-bottom:2px solid #1e3a5f;padding-bottom:4px;margin-top:34px;color:#1e3a5f}h3{font-size:15px;margin-top:22px}
+.sub{color:#666;font-size:13px}
+.note{background:#fff7e0;border:1px solid #f0d890;padding:10px 12px;border-radius:6px;font-size:13px;margin:12px 0}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.card{border:1px solid #d5dbe3;border-radius:8px;padding:12px;text-align:center}
+.card b{display:block;font-size:24px;color:#1e3a5f}.card span{font-size:12px;color:#666}
+table{border-collapse:collapse;width:100%;font-size:13px;margin:8px 0}th,td{border:1px solid #d5dbe3;padding:6px 8px;text-align:left}th{background:#eef2f7}
+td.n,th.n{text-align:right}
+.bar{background:#e8edf3;height:14px;border-radius:3px;min-width:120px}.bar i{display:block;height:14px;border-radius:3px;background:#2f6fb0}
+.bar.s i{background:#e08a2b}
+.auto{color:#1a7f37;font-weight:700}.sv{color:#c25e00;font-weight:700}
+.tag{font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid}
+.tag.a{color:#1a7f37;border-color:#1a7f37}.tag.s{color:#c25e00;border-color:#c25e00}.tag.m{color:#666;border-color:#999}
+</style></head><body>
+
+<h1>검사통합검색앱 내부고객 만족도 평가 보고서 <span class="sub">(예시안)</span></h1>
+<div class="sub">평가 대상: AI 검사기준 검색 보조 앱 · 대상: 서울지역 검사원 · 작성 기준일 2026-10-30</div>
+<div class="note"><b>읽는 법</b> <span class="tag a">자동</span> = 앱 DB에서 바로 추출한 <u>실제 수치</u> (2026-10-30 조회) · <span class="tag s">설문</span> = 설문 후 채워질 <u>가상(예시) 수치</u>입니다. 설문 수치는 형식을 보여 주려는 임의값이며 실제 결과가 아닙니다. 개발자(노준호) 본인의 사용 기록은 모든 자동 수치에서 제외했습니다.</div>
+
+<h2>1. 평가 개요 · 지표 체계</h2>
+<table>
+<tr><th>평가 영역</th><th>지표</th><th>산출 방법</th><th>출처</th></tr>
+<tr><td rowspan="4">① 도입·이용</td><td>방문자 수 / AI 이용자 수 / 이용 비율</td><td>activity_log, ai_question_log의 고유 사번</td><td><span class="tag a">자동</span></td></tr>
+<tr><td>재이용률(2회 이상 질문자 비율)</td><td>사번별 질문 수 ≥ 2</td><td><span class="tag a">자동</span></td></tr>
+<tr><td>지사별 이용 분포 · 일별 추이</td><td>team 집계, 일자별 질문 수</td><td><span class="tag a">자동</span></td></tr>
+<tr><td>이용 빈도·시간대(주 N회, 현장/사무실)</td><td>문항 응답</td><td><span class="tag s">설문</span></td></tr>
+<tr><td rowspan="3">② 답변 품질</td><td>👍/👎 비율(답변 만족률)</td><td>ai_feedback.rating</td><td><span class="tag a">자동</span></td></tr>
+<tr><td>👎 사유 분포, "자료 없음" 비율, 되묻기 선택률</td><td>ai_feedback.reasons, ai_clarify_choices</td><td><span class="tag a">자동</span></td></tr>
+<tr><td>정확성·근거 신뢰도·이해 용이성 5점 척도</td><td>문항 응답 평균</td><td><span class="tag s">설문</span></td></tr>
+<tr><td rowspan="3">③ 업무 효과</td><td>건당 조문 확인 시간 절감(분)</td><td>"앱 이용 전/후 소요시간" 문항 × 질문 수</td><td><span class="tag s">설문</span>+<span class="tag a">자동</span></td></tr>
+<tr><td>연혁·표준화·판정지침 열람 건수(기존 문서 대비 접근성)</td><td>activity_log 페이지별 view_count</td><td><span class="tag a">자동</span></td></tr>
+<tr><td>검사 현장 도움도, 재검사/부적합 판정 근거 확인 도움</td><td>문항 응답</td><td><span class="tag s">설문</span></td></tr>
+<tr><td>④ 종합·NPS</td><td>종합 만족도, 지속 이용/추천 의향(0~10)</td><td>문항 응답</td><td><span class="tag s">설문</span></td></tr>
+<tr><td>⑤ 운영 효율</td><td>질문당 토큰·비용(USD)</td><td>ai_usage 집계</td><td><span class="tag a">자동</span></td></tr>
+</table>
+
+<h2>2. 이용 현황 <span class="tag a">자동</span></h2>
+<div class="note">개발자(노준호) 계정의 사용·조회·평가 기록은 <b>모두 제외</b>했습니다(사번 20160730 및 사번 칸에 이름이 저장된 중복 기록 포함). 일자별 추이는 제외 기준으로 분리할 수 없어 싣지 않았습니다.</div>
+<div class="cards">
+<div class="card"><b>29명</b><span>앱 방문자</span></div>
+<div class="card"><b>19명</b><span>AI 질문 이용자 (65.5%)</span></div>
+<div class="card"><b>79건</b><span>AI 질문</span></div>
+<div class="card"><b>281회</b><span>화면 조회 합계</span></div>
+</div>
+<table>
+<tr><th>지사</th><th class="n">방문자</th><th class="n">질문 수</th><th class="n">화면 조회</th><th>질문 비중</th></tr>
+<tr><td>서울강동지사</td><td class="n">8</td><td class="n">33</td><td class="n">73</td><td><div class="bar"><i style="width:42%"></i></div></td></tr>
+<tr><td>서울강서지사</td><td class="n">7</td><td class="n">16</td><td class="n">37</td><td><div class="bar"><i style="width:20%"></i></div></td></tr>
+<tr><td>서울강남지사</td><td class="n">5</td><td class="n">15</td><td class="n">103</td><td><div class="bar"><i style="width:19%"></i></div></td></tr>
+<tr><td>서울동부지사</td><td class="n">3</td><td class="n">10</td><td class="n">28</td><td><div class="bar"><i style="width:13%"></i></div></td></tr>
+<tr><td>서울서초지사</td><td class="n">3</td><td class="n">3</td><td class="n">6</td><td><div class="bar"><i style="width:4%"></i></div></td></tr>
+<tr><td>서울서부지사</td><td class="n">3</td><td class="n">2</td><td class="n">34</td><td><div class="bar"><i style="width:3%"></i></div></td></tr>
+</table>
+<p>재이용(질문 2회 이상) 사용자는 <b>14명</b>으로 전체 방문자의 48.3%, AI 이용자의 73.7%입니다. 1인 최다 질문은 17건으로 특정인 편중이 크지 않아, 평균 질문 수(AI 이용자 1인당 약 4.2건)도 대표 지표로 쓸 수 있습니다. 서부·서초지사는 질문이 적어 확산 대상입니다.</p>
+
+<h3>비용 (최근 질문 로그 33건 기준)</h3>
+<table>
+<tr><th class="n">질문</th><th class="n">입력 토큰</th><th class="n">출력 토큰</th><th class="n">비용(USD)</th><th class="n">질문당 비용</th></tr>
+<tr><td class="n">33건</td><td class="n">716,217</td><td class="n">69,244</td><td class="n">약 1.34</td><td class="n">약 $0.04 (약 55원)</td></tr>
+</table>
+<p>로그 조회가 최근 100건으로 제한되어 제외 후 표본이 33건입니다. 정식 평가에서는 DB에서 기간 전체를 직접 집계하세요. 질문당 비용이 작아 "건당 시간 절감 × 인건비"와 비교하는 비용 대비 효과(ROI) 산출에 쓸 수 있습니다.</p>
+
+<h2>3. 답변 품질 <span class="tag a">자동</span></h2>
+<div class="cards">
+<div class="card"><b>1 : 6</b><span>👍 : 👎 (평가 응답 7건)</span></div>
+<div class="card"><b>14%</b><span>답변 만족률(👍/전체 평가)</span></div>
+<div class="card"><b>9%</b><span>평가 참여율(7/79)</span></div>
+</div>
+<div class="note">평가 표본(7건)이 너무 작고, 👍/👎는 불만이 있을 때 누르는 편향이 있어 현재 수치로 품질을 결론내리기 어렵습니다. 설문의 정확성·신뢰도 척도로 보완하고, 평가 버튼 노출을 늘리는 것이 필요합니다.</div>
+<p>👎 사유별 비중, 되묻기(clarify) 선택률, "앱에 자료 없음" 요청 비율은 ai_feedback.reasons / ai_clarify_choices / revision_flags에서 같은 방식으로 추출할 수 있습니다(본 예시에서는 생략). 👎 건의 검토·반영 처리율도 "피드백 반영률" 지표로 쓸 수 있습니다.</p>
+
+<h2>4. 만족도 설문 결과 <span class="tag s">설문(가상 수치)</span></h2>
+<p class="sub">응답자 N=19명(가상) · 5점 척도(1 매우 불만 ~ 5 매우 만족)</p>
+<table>
+<tr><th>문항</th><th class="n">평균</th><th class="n">4점 이상 비율</th><th>분포</th></tr>
+<tr><td>Q1. 검색 결과가 필요한 조문을 정확히 찾아 준다</td><td class="n">4.1</td><td class="n">81%</td><td><div class="bar s"><i style="width:82%"></i></div></td></tr>
+<tr><td>Q2. 답변의 근거(조문·표준화)를 신뢰할 수 있다</td><td class="n">4.3</td><td class="n">86%</td><td><div class="bar s"><i style="width:86%"></i></div></td></tr>
+<tr><td>Q3. 답변이 이해하기 쉽고 간결하다</td><td class="n">3.9</td><td class="n">71%</td><td><div class="bar s"><i style="width:78%"></i></div></td></tr>
+<tr><td>Q4. 그림·표·연혁 자료가 업무에 도움이 된다</td><td class="n">4.4</td><td class="n">90%</td><td><div class="bar s"><i style="width:88%"></i></div></td></tr>
+<tr><td>Q5. 현장/사무실 검사 업무에 실제로 도움이 된다</td><td class="n">4.2</td><td class="n">81%</td><td><div class="bar s"><i style="width:84%"></i></div></td></tr>
+<tr><td><b>Q6. 종합 만족도</b></td><td class="n"><b>4.2</b></td><td class="n"><b>86%</b></td><td><div class="bar s"><i style="width:84%"></i></div></td></tr>
+</table>
+<table>
+<tr><th>문항</th><th>결과(가상)</th></tr>
+<tr><td>Q7. 조문 1건을 확인하는 데 걸리는 시간 (이용 전 → 후)</td><td>평균 <b>12.0분 → 3.5분</b> (8.5분 단축, 71% 감소)</td></tr>
+<tr><td>Q8. 지속 이용·동료 추천 의향 (0~10)</td><td>평균 8.3점 · 추천자 62% / 중립 29% / 비추천 9% → <b>NPS +53</b></td></tr>
+<tr><td>Q9. 가장 도움된 기능 (복수)</td><td>AI 질문 76% · 연혁(종전 기준) 62% · 표준화 검색 57% · 판정지침 43%</td></tr>
+<tr><td>Q10. 개선 요청 (주관식)</td><td>답변 길이 축소, 후속 질문 맥락 유지, 현장용 모바일 속도 — 키워드 코딩 후 빈도 집계</td></tr>
+</table>
+
+<h2>5. 정량 결합 분석 (설문 × 자동 데이터) 예시</h2>
+<table>
+<tr><th>결합 지표</th><th>산식</th><th>예시값</th></tr>
+<tr><td>누적 업무시간 절감</td><td>AI 질문 수 × Q7 건당 절감(분)</td><td>79건 × 8.5분 ≈ <b>672분(약 11.2시간)</b></td></tr>
+<tr><td>질문당 순효과</td><td>8.5분 ÷ 질문당 비용 약 55원</td><td>비용 대비 효과 큼 (인건비 환산은 부서 단가 적용)</td></tr>
+<tr><td>만족도 × 이용도 상관</td><td>사번별 질문 수와 종합 만족도 상관계수</td><td>설문에 사번(또는 익명 코드) 연결 시 산출 가능</td></tr>
+<tr><td>행동(재이용)과 인식(만족) 일치</td><td>재이용률 73.7% vs Q6 4점 이상 86%</td><td>두 지표가 같은 방향이면 결과의 설득력 강화</td></tr>
+</table>
+
+<h2>6. 결론 틀(예시 문안)</h2>
+<p>AI 이용자 19명 중 14명(74%)이 2회 이상 재이용했고, 설문에서 종합 만족도 4.2점, 건당 확인 시간 71% 감소(가상값)로 나타나 <b>검사 기준 확인 업무에 실질적 도움이 된다</b>고 평가할 수 있다. 다만 지사별 이용 편차(서부·서초 저조)와 👍/👎 참여율 9%는 한계이며, 확산 활동과 평가 유도(QR·알림)로 보완이 필요하다.</p>
+
+<h2>7. 설문 시행 전 준비 체크리스트</h2>
+<table>
+<tr><th>항목</th><th>내용</th></tr>
+<tr><td>측정 시작선</td><td>앱 이용 전 소요시간은 이용 전 기억에 의존하므로, 시행 전 짧은 사전 측정(10건 stopwatch)을 권장</td></tr>
+<tr><td>데이터 정제</td><td>사번-이름 혼입 정규화(제외 대상은 사번 20160730과 이름 "노준호" 두 형태 모두), 관리자·테스트 계정 제외, 기간 고정(예: 2026-11-01~11-30)</td></tr>
+<tr><td>익명성</td><td>보고서는 지사 단위 집계만 사용, 개인별 수치는 내부 분석에만 사용</td></tr>
+<tr><td>추가 로깅 제안</td><td>응답 시간, "답변에 도움됨" 1탭 평가 노출 확대, 검색 후 이탈 여부 → 지표 보강</td></tr>
+<tr><td>표본</td><td>설문 응답률 목표 70% 이상(AI 이용자 기준), 비이용자 10명 대상 미이용 사유 문항 추가</td></tr>
+</table>
+</body></html>

@@ -1,0 +1,168 @@
+import { Switch, Route } from "wouter";
+import { queryClient } from './client/src/lib/queryClient';
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useEffect, useState } from "react";
+import LoginPage from "@/pages/login";
+import Home from "@/pages/home";
+import JudgmentPage from "@/pages/judgment";
+import InspectionStandardsPage from "@/pages/inspection-standards";
+import PrecisionInspectionPage from "@/pages/precision-inspection";
+import MemoPage from "@/pages/memo";
+import SafetyPage from "@/pages/safety";
+import TechnicalDataPage from "@/pages/technical-data";
+import ChatPage from "@/pages/chat";
+import NotFound from "@/pages/not-found";
+import SwipeNavigator from "@/components/SwipeNavigator";
+import { isDuplicateName } from "@/lib/teams";
+import { setGlobalAdminMode } from "@/lib/super-admin";
+import { registerPushToken } from "@/lib/push";
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/judgment" component={JudgmentPage} />
+      <Route path="/precision" component={PrecisionInspectionPage} />
+      <Route path="/memo" component={MemoPage} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+// 인앱 푸시 알림 토스트
+function InAppNotificationToast() {
+  const [toast, setToast] = useState<{ title: string; body: string } | null>(null);
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      setToast(e.detail);
+      setTimeout(() => setToast(null), 4000);
+    };
+    window.addEventListener("inAppNotification", handler as EventListener);
+    return () => window.removeEventListener("inAppNotification", handler as EventListener);
+  }, []);
+  if (!toast) return null;
+  return (
+    <div
+      onClick={() => { setToast(null); window.dispatchEvent(new CustomEvent("navigatePage", { detail: { index: 7 } })); }}
+      style={{ position:"fixed", top:16, left:16, right:16, zIndex:99999, background:"#1f2937", color:"white", borderRadius:14, padding:"12px 16px", boxShadow:"0 4px 20px rgba(0,0,0,0.3)", display:"flex", alignItems:"flex-start", gap:10 }}
+    >
+      <span style={{ fontSize:20 }}>💬</span>
+      <div>
+        <p style={{ fontSize:13, fontWeight:700, marginBottom:2 }}>{toast.title}</p>
+        <p style={{ fontSize:12, opacity:0.8 }}>{toast.body}</p>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string>("user");
+  const [userOrg, setUserOrg] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
+  const [isChecking, setIsChecking] = useState(true);
+
+  useEffect(() => {
+    const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+    if (saved.autoLogin && saved.token) {
+      fetch("/api/auth/verify", { headers: { Authorization: `Bearer ${saved.token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data) {
+            const rawName = (data.name || saved.name || "").trim();
+            const empId = (data.empId || saved.empId || "").trim();
+            const name = isDuplicateName(rawName) && empId ? `${rawName}(${empId})` : rawName;
+            setAuthToken(saved.token);
+            setUserRole(name === "노준호" ? "admin" : (data.role || "user"));
+            setUserOrg(data.org || saved.org || "");
+            setUserName(name);
+            registerPushToken();
+            // [2026-09] 같은 기기를 다른 사람이 이어서 쓰는 경우, 이전 사용자가 켜둔
+            // 로컬 관리자모드(localStorage globalAdminMode)가 그대로 남아있으면 안 되므로
+            // 로그인 확정 시점마다 본인 확인해서 아니면 강제로 끈다.
+            if (name !== "노준호") setGlobalAdminMode(false);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsChecking(false));
+    } else {
+      setIsChecking(false);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+    // 로그아웃해도 이메일만 남겨 다음 로그인 때 입력을 줄인다(비밀번호는 저장하지 않음)
+    localStorage.setItem("loginInfo", JSON.stringify({ email: saved.email }));
+    setAuthToken(null);
+    setUserRole("user");
+    setUserOrg("");
+    setUserName("");
+    // [2026-09] 로그아웃 시점에 로컬 관리자모드를 꺼둔다 — 같은 기기에서 다음 사람이
+    // 로그인했을 때 이전 사용자의 관리자모드가 남아있지 않도록 하기 위한 안전장치.
+    // (실제 확정은 다음 로그인 성공 시 이름 재확인으로도 한 번 더 걸린다.)
+    setGlobalAdminMode(false);
+  };
+
+  // 본인 소속 변경 후: 화면의 소속과 새 토큰(새 소속이 담김)을 바로 반영한다.
+  const handleOrgChanged = (org: string, token: string) => {
+    const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+    localStorage.setItem("loginInfo", JSON.stringify({ ...saved, org, token: saved.autoLogin ? token : "" }));
+    setUserOrg(org);
+    setAuthToken(token);
+  };
+
+  if (isChecking) return null;
+
+  if (!authToken) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <LoginPage onLogin={(token, org, role, name) => {
+          const trimmedName = (name || "").trim();
+          setAuthToken(token);
+          setUserRole(trimmedName === "노준호" ? "admin" : role);
+          setUserOrg(org);
+          setUserName(name);
+          // [2026-09] 새로 로그인한 사람이 노준호가 아니면, 같은 기기에 이전 사람이
+          // 남겨둔 로컬 관리자모드를 즉시 끈다 (super-admin.ts의 이벤트로 열려있는
+          // 화면에도 바로 반영됨).
+          if (trimmedName !== "노준호") setGlobalAdminMode(false);
+        }} />
+      </QueryClientProvider>
+    );
+  }
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <InAppNotificationToast />
+      <TooltipProvider>
+        <Toaster />
+        <SwipeNavigator
+          pages={[
+            <Home key="home" role={userRole} onLogout={handleLogout} authToken={authToken} onOrgChanged={handleOrgChanged} />,
+            <TechnicalDataPage key="technical" />,
+            <JudgmentPage key="judgment" />,
+            <InspectionStandardsPage key="inspection-standards" />,
+            <PrecisionInspectionPage key="precision" />,
+            <MemoPage key="memo" />,
+            <SafetyPage key="safety" org={userOrg} name={userName} role={userRole} />,
+            <ChatPage key="chat" />,
+          ]}
+          pageNames={[
+            "AI검색",
+            "표준화&기술자료",
+            "검사가이드",
+            "검사기준",
+            "정밀안전검사",
+            "메모",
+            "안전보건",
+            "채팅",
+          ]}
+        />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

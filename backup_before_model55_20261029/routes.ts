@@ -1,0 +1,4384 @@
+import type { Express } from "express";
+import { isAdminIdentity } from "./admin-identity";
+import { createServer, type Server } from "http";
+import multer from "multer";
+import Anthropic from "@anthropic-ai/sdk";
+
+// [2026-10-23] AI 답변 그림·표 출력용 — 조문 연혁 행에 붙은 첨부(그림/표)를 "[[첨부:행id:번호]] 종류 캡션" 한 줄씩의
+// 안내 문구로 만들어 AI 컨텍스트에 함께 넘긴다. AI는 필요할 때 이 표시를 답변에 그대로 쓰고, 클라이언트가
+// 표시를 실제 그림·표로 바꿔 그린다. (description에는 섞지 않는다 — 카드 화면에 표시가 노출되지 않게 별도 컬럼으로 반환)
+const ATT_TAG_SQL = `COALESCE((SELECT string_agg('[[첨부:' || inspection_item_revisions.id || ':' || (t.n - 1) || ']] (' || CASE WHEN t.a->>'kind' = 'table' THEN '표' ELSE '그림' END || ') ' || COALESCE(NULLIF(t.a->>'caption',''), left(COALESCE(t.a->>'search',''), 40)), E'\\n' ORDER BY t.n) FROM jsonb_array_elements(CASE WHEN jsonb_typeof(inspection_item_revisions.attachments) = 'array' THEN inspection_item_revisions.attachments ELSE '[]'::jsonb END) WITH ORDINALITY AS t(a, n)), '')`;
+import { storage } from "./storage";
+import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema } from "@shared/schema";
+import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
+import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAnswer } from "./routes/research-candidates";
+import { registerUserStatsRoutes } from "./routes/user-stats";
+import { registerActivityLogRoutes } from "./routes/activity-log";
+import { registerPresenceRoutes } from "./routes/presence";
+import { registerAuthEmailRoutes } from "./routes/auth-email";
+import { ensurePushTokenColumn } from "./ensure-push-column";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+function handleError(res: any, error: any, message: string) {
+  console.error("========== API ERROR ==========");
+  console.error(message);
+  console.error(error);
+  console.error("================================");
+  res.status(500).json({ error: message });
+}
+
+// ── 전문가 지식 수집: AI 질문 자동 생성/정리 ──
+// 재고(활성 질문 수)가 EXPERT_QUESTION_LOW_WATERMARK 미만이면 자동으로 채우고,
+// 재고가 충분해도 가장 최근 질문이 EXPERT_QUESTION_DAILY_MS(하루)보다 오래됐으면 신선도 유지를 위해 1개를 추가로 채운다.
+// EXPERT_QUESTION_CAP을 넘으면 오래된 것부터 삭제, 무응답(건너뜀)이 EXPERT_QUESTION_SKIP_LIMIT회 이상 쌓인
+// 질문은 삭제한다. 관리자 수동 생성 버튼과 30분 주기 백그라운드 점검이 이 로직을 공유한다.
+const EXPERT_QUESTION_LOW_WATERMARK = 5;
+const EXPERT_QUESTION_CAP = 10;
+// [2026-09] 10 → 3으로 하향: 여러 사람이 같은 질문을 반복해서 건너뛰는 건 "이 질문 자체가
+// 답하기 어렵거나 관심이 없다"는 신호로 보고, 더 빨리 다른 질문으로 교체한다.
+const EXPERT_QUESTION_SKIP_LIMIT = 3;
+const EXPERT_QUESTION_DAILY_MS = 24 * 60 * 60 * 1000;
+
+// [2026-09-29] 전문가 질문이 실제 이용자들의 AI 검색 사용 패턴과 동떨어진다는 지적 반영.
+// 예전에는 AI가 "그럴듯한 애매한 상황"을 순수 상상으로 지어냈고, 중복만 피했을 뿐 실제
+// 현장에서 어떤 질문이 오가는지는 전혀 참고하지 않았다. 이미 앱에 쌓여 있는 실제 신호
+// 두 가지를 소재로 삼는다: (1) ai_answer_pool에서 아쉬워요가 더 많아 자동 제외(excluded)된
+// 답변 — AI 답변이 실제로 부족했던 질문, (2) ai_research_candidates — DB 자체에 자료가
+// 없어 외부 검색까지 가야 했던 질문. 둘 다 "AI 혼자서는 확신 있게 못 답한 질문"이라는
+// 공통점이 있어, 전문가 지식으로 보강할 가치가 가장 큰 소재다.
+// 순수 쿼리 로직만 분리해 exports — LLM 호출 없이 회귀 테스트할 수 있게 한다.
+export async function getExpertQuestionSeedMaterial(): Promise<{
+  negativeFeedback: { question: string; answer: string }[];
+  outOfScope: { question: string }[];
+}> {
+  const { pool } = await import("./db");
+  const [negRows, oosRows] = await Promise.all([
+    pool.query(
+      `SELECT question, answer FROM ai_answer_pool WHERE status = 'excluded' ORDER BY updated_at DESC LIMIT 5`
+    ),
+    pool.query(
+      `SELECT question FROM ai_research_candidates WHERE status IN ('pending_review', 'approved') ORDER BY created_at DESC LIMIT 5`
+    ),
+  ]);
+  return {
+    negativeFeedback: negRows.rows as { question: string; answer: string }[],
+    outOfScope: oosRows.rows as { question: string }[],
+  };
+}
+
+// 질문이 공손한 존댓말로 끝나는지(요 / 니다 / 니까) 간단히 점검
+function isPoliteKorean(text: unknown): boolean {
+  return typeof text === "string" && /(요|니다|니까)\s*[?.!]*\s*$/.test(text.trim());
+}
+
+// 이미 저장된 활성 질문 중 반말·단답인 것을 존댓말로 고쳐 쓴다(한 번에 최대 10개, 내용의 의미는 유지).
+// 새로 생성되는 질문은 생성 단계에서 존댓말로 만들지만, 예전에 만들어져 풀에 남아 있는 질문은
+// 재고가 충분하면 며칠씩 그대로 노출되므로 점검 때마다 정리한다. 이미 존댓말이면 AI를 부르지 않는다.
+async function politeNormalizeExpertQuestions(): Promise<void> {
+  if (!process.env.ANTHROPIC_API_KEY) return;
+  const { db } = await import("./db");
+  const { expertQuestions } = await import("@shared/schema");
+  const { eq } = await import("drizzle-orm");
+  const rows = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true));
+  const targets = rows.filter(q => !isPoliteKorean(q.content)).slice(0, 10);
+  if (targets.length === 0) return;
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  for (const q of targets) {
+    try {
+      const resp = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        messages: [{
+          role: "user",
+          content: `다음 질문을 공손한 존댓말(해요체) 질문 한 문장으로 고쳐 써 주세요. 의미와 길이는 그대로 유지하고, "~인가요?", "~하시나요?"처럼 끝내 주세요. 설명 없이 고친 질문만 출력하세요.\n\n${q.content}`,
+        }],
+      });
+      const block = resp.content[0];
+      const fixed = block && block.type === "text" ? block.text.trim().replace(/^["']|["']$/g, "") : "";
+      if (fixed && fixed.length <= 400 && isPoliteKorean(fixed)) {
+        await db.update(expertQuestions).set({ content: fixed }).where(eq(expertQuestions.id, q.id));
+        console.log(`[전문가질문풀] 존댓말로 정리: #${q.id}`);
+      }
+    } catch (e) {
+      console.error(`[전문가질문풀] 존댓말 정리 실패 #${q.id}:`, e);
+    }
+  }
+}
+
+// AI가 새 질문 + 예상 답변 4개를 생성해 DB에 저장 — 기존 질문과 겹치지 않도록 등록된 질문 목록을 함께 전달함
+async function generateOneExpertQuestion() {
+  const { db } = await import("./db");
+  const { expertQuestions } = await import("@shared/schema");
+  const existing = await db.select().from(expertQuestions);
+  const existingList = existing.map(q => `- ${q.content}`).join("\n") || "(없음)";
+
+  // 실제 현장 신호를 프롬프트에 반영 — 하나라도 있으면 섹션을 추가하고, 하나도 없으면
+  // (신규 앱이라 데이터가 아직 없는 경우 등) 기존 방식과 완전히 동일하게 동작한다.
+  let realSignalSection = "";
+  try {
+    const { negativeFeedback, outOfScope } = await getExpertQuestionSeedMaterial();
+    if (negativeFeedback.length > 0 || outOfScope.length > 0) {
+      const negList = negativeFeedback.map(r => `- "${r.question}" (AI 답변이 부족하다는 평가를 받음)`).join("\n") || "(없음)";
+      const oosList = outOfScope.map(r => `- "${r.question}" (이 앱 자료에서 답을 찾지 못함)`).join("\n") || "(없음)";
+      realSignalSection = `
+
+## 실제 이용자 질문 (최우선 참고자료)
+아래는 실제 검사원들이 AI 검색에 물어봤지만 AI가 확신 있게 답하지 못한 진짜 질문들이다.
+완전히 새로운 상황을 상상해서 지어내지 말고, 이 중 하나를 골라 그 주제와 길이를 최대한
+유지한 채로 다듬어라. "일반화"한답시고 장황한 배경 설명과 조건을 덧붙여 원래보다 길게
+늘리지 마라. 주제만 이어받고, 꼭 필요한 경우에만 "왜 애매한지"를 아주 짧게 보태라.
+단, 원문이 반말이거나 말끝이 거칠어도 질문 문장은 반드시 공손한 존댓말(해요체, "~인가요?",
+"~하시나요?")로 바꿔서 써라.
+
+AI 답변이 부족했던 질문:
+${negList}
+
+이 앱 자료에 없어 외부 검색까지 갔던 질문:
+${oosList}`;
+    }
+  } catch (e) {
+    console.error("[전문가질문생성] 실제 이용자 질문 조회 실패 — 기존 방식으로 진행:", e);
+  }
+
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const callModel = (extraNote: string) => anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    // [2026-09-30] 600 → 1200. 실제 이용자 질문 소재(realSignalSection)를 프롬프트에
+    // 추가한 뒤 라이브에서 "SyntaxError: Unterminated string in JSON" 500 에러가
+    // 재현됐다 — 참고할 실제 사례가 생기니 모델이 이전보다 풍부하게(예상 답변 4개를
+    // 더 길게) 작성하면서 600 토큰 한도에서 JSON이 중간에 잘린 것. 실제로 출력되는
+    // JSON은 질문 1개 + 답변 4개로 원래도 여유가 크지 않았으므로 넉넉히 올린다.
+    max_tokens: 1200,
+    system: `너는 승강기(엘리베이터·에스컬레이터·휠체어리프트) 정밀·정기검사 분야의 베테랑 검사원이다.
+현직 검사원들에게 던질 질문 1개를 새로 만들어라. 목적은 법령·판정지침·매뉴얼에 명확한 답이 나와 있지 않아서 검사원 개인의 현장 경험과 판단이 꼭 필요한 주제를 찾아, 그 경험을 데이터로 모으는 것이다.
+
+규칙:
+1. 이미 문서화된 기준을 그대로 묻는 질문(예: "몇 mm 이하면 부적합인가요" 같은 단순 수치 확인)은 금지 — 판단 기준이 애매하거나 매뉴얼에 없는 상황을 다뤄야 한다.
+2. 비현실적이거나 실무에서 잘 마주치지 않는 상황은 피하고, 실제로 검사원이 종종 마주치는 애매한 판단 상황이어야 한다.
+3. 아래 "이미 등록된 질문"과 주제가 겹치지 않게 한다.
+4. 예상 답변 4개는 실제 검사원들이 낼 법한, 서로 구별되는 현실적인 대응 방식이어야 한다(비슷비슷한 답 4개 금지).
+5. category는 "판정기준" | "현장경험" | "위험성평가" 중 하나로 분류한다.
+6. [2026-09-30] 문체와 길이 — 검사원이 현장에서 휴대폰으로 빠르게 읽을 수 있게 짧게 써라.
+   "~할 때, ~인데, ~인 상황에서, ~까지 고려하면 어떻게 판정하시나요?"처럼 조건을 줄줄이 나열한
+   보고서체·시험문제체는 금지한다. 목표는 1~2문장, 100자 안팎 — 판단이 애매하다는 요지만 짧게
+   던지고, 세부 조건은 예상 답변 4개 쪽에서 풀어내라.
+   [2026-10 추가] 말투는 반드시 공손한 존댓말(해요체)로 쓴다. 반말·명령체·단답("~해?", "~야?",
+   "~함?", "~인지")으로 끝내지 말고 "~인가요?", "~하시나요?", "~어떻게 하세요?"처럼 끝맺어라.
+   (좋은 예: "비상용엘리베이터 승강장문 헤더 위 전선 압착 연결은 방수 기준에 어긋나는 걸로 보시나요?",
+   "카 상부 조명이 켜지긴 하는데 너무 어두우면 조도계 없이 어떻게 판정하시나요?")
+   예상 답변 4개도 정중한 말투의 짧은 문장으로 쓴다.
+
+이미 등록된 질문:
+${existingList}
+${realSignalSection}
+
+다른 설명 없이 아래 JSON 형식만 반환하라:
+{"content": "질문 내용", "presetAnswers": ["답변1","답변2","답변3","답변4"], "category": "판정기준"}`,
+    messages: [{ role: "user", content: "새 질문 1개를 만들어줘." + extraNote }],
+  });
+
+  const parseResponse = (response: Awaited<ReturnType<typeof callModel>>) => {
+    const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "";
+    return JSON.parse(raw.replace(/```json|```/g, "").trim());
+  };
+  // 존댓말 여부 점검: 질문이 "~요 / ~니다 / ~니까"로 끝나지 않으면(반말·단답) 한 번 더 요청한다.
+  // 두 번째에도 어긋나면 그대로 저장한다(생성 자체가 실패하는 것보다 낫다).
+  const isPolite = isPoliteKorean;
+  let parsed = parseResponse(await callModel(""));
+  if (!isPolite(parsed?.content)) {
+    try {
+      const retry = parseResponse(await callModel("\n(이전 시도는 말투가 반말이었다. 반드시 \"~인가요?\", \"~하시나요?\" 같은 존댓말 질문으로 다시 만들어줘.)"));
+      if (isPolite(retry?.content)) parsed = retry;
+    } catch (e) {
+      console.error("[전문가질문생성] 존댓말 재시도 실패 — 첫 결과 사용:", e);
+    }
+  }
+  if (!parsed.content || !Array.isArray(parsed.presetAnswers) || parsed.presetAnswers.length !== 4) {
+    throw new Error("AI 응답 형식이 올바르지 않습니다.");
+  }
+  const [row] = await db.insert(expertQuestions).values({
+    content: parsed.content,
+    presetAnswers: parsed.presetAnswers,
+    category: parsed.category || null,
+    active: true,
+  }).returning();
+  return row;
+}
+
+// 로그인 소속 목록 정렬: '서울지역본부'를 맨 위에 두고, 나머지는 가나다 내림차순
+function sortOrganizations(names: string[]): string[] {
+  const HEAD = "서울지역본부";
+  const rest = names.filter(n => n !== HEAD).sort((a, b) => b.localeCompare(a, "ko"));
+  return names.includes(HEAD) ? [HEAD, ...rest] : rest;
+}
+
+// 30분마다(+서버 기동 시 1회) 호출되는 풀 유지 관리 — 사용자가 배너를 열 때 AI 호출을 기다리지 않도록
+// 미리 재고를 채워두고, 오래되거나 다들 건너뛰는 질문은 자동으로 정리한다.
+async function maintainExpertQuestionPool(): Promise<void> {
+  const { db } = await import("./db");
+  const { expertQuestions, expertAnswers } = await import("@shared/schema");
+  const { eq, inArray } = await import("drizzle-orm");
+
+  // 1) 무응답(건너뜀) 10회 이상 누적된 질문은 삭제
+  const skipAnswers = await db.select({ questionId: expertAnswers.questionId }).from(expertAnswers).where(eq(expertAnswers.answerType, "skip"));
+  const skipCountByQuestion = new Map<number, number>();
+  for (const a of skipAnswers) skipCountByQuestion.set(a.questionId, (skipCountByQuestion.get(a.questionId) || 0) + 1);
+  const overSkippedIds = Array.from(skipCountByQuestion.entries()).filter(([, count]) => count >= EXPERT_QUESTION_SKIP_LIMIT).map(([id]) => id);
+  if (overSkippedIds.length > 0) {
+    await db.delete(expertQuestions).where(inArray(expertQuestions.id, overSkippedIds));
+    console.log(`[전문가질문풀] 무응답 ${EXPERT_QUESTION_SKIP_LIMIT}회 이상 질문 ${overSkippedIds.length}개 삭제`);
+  }
+
+  // 1-2) 예전에 만들어져 남아 있는 반말 질문을 존댓말로 정리
+  try { await politeNormalizeExpertQuestions(); } catch (e) { console.error("[전문가질문풀] 존댓말 정리 중 오류:", e); }
+
+  // 2) 재고 기준(5개) 미만이면 그만큼 채우고, 재고가 충분해도 가장 최근 질문이 하루 넘게 그대로면
+  // 신선도 유지를 위해 1개를 추가로 채운다 — 사람 수는 많은데 질문 풀이 며칠째 그대로라 다들 같은 질문만
+  // 보는 상황(예: 재고가 상한까지 다 찬 채로 오래 방치되는 경우)을 막기 위함
+  let active = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true)).orderBy(expertQuestions.createdAt);
+  let needed = Math.max(0, EXPERT_QUESTION_LOW_WATERMARK - active.length);
+  if (needed === 0) {
+    const newest = active[active.length - 1]?.createdAt;
+    if (newest && Date.now() - new Date(newest).getTime() >= EXPERT_QUESTION_DAILY_MS) {
+      needed = 1;
+      console.log("[전문가질문풀] 재고는 충분하지만 최근 질문이 하루 이상 지나 신선도 보충 1개 실행");
+    }
+  }
+  for (let i = 0; i < needed; i++) {
+    try {
+      await generateOneExpertQuestion();
+      console.log(`[전문가질문풀] 새 질문 자동 생성 (${i + 1}/${needed})`);
+    } catch (e) {
+      console.error("[전문가질문풀] 자동 생성 실패, 다음 점검에서 재시도:", e);
+      break;
+    }
+  }
+
+  // 3) 방금 채운 것까지 포함해 활성 질문이 상한(10개)을 넘으면 오래된 것부터 삭제
+  active = await db.select().from(expertQuestions).where(eq(expertQuestions.active, true)).orderBy(expertQuestions.createdAt);
+  if (active.length > EXPERT_QUESTION_CAP) {
+    const excess = active.length - EXPERT_QUESTION_CAP;
+    const toDeleteIds = active.slice(0, excess).map(q => q.id);
+    await db.delete(expertQuestions).where(inArray(expertQuestions.id, toDeleteIds));
+    console.log(`[전문가질문풀] 상한(${EXPERT_QUESTION_CAP}개) 초과로 오래된 질문 ${toDeleteIds.length}개 삭제`);
+  }
+}
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Category routes
+  app.get("/api/categories", async (req, res) => {
+    try {
+      const categories = await storage.getAllCategories();
+      res.json(categories);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch categories" });
+    }
+  });
+
+  app.get("/api/categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const category = await storage.getCategory(id);
+      if (!category) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      res.json(category);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch category" });
+    }
+  });
+
+  app.post("/api/categories", async (req, res) => {
+    try {
+      const validatedData = insertCategorySchema.parse(req.body);
+      const category = await storage.createCategory(validatedData);
+      res.status(201).json(category);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid category data" });
+    }
+  });
+
+  app.put("/api/categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const validatedData = insertCategorySchema.partial().parse(req.body);
+      const category = await storage.updateCategory(id, validatedData);
+      if (!category) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      res.json(category);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid category data" });
+    }
+  });
+
+  app.delete("/api/categories/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteCategory(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete category" });
+    }
+  });
+
+  // Standard routes
+  app.get("/api/standards", async (req, res) => {
+    try {
+      const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : null;
+      const hotspotId = req.query.hotspotId ? parseInt(req.query.hotspotId as string) : null;
+      
+      let standards;
+      if (hotspotId) {
+        standards = await storage.getStandardsByHotspot(hotspotId);
+      } else if (categoryId) {
+        standards = await storage.getStandardsByCategory(categoryId);
+      } else {
+        standards = await storage.getAllStandards();
+      }
+      res.json(standards);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch standards" });
+    }
+  });
+
+  // AI 답변 피드백 API
+  // OpenAI 임베딩 생성 헬퍼 (네트워크가 막혀있는 등의 상황에서 무한 대기하지 않도록 8초 타임아웃)
+  async function getEmbedding(text: string): Promise<number[] | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const resp = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "text-embedding-3-small",
+          input: text.slice(0, 8000),
+        }),
+        signal: controller.signal,
+      });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        console.error(`[임베딩] OpenAI 응답 오류 status=${resp.status}:`, errText.slice(0, 300));
+        return null;
+      }
+      const data = await resp.json();
+      return data?.data?.[0]?.embedding || null;
+    } catch (e) {
+      console.error("[임베딩] 생성 실패:", e);
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  // [2026-09] AI 피드백 관리 API(좋아요/아쉬워요 저장, 질문 임베딩 클러스터링,
+  // 관리자 모니터링 패널용 조회/제외)는 server/routes/ai-feedback.ts로 분리했다.
+  // (/api/ai-similar-answers, /api/ai-feedback, /api/ai-feedback/export,
+  //  /api/ai-feedback/clusters, /api/ai-feedback/clusters/:id/exclude)
+  registerAiFeedbackRoutes(app);
+
+  // [2026-09] "자료 범위 밖" 답변 → 웹 검색 보강 → 관리자 승인 파이프라인 API
+  // (/api/ai-research-candidates, /api/ai-research-candidates/:id/approve, /reject)
+  registerResearchCandidateRoutes(app);
+
+  // [2026-09] 사용자별 질문/피드백 통계 API (/api/user-stats)
+  registerUserStatsRoutes(app);
+
+  // [2026-10] 자료 조회 기록 (/api/activity-log, /api/activity-stats)
+  registerActivityLogRoutes(app);
+  registerPresenceRoutes(app);
+  registerAuthEmailRoutes(app);
+
+  app.get("/api/standards/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const standard = await storage.getStandard(id);
+      if (!standard) {
+        return res.status(404).json({ error: "Standard not found" });
+      }
+      res.json(standard);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch standard" });
+    }
+  });
+
+  app.post("/api/standards", async (req, res) => {
+    try {
+      const validatedData = insertStandardSchemaExt.parse(req.body);
+      const standard = await storage.createStandard(validatedData);
+      res.status(201).json(standard);
+    } catch (error) {
+      console.error("[POST /api/standards 오류]", error);
+      res.status(400).json({ error: "Invalid standard data", detail: String(error) });
+    }
+  });
+
+  app.put("/api/standards/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const validatedData = insertStandardSchemaExt.partial().parse(req.body);
+      const standard = await storage.updateStandard(id, validatedData);
+      if (!standard) {
+        return res.status(404).json({ error: "Standard not found" });
+      }
+      res.json(standard);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid standard data" });
+    }
+  });
+
+  app.delete("/api/standards/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteStandard(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete standard" });
+    }
+  });
+
+  // Admin password verification
+  // 무차별 대입 방지: IP당 15분에 5회까지만 틀릴 수 있다(서버 재시작 시 초기화되는 메모리 기반).
+  const adminPwFails = new Map<string, { count: number; first: number }>();
+  const ADMIN_PW_WINDOW_MS = 15 * 60 * 1000;
+  const ADMIN_PW_MAX_FAILS = 5;
+  app.post("/api/admin/verify-password", async (req, res) => {
+    try {
+      const adminPassword = process.env.ADMIN_PASSWORD;
+      if (!adminPassword) {
+        console.error("ADMIN_PASSWORD environment variable is not set");
+        return res.status(500).json({ success: false, error: "서버 설정 오류입니다." });
+      }
+
+      const ip = String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim() || "unknown";
+      const now = Date.now();
+      const rec = adminPwFails.get(ip);
+      if (rec && now - rec.first > ADMIN_PW_WINDOW_MS) adminPwFails.delete(ip);
+      const cur = adminPwFails.get(ip);
+      if (cur && cur.count >= ADMIN_PW_MAX_FAILS) {
+        return res.status(429).json({ success: false, error: "시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요." });
+      }
+
+      const { password } = req.body;
+      if (password === adminPassword) {
+        adminPwFails.delete(ip);
+        res.json({ success: true });
+      } else {
+        const next = cur ? { count: cur.count + 1, first: cur.first } : { count: 1, first: now };
+        adminPwFails.set(ip, next);
+        res.status(401).json({ success: false, error: "잘못된 비밀번호입니다." });
+      }
+    } catch (error) {
+      res.status(400).json({ success: false, error: "비밀번호 검증에 실패했습니다." });
+    }
+  });
+
+  // Hotspot routes
+  app.get("/api/hotspots", async (req, res) => {
+    try {
+      const hotspots = await storage.getAllHotspots();
+      res.json(hotspots);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch hotspots" });
+    }
+  });
+
+  app.get("/api/hotspots/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const hotspot = await storage.getHotspot(id);
+      if (!hotspot) {
+        return res.status(404).json({ error: "Hotspot not found" });
+      }
+      res.json(hotspot);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch hotspot" });
+    }
+  });
+
+  app.post("/api/hotspots", async (req, res) => {
+    try {
+      const validatedData = insertHotspotSchema.parse(req.body);
+      const hotspot = await storage.createHotspot(validatedData);
+      res.status(201).json(hotspot);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid hotspot data" });
+    }
+  });
+
+  app.put("/api/hotspots/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const validatedData = insertHotspotSchema.partial().parse(req.body);
+      const hotspot = await storage.updateHotspot(id, validatedData);
+      if (!hotspot) {
+        return res.status(404).json({ error: "Hotspot not found" });
+      }
+      res.json(hotspot);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid hotspot data" });
+    }
+  });
+
+  app.delete("/api/hotspots/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteHotspot(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete hotspot" });
+    }
+  });
+
+  // Memo routes
+  app.get("/api/memos", async (req, res) => {
+    try {
+      const search = req.query.search as string;
+      const memos = search 
+        ? await storage.searchMemos(search)
+        : await storage.getAllMemos();
+      res.json(memos);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch memos");
+    }
+  });
+
+  app.get("/api/memos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const memo = await storage.getMemo(id);
+      if (!memo) {
+        return res.status(404).json({ error: "Memo not found" });
+      }
+      res.json(memo);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch memo" });
+    }
+  });
+
+  app.post("/api/memos", async (req, res) => {
+    try {
+      const validatedData = insertMemoSchema.parse(req.body);
+      const memo = await storage.createMemo(validatedData);
+      res.status(201).json(memo);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid memo data" });
+    }
+  });
+
+  app.put("/api/memos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const validatedData = insertMemoSchema.partial().parse(req.body);
+      const memo = await storage.updateMemo(id, validatedData);
+      if (!memo) {
+        return res.status(404).json({ error: "Memo not found" });
+      }
+      res.json(memo);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid memo data" });
+    }
+  });
+
+  app.delete("/api/memos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteMemo(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete memo" });
+    }
+  });
+
+  // Photo routes
+  app.get("/api/memos/:memoId/photos", async (req, res) => {
+    try {
+      const memoId = parseInt(req.params.memoId);
+      const photos = await storage.getPhotosByMemo(memoId);
+      res.json(photos.map(p => ({ ...p, imageData: undefined, hasImage: true })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch photos" });
+    }
+  });
+
+  app.get("/api/photos/:id/image", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const photo = await storage.getPhoto(id);
+      if (!photo) {
+        return res.status(404).json({ error: "Photo not found" });
+      }
+      const base64Data = photo.imageData.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Data, 'base64');
+      res.setHeader('Content-Type', photo.mimeType);
+      res.send(buffer);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch photo image" });
+    }
+  });
+
+  app.post("/api/memos/:memoId/photos", upload.single('image'), async (req, res) => {
+    try {
+      const memoId = parseInt(req.params.memoId);
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No image provided" });
+      }
+      
+      const existingPhotos = await storage.getPhotosByMemo(memoId);
+      if (existingPhotos.length >= 5) {
+        return res.status(400).json({ error: "Maximum 5 photos allowed" });
+      }
+
+      const base64Data = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+      const photo = await storage.createPhoto({
+        memoId,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        imageData: base64Data
+      });
+      res.status(201).json({ ...photo, imageData: undefined, hasImage: true });
+    } catch (error) {
+      res.status(400).json({ error: "Failed to upload photo" });
+    }
+  });
+
+  app.delete("/api/photos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deletePhoto(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete photo" });
+    }
+  });
+
+  // Annotation routes
+  app.get("/api/photos/:photoId/annotations", async (req, res) => {
+    try {
+      const photoId = parseInt(req.params.photoId);
+      const annotations = await storage.getAnnotationsByPhoto(photoId);
+      res.json(annotations);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch annotations" });
+    }
+  });
+
+  app.post("/api/photos/:photoId/annotations", async (req, res) => {
+    try {
+      const photoId = parseInt(req.params.photoId);
+      const validatedData = insertPhotoAnnotationSchema.parse({ ...req.body, photoId });
+      const annotation = await storage.createAnnotation(validatedData);
+      res.status(201).json(annotation);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid annotation data" });
+    }
+  });
+
+  app.delete("/api/annotations/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteAnnotation(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete annotation" });
+    }
+  });
+
+  app.delete("/api/photos/:photoId/annotations", async (req, res) => {
+    try {
+      const photoId = parseInt(req.params.photoId);
+      await storage.deleteAnnotationsByPhoto(photoId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete annotations" });
+    }
+  });
+
+  // Standard Comment routes
+  app.get("/api/standards/:standardId/comments", async (req, res) => {
+    try {
+      const standardId = parseInt(req.params.standardId);
+      const comments = await storage.getCommentsByStandard(standardId);
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/standards/:standardId/comments", async (req, res) => {
+    try {
+      const standardId = parseInt(req.params.standardId);
+      const validatedData = insertStandardCommentSchema.parse({
+        ...req.body,
+        standardId
+      });
+      const comment = await storage.createComment(validatedData);
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid comment data" });
+    }
+  });
+
+  app.delete("/api/comments/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteComment(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete comment" });
+    }
+  });
+
+  // Judgment Photo routes
+  app.get("/api/judgment-items/:itemId/photos", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const photos = await storage.getJudgmentPhotosByItem(itemId);
+      res.json(photos);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch photos" });
+    }
+  });
+
+  app.get("/api/judgment-items/:itemId/photo-count", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const count = await storage.getJudgmentPhotoCount(itemId);
+      res.json({ count });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch photo count" });
+    }
+  });
+
+  app.post("/api/judgment-items/:itemId/photos", upload.single("photo"), async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const existingCount = await storage.getJudgmentPhotoCount(itemId);
+      if (existingCount >= 10) {
+        return res.status(400).json({ error: "Maximum 10 photos allowed per item" });
+      }
+      if (!req.file) {
+        return res.status(400).json({ error: "No file provided" });
+      }
+      const base64Data = req.file.buffer.toString("base64");
+      const imageData = `data:${req.file.mimetype};base64,${base64Data}`;
+      const validatedData = insertJudgmentPhotoSchema.parse({
+        itemId,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        imageData
+      });
+      const photo = await storage.createJudgmentPhoto(validatedData);
+      res.status(201).json(photo);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid photo data" });
+    }
+  });
+
+  app.delete("/api/judgment-photos/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteJudgmentPhoto(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete photo" });
+    }
+  });
+
+  app.put("/api/judgment-photos/:id/order", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { sortOrder } = req.body;
+      if (typeof sortOrder !== 'number') {
+        return res.status(400).json({ error: "sortOrder must be a number" });
+      }
+      await storage.updateJudgmentPhotoOrder(id, sortOrder);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update photo order" });
+    }
+  });
+
+  app.put("/api/judgment-items/:itemId/photos/reorder", async (req, res) => {
+    try {
+      const { photoIds } = req.body;
+      if (!Array.isArray(photoIds)) {
+        return res.status(400).json({ error: "photoIds must be an array" });
+      }
+      await storage.reorderJudgmentPhotos(photoIds);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to reorder photos" });
+    }
+  });
+
+  // Judgment Comment routes
+  app.get("/api/judgment-items/:itemId/comments", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const comments = await storage.getJudgmentCommentsByItem(itemId);
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch comments" });
+    }
+  });
+
+  app.post("/api/judgment-items/:itemId/comments", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const validatedData = insertJudgmentCommentSchema.parse({
+        ...req.body,
+        author: req.body.author || "",
+        itemId
+      });
+      const comment = await storage.createJudgmentComment(validatedData);
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid comment data" });
+    }
+  });
+
+  // ── 기술자료(표준화) 댓글 API — judgment_comments 테이블 재사용 (itemId: "std_" + title) ──
+  app.get("/api/std-comments/:title", async (req, res) => {
+    try {
+      const itemId = "std_" + decodeURIComponent(req.params.title);
+      const comments = await storage.getJudgmentCommentsByItem(itemId);
+      res.json(comments);
+    } catch (e) { res.status(500).json({ error: "Failed to get comments" }); }
+  });
+
+  app.post("/api/std-comments/:title", async (req, res) => {
+    try {
+      const itemId = "std_" + decodeURIComponent(req.params.title);
+      const comment = await storage.createJudgmentComment({
+        itemId, author: "", content: req.body.content || ""
+      });
+      res.status(201).json(comment);
+    } catch (e) { res.status(500).json({ error: "Failed to create comment" }); }
+  });
+
+  app.delete("/api/std-comments/:id", async (req, res) => {
+    try {
+      await storage.deleteJudgmentComment(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (e) { res.status(500).json({ error: "Failed to delete comment" }); }
+  });
+
+  app.get("/api/std-comments-counts", async (req, res) => {
+    res.json({});
+  });
+
+  app.delete("/api/judgment-comments/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteJudgmentComment(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete comment" });
+    }
+  });
+
+  // Inspection Item Edit routes (for admin modifications synced across all users)
+  app.get("/api/inspection-edits", async (req, res) => {
+    try {
+      const edits = await storage.getAllInspectionItemEdits();
+      res.json(edits);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch inspection edits");
+    }
+  });
+
+  app.get("/api/inspection-edits/:itemId", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      const edit = await storage.getInspectionItemEdit(itemId);
+      if (!edit) {
+        return res.status(404).json({ error: "Edit not found" });
+      }
+      res.json(edit);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch inspection edits");
+    }
+  });
+
+  app.put("/api/inspection-edits/:itemId", async (req, res) => {
+    try {
+      const itemId = decodeURIComponent(req.params.itemId);
+      // 알려진 필드만 추출 — standardDatesWithMemo 등 미지 필드 무시
+      const {
+        text, effectiveDate, expiryDate, introductionType, customWarning,
+        permitEffectiveDate, standardNote, equipmentTypes, fixedResult,
+      } = req.body;
+
+      // standardDates: 배열이면 JSON 문자열로, 이미 문자열이면 그대로
+      let standardDates: string | undefined;
+      if (req.body.standardDates !== undefined) {
+        standardDates = Array.isArray(req.body.standardDates)
+          ? JSON.stringify(req.body.standardDates)
+          : typeof req.body.standardDates === "string"
+            ? req.body.standardDates
+            : undefined;
+      }
+
+      const validatedData = insertInspectionItemEditSchema.parse({
+        itemId,
+        text: text ?? null,
+        effectiveDate: effectiveDate ?? null,
+        expiryDate: expiryDate ?? null,
+        introductionType: introductionType ?? null,
+        customWarning: customWarning ?? null,
+        permitEffectiveDate: permitEffectiveDate ?? null,
+        standardDates: standardDates ?? null,
+        standardNote: standardNote ?? null,
+        equipmentTypes: equipmentTypes
+          ? (Array.isArray(equipmentTypes) ? JSON.stringify(equipmentTypes) : String(equipmentTypes))
+          : null,
+        fixedResult: fixedResult ?? null,
+      });
+      const edit = await storage.upsertInspectionItemEdit(validatedData);
+      res.json(edit);
+    } catch (error) {
+      console.error("[inspection-edits PUT 오류]", error);
+      res.status(400).json({ error: "Invalid edit data", detail: String(error) });
+    }
+  });
+
+  // ── 표준화 오버라이드 API ──
+  app.get("/api/std-overrides", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemOverrides } = await import("@shared/schema");
+      const rows = await db.select().from(stdItemOverrides);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.json(rows);
+    } catch { res.status(500).json({ error: "Failed to fetch std overrides" }); }
+  });
+
+  app.put("/api/std-overrides/:title", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
+      const { overrideTitle, basis, conclusion, source, ref, typeTag, category, permitDate, inspectionDate, inspectionYear, installInspectionDate } = req.body;
+      const existing = await db.select().from(stdItemOverrides).where(eq(stdItemOverrides.title, title)).limit(1);
+      let row;
+      if (existing.length > 0) {
+        [row] = await db.update(stdItemOverrides).set({ overrideTitle, basis, conclusion, source, ref, typeTag, category, permitDate, inspectionDate, inspectionYear, installInspectionDate, updatedAt: new Date(), manuallyEdited: true }).where(eq(stdItemOverrides.title, title)).returning();
+      } else {
+        [row] = await db.insert(stdItemOverrides).values({ title, overrideTitle, basis, conclusion, source, ref, typeTag, category, permitDate, inspectionDate, inspectionYear, installInspectionDate, manuallyEdited: true }).returning();
+      }
+      res.json(row);
+    } catch (e) {
+      console.error("[PUT /api/std-overrides 오류]", e);
+      res.status(500).json({ error: "Failed to save std override", detail: String(e) });
+    }
+  });
+
+  app.delete("/api/std-overrides/:title", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
+      const deleted = await db.delete(stdItemOverrides).where(eq(stdItemOverrides.title, title)).returning();
+      if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
+      res.status(204).send();
+    } catch (e) {
+      console.error("[DELETE /api/std-overrides 오류]", e);
+      res.status(500).json({ error: "Failed to delete std override", detail: String(e) });
+    }
+  });
+
+  // ── 기술자료 API (표준화와 완전히 분리된 데이터소스 — 소음, 기종별 특성 등 자유형식 자료) ──
+  app.get("/api/technical-materials", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { technicalMaterials } = await import("@shared/schema");
+      const { desc } = await import("drizzle-orm");
+      const rows = await db.select().from(technicalMaterials).orderBy(desc(technicalMaterials.updatedAt));
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.json(rows);
+    } catch (e) {
+      console.error("[GET /api/technical-materials 오류]", e);
+      res.status(500).json({ error: "Failed to fetch technical materials" });
+    }
+  });
+
+  app.put("/api/technical-materials/:title", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { technicalMaterials, techMaterialPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
+      const { category, body, source, newTitle } = req.body;
+      if (!body) return res.status(400).json({ error: "본문(body)은 필수입니다" });
+      const existing = await db.select().from(technicalMaterials).where(eq(technicalMaterials.title, title)).limit(1);
+      let row;
+      if (existing.length > 0) {
+        [row] = await db.update(technicalMaterials)
+          .set({ title: newTitle || title, category, body, source, updatedAt: new Date() })
+          .where(eq(technicalMaterials.title, title))
+          .returning();
+        // 제목이 실제로 바뀐 경우, 사진 테이블의 item_key(제목 기반 연결키)도 함께 갱신해
+        // 사진이 고아 상태(예전 제목으로 남아 화면에서 조회 안 됨)가 되는 것을 방지한다.
+        if (newTitle && newTitle !== title) {
+          await db.update(techMaterialPhotos)
+            .set({ itemKey: newTitle })
+            .where(eq(techMaterialPhotos.itemKey, title));
+        }
+      } else {
+        [row] = await db.insert(technicalMaterials)
+          .values({ title: newTitle || title, category, body, source })
+          .returning();
+      }
+      res.json(row);
+    } catch (e) {
+      console.error("[PUT /api/technical-materials 오류]", e);
+      res.status(500).json({ error: "Failed to save technical material", detail: String(e) });
+    }
+  });
+
+  app.delete("/api/technical-materials/:title", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { technicalMaterials, techMaterialPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const title = (() => { try { return decodeURIComponent(req.params.title); } catch { return req.params.title; } })();
+      const deleted = await db.delete(technicalMaterials).where(eq(technicalMaterials.title, title)).returning();
+      if (deleted.length === 0) return res.status(404).json({ error: "Not found" });
+      // 자료 삭제 시 연결된 사진도 함께 정리해 고아 레코드가 남지 않도록 한다.
+      await db.delete(techMaterialPhotos).where(eq(techMaterialPhotos.itemKey, title));
+      res.status(204).send();
+    } catch (e) {
+      console.error("[DELETE /api/technical-materials 오류]", e);
+      res.status(500).json({ error: "Failed to delete technical material", detail: String(e) });
+    }
+  });
+
+  // ── 검사기준 오버라이드 API ──
+  app.get("/api/insp-std-overrides", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const rows = await db.select().from(inspStdOverrides);
+      res.json(rows);
+    } catch { res.status(500).json({ error: "Failed to fetch insp-std overrides" }); }
+  });
+
+  app.put("/api/insp-std-overrides/:itemKey", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspStdOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const itemKey = req.params.itemKey;
+      const { text, source } = req.body;
+      const existing = await db.select().from(inspStdOverrides).where(eq(inspStdOverrides.itemKey, itemKey)).limit(1);
+      let row;
+      if (existing.length > 0) {
+        [row] = await db.update(inspStdOverrides).set({ text, source, updatedAt: new Date() }).where(eq(inspStdOverrides.itemKey, itemKey)).returning();
+      } else {
+        [row] = await db.insert(inspStdOverrides).values({ itemKey, text, source }).returning();
+      }
+      res.json(row);
+    } catch (e) { res.status(500).json({ error: "Failed to save insp-std override" }); }
+  });
+
+    app.delete("/api/inspection-edits/:itemId", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      await storage.deleteInspectionItemEdit(itemId);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete inspection edit" });
+    }
+  });
+
+  // Custom Inspection Item routes (for admin-added items synced across all users)
+  app.get("/api/custom-items", async (req, res) => {
+    try {
+      const items = await storage.getAllCustomInspectionItems();
+      res.json(items);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch inspection edits");
+    }
+  });
+
+  app.post("/api/custom-items", async (req, res) => {
+    try {
+      const validatedData = insertCustomInspectionItemSchema.parse(req.body)
+      const item = await storage.createCustomInspectionItem(validatedData);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid item data" });
+    }
+  });
+
+  app.delete("/api/custom-items/:itemId", async (req, res) => {
+    try {
+      const itemId = req.params.itemId;
+      await storage.deleteCustomInspectionItem(itemId);
+      res.status(204).send();
+    } catch (error) {
+      handleError(res, error, "Failed to fetch custom items");
+    }
+  });
+
+// PPE routes
+  app.get("/api/ppe", async (req, res) => {
+    try {
+      const { employeeId, employeeName, admin } = req.query as { employeeId?: string; employeeName?: string; admin?: string };
+      const isAdmin = admin === "true" || isAdminIdentity(employeeId, employeeName);
+      const items = await storage.getAllPpeItems();
+      if (isAdmin) {
+        res.json(items);
+      } else if (employeeId && employeeName) {
+        res.json(items.filter(i => i.employeeId === employeeId && i.employeeName === employeeName));
+      } else {
+        res.json([]);
+      }
+    } catch (error) {
+      handleError(res, error, "Failed to fetch PPE items");
+    }
+  });
+
+  app.post("/api/ppe", async (req, res) => {
+    try {
+      const validatedData = insertPpeItemSchema.parse(req.body);
+      const item = await storage.createPpeItem(validatedData);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid PPE data" });
+    }
+  });
+
+  app.delete("/api/ppe/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deletePpeItem(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete PPE item" });
+    }
+  });
+
+  // Near miss routes
+  app.get("/api/near-misses", async (req, res) => {
+    try {
+      const items = await storage.getAllNearMisses();
+      res.json(items);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch near misses");
+    }
+  });
+
+  app.post("/api/near-misses", async (req, res) => {
+    try {
+      const validatedData = insertNearMissSchema.parse(req.body);
+      const item = await storage.createNearMiss(validatedData);
+      res.status(201).json(item);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid near miss data" });
+    }
+  });
+
+  app.delete("/api/near-misses/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteNearMiss(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete near miss" });
+    }
+  });
+
+  // ── 위험성평가: 지사 목록 (등록된 항목/평가에서 사용된 지사명 취합) ──
+  app.get("/api/risk-branches", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems } = await import("@shared/schema");
+      const { sql: sqlOp } = await import("drizzle-orm");
+      const rows = await db.selectDistinct({ branchId: riskHazardItems.branchId }).from(riskHazardItems);
+      const names = rows.map(r => r.branchId).filter(Boolean);
+      if (!names.includes("서울강서지사")) names.unshift("서울강서지사");
+      res.json(names);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk branches");
+    }
+  });
+
+  // ── 위험성평가: 유해위험요인 (모든 이용자 등록 가능) ──
+  app.get("/api/risk-hazard-items", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems } = await import("@shared/schema");
+      const { eq, and, desc } = await import("drizzle-orm");
+      const branchId = req.query.branchId as string | undefined;
+      const team = req.query.team as string | undefined;
+      const conditions = [] as any[];
+      if (branchId) conditions.push(eq(riskHazardItems.branchId, branchId));
+      if (team) conditions.push(eq(riskHazardItems.team, team));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskHazardItems).where(and(...conditions)).orderBy(desc(riskHazardItems.createdAt))
+        : await db.select().from(riskHazardItems).orderBy(desc(riskHazardItems.createdAt));
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk hazard items");
+    }
+  });
+
+  app.post("/api/risk-hazard-items", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems, riskItemSelections, insertRiskHazardItemSchema } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      // selectEmployeeId/selectEmployeeName/selectRound/selectHadAccidentExperience — 팀원이 "직접 등록"할 때만 넘어옴(=등록과 동시에 본인 선택으로 처리)
+      const { selectEmployeeId, selectEmployeeName, selectRound, selectHadAccidentExperience, ...body } = req.body;
+      const validated = insertRiskHazardItemSchema.parse(body);
+      if (!validated.isTemplate && validated.team && selectEmployeeId) {
+        // 같은 팀/같은 회차에서 이미 선택한 항목이 있는지 확인 (1인 1항목)
+        const mine = await db.select({ id: riskItemSelections.id })
+          .from(riskItemSelections)
+          .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+          .where(and(eq(riskHazardItems.team, validated.team), eq(riskItemSelections.employeeId, selectEmployeeId), eq(riskItemSelections.round, selectRound || "")));
+        if (mine.length > 0) {
+          return res.status(409).json({ error: "이미 선택한 항목이 있습니다. 먼저 선택을 취소하세요." });
+        }
+      }
+      const [row] = await db.insert(riskHazardItems).values(validated).returning();
+      if (!validated.isTemplate && validated.team && selectEmployeeId && selectEmployeeName) {
+        await db.insert(riskItemSelections).values({ hazardItemId: row.id, employeeId: selectEmployeeId, employeeName: selectEmployeeName, round: selectRound, hadAccidentExperience: selectHadAccidentExperience ?? null });
+      }
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid risk hazard item data", detail: String(error) });
+    }
+  });
+
+  // 팀별 위험요인(예시/필수 항목) 수정 — 내용, 사진, 현재 안전보건조치, 필수 여부 등을 수정
+  app.put("/api/risk-hazard-items/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const allowedFields = ["workCategory", "subWork", "content", "discoveryPath", "fieldInfo", "imageUrls", "referenceSafetyMeasure", "isMandatory"] as const;
+      const updates: Record<string, any> = {};
+      for (const f of allowedFields) {
+        if (f in req.body) updates[f] = req.body[f];
+      }
+      if (Object.keys(updates).length === 0) return res.status(400).json({ error: "수정할 내용이 없습니다." });
+      const [row] = await db.update(riskHazardItems).set(updates).where(eq(riskHazardItems.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "항목을 찾을 수 없습니다." });
+      res.json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid risk hazard item update", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 항목 선택(예시 선택) — 항목 1개당 1명만 선택 가능, 팀당 1인 1항목 (회차별) ──
+  app.get("/api/risk-item-selections", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskItemSelections, riskHazardItems } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const team = req.query.team as string | undefined;
+      const round = req.query.round as string | undefined;
+      const cols = {
+        id: riskItemSelections.id,
+        hazardItemId: riskItemSelections.hazardItemId,
+        employeeId: riskItemSelections.employeeId,
+        employeeName: riskItemSelections.employeeName,
+        round: riskItemSelections.round,
+        hadAccidentExperience: riskItemSelections.hadAccidentExperience,
+        createdAt: riskItemSelections.createdAt,
+      };
+      let rows;
+      if (team && round) {
+        rows = await db.select(cols).from(riskItemSelections)
+          .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+          .where(and(eq(riskHazardItems.team, team), eq(riskItemSelections.round, round)));
+      } else if (team) {
+        rows = await db.select(cols).from(riskItemSelections)
+          .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+          .where(eq(riskHazardItems.team, team));
+      } else if (round) {
+        rows = await db.select().from(riskItemSelections).where(eq(riskItemSelections.round, round));
+      } else {
+        rows = await db.select().from(riskItemSelections);
+      }
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk item selections");
+    }
+  });
+
+  app.post("/api/risk-item-selections", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskItemSelections, riskHazardItems, insertRiskItemSelectionSchema } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const validated = insertRiskItemSelectionSchema.parse(req.body);
+      const [item] = await db.select().from(riskHazardItems).where(eq(riskHazardItems.id, validated.hazardItemId));
+      if (!item) return res.status(404).json({ error: "항목을 찾을 수 없습니다." });
+      if (!item.team) return res.status(400).json({ error: "팀이 지정되지 않은 항목입니다." });
+      const [taken] = await db.select().from(riskItemSelections).where(and(eq(riskItemSelections.hazardItemId, validated.hazardItemId), eq(riskItemSelections.round, validated.round)));
+      if (taken) return res.status(409).json({ error: "이미 다른 팀원이 선택한 항목입니다." });
+      const mine = await db.select({ id: riskItemSelections.id })
+        .from(riskItemSelections)
+        .innerJoin(riskHazardItems, eq(riskItemSelections.hazardItemId, riskHazardItems.id))
+        .where(and(eq(riskHazardItems.team, item.team), eq(riskItemSelections.employeeId, validated.employeeId), eq(riskItemSelections.round, validated.round)));
+      if (mine.length > 0) return res.status(409).json({ error: "이미 선택한 항목이 있습니다. 먼저 선택을 취소하세요." });
+      const [row] = await db.insert(riskItemSelections).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid selection data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 회차 목록 조회 (공유 아카이브에서 연도/회차별로 열람할 때 사용) ──
+  app.get("/api/risk-rounds", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAssessments, riskItemSelections } = await import("@shared/schema");
+      const a = await db.selectDistinct({ round: riskAssessments.round }).from(riskAssessments);
+      const s = await db.selectDistinct({ round: riskItemSelections.round }).from(riskItemSelections);
+      const set = new Set<string>();
+      [...a, ...s].forEach(r => { if (r.round) set.add(r.round); });
+      res.json(Array.from(set));
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk rounds");
+    }
+  });
+
+  // ── 위험성평가: 팀원 절반 이상 선택 완료 시 "무시하고 평가하기"로 전원 완료를 건너뛴 기록 ──
+  app.get("/api/risk-round-overrides", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskRoundOverrides } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const team = req.query.team as string | undefined;
+      const round = req.query.round as string | undefined;
+      const phase = req.query.phase as string | undefined;
+      const conditions = [] as any[];
+      if (team) conditions.push(eq(riskRoundOverrides.team, team));
+      if (round) conditions.push(eq(riskRoundOverrides.round, round));
+      if (phase) conditions.push(eq(riskRoundOverrides.phase, phase));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskRoundOverrides).where(and(...conditions))
+        : await db.select().from(riskRoundOverrides);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk round overrides");
+    }
+  });
+
+  app.post("/api/risk-round-overrides", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskRoundOverrides, insertRiskRoundOverrideSchema } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const validated = insertRiskRoundOverrideSchema.parse(req.body);
+      const phase = validated.phase || "selection";
+      const [existing] = await db.select().from(riskRoundOverrides).where(and(eq(riskRoundOverrides.team, validated.team), eq(riskRoundOverrides.round, validated.round), eq(riskRoundOverrides.phase, phase)));
+      if (existing) return res.json(existing);
+      const [row] = await db.insert(riskRoundOverrides).values({ ...validated, phase }).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid round override data", detail: String(error) });
+    }
+  });
+
+  // 처음으로 돌아가기 / 선택 취소 시, 강제로 열어둔 팀 게이트를 다시 잠가 "무시하고 평가하기"를 다시 물어보도록 함
+  // phase를 지정하지 않으면 해당 team+round의 모든 단계(selection, experience) 게이트를 초기화함
+  app.delete("/api/risk-round-overrides", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskRoundOverrides } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const team = req.query.team as string | undefined;
+      const round = req.query.round as string | undefined;
+      const phase = req.query.phase as string | undefined;
+      if (!team || !round) return res.status(400).json({ error: "team, round required" });
+      const conditions = [eq(riskRoundOverrides.team, team), eq(riskRoundOverrides.round, round)];
+      if (phase) conditions.push(eq(riskRoundOverrides.phase, phase));
+      await db.delete(riskRoundOverrides).where(and(...conditions));
+      res.status(204).send();
+    } catch (error) {
+      handleError(res, error, "Failed to clear risk round override");
+    }
+  });
+
+  app.delete("/api/risk-item-selections/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskItemSelections } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { employeeId, admin } = req.query as { employeeId?: string; admin?: string };
+      const isAdmin = admin === "true";
+      const [sel] = await db.select().from(riskItemSelections).where(eq(riskItemSelections.id, id));
+      if (!sel) return res.status(404).json({ error: "Not found" });
+      if (!isAdmin && sel.employeeId !== employeeId) {
+        return res.status(403).json({ error: "본인이 선택한 항목만 취소할 수 있습니다." });
+      }
+      await db.delete(riskItemSelections).where(eq(riskItemSelections.id, id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to cancel selection", detail: String(error) });
+    }
+  });
+
+
+  app.delete("/api/risk-hazard-items/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskHazardItems, riskAssessments } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { employeeId, employeeName, admin } = req.query as { employeeId?: string; employeeName?: string; admin?: string };
+      const isAdmin = admin === "true" || isAdminIdentity(employeeId, employeeName);
+      const [item] = await db.select().from(riskHazardItems).where(eq(riskHazardItems.id, id));
+      if (!item) return res.status(404).json({ error: "Not found" });
+      if (!isAdmin && item.registeredById !== employeeId) {
+        return res.status(403).json({ error: "본인이 등록한 항목만 삭제할 수 있습니다." });
+      }
+      await db.delete(riskAssessments).where(eq(riskAssessments.hazardItemId, id));
+      await db.delete(riskHazardItems).where(eq(riskHazardItems.id, id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete risk hazard item", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 개인별 평가입력 (사번+회차 기준 upsert) ──
+  app.get("/api/risk-assessments", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAssessments } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const branchId = req.query.branchId as string | undefined;
+      const round = req.query.round as string | undefined;
+      const conditions = [] as any[];
+      if (branchId) conditions.push(eq(riskAssessments.branchId, branchId));
+      if (round) conditions.push(eq(riskAssessments.round, round));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskAssessments).where(and(...conditions))
+        : await db.select().from(riskAssessments);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk assessments");
+    }
+  });
+
+  app.post("/api/risk-assessments", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAssessments, insertRiskAssessmentSchema } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const validated = insertRiskAssessmentSchema.parse(req.body);
+      const [existing] = await db.select().from(riskAssessments).where(
+        and(
+          eq(riskAssessments.hazardItemId, validated.hazardItemId),
+          eq(riskAssessments.employeeId, validated.employeeId),
+          eq(riskAssessments.round, validated.round)
+        )
+      );
+      if (existing) {
+        const [row] = await db.update(riskAssessments)
+          .set({ ...validated, updatedAt: new Date() })
+          .where(eq(riskAssessments.id, existing.id))
+          .returning();
+        return res.json(row);
+      }
+      const [row] = await db.insert(riskAssessments).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid risk assessment data", detail: String(error) });
+    }
+  });
+
+  // "처음으로 돌아가기" 시 본인의 이번 회차 평가 데이터를 완전히 삭제(진짜 처음부터 다시 시작) — 본인 것만 삭제, 팀원 데이터는 유지
+  app.delete("/api/risk-assessments", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAssessments } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const employeeId = req.query.employeeId as string | undefined;
+      const round = req.query.round as string | undefined;
+      const branchId = req.query.branchId as string | undefined;
+      if (!employeeId || !round) return res.status(400).json({ error: "employeeId, round required" });
+      const conditions = [eq(riskAssessments.employeeId, employeeId), eq(riskAssessments.round, round)];
+      if (branchId) conditions.push(eq(riskAssessments.branchId, branchId));
+      const deleted = await db.delete(riskAssessments).where(and(...conditions)).returning();
+      res.json({ ok: true, count: deleted.length });
+    } catch (error) {
+      handleError(res, error, "Failed to delete risk assessments");
+    }
+  });
+
+  // ── 위험성평가: 결과 확인 (평가 종료 후 팀별 결과 열람 확인) ──
+  app.get("/api/risk-result-confirmations", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskResultConfirmations } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const branchId = req.query.branchId as string | undefined;
+      const round = req.query.round as string | undefined;
+      const conditions = [] as any[];
+      if (branchId) conditions.push(eq(riskResultConfirmations.branchId, branchId));
+      if (round) conditions.push(eq(riskResultConfirmations.round, round));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskResultConfirmations).where(and(...conditions))
+        : await db.select().from(riskResultConfirmations);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk result confirmations");
+    }
+  });
+
+  app.post("/api/risk-result-confirmations", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskResultConfirmations, insertRiskResultConfirmationSchema } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const validated = insertRiskResultConfirmationSchema.parse(req.body);
+      const [existing] = await db.select().from(riskResultConfirmations).where(
+        and(
+          eq(riskResultConfirmations.branchId, validated.branchId),
+          eq(riskResultConfirmations.round, validated.round),
+          eq(riskResultConfirmations.team, validated.team),
+          eq(riskResultConfirmations.employeeId, validated.employeeId)
+        )
+      );
+      if (existing) return res.json(existing);
+      const [row] = await db.insert(riskResultConfirmations).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid confirmation data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 서명 (모든 팀 결과 확인 후 최종 서명) ──
+  app.get("/api/risk-signatures", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskSignatures } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const branchId = req.query.branchId as string | undefined;
+      const round = req.query.round as string | undefined;
+      const conditions = [] as any[];
+      if (branchId) conditions.push(eq(riskSignatures.branchId, branchId));
+      if (round) conditions.push(eq(riskSignatures.round, round));
+      const rows = conditions.length > 0
+        ? await db.select().from(riskSignatures).where(and(...conditions))
+        : await db.select().from(riskSignatures);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch risk signatures");
+    }
+  });
+
+  app.post("/api/risk-signatures", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskSignatures, insertRiskSignatureSchema } = await import("@shared/schema");
+      const { and, eq } = await import("drizzle-orm");
+      const validated = insertRiskSignatureSchema.parse(req.body);
+      const [existing] = await db.select().from(riskSignatures).where(
+        and(
+          eq(riskSignatures.branchId, validated.branchId),
+          eq(riskSignatures.round, validated.round),
+          eq(riskSignatures.employeeId, validated.employeeId)
+        )
+      );
+      if (existing) {
+        const [row] = await db.update(riskSignatures)
+          .set({ ...validated, signedAt: new Date() })
+          .where(eq(riskSignatures.id, existing.id))
+          .returning();
+        return res.json(row);
+      }
+      const [row] = await db.insert(riskSignatures).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid signature data", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 붙임4-1/4-3 양식 엑셀 내보내기 (관리자용) ──
+  app.get("/api/risk-assessments/export", async (req, res) => {
+    try {
+      const branchId = (req.query.branchId as string) || "";
+      const round = (req.query.round as string) || "";
+      if (!branchId || !round) return res.status(400).json({ error: "branchId, round는 필수입니다." });
+      const { db } = await import("./db");
+      const { riskHazardItems, riskAssessments, riskItemSelections } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const items = await db.select().from(riskHazardItems).where(eq(riskHazardItems.branchId, branchId));
+      const assessments = await db.select().from(riskAssessments).where(and(eq(riskAssessments.branchId, branchId), eq(riskAssessments.round, round)));
+      const selections = await db.select().from(riskItemSelections).where(and(eq(riskItemSelections.round, round)));
+
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+
+      // 팀별 業무구분 매핑 (붙임4-3 시트 구성과 동일)
+      const freqSheetGroups: { sheetName: string; workCategory: string }[] = [
+        { sheetName: "엘리베이터", workCategory: "엘리베이터" },
+        { sheetName: "에스컬레이터", workCategory: "에스컬레이터" },
+        { sheetName: "수직형 휠체어리프트", workCategory: "수직형 휠체어리프트" },
+        { sheetName: "경사형 휠체어리프트", workCategory: "경사형 휠체어리프트" },
+      ];
+      const freqHeader = ["연번","세부 업무","유해위험요인","사고 가능성(빈도)","중대성(강도)","위험성","허용여부","현재 안전보건조치","개선 안전보건조치","평가자","평가일"];
+
+      function levelOfRisk(risk: number): { level: string; allow: string } {
+        if (risk >= 15) return { level: "상", allow: "허용 불가능" };
+        if (risk >= 9) return { level: "중", allow: "허용 불가능" };
+        return { level: "하", allow: "허용 가능" };
+      }
+
+      // 중대성(강도)은 이제 평가자 개인별 값이라 위험성/허용여부도 평가자마다 다를 수 있음 — 항목당 한 행이 아니라 평가자당 한 행으로 출력
+      for (const g of freqSheetGroups) {
+        const groupItems = items.filter(it => it.workCategory === g.workCategory && it.isTemplate);
+        if (groupItems.length === 0) continue;
+        const sheet = wb.addWorksheet(g.sheetName);
+        sheet.addRow(["평가업무", "승강기 검사"]);
+        sheet.addRow(["평가방법", "빈도·강도법"]);
+        sheet.addRow(["업무구분", g.workCategory]);
+        sheet.addRow(["회차", round]);
+        sheet.addRow([]);
+        sheet.addRow(freqHeader);
+        let seq = 1;
+        for (const item of groupItems) {
+          const itemAssessments = assessments.filter(a => a.hazardItemId === item.id);
+          if (itemAssessments.length === 0) {
+            sheet.addRow([seq++, item.subWork || "", item.content, "", "", "", "", item.referenceSafetyMeasure || "", "", "", ""]);
+            continue;
+          }
+          const withExp = itemAssessments.filter(a => a.hadAccidentExperience !== null);
+          const expCount = withExp.filter(a => a.hadAccidentExperience).length;
+          const possibility = withExp.length > 0 ? Math.round((expCount / withExp.length) * 5 * 10) / 10 : 0;
+          const withSev = itemAssessments.filter(a => a.severity != null);
+          if (withSev.length === 0) {
+            sheet.addRow([seq++, item.subWork || "", item.content, possibility, "", "", "", item.referenceSafetyMeasure || "", "", withExp.map(a => a.employeeName).join(", "), ""]);
+            continue;
+          }
+          for (const a of withSev) {
+            const risk = Math.round(possibility * (a.severity as number) * 10) / 10;
+            const initial = levelOfRisk(risk);
+            let finalRisk = risk, finalLevel = initial.level, finalAllow = initial.allow;
+            if (initial.allow === "허용 불가능" && a.postImprovementSeverity != null) {
+              const postRisk = Math.round(possibility * a.postImprovementSeverity * 10) / 10;
+              const post = levelOfRisk(postRisk);
+              finalRisk = postRisk; finalLevel = post.level; finalAllow = post.allow;
+            }
+            sheet.addRow([
+              seq++, item.subWork || "", item.content,
+              possibility, a.severity, `${finalRisk} (${finalLevel})`, finalAllow,
+              item.referenceSafetyMeasure || "", a.reductionPlan || "", a.employeeName,
+              new Date(a.updatedAt).toLocaleDateString("ko-KR"),
+            ]);
+          }
+        }
+        sheet.columns.forEach(c => { c.width = 22; });
+      }
+
+      // 사무(체크리스트법) 시트 — 붙임4-1
+      const checklistItems = items.filter(it => it.workCategory === "사무" || it.method === "checklist");
+      if (checklistItems.filter(it => it.isTemplate).length > 0) {
+        const sheet = wb.addWorksheet("사무");
+        sheet.addRow(["평가업무", "사무"]);
+        sheet.addRow(["평가방법", "체크리스트법"]);
+        sheet.addRow(["회차", round]);
+        sheet.addRow([]);
+        sheet.addRow(["연번","유해위험요인","위험성(상/중/하)","현재 안전보건조치","개선 안전보건조치","평가자","평가일"]);
+        let seq = 1;
+        for (const item of checklistItems.filter(it => it.isTemplate)) {
+          const itemAssessments = assessments.filter(a => a.hazardItemId === item.id);
+          if (itemAssessments.length === 0) {
+            sheet.addRow([seq++, item.content, "", item.referenceSafetyMeasure || "", "", "", ""]);
+            continue;
+          }
+          const counts: Record<string, number> = {};
+          itemAssessments.forEach(a => { if (a.level) counts[a.level] = (counts[a.level] || 0) + 1; });
+          const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+          const level = top ? top[0] : "";
+          const plans = itemAssessments.filter(a => a.reductionPlan?.trim()).map(a => `[${a.employeeName}] ${a.reductionPlan}`).join("\n");
+          const evaluators = itemAssessments.map(a => a.employeeName).join(", ");
+          const latestDate = itemAssessments.reduce((max, a) => a.updatedAt > max ? a.updatedAt : max, itemAssessments[0].updatedAt);
+          sheet.addRow([seq++, item.content, level, item.referenceSafetyMeasure || "", plans, evaluators, new Date(latestDate).toLocaleDateString("ko-KR")]);
+        }
+        sheet.columns.forEach(c => { c.width = 24; });
+      }
+
+      if (wb.worksheets.length === 0) wb.addWorksheet("결과없음");
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const rawFilename = `${branchId}_${round}_위험성평가.xlsx`;
+      const encodedFilename = encodeURIComponent(rawFilename);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      // 헤더 값은 Latin-1 범위 밖 문자(한글 등)를 허용하지 않아 setHeader가 즉시 예외를 던진다.
+      // RFC 5987 filename*= 형식으로 인코딩해야 한글 파일명이 안전하게 전달된다.
+      res.setHeader("Content-Disposition", `attachment; filename="${encodedFilename}"; filename*=UTF-8''${encodedFilename}`);
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      handleError(res, error, "Failed to export risk assessments");
+    }
+  });
+
+  // ── 위험성평가: 수시 평가 신청 ──
+  // 지정된 팀원(이름)에게만 푸시 알림 전송 — 등록된 토큰이 없으면 조용히 무시
+  async function sendPushToEmployees(employeeIds: string[], title: string, body: string, data?: Record<string, string>) {
+    try {
+      if (!employeeIds || employeeIds.length === 0) return;
+      const admin = await import("firebase-admin");
+      if (!admin.default.apps.length) {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_ADMINSDK || "{}");
+        admin.default.initializeApp({ credential: admin.default.credential.cert(serviceAccount) });
+      }
+      const { pool: pgPool } = await import("./db");
+      await ensurePushTokenColumn(pgPool);
+      const rows = await pgPool.query(`SELECT token FROM push_tokens WHERE employee_id = ANY($1)`, [employeeIds]);
+      const tokens = rows.rows.map((r: any) => r.token).filter(Boolean);
+      if (tokens.length === 0) return;
+      await Promise.allSettled(
+        tokens.map((token: string) =>
+          admin.default.messaging().send({ token, notification: { title, body }, data: data || {}, android: { priority: "high" } })
+        )
+      );
+    } catch (e) {
+      console.error("[FCM] 대상자 알림 전송 실패:", e);
+    }
+  }
+
+  app.get("/api/risk-adhoc-requests", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAdhocRequests } = await import("@shared/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const team = req.query.team as string | undefined;
+      const rows = team
+        ? await db.select().from(riskAdhocRequests).where(eq(riskAdhocRequests.team, team)).orderBy(desc(riskAdhocRequests.createdAt))
+        : await db.select().from(riskAdhocRequests).orderBy(desc(riskAdhocRequests.createdAt));
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch adhoc requests");
+    }
+  });
+
+  app.post("/api/risk-adhoc-requests", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAdhocRequests, insertRiskAdhocRequestSchema } = await import("@shared/schema");
+      const validated = insertRiskAdhocRequestSchema.parse(req.body);
+      const [row] = await db.insert(riskAdhocRequests).values(validated).returning();
+      // 신청 등록 시점에는 알림을 보내지 않음 — 실제로 평가할지는 관리자 승인 후 결정되므로,
+      // 알림은 승인되어 실제 평가 대상이 되는 순간(PUT status=진행중)에만 보냄
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid adhoc request data", detail: String(error) });
+    }
+  });
+
+  app.put("/api/risk-adhoc-requests/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { riskAdhocRequests, riskHazardItems } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { status, round } = req.body as { status?: string; round?: string };
+      const [existing] = await db.select().from(riskAdhocRequests).where(eq(riskAdhocRequests.id, id));
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      const patch: any = { updatedAt: new Date() };
+      if (status) patch.status = status;
+      if (round !== undefined) patch.round = round || null;
+      const [row] = await db.update(riskAdhocRequests).set(patch).where(eq(riskAdhocRequests.id, id)).returning();
+      // 대기 → 진행중으로 전환되며 회차가 부여되는 순간, 신고 내용을 그대로 평가 항목으로 자동 생성
+      if (status === "진행중" && round && existing.status !== "진행중") {
+        const method = row.team === "사무업무 4반" ? "checklist" : "freq_severity";
+        await db.insert(riskHazardItems).values({
+          method,
+          workCategory: method === "checklist" ? "사무" : "기타",
+          subWork: null,
+          content: row.content || row.reason,
+          discoveryPath: "수시평가신청",
+          fieldInfo: row.fieldInfo || null,
+          imageUrls: row.imageUrls && row.imageUrls.length > 0 ? row.imageUrls : null,
+          branchId: row.branchId,
+          registeredById: row.requestedById,
+          registeredByName: row.requestedByName,
+          team: row.team,
+          isTemplate: false,
+          isMandatory: true,
+          sourceRound: round,
+          targetMembers: row.targetMembers && row.targetMembers.length > 0 ? row.targetMembers : null,
+          referenceSafetyMeasure: row.currentSafetyMeasure || null,
+        } as any);
+        if (row.targetMembers && row.targetMembers.length > 0) {
+          sendPushToEmployees(
+            row.targetMembers,
+            "수시 위험성평가 평가 요청",
+            `수시 위험성평가가 시작되었습니다. 앱에서 평가를 완료해주세요: ${(row.content || row.reason || "").slice(0, 60)}`,
+            { type: "risk-adhoc-approved", requestId: String(row.id) }
+          );
+        }
+      }
+      res.json(row);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update adhoc request", detail: String(error) });
+    }
+  });
+
+  // ── 위험성평가: 팀 배정 오버라이드 (본인 선택 또는 관리자 지정, 언제든 재변경 가능) ──
+  app.get("/api/employee-team-overrides", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { employeeTeamOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const employeeId = req.query.employeeId as string | undefined;
+      const rows = employeeId
+        ? await db.select().from(employeeTeamOverrides).where(eq(employeeTeamOverrides.employeeId, employeeId))
+        : await db.select().from(employeeTeamOverrides);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch employee team overrides");
+    }
+  });
+
+  app.put("/api/employee-team-overrides/:employeeId", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { employeeTeamOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const employeeId = req.params.employeeId;
+      const { team, setBy } = req.body as { team: string; setBy?: string };
+      if (!team) return res.status(400).json({ error: "team is required" });
+      const existing = await db.select().from(employeeTeamOverrides).where(eq(employeeTeamOverrides.employeeId, employeeId)).limit(1);
+      let row;
+      if (existing.length > 0) {
+        [row] = await db.update(employeeTeamOverrides).set({ team, setBy: setBy || null, updatedAt: new Date() }).where(eq(employeeTeamOverrides.employeeId, employeeId)).returning();
+      } else {
+        [row] = await db.insert(employeeTeamOverrides).values({ employeeId, team, setBy: setBy || null }).returning();
+      }
+      res.json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to save team override", detail: String(error) });
+    }
+  });
+
+  app.delete("/api/employee-team-overrides/:employeeId", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { employeeTeamOverrides } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(employeeTeamOverrides).where(eq(employeeTeamOverrides.employeeId, req.params.employeeId));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete team override", detail: String(error) });
+    }
+  });
+
+  // Judgment results routes
+  app.get("/api/judgment-results/:sessionId", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const results = await storage.getJudgmentResults(sessionId);
+      res.json(results);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch judgment results");
+    }
+  });
+
+  app.post("/api/judgment-results", async (req, res) => {
+    try {
+      const validatedData = insertJudgmentResultSchema.parse(req.body);
+      const result = await storage.upsertJudgmentResult(validatedData);
+      res.status(201).json(result);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid judgment result data" });
+    }
+  });
+
+
+
+  // Inspection item revisions routes
+  // equipmentType으로 스코핑: 조문번호(item_id)는 승강기 종류마다 별도 안전기준을 참조하므로
+  // 번호만으로는 구분이 안 된다 (예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문).
+  //
+  // [2026-09-30] 쓰기 계열(POST/PUT/DELETE)에 비밀번호 검증 추가. 검사기준 연혁은 검사원이
+  // 실제 법적 판단에 참고하는 데이터라, 관리자 모드 버튼을 숨기는 것만으로는(클라이언트단
+  // 제어일 뿐이라 누구나 devtools/curl로 API를 직접 호출해 우회 가능) 부족하다고 판단해
+  // 기존 std-photos/tech-photos 삭제 엔드포인트와 동일한 패턴(요청 바디의 password를
+  // 상수와 비교)으로 서버측 검증을 추가했다. GET(조회)은 검증 대상이 아니다.
+  const REVISION_EDIT_PW = "910919";
+  function checkRevisionPassword(req: any, res: any): boolean {
+    if (req.body?.password !== REVISION_EDIT_PW) {
+      res.status(403).json({ error: "비밀번호 오류" });
+      return false;
+    }
+    return true;
+  }
+  app.get("/api/inspection-revisions/:itemId", async (req, res) => {
+    try {
+      const equipmentType = (req.query.equipmentType as string) || undefined;
+      const revisions = await storage.getItemRevisions(req.params.itemId, equipmentType);
+      res.json(revisions);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch revisions" });
+    }
+  });
+  // [2026-10-23] AI 답변에 쓰인 "[[첨부:행id:번호]]" 표시를 실제 그림·표로 바꿔 그릴 때 조회한다.
+  // 읽기 전용이며 연혁 화면에 이미 공개된 첨부와 같은 데이터다. 없는 id/번호는 404 → 클라이언트가 조용히 무시한다.
+  app.get("/api/revision-attachment/:id/:idx", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const idx = parseInt(req.params.idx, 10);
+      if (!Number.isInteger(id) || !Number.isInteger(idx) || id < 0 || idx < 0) return res.status(400).json({ error: "잘못된 요청" });
+      const { pool: attPool } = await import("./db");
+      const r = await attPool.query(`SELECT attachments FROM inspection_item_revisions WHERE id = $1`, [id]);
+      const arr = r.rows[0]?.attachments;
+      if (!Array.isArray(arr) || !arr[idx]) return res.status(404).json({ error: "첨부 없음" });
+      res.json(arr[idx]);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch attachment" });
+    }
+  });
+  app.post("/api/inspection-revisions", async (req, res) => {
+    try {
+      if (!checkRevisionPassword(req, res)) return;
+      const body = { ...req.body, equipmentType: req.body.equipmentType || "엘리베이터" };
+      const revision = await storage.createItemRevision(body);
+      res.status(201).json(revision);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to create revision" });
+    }
+  });
+  app.put("/api/inspection-revisions/:id", async (req, res) => {
+    try {
+      if (!checkRevisionPassword(req, res)) return;
+      const updated = await storage.updateItemRevision(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ error: "Revision not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update revision" });
+    }
+  });
+  app.delete("/api/inspection-revisions/:id", async (req, res) => {
+    try {
+      if (!checkRevisionPassword(req, res)) return;
+      await storage.deleteItemRevision(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete revision" });
+    }
+  });
+  app.delete("/api/inspection-revisions/item/:itemId", async (req, res) => {
+    try {
+      if (!checkRevisionPassword(req, res)) return;
+      const equipmentType = (req.query.equipmentType as string) || undefined;
+      await storage.deleteAllItemRevisions(req.params.itemId, equipmentType);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete revisions" });
+    }
+  });
+
+  // [2026-10-01] 연혁 "확인 요청" 신고 — 과거 문서를 사람이 읽고 현재 조문번호에 수동으로
+  // 매핑한 연혁은(특히 1997→2022 에스컬레이터 연혁처럼) 현장 전문가가 보기에 매핑이
+  // 어색할 수 있다. 관리자뿐 아니라 일반 이용자도 신고할 수 있게 비밀번호 검증 없이 연다
+  // — 신고 자체는 데이터를 바꾸지 않는 단순 플래그라 위험이 없다.
+  app.post("/api/inspection-revisions/:id/flag", async (req, res) => {
+    try {
+      const { pool: flagPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const row = await flagPool.query(`SELECT item_id, equipment_type FROM inspection_item_revisions WHERE id = $1`, [id]);
+      if (row.rows.length === 0) return res.status(404).json({ error: "연혁을 찾을 수 없습니다" });
+      const itemId: string = row.rows[0].item_id;
+      const equipmentType: string = row.rows[0].equipment_type;
+      const { note, employeeId, employeeName } = req.body as { note?: string; employeeId?: string; employeeName?: string };
+      const trimmedNote = typeof note === "string" ? note.trim() : "";
+      if (!trimmedNote) return res.status(400).json({ error: "신고 사유를 입력해야 합니다" });
+      const inserted = await flagPool.query(
+        `INSERT INTO revision_flags (revision_id, item_id, equipment_type, note, employee_id, employee_name)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [id, itemId, equipmentType || "엘리베이터", trimmedNote, employeeId || null, employeeName || null]
+      );
+      res.status(201).json({ id: inserted.rows[0].id });
+    } catch (error) {
+      res.status(500).json({ error: "신고 접수 실패" });
+    }
+  });
+
+  // 관리자 모드: 신고 목록 조회 ("AI 학습 관리" 화면의 "연혁 확인 요청" 탭)
+  app.get("/api/revision-flags", async (req, res) => {
+    try {
+      const { pool: flagPool } = await import("./db");
+      const resolved = req.query.resolved;
+      const whereClause = resolved === "true" ? "WHERE resolved = TRUE" : resolved === "false" ? "WHERE resolved = FALSE" : "";
+      const rows = await flagPool.query(
+        `SELECT f.id, f.revision_id, f.item_id, f.equipment_type, f.note, f.employee_id, f.employee_name,
+                f.resolved, f.created_at, r.description, r.effective_date, r.expiry_date, r.introduction_type
+         FROM revision_flags f
+         LEFT JOIN inspection_item_revisions r ON r.id = f.revision_id
+         ${whereClause}
+         ORDER BY f.created_at DESC
+         LIMIT 200`
+      );
+      res.json({ flags: rows.rows });
+    } catch (error) {
+      res.status(500).json({ error: "신고 목록 조회 실패" });
+    }
+  });
+
+  // 관리자 모드: 신고 처리 완료 표시 (비밀번호 불필요 — 데이터 변경이 아닌 처리 상태 기록)
+  app.post("/api/revision-flags/:id/resolve", async (req, res) => {
+    try {
+      const { pool: flagPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const result = await flagPool.query(
+        `UPDATE revision_flags SET resolved = TRUE, resolved_at = NOW() WHERE id = $1 RETURNING id`,
+        [id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "신고를 찾을 수 없습니다" });
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(500).json({ error: "처리 실패" });
+    }
+  });
+
+  // 법령개정 — 메모 페이지 안의 "법령개정" 탭에서 쓰는 CRUD. 관리자가 고시 전문을
+  // 통째로 붙여넣어 등록하고, 이용자는 목록에서 골라 읽기만 한다. 쓰기는 연혁 CRUD와
+  // 같은 관리자 비밀번호 검증(checkRevisionPassword)을 재사용한다.
+  app.get("/api/law-notices", async (req, res) => {
+    try {
+      const { pool: lnPool } = await import("./db");
+      const rows = await lnPool.query(
+        `SELECT id, title, notice_number, effective_date, created_at, updated_at
+         FROM law_notices ORDER BY effective_date DESC NULLS LAST, created_at DESC`
+      );
+      res.json(rows.rows);
+    } catch (error) {
+      res.status(500).json({ error: "목록 조회 실패" });
+    }
+  });
+
+  app.get("/api/law-notices/:id", async (req, res) => {
+    try {
+      const { pool: lnPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const row = await lnPool.query(`SELECT * FROM law_notices WHERE id = $1`, [id]);
+      if (row.rows.length === 0) return res.status(404).json({ error: "찾을 수 없습니다" });
+      res.json(row.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: "조회 실패" });
+    }
+  });
+
+  app.post("/api/law-notices", async (req, res) => {
+    if (!checkRevisionPassword(req, res)) return;
+    try {
+      const { pool: lnPool } = await import("./db");
+      const { title, noticeNumber, effectiveDate, content } = req.body as {
+        title?: string; noticeNumber?: string; effectiveDate?: string; content?: string;
+      };
+      const trimmedTitle = (title || "").trim();
+      const trimmedContent = (content || "").trim();
+      if (!trimmedTitle || !trimmedContent) return res.status(400).json({ error: "제목과 본문을 입력해야 합니다" });
+      const inserted = await lnPool.query(
+        `INSERT INTO law_notices (title, notice_number, effective_date, content)
+         VALUES ($1, $2, $3, $4) RETURNING *`,
+        [trimmedTitle, noticeNumber || null, effectiveDate || null, trimmedContent]
+      );
+      res.status(201).json(inserted.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: "등록 실패" });
+    }
+  });
+
+  app.put("/api/law-notices/:id", async (req, res) => {
+    if (!checkRevisionPassword(req, res)) return;
+    try {
+      const { pool: lnPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const { title, noticeNumber, effectiveDate, content } = req.body as {
+        title?: string; noticeNumber?: string; effectiveDate?: string; content?: string;
+      };
+      const trimmedTitle = (title || "").trim();
+      const trimmedContent = (content || "").trim();
+      if (!trimmedTitle || !trimmedContent) return res.status(400).json({ error: "제목과 본문을 입력해야 합니다" });
+      const result = await lnPool.query(
+        `UPDATE law_notices SET title = $1, notice_number = $2, effective_date = $3, content = $4, updated_at = NOW()
+         WHERE id = $5 RETURNING *`,
+        [trimmedTitle, noticeNumber || null, effectiveDate || null, trimmedContent, id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: "찾을 수 없습니다" });
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: "수정 실패" });
+    }
+  });
+
+  app.delete("/api/law-notices/:id", async (req, res) => {
+    if (!checkRevisionPassword(req, res)) return;
+    try {
+      const { pool: lnPool } = await import("./db");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const result = await lnPool.query(`DELETE FROM law_notices WHERE id = $1 RETURNING id`, [id]);
+      if (result.rows.length === 0) return res.status(404).json({ error: "찾을 수 없습니다" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "삭제 실패" });
+    }
+  });
+
+  // 연도별 기준 브라우징 — 개정 이력 테이블에 존재하는 연도 목록
+  // (effective_date / expiry_date에서 연도만 추출해 선택 버튼을 구성하는 데 사용)
+  app.get("/api/inspection-revisions-years", async (req, res) => {
+    try {
+      const { pool: pgPool } = await import("./db");
+      const result = await pgPool.query(
+        `SELECT DISTINCT LEFT(d, 4) AS yr FROM (
+           SELECT effective_date AS d FROM inspection_item_revisions WHERE effective_date IS NOT NULL
+           UNION ALL
+           SELECT expiry_date AS d FROM inspection_item_revisions WHERE expiry_date IS NOT NULL
+         ) t
+         WHERE d ~ '^[0-9]{4}-'
+         ORDER BY yr`
+      );
+      const years = result.rows.map((r: any) => r.yr).filter(Boolean);
+      res.json(years);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch revision years" });
+    }
+  });
+
+  // 전체 연도 통합 검색 — 특정 연도에 한정하지 않고 모든 tier(현행/종전/추가)의
+  // description을 대상으로 키워드를 검색해, 항목별 · 연도별 매칭 결과를 반환한다.
+  app.get("/api/inspection-revisions-search", async (req, res) => {
+    try {
+      const q = (req.query.q as string || "").trim();
+      if (!q) return res.json([]);
+      const { pool: pgPool } = await import("./db");
+      const result = await pgPool.query(
+        `SELECT item_id, introduction_type, effective_date, expiry_date, description
+         FROM inspection_item_revisions
+         WHERE introduction_type IN ('current', 'old', 'additional')
+           AND (COALESCE(description,'') || COALESCE(E'\\n' || attachments_text,'')) ILIKE $1
+         ORDER BY item_id, effective_date ASC NULLS FIRST
+         LIMIT 300`,
+        [`%${q}%`]
+      );
+      res.json(result.rows.map((r: any) => ({
+        itemId: r.item_id,
+        introductionType: r.introduction_type,
+        effectiveDate: r.effective_date,
+        expiryDate: r.expiry_date,
+        description: r.description,
+      })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to search revisions" });
+    }
+  });
+
+
+
+  // 통계 요약 API - 서버에서 공공데이터 가공 후 제공
+  app.get("/api/stats-summary", async (req, res) => {
+    try {
+      const apiKey = process.env.PUBLIC_DATA_API_KEY_YEARLY || process.env.PUBLIC_DATA_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API key not configured" });
+
+      const [yearlyRes, ageRes] = await Promise.all([
+        fetch(`http://apis.data.go.kr/1741000/ElevatorSafetyAccidentsByYear/getElevatorSafetyAccidentsByYear?serviceKey=${apiKey}&pageNo=1&numOfRows=20&type=json`),
+        fetch(`http://apis.data.go.kr/1741000/ElevatorSafetyAccidentsByAge/getElevatorSafetyAccidentsByAge?serviceKey=${apiKey}&pageNo=1&numOfRows=20&type=json`),
+      ]);
+
+      const yearlyData = await yearlyRes.json();
+      const ageData = await ageRes.json();
+
+      const yearly = yearlyData?.ElevatorSafetyAccidentsByYear?.[1]?.row || [];
+      const age = ageData?.ElevatorSafetyAccidentsByAge?.[1]?.row || [];
+
+      const latest = yearly[yearly.length - 1];
+      const prev = yearly[yearly.length - 2];
+      const latestAge = age[age.length - 1];
+
+      if (!latest) return res.status(404).json({ error: "No data" });
+
+      const total = parseInt(latest.safe_acci_smry);
+      const prevTotal = prev ? parseInt(prev.safe_acci_smry) : null;
+      const trend = prevTotal
+        ? (total < prevTotal
+          ? `전년(${prev.wrttimeid}년, ${prevTotal}건) 대비 ${prevTotal - total}건 감소`
+          : `전년(${prev.wrttimeid}년, ${prevTotal}건) 대비 ${total - prevTotal}건 증가`)
+        : "";
+
+      const elderPct = latestAge
+        ? Math.round(parseInt(latestAge.old65_mor) / parseInt(latestAge.tot) * 100)
+        : 0;
+
+      res.json({
+        year: latest.wrttimeid,
+        total: latest.safe_acci_smry,
+        passenger: latest.safe_acci_only_passenger,
+        freight: latest.safe_acci_only_freight,
+        escalator: latest.safe_acci_escalator,
+        deaths: latest.expcas_death,
+        serious: latest.expcas_serious_injury,
+        trend,
+        elderPct,
+        message: `행정안전부 승강기 안전사고 통계 (${latest.wrttimeid}년)\n\n• 전체 사고: ${latest.safe_acci_smry}건 (${trend})\n• 승객용 엘리베이터: ${latest.safe_acci_only_passenger}건\n• 화물용 엘리베이터: ${latest.safe_acci_only_freight}건\n• 에스컬레이터: ${latest.safe_acci_escalator}건\n• 사망: ${latest.expcas_death}명 / 중상: ${latest.expcas_serious_injury}명${elderPct > 0 ? `\n• 65세 이상 피해 비율: ${elderPct}%` : ""}\n\n빈도 높은 사고 유형\n1위  승강장문 열림 주행 — 문닫힘 안전장치 불량\n2위  피트 추락 — 최하층 정지장치 미작동\n3위  카 상부 끼임 — 점검운전 중 안전스위치 미사용`
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch stats" });
+    }
+  });
+
+  // 공공데이터 API 프록시 - 연도별 승강기 안전사고
+  app.get("/api/elevator-accidents/yearly", async (req, res) => {
+    try {
+      const apiKey = process.env.PUBLIC_DATA_API_KEY_YEARLY || process.env.PUBLIC_DATA_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API key not configured" });
+      const url = `http://apis.data.go.kr/1741000/ElevatorSafetyAccidentsByYear/getElevatorSafetyAccidentsByYear?serviceKey=${apiKey}&pageNo=1&numOfRows=20&type=json`;
+      const response = await fetch(url);
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch yearly accident data" });
+    }
+  });
+
+  // 공공데이터 API 프록시 - 연령별 승강기 안전사고
+  app.get("/api/elevator-accidents/age", async (req, res) => {
+    try {
+      const apiKey = process.env.PUBLIC_DATA_API_KEY_AGE || process.env.PUBLIC_DATA_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API key not configured" });
+      const url = `http://apis.data.go.kr/1741000/ElevatorSafetyAccidentsByAge/getElevatorSafetyAccidentsByAge?serviceKey=${apiKey}&pageNo=1&numOfRows=20&type=json`;
+      const response = await fetch(url);
+      const data = await response.json();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch age accident data" });
+    }
+  });
+
+  // App settings routes
+  app.get("/api/settings/:key", async (req, res) => {
+    try {
+      const value = await storage.getSetting(req.params.key);
+      res.json({ key: req.params.key, value });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get setting" });
+    }
+  });
+  // 클라이언트가 실제로 저장하는 키만 허용(임의 키로 설정 테이블을 채우는 것 방지)
+  const WRITABLE_SETTING_KEYS = new Set(["structureImg", "cardOffsets"]);
+  app.post("/api/settings", async (req, res) => {
+    try {
+      const { key, value } = req.body;
+      if (typeof key !== "string" || !WRITABLE_SETTING_KEYS.has(key) || typeof value !== "string") {
+        return res.status(400).json({ error: "허용되지 않는 설정입니다" });
+      }
+      await storage.setSetting(key, value);
+      res.json({ key, value });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save setting" });
+    }
+  });
+
+  // 항목별 댓글 수 일괄 조회
+  // 연혁집 데이터 보유 항목 목록 (revision이 1개 이상인 item_id 목록)
+  // equipmentType별로 중첩된 형태로 반환한다 — 조문번호가 승강기 종류마다 다른 안전기준
+  // 문서를 가리키므로(예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문), 종류를 구분하지 않고
+  // 평면(flat) 맵으로 반환하면 서로 다른 종류의 항목이 번호만 같아도 연혁이 있는 것처럼
+  // 오판정되는 문제가 있었다. 응답 형태: { [equipmentType]: { [itemId]: count } }
+  app.get("/api/inspection-items/revision-counts", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(
+        sql`SELECT equipment_type, item_id, COUNT(*) as cnt FROM inspection_item_revisions GROUP BY equipment_type, item_id HAVING COUNT(*) > 0`
+      );
+      const result: Record<string, Record<string, number>> = {};
+      (rows.rows || rows).forEach((r: any) => {
+        const eqType = r.equipment_type || "엘리베이터";
+        if (!result[eqType]) result[eqType] = {};
+        result[eqType][r.item_id] = Number(r.cnt);
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({});
+    }
+  });
+
+  // 조문별 종전 기간 조회 — 검사가이드 종전 판정용
+  // ── Firebase Admin SDK 초기화 ──────────────────────────────────
+  let firebaseAdmin: any = null;
+  try {
+    const admin = await import("firebase-admin");
+    if (!admin.default.apps.length) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_ADMINSDK || "{}");
+      admin.default.initializeApp({
+        credential: admin.default.credential.cert(serviceAccount),
+      });
+    }
+    firebaseAdmin = admin.default;
+  } catch (e) {
+    console.error("[FCM] Firebase Admin 초기화 실패:", e);
+  }
+
+  // FCM 토큰 등록
+  app.post("/api/push/register", async (req, res) => {
+    try {
+      const { token, platform, employeeId } = req.body;
+      if (!token) return res.status(400).json({ error: "토큰 없음" });
+      const { pool: pgPool } = await import("./db");
+      await ensurePushTokenColumn(pgPool);
+      await pgPool.query(
+        `INSERT INTO push_tokens (token, platform, employee_id, created_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (token) DO UPDATE SET platform = $2, employee_id = COALESCE($3, push_tokens.employee_id), updated_at = NOW()`,
+        [token, platform || "android", employeeId || null]
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: "등록 실패" });
+    }
+  });
+
+  // FCM 푸시 전송 (채팅 새 메시지)
+  app.post("/api/push/send", async (req, res) => {
+    try {
+      // 전 직원에게 알림이 가는 엔드포인트라 관리자 비밀번호 필요(앱 내부에서는 호출하지 않음).
+      const adminPw = process.env.ADMIN_PASSWORD;
+      if (!adminPw || req.headers["x-admin-password"] !== adminPw) {
+        return res.status(403).json({ error: "관리자만 사용할 수 있습니다" });
+      }
+      const { title, body, data } = req.body;
+      if (!firebaseAdmin) return res.status(500).json({ error: "FCM 미초기화" });
+      const { pool: pgPool } = await import("./db");
+      const rows = await pgPool.query(`SELECT token FROM push_tokens`);
+      const tokens = rows.rows.map((r: any) => r.token).filter(Boolean);
+      if (tokens.length === 0) return res.json({ sent: 0 });
+      const results = await Promise.allSettled(
+        tokens.map((token: string) =>
+          firebaseAdmin.messaging().send({
+            token,
+            notification: { title: title || "검사통합검색앱", body: body || "새 메시지가 있습니다." },
+            data: data || {},
+            android: { priority: "high" },
+          })
+        )
+      );
+      const sent = results.filter(r => r.status === "fulfilled").length;
+      res.json({ sent, total: tokens.length });
+    } catch (e) {
+      res.status(500).json({ error: "전송 실패" });
+    }
+  });
+
+  // ── 로그인 API ──────────────────────────────────────────────────
+  app.get("/api/auth/organizations", async (req, res) => {
+    try {
+      const { pool } = await import("./db");
+      const rows = await pool.query("SELECT name FROM organizations");
+      res.json(sortOrganizations(rows.rows.map((r: any) => r.name)));
+    } catch (e) {
+      res.status(500).json([]);
+    }
+  });
+
+  // 로그인/가입/비밀번호 재설정/토큰 검증은 server/routes/auth-email.ts (이메일 인증 방식)
+
+  // 승강기 고유번호로 설치정보 조회 (한국승강기안전공단 공공API)
+  app.get("/api/elevator-info/:elvtrNo", async (req, res) => {
+    try {
+      const { elvtrNo } = req.params;
+      const apiKey = process.env.ELEVATOR_API_KEY;
+      if (!apiKey) return res.status(500).json({ error: "API 키 없음" });
+
+      const url = `https://apis.data.go.kr/B553664/ElevatorInstallationService/getInstallationElvtrListV2?serviceKey=${encodeURIComponent(apiKey)}&elevator_no=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+
+      const item = data?.response?.body?.items?.item;
+      if (!item) return res.status(404).json({ error: "승강기 정보 없음" });
+
+      const info = Array.isArray(item) ? item[0] : item;
+      res.json({
+        elvtrNo: info.elvtrNo,
+        buldNm: info.buldNm,
+        address: info.address1,
+        elvtrKindNm: info.elvtrKindNm,
+        elvtrSttsNm: info.elvtrSttsNm,
+        installationDe: info.installationDe,   // 설치일자
+        frstInstallationDe: info.frstInstallationDe, // 최초설치일자
+        hoistwyCnt: info.hoistwyCnt,
+        ratedLoadCap: info.ratedLoadCap,
+        ratedSpeed: info.ratedSpeed,
+      });
+    } catch (e) {
+      res.status(500).json({ error: "API 조회 실패" });
+    }
+  });
+
+  // equipmentType별로 중첩된 형태로 반환한다 (동일 사유: 조문번호가 종류마다 다른 문서를 가리킴)
+  app.get("/api/inspection-items/previous-ranges", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const rows = await db.execute(
+        sql`SELECT equipment_type, item_id, MIN(effective_date) as min_date, MAX(expiry_date) as max_expiry
+            FROM inspection_item_revisions
+            WHERE introduction_type = 'old'
+            AND effective_date IS NOT NULL
+            GROUP BY equipment_type, item_id`
+      );
+      const result: Record<string, Record<string, { minDate: string | null; maxExpiry: string; unknownStart?: boolean; unknownStartExpiry?: string }>> = {};
+      (rows.rows || rows).forEach((r: any) => {
+        const eqType = r.equipment_type || "엘리베이터";
+        if (!result[eqType]) result[eqType] = {};
+        result[eqType][r.item_id] = {
+          minDate: r.min_date,
+          maxExpiry: r.max_expiry,
+        };
+      });
+      // 종전 기준이 "OOOO-MM-DD 이전 건축허가분"뿐이라 시작일(effective_date)이 없는 항목:
+      // 시작일은 알 수 없지만 만료일 이전은 종전이므로 minDate=null, unknownStart=true로 함께 내려준다.
+      const noStart = await db.execute(
+        sql`SELECT equipment_type, item_id, MAX(expiry_date) as max_expiry
+            FROM inspection_item_revisions
+            WHERE introduction_type = 'old'
+            AND effective_date IS NULL
+            AND expiry_date IS NOT NULL
+            GROUP BY equipment_type, item_id`
+      );
+      (noStart.rows || noStart).forEach((r: any) => {
+        const eqType = r.equipment_type || "엘리베이터";
+        if (!result[eqType]) result[eqType] = {};
+        const exist = result[eqType][r.item_id];
+        if (exist) {
+          // 시작일 있는 연혁도 함께 있는 항목: 가장 오래된 "이전 건축허가분"의 만료일을 별도로 내려준다.
+          exist.unknownStartExpiry = r.max_expiry;
+          return;
+        }
+        result[eqType][r.item_id] = { minDate: null, maxExpiry: r.max_expiry, unknownStart: true };
+      });
+      res.json(result);
+    } catch (e) {
+      res.status(500).json({});
+    }
+  });
+
+  app.get("/api/judgment-items/comment-counts", async (req, res) => {
+    try {
+      const counts = await storage.getItemCommentCounts();
+      res.json(counts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch comment counts" });
+    }
+  });
+
+  // 메모 댓글 API
+  app.get("/api/memos/:memoId/comments", async (req, res) => {
+    try {
+      const comments = await storage.getMemoComments(parseInt(req.params.memoId));
+      res.json(comments);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch memo comments" });
+    }
+  });
+
+  app.post("/api/memos/:memoId/comments", async (req, res) => {
+    try {
+      const comment = await storage.createMemoComment({
+        memoId: parseInt(req.params.memoId),
+        author: req.body.author,
+        content: req.body.content,
+      });
+      res.status(201).json(comment);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to create memo comment" });
+    }
+  });
+
+  app.delete("/api/memo-comments/:id", async (req, res) => {
+    try {
+      await storage.deleteMemoComment(parseInt(req.params.id));
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete memo comment" });
+    }
+  });
+
+  // 검사기준 DB API
+  // standardEquipmentType 쿼리 파라미터로 문서(승강기 종류)를 스코핑한다.
+  // 조문번호가 문서마다 독립적으로 채번되어 겹칠 수 있으므로(별표22 "5.2.1" vs 별표24 "5.2.1")
+  // 반드시 지정된 종류의 조문만 반환/수정해야 한다. 미지정 시 기존 동작과 동일하게 엘리베이터.
+  app.get("/api/inspection-base-items", async (req, res) => {
+    try {
+      const standardEquipmentType = (req.query.standardEquipmentType as string) || "엘리베이터";
+      const items = await storage.getInspectionBaseItems(standardEquipmentType);
+      res.json(items);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inspection base items" });
+    }
+  });
+
+  // 관리자 화면에서 새 조문을 직접 추가 (별표22_유효항목.json 배포 없이도 즉시 화면에 노출됨)
+  app.post("/api/inspection-base-items", async (req, res) => {
+    try {
+      const { itemId, text, sectionTitle, parentSectionId, afterItemId, standardEquipmentType } = req.body as {
+        itemId?: string; text?: string; sectionTitle?: string; parentSectionId?: string; afterItemId?: string; standardEquipmentType?: string;
+      };
+      if (!itemId || !itemId.trim() || !text || !text.trim()) {
+        return res.status(400).json({ error: "조문 번호와 내용을 모두 입력해주세요." });
+      }
+      // standardEquipmentType은 반드시 명시해야 한다 — itemId는 문서(별표22/별표24 등)마다
+      // 독립적으로 채번되어 서로 겹칠 수 있으므로, 생략 시 조용히 기본값("엘리베이터")으로
+      // 처리하면 호출부 실수가 엉뚱한 문서에 항목을 만드는 사고로 이어진다.
+      if (!standardEquipmentType || !standardEquipmentType.trim()) {
+        return res.status(400).json({ error: "standardEquipmentType(대상 문서 종류)을 지정해주세요." });
+      }
+      const trimmedId = itemId.trim();
+      const eqType = standardEquipmentType.trim();
+      // 이미 DB에 같은 itemId+standardEquipmentType 행이 있는 경우 — 화면에는 안 보이던(별표22_유효항목.json 미등재,
+      // 다른 문서에서 잘못 인덱싱된) 잡음 행일 수 있다. 그냥 실패시키지 않고 기존 내용을 함께
+      // 돌려줘서, 관리자가 그 내용을 보고 "덮어쓰기(이 번호로 등록)"할지 판단할 수 있게 한다.
+      const existing = await storage.getInspectionBaseItem(trimmedId, eqType);
+      if (existing) {
+        return res.status(409).json({
+          error: `이미 존재하는 조문번호입니다: ${trimmedId} (화면에는 숨겨져 있던 항목일 수 있습니다)`,
+          existing: {
+            itemId: existing.itemId,
+            text: existing.text,
+            isAdminAdded: existing.isAdminAdded,
+            isActive: existing.isActive,
+          },
+        });
+      }
+      const created = await storage.createInspectionBaseItem({
+        itemId: trimmedId,
+        text: text.trim(),
+        sectionTitle,
+        parentSectionId,
+        afterItemId,
+        standardEquipmentType: eqType,
+      });
+      res.status(201).json(created);
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || "Failed to create inspection base item" });
+    }
+  });
+
+  app.get("/api/inspection-base-items/:itemId", async (req, res) => {
+    try {
+      const standardEquipmentType = (req.query.standardEquipmentType as string) || "엘리베이터";
+      const item = await storage.getInspectionBaseItem(req.params.itemId, standardEquipmentType);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      res.json(item);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inspection base item" });
+    }
+  });
+
+  // 관리자 화면에서 조문을 직접 수정 — DB 행 자체를 갱신 (별도 override 테이블 사용 안 함)
+  // adopt: true — 화면에 안 보이던(별표22_유효항목.json 미등재) 기존 행을 "덮어쓰기"로 등록할 때,
+  //               isAdminAdded/isActive를 true로 같이 세팅해서 즉시 화면에 노출시킨다.
+  app.put("/api/inspection-base-items/:itemId", async (req, res) => {
+    try {
+      const { text, sectionTitle, adopt, standardEquipmentType } = req.body as { text?: string; sectionTitle?: string; adopt?: boolean; standardEquipmentType?: string };
+      // standardEquipmentType 필수 — 없으면 400 (2026-09-29 사고: 쿼리로 보낸 값이 무시되고
+      // 기본값 "엘리베이터"로 조용히 처리되어 엉뚱한 문서의 항목을 덮어쓴 사고의 재발 방지).
+      if (!standardEquipmentType || !standardEquipmentType.trim()) {
+        return res.status(400).json({ error: "standardEquipmentType(대상 문서 종류)을 지정해주세요." });
+      }
+      const updated = await storage.updateInspectionBaseItem(req.params.itemId, {
+        text, sectionTitle,
+        ...(adopt ? { isAdminAdded: "true", isActive: "true" } : {}),
+      }, standardEquipmentType.trim());
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update inspection base item" });
+    }
+  });
+
+  // 특정 조문의 변경 이력 조회 — 관리자 화면에서 실수로 덮어쓴 내용을 되돌릴 때 사용.
+  app.get("/api/inspection-base-items/:itemId/history", async (req, res) => {
+    try {
+      const standardEquipmentType = req.query.standardEquipmentType as string;
+      if (!standardEquipmentType || !standardEquipmentType.trim()) {
+        return res.status(400).json({ error: "standardEquipmentType(대상 문서 종류)을 지정해주세요." });
+      }
+      const history = await storage.getInspectionBaseItemHistory(req.params.itemId, standardEquipmentType.trim());
+      res.json(history);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch inspection base item history" });
+    }
+  });
+
+  // 이력 스냅샷 하나로 현재 값을 되돌리기
+  app.post("/api/inspection-base-items/history/:historyId/restore", async (req, res) => {
+    try {
+      const historyId = parseInt(req.params.historyId, 10);
+      if (Number.isNaN(historyId)) return res.status(400).json({ error: "잘못된 historyId입니다." });
+      const restored = await storage.restoreInspectionBaseItemFromHistory(historyId);
+      res.json(restored);
+    } catch (error: any) {
+      res.status(400).json({ error: error?.message || "Failed to restore inspection base item" });
+    }
+  });
+
+  // ==================== AI 챗봇 ====================
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const { messages, context, mode, employeeId, employeeName, team, equipmentType: requestEquipmentType } = req.body as {
+        messages: { role: "user" | "assistant"; content: string }[];
+        mode?: "fast" | "precise";
+        employeeId?: string;
+        employeeName?: string;
+        team?: string;
+        // [2026-09-29] 클라이언트가 질문 텍스트로 판별한 설비종류("엘리베이터"|"에스컬레이터").
+        // 애매하면 클라이언트가 아예 이 필드를 안 보낸다(undefined) — articleTask/baseItemTask가
+        // item_id만으로 조문을 찾을 때, 엘리베이터·에스컬레이터 두 문서에 번호가 겹치는 조문을
+        // 서로 뒤섞어 잘못된 문서 이름으로 인용하는 사고(2026-09-29 무빙워크 오인용)를 막기
+        // 위해 쓰인다. 값이 있으면 해당 문서로 조회를 좁히고, 없으면 양쪽 다 조회하되
+        // 각 결과에 실제 소속 문서 라벨을 붙여 반환한다.
+        equipmentType?: "엘리베이터" | "에스컬레이터";
+        context?: {
+          inspCtx?: { priority: string; title: string; ref: string; content: string; docLabel?: string }[];
+          techCtx?: { priority: string; title: string; ref: string; basis: string; conclusion: string; source: string; permitDate?: string; inspectionDate?: string; inspectionYear?: string; installInspectionDate?: string }[];
+          techMaterialCtx?: { priority: string; title: string; category?: string; content: string; source?: string }[];
+          verdictCtx?: { priority: string; title: string; content: string }[];
+          chatCtx?: { priority: string; content: string; note: string }[];
+          memoCtx?: { title: string; content: string }[];
+          precisionCtx?: { situation: string; judgment: string; basis: string; source: string }[];
+        };
+      };
+
+      if (!messages || messages.length === 0) {
+        return res.status(400).json({ error: "messages 필요합니다." });
+      }
+
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const userQuestion = messages[messages.length - 1]?.content || "";
+
+      // [2026-09] 사용자별 질문 통계용 로그 — 핸들러 최상단에서 남겨서, 균형추 계산
+      // 카드 감지 등 중간에 조기 응답(return)하는 분기를 타도 질문 자체는 항상 기록되게
+      // 한다. 응답 전송과 무관한 fire-and-forget이며, 실패해도 사용자 흐름에 영향 없음.
+      (async () => {
+        try {
+          const { pool: logPool } = await import("./db");
+          await logPool.query(
+            `INSERT INTO ai_question_log (employee_id, employee_name, team, question, mode) VALUES ($1, $2, $3, $4, $5)`,
+            [employeeId || null, employeeName || null, team || null, userQuestion, mode || null]
+          );
+        } catch (e) {
+          console.error("[질문 로그 기록] 실패:", e);
+        }
+      })();
+
+      // 좋은 평가를 받은 유사 답변 참고 (RAG) — 참고만 하고 그대로 복사하지 않도록 프롬프트에 명시
+      // 아래에서 바로 await하지 않고 Promise만 만들어 둔 뒤, 뒤따르는 승강기번호 조회/DB조회들과
+      // 함께 나중에 한꺼번에 기다린다 — 임베딩 호출 왕복시간을 다른 작업과 겹쳐서 지연을 줄인다.
+      const ragTask = (async (): Promise<string> => {
+        try {
+          const embedding = await getEmbedding(userQuestion);
+          if (embedding) {
+            const { pool: ragPool } = await import("./db");
+            const vecStr = `[${embedding.join(",")}]`;
+            const simRows = await ragPool.query(
+              `SELECT question, answer, 1 - (embedding <=> $1::vector) as similarity
+               FROM ai_answer_pool
+               WHERE status = 'approved' AND embedding IS NOT NULL
+               ORDER BY embedding <=> $1::vector LIMIT 1`,
+              [vecStr]
+            );
+            if (simRows.rows.length > 0 && simRows.rows[0].similarity >= 0.82) {
+              const ref = simRows.rows[0];
+              return `\n\n[참고 — 과거 유사 질문에 좋은 평가를 받은 답변 스타일]\n질문: ${ref.question}\n답변: ${ref.answer.slice(0, 500)}\n(참고만 하고 현재 질문에 맞게 새로 작성할 것. 그대로 복사하지 말 것)`;
+            }
+          }
+        } catch (e) {}
+        return "";
+      })();
+
+      // 승강기 고유번호 감지 (7자리 숫자 또는 4자리-3자리 형식)
+      let elevatorInfoSection = "";
+      const elvtrMatch = userQuestion.match(/\b(\d{4}-\d{3}|\d{7})\b/);
+      if (elvtrMatch) {
+        try {
+          const elvtrNo = elvtrMatch[1].replace(/-/g, "");  // 하이픈 제거
+          const apiKey = process.env.ELEVATOR_API_KEY;
+          const url = `https://apis.data.go.kr/B553664/ElevatorInstallationService/getInstallationElvtrListV2?serviceKey=${encodeURIComponent(apiKey)}&elevator_no=${encodeURIComponent(elvtrNo)}&numOfRows=1&pageNo=1&_type=json`;
+          const elvResp = await fetch(url);
+          const elvData = await elvResp.json();
+          console.log("[승강기API] elvtrNo:", elvtrNo, "response:", JSON.stringify(elvData?.response?.header));
+          const item = elvData?.response?.body?.items?.item;
+          if (item) {
+            const info = Array.isArray(item) ? item[0] : item;
+            (req as any).elevatorData = info;
+            const installDate = String(info.installationDe || info.frstInstallationDe || "");
+            // 날짜 포맷 변환 (20020910 → 2002-09-10)
+            const formatDate = (d: string) => d.length === 8 ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : d;
+            elevatorInfoSection = `\n\n[승강기 정보 - ${elvtrNo}]\n건물명: ${info.buldNm || "-"}\n주소: ${info.address1 || "-"} ${info.address2 || ""}\n종류: ${info.elvtrKindNm || "-"} (${info.elvtrDiv || "-"})\n형식: ${info.elvtrForm || "-"} ${info.elvtrDetailForm || ""}\n설치일자: ${installDate ? formatDate(installDate) : "-"}\n최초설치일자: ${info.frstInstallationDe ? formatDate(String(info.frstInstallationDe)) : "-"}\n정격속도: ${info.ratedSpeed || "-"} m/s\n적재하중: ${info.liveLoad || "-"} kg\n정원: ${info.ratedCap || "-"}명\n운행층수: ${info.shuttleFloorCnt || "-"}층\n설치장소: ${info.installationPlace || "-"}`;
+
+            // 설치일자 기준 안전 포인트 추출 (종전 or 신설)
+            if (installDate) {
+              try {
+                const { pool: safetyPool } = await import("./db");
+                const isoDate = formatDate(installDate);
+
+                let safetyRows = await safetyPool.query(
+                  `SELECT r.item_id, r.description as old_desc, c.description as cur_desc,
+                          r.effective_date, r.expiry_date, 'previous' as point_type
+                   FROM inspection_item_revisions r
+                   JOIN inspection_item_revisions c ON c.item_id = r.item_id AND c.introduction_type = 'current'
+                   WHERE r.introduction_type = 'old'
+                   AND r.effective_date <= $1
+                   AND (r.expiry_date >= $1 OR r.expiry_date IS NULL)
+                   AND r.description IS NOT NULL AND TRIM(r.description) != ''
+                   AND c.description IS NOT NULL AND TRIM(c.description) != ''
+                   ORDER BY RANDOM() LIMIT 3`,
+                  [isoDate]
+                );
+
+                if (safetyRows.rows.length === 0) {
+                  safetyRows = await safetyPool.query(
+                    `SELECT sub.item_id, r.description as old_desc, c.description as cur_desc,
+                            sub.first_date as effective_date, NULL as expiry_date, 'new' as point_type
+                     FROM (
+                       SELECT item_id, MIN(effective_date) as first_date
+                       FROM inspection_item_revisions
+                       WHERE introduction_type = 'old'
+                       GROUP BY item_id
+                       HAVING MIN(effective_date) > $1
+                     ) sub
+                     JOIN inspection_item_revisions r ON r.item_id = sub.item_id
+                       AND r.introduction_type = 'old' AND r.effective_date = sub.first_date
+                     JOIN inspection_item_revisions c ON c.item_id = sub.item_id AND c.introduction_type = 'current'
+                     WHERE r.description IS NOT NULL AND TRIM(r.description) != ''
+                     AND c.description IS NOT NULL AND TRIM(c.description) != ''
+                     ORDER BY RANDOM() LIMIT 3`,
+                    [isoDate]
+                  );
+                }
+                // AI로 각 항목 유의사항 생성
+                const rows = safetyRows.rows;
+                const safetyWithWarn = await Promise.all(rows.map(async (row: any) => {
+                  try {
+                    const isNew = row.point_type === 'new';
+                    const warnResp = await anthropic.messages.create({
+                      model: "claude-haiku-4-5-20251001",
+                      max_tokens: 150,
+                      system: isNew
+                        ? `승강기 검사 전문가. 설치 이후 신설/강화된 기준을 안내한다. "✅ [강화된 내용 요약]. 소급 적용 여부를 확인하세요." 형식으로 한 문장만 출력. 마크다운 없음.`
+                        : `승강기 검사 전문가. 종전/현행 차이 분석해 한 문장 유의사항. 종전 기준에 적합하게 설치된 현장이므로 과잉 지적 표현은 금지. "⚠️ 현행 기준과 달리 [차이점]이 있을 수 있습니다. 확인 시 참고하세요." 또는 "✅ [확인 포인트]를 현장에서 확인하세요." 형식. 한 문장만. 마크다운 없음.`,
+                      messages: [{ role: "user", content: isNew
+                        ? `신설/강화 기준: ${row.cur_desc.slice(0,200)}`
+                        : `종전: ${row.old_desc.slice(0,200)}
+현행: ${row.cur_desc.slice(0,200)}` }],
+                    });
+                    const warnText = warnResp.content[0].type === "text" ? warnResp.content[0].text.trim() : "";
+                    return { ...row, warn: warnText };
+                  } catch(e) {
+                    return { ...row, warn: "⚠️ 현행 기준과 차이 있는 항목입니다. 현장 확인 시 유의하세요." };
+                  }
+                }));
+                (req as any).safetyPoints = safetyWithWarn;
+                (req as any).isElevatorQuery = true;
+              } catch(e) {}
+            }
+          } else {
+            console.log("[승강기API] 항목 없음:", JSON.stringify(elvData?.response?.body));
+          }
+        } catch (e) {
+          // 조회 실패 시 무시
+        }
+      }
+
+      // ── 컨텍스트 텍스트 구성 ──────────────────────────────────────────
+      const sections: string[] = [];
+      if (context) {
+        if (context.inspCtx?.length) {
+          // 문서 라벨(별표22=엘리베이터 / 별표24=에스컬레이터)은 하드코딩하지 않고 클라이언트가
+          // 실제 검색에 사용한 문서를 그대로 넘겨받아 표시한다. 예전엔 여기가 무조건 "별표22"로
+          // 고정돼 있어서, 무빙워크처럼 에스컬레이터(별표24) 조문이 검색돼도 AI가 "[별표22] X.X"
+          // 형식으로 존재하지 않는 조문을 인용하는 사고가 있었다(2026-09-29).
+          const docLabels = [...new Set(context.inspCtx.map(c => c.docLabel).filter(Boolean))];
+          const headerLabel = docLabels.length === 1 ? docLabels[0] : "별표22/별표24";
+          sections.push(`[1순위] 검사기준(${headerLabel})\n` +
+            context.inspCtx.map(c => {
+              const refLabel = c.ref ? ` [${c.docLabel ? c.docLabel + " " : ""}${c.ref}]` : "";
+              return `■ ${c.title}${refLabel}\n${c.content}`;
+            }).join("\n\n"));
+        }
+        if (context.verdictCtx?.length) {
+          sections.push("[2순위] 판정지침\n" +
+            context.verdictCtx.map(c => `■ ${c.title}\n${c.content}`).join("\n\n"));
+        }
+        if (context.techCtx?.length) {
+          sections.push("[3순위] 표준화\n" +
+            context.techCtx.map(c => {
+              const dates = [
+                c.permitDate ? `건축허가일: ${c.permitDate}` : "",
+                c.inspectionDate ? `검사기준적용일: ${c.inspectionDate}` : "",
+                c.inspectionYear ? `검사일: ${c.inspectionYear}` : "",
+                c.installInspectionDate ? `설치검사일: ${c.installInspectionDate}` : "",
+              ].filter(Boolean).join(" / ");
+              return `■ ${c.title}\n${c.basis ? `현안: ${c.basis}\n` : ""}${c.conclusion ? `결정: ${c.conclusion}\n` : ""}${dates ? `적용시기: ${dates}\n` : ""}출처: ${c.source}`;
+            }).join("\n\n"));
+        }
+        // [2026-09] 기술자료 — 표준화(std_item_overrides)와 완전히 별도의 데이터소스
+        // (technical_materials 테이블: 소음, 기종별 특성 등 자유형식 자료).
+        if (context.techMaterialCtx?.length) {
+          sections.push("[3순위] 기술자료\n" +
+            context.techMaterialCtx.map(c =>
+              `■ ${c.title}${c.category ? ` [${c.category}]` : ""}\n${c.content}${c.source ? `\n출처: ${c.source}` : ""}`
+            ).join("\n\n"));
+        }
+        if (context.memoCtx?.length) {
+          sections.push("[4순위] 현장메모\n" +
+            context.memoCtx.map(c => `• [${c.title}] ${c.content}`).join("\n"));
+        }
+        if (context.precisionCtx?.length) {
+          sections.push("[4순위] 정밀안전검사 판정기준\n" +
+            context.precisionCtx.map(c =>
+              `• ${c.situation}: ${c.judgment} / 근거: ${c.basis}`
+            ).join("\n"));
+        }
+        if (context.chatCtx?.length) {
+          sections.push("[참고] 현장의견(비공식)\n" +
+            context.chatCtx.map(c => `• ${c.content}`).join("\n"));
+        }
+      }
+      // ── 조문 DB 검색 / 키워드 조문 연혁 검색 / 메모 검색 / 질문유형 분류 ──
+      // 네 조회는 서로의 결과를 필요로 하지 않으므로(순서 고정 표시만 나중에 동기 처리)
+      // 병렬로 실행해 지연시간을 줄인다. (예전엔 순차 실행이라 4번의 왕복시간이 그대로 더해졌음)
+      let articleCards: any[] = [];
+
+      // 조문 DB 검색 (inspection_item_revisions) — 질문에 조문번호가 직접 언급된 경우
+      const articleTask = (async (): Promise<any[] | null> => {
+        try {
+          const refMatches = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g);
+          if (!refMatches || refMatches.length === 0) return null;
+          const uniqueRefs = [...new Set(refMatches)].slice(0, 5) as string[];
+          const { pool: pgPool } = await import("./db");
+          const placeholders = uniqueRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
+          // [2026-09-29] 조문번호(item_id)는 엘리베이터(별표22)/에스컬레이터(별표24) 문서마다
+          // 독립적으로 채번되어 번호가 겹칠 수 있다(예: 두 문서 모두 "5.2.1" 존재). 질문에서
+          // 설비종류가 명확히 판별된 경우(requestEquipmentType) 그 문서로 조회를 좁혀 애초에
+          // 엉뚱한 문서 내용이 섞여 들어오지 않게 하고, 애매한 경우엔 기존처럼 양쪽 다 조회하되
+          // equipment_type을 같이 SELECT해서 아래 렌더링 단계에서 문서별로 정확히 라벨링한다.
+          const typeFilter = requestEquipmentType ? ` AND equipment_type = $${uniqueRefs.length + 1}` : "";
+          const typeParams = requestEquipmentType ? [...uniqueRefs, requestEquipmentType] : uniqueRefs;
+          const revRows = await pgPool.query(
+            `SELECT item_id, introduction_type, effective_date, expiry_date, (description || COALESCE(E'\\n' || attachments_text, '')) AS description, equipment_type,
+                    ${ATT_TAG_SQL} AS att_tag
+             FROM inspection_item_revisions
+             WHERE item_id IN (${placeholders})
+             AND introduction_type IN ('current', 'old')
+             AND description IS NOT NULL AND TRIM(description) != ''${typeFilter}
+             ORDER BY item_id, effective_date DESC NULLS FIRST`,
+            typeParams
+          );
+          return (revRows.rows && revRows.rows.length > 0) ? (revRows.rows as any[]) : null;
+        } catch (e) {
+          return null; // 조문 DB 조회 실패 시 무시
+        }
+      })();
+
+      // [2026-09] 조문 "원문 본문" 조회 (inspection_base_items) — 위 articleTask는 개정연혁
+      // (inspection_item_revisions.description, "무엇이 왜 바뀌었는지")만 조회했고 정작 조문의
+      // 실제 검사기준 본문(무엇을 검사해야 하는지)은 AI 컨텍스트에 전혀 포함되지 않고 있었다.
+      // 예) "7.5.2 검사기준 알려줘" → 상위 섹션 "7.5.2 동력 작동식 문" 하나만 정확일치로
+      // 찾다 보니, 실제 검사내용이 담긴 하위 조문(7.5.2.1.1.1~7.5.2.1.1.3)은 통째로 빠졌다.
+      //
+      // [시도했다가 폐기한 접근] inspection_base_items의 sortOrder가 "문서 전체 순번"일
+      // 것으로 가정하고 "다음 형제 섹션 시작 직전까지"를 계산해봤으나, 실제 데이터는
+      // 최초 시딩 이후 관리자가 개별 추가한 항목들이 섞여 sortOrder가 문서 순서와
+      // 무관하게 뒤죽박죽이었다(예: "7" 조회 시 5.1.4 → 7.1 → 9.7처럼 전혀 다른 장으로
+      // 튐). sortOrder에 의존하는 범위 계산은 실제 라이브 데이터로 검증한 결과 폐기.
+      //
+      // 대신 sectionId/itemId 문자열 자체의 계층 구조만으로 안전하게 하위 확장한다:
+      // ref와 완전히 같거나 "ref."로 시작하는 행만 포함 — "7"을 물으면 7.1~7.18...(7로
+      // 시작하는 모든 하위)이 포함되고 "8.x"는 애초에 prefix가 달라 걸리지 않으므로,
+      // 별도의 "다음 챕터 경계 계산" 없이도 자연스럽게 그 장(章) 안에서 멈춘다.
+      const baseItemTask = (async (): Promise<any[] | null> => {
+        try {
+          const refMatches = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g);
+          if (!refMatches || refMatches.length === 0) return null;
+          const uniqueRefs = [...new Set(refMatches)].slice(0, 3) as string[];
+          const { pool: biPool } = await import("./db");
+          // [2026-09-29] articleTask와 동일한 이유로 설비종류가 명확하면(requestEquipmentType)
+          // standard_equipment_type으로 좁혀서 조회한다. 예전엔 이 필터가 아예 없어서, 질문
+          // 번호가 엘리베이터·에스컬레이터 양쪽 문서에 다 있으면 서로 다른 문서 내용이 하나로
+          // 섞여 항상 "별표22"로 잘못 라벨링되는 사고(2026-09-29 무빙워크 오인용)가 있었다.
+          const likeConds = uniqueRefs
+            .map((_, i) => `(section_id = $${i * 2 + 1} OR section_id LIKE $${i * 2 + 2} OR item_id = $${i * 2 + 1} OR item_id LIKE $${i * 2 + 2})`)
+            .join(" OR ");
+          const params = uniqueRefs.flatMap(ref => [ref, `${ref}.%`]);
+          const typeFilter = requestEquipmentType ? ` AND standard_equipment_type = $${params.length + 1}` : "";
+          const finalParams = requestEquipmentType ? [...params, requestEquipmentType] : params;
+          const rowsResult = await biPool.query(
+            `SELECT item_id, section_id, section_title, text, sort_order, standard_equipment_type
+             FROM inspection_base_items
+             WHERE (${likeConds})${typeFilter}
+             ORDER BY item_id`,
+            finalParams
+          );
+          const resultRows = rowsResult.rows as any[];
+          // 안전장치: 하위 항목이 아주 많은 대분류(예: 최상위 "7" 전체)를 물은 경우
+          // 컨텍스트 폭증을 막기 위해 글자수 총량 기준으로 자른다.
+          let totalChars = 0;
+          const capped: any[] = [];
+          for (const r of resultRows) {
+            const len = (r.text || "").length;
+            if (totalChars > 0 && totalChars + len > 6000) break;
+            totalChars += len;
+            capped.push(r);
+          }
+          return capped.length > 0 ? capped : null;
+        } catch (e) {
+          return null; // 조문 원문 DB 조회 실패 시 무시
+        }
+      })();
+
+      // 조문 연혁 키워드 검색 (조문번호를 언급하지 않는 질문도 커버) — SQL 자체는 위 조회와 무관하므로
+      // 동시에 실행하고, 중복 제거(articleCards와 겹치는 item_id 제외)만 두 결과가 모두 온 뒤 처리한다.
+      //
+      // [2026-09] "설치" 처럼 조문 전반에 흔히 등장하는 단어 하나만 매칭돼도 "비상통화장치"처럼
+      // 소수 조문에만 등장하는 단어와 동일하게 match_count=1로 취급되어, 실제로는 무관한 조문이
+      // (동점 상황에서 effective_date 최신순으로) 상위에 노출되는 문제가 있었다.
+      // 예) "비상통화장치는 2개소 설치 의무야?" → "설치" 단어만으로 매칭된 무관 조문들이 3~5순위로 노출.
+      //
+      // "설치" 자체를 불용어로 막으면 "설치검사 시 서류제출" 같은 질문에서 "설치"가 진짜 핵심 단어인
+      // 경우까지 죽여버리므로, 특정 단어를 하드코딩해 배제하는 대신 DB 통계로 흔함/희귀함을 그때그때
+      // 계산한다(IDF와 동일한 원리): 등장 조문 수가 적을수록(희귀할수록) 가중치를 높게 준다.
+      // 가중치(단어) = 전체 조문 수 / 그 단어가 등장하는 조문 수
+      // 각 매칭 행의 점수 = 그 행에 매칭된 토큰들의 가중치 합 → 점수가 낮은(흔한 단어만 매칭된) 행은
+      // 결과에서 제외한다.
+      const keywordTask = (async (): Promise<any[] | null> => {
+        try {
+          const STOPWORDS = new Set([
+            "관련", "대해", "대한", "알려줘", "무엇", "뭐", "어떻게", "해야", "하는지",
+            "확인", "경우", "있는지", "해줘", "그리고", "되나요", "되는지", "인가요",
+            "입니다", "궁금해요", "궁금합니다", "엘리베이터", "승강기", "기준", "조문", "규정", "조항",
+          ]);
+          // 흔한 조사를 단어 끝에서 제거 — "비상통화장치는" → "비상통화장치"로 정규화해
+          // 조사가 안 붙은 원형과 매칭되도록 한다(길이 3 이상 단어에만 적용해 과도한 축약 방지).
+          const JOSA = /(으로써|으로서|이라고|라고|이라는|라는|이라도|라도|에서부터|에서|으로|이나|나|이든|든|까지|부터|보다|한테|에게|처럼|이랑|랑|와|과|만|도|는|은|를|을|의|이|가|에)$/;
+          const stripJosa = (t: string): string => {
+            if (t.length < 3) return t;
+            const stripped = t.replace(JOSA, "");
+            return stripped.length >= 2 ? stripped : t;
+          };
+          const tokens = (userQuestion.match(/[가-힣A-Za-z0-9]+/g) || [])
+            .map(stripJosa)
+            .filter((t: string) => t.length >= 2 && !STOPWORDS.has(t));
+          const uniqueTokens = [...new Set(tokens)].slice(0, 6) as string[];
+          if (uniqueTokens.length === 0) return null;
+          const { pool: kwPool } = await import("./db");
+          const likeParams = uniqueTokens.map(t => `%${t}%`);
+          // 토큰별 가중치(IDF) 계산: 전체 조문 수 / 해당 토큰이 등장하는 고유 item_id 수.
+          // 전체 조문 수 + 토큰별 등장 조문 수를 쿼리 1번(UNION ALL)으로 한꺼번에 가져와
+          // 왕복 횟수를 줄인다(토큰마다 개별 쿼리를 날리지 않음).
+          const idfParams = uniqueTokens.map(t => `%${t}%`);
+          const perTokenCountSql = uniqueTokens
+            .map((_, i) => `SELECT ${i} AS idx, COUNT(DISTINCT item_id) AS c FROM inspection_item_revisions
+               WHERE (COALESCE(description,'') || COALESCE(E'\\n' || attachments_text,'')) ILIKE $${i + 1} AND introduction_type IN ('current', 'old') AND description IS NOT NULL AND TRIM(description) != ''`)
+            .join(" UNION ALL ");
+          const countsResult = await kwPool.query(
+            `SELECT -1 AS idx, COUNT(DISTINCT item_id) AS c FROM inspection_item_revisions
+             WHERE introduction_type IN ('current', 'old') AND description IS NOT NULL AND TRIM(description) != ''
+             UNION ALL ${perTokenCountSql}`,
+            idfParams
+          );
+          const countByIdx = new Map<number, number>();
+          for (const row of countsResult.rows as any[]) {
+            countByIdx.set(Number(row.idx), Number(row.c) || 0);
+          }
+          const totalDocs = countByIdx.get(-1) || 1;
+          const idfWeights: number[] = uniqueTokens.map((_, i) => {
+            const docCount = countByIdx.get(i) || 0;
+            return docCount > 0 ? totalDocs / docCount : 0;
+          });
+
+          const likeConds = uniqueTokens.map((_, i) => `(COALESCE(description,'') || COALESCE(E'\\n' || attachments_text,'')) ILIKE $${i + 1}`).join(" OR ");
+          const scoreExpr = uniqueTokens
+            .map((_, i) => `(CASE WHEN (COALESCE(description,'') || COALESCE(E'\\n' || attachments_text,'')) ILIKE $${i + 1} THEN ${idfWeights[i].toFixed(4)} ELSE 0 END)`)
+            .join(" + ");
+          const kwRows = await kwPool.query(
+            `SELECT item_id, introduction_type, effective_date, expiry_date, (description || COALESCE(E'\\n' || attachments_text, '')) AS description,
+                    (${scoreExpr}) AS kw_score, ${ATT_TAG_SQL} AS att_tag
+             FROM inspection_item_revisions
+             WHERE (${likeConds})
+               AND introduction_type IN ('current', 'old')
+               AND description IS NOT NULL AND TRIM(description) != ''
+             ORDER BY kw_score DESC, effective_date DESC NULLS FIRST
+             LIMIT 16`,
+            likeParams
+          );
+          // 가중치 합산 점수가 임계치 미달인 결과는 제외한다.
+          // 임계치 = "매칭된 토큰 중 가장 흔한(최소 가중치) 단어 하나"보다는 커야 통과 —
+          // 즉 가장 흔한 단어 혼자만 매칭된 행(점수 = 그 단어의 가중치와 동일)은 걸러내고,
+          // 그보다 희귀한 단어가 하나라도 더 매칭된 행(점수가 더 큼)만 남긴다.
+          // 예) "설치"(3.4) + "비상통화장치"(56) 매칭 시 → "설치" 단독 매칭 행(점수 3.4)은
+          //     임계치(3.4)를 넘지 못해 제외되고, "비상통화장치"가 걸린 행(점수 56+)만 남는다.
+          // 단, 유효 토큰이 1개뿐이라 그 단어 자체가 최선의 단서인 경우(예: "설치검사 서류제출"
+          // 질문에서 매칭 토큰이 "설치"류 하나뿐)에는 그 단어만으로 매칭된 행도 통과시켜야
+          // 결과가 0개로 사라지지 않는다 — 이때는 임계치를 0으로 낮춘다.
+          const positiveWeights = idfWeights.filter(w => w > 0);
+          const minWeight = positiveWeights.length > 0 ? Math.min(...positiveWeights) : 0;
+          const hasMultipleDistinctWeights = new Set(positiveWeights.map(w => w.toFixed(4))).size > 1;
+          const threshold = hasMultipleDistinctWeights ? minWeight * 1.01 : 0;
+          let filtered = (kwRows.rows as any[]).filter(r => Number(r.kw_score) >= threshold).slice(0, 8);
+          // 임계치 필터로 결과가 전부 사라진 경우(모든 매칭이 흔한 단어 하나뿐이었던 경우)엔
+          // 아예 카드를 안 보여주는 것이 무관한 카드를 보여주는 것보다 낫다 — 필터링 없이
+          // 강제로 채우지 않는다.
+          return filtered;
+        } catch (e) {
+          return null; // 키워드 조문 연혁 검색 실패 시 무시
+        }
+      })();
+
+      // 메모 자동 검색 — 최대 3개 키워드를 병렬로 조회 (예전엔 for-await 순차 조회였음)
+      const memoTask = (async (): Promise<string> => {
+        try {
+          const kwMatches = userQuestion.match(/[가-힣a-zA-Z]{2,6}/g) || [];
+          const kws = [...new Set(kwMatches)].slice(0, 3) as string[];
+          const memoResults = await Promise.all(kws.map(kw => storage.searchMemos(kw).catch(() => [] as any[])));
+          const memoHits: string[] = [];
+          memoResults.forEach((memos: any[]) => {
+            memos.slice(0, 2).forEach((m: any) => {
+              const content = m.content || m.description || "";
+              if (content) memoHits.push(`[${m.title || "메모"}] ${content.slice(0, 250)}`);
+            });
+          });
+          return memoHits.length > 0 ? "\n\n[현장메모]\n" + [...new Set(memoHits)].slice(0, 4).join("\n") : "";
+        } catch {
+          return "";
+        }
+      })();
+
+      // [2026-09] 관리자가 승인한 "참고자료 - 외부검색" 후보 중 이번 질문과 관련된 것을 조회.
+      // ai_research_candidates는 status='approved'인 것만 컨텍스트에 노출한다 — 관리자가
+      // 원문 링크를 직접 확인하고 승인하기 전까지는 어떤 사용자 답변에도 영향을 주지 않는다.
+      // memoTask와 동일한 가벼운 키워드 매칭 방식(임베딩 유사도까지는 과함 — 후보 수 자체가
+      // 적을 것으로 예상되는 데이터라 단순 매칭으로 충분).
+      const researchTask = (async (): Promise<string> => {
+        try {
+          const kwMatches = userQuestion.match(/[가-힣a-zA-Z]{2,6}/g) || [];
+          const kws = [...new Set(kwMatches)].slice(0, 3) as string[];
+          if (kws.length === 0) return "";
+          const { pool: rcPool } = await import("./db");
+          const likeConds = kws.map((_, i) => `question ILIKE $${i + 1}`).join(" OR ");
+          const rows = await rcPool.query(
+            `SELECT question, summary, sources FROM ai_research_candidates
+             WHERE status = 'approved' AND (${likeConds})
+             ORDER BY reviewed_at DESC NULLS LAST LIMIT 2`,
+            kws.map(k => `%${k}%`)
+          );
+          if (rows.rows.length === 0) return "";
+          const text = rows.rows.map((r: any) => {
+            const srcs = Array.isArray(r.sources) ? r.sources : [];
+            const srcText = srcs.map((s: any) => s.title || s.url).join(", ");
+            return `[참고자료 - 외부검색] 관련 질문: "${r.question}"\n${r.summary}\n(출처: ${srcText || "확인 필요"})`;
+          }).join("\n\n");
+          return "\n\n[참고자료 - 외부검색 (관리자 승인됨, 앱 자체 검사기준 아님)]\n" + text;
+        } catch {
+          return "";
+        }
+      })();
+
+      // [2026-10] "지식 검수"에서 관리자가 승인한 현장 전문가 답변(expert_answers, status='승인')을
+      // 컨텍스트에 반영. 그동안 승인 버튼("승인하고 반영")이 status만 바꿀 뿐 실제로는 어디에도
+      // 반영되지 않는 죽은 데이터였다 — researchTask와 동일한 가벼운 키워드 매칭 패턴으로 연결한다.
+      // answerType='skip'(건너뜀 기록용)은 답변 내용이 없으므로 제외.
+      const expertAnswerTask = (async (): Promise<string> => {
+        try {
+          const kwMatches = userQuestion.match(/[가-힣a-zA-Z]{2,6}/g) || [];
+          const kws = [...new Set(kwMatches)].slice(0, 3) as string[];
+          if (kws.length === 0) return "";
+          const { pool: eaPool } = await import("./db");
+          const likeConds = kws.map((_, i) => `question_content ILIKE $${i + 1}`).join(" OR ");
+          const rows = await eaPool.query(
+            `SELECT question_content, answer_text FROM expert_answers
+             WHERE status = '승인' AND answer_type != 'skip' AND answer_text IS NOT NULL AND (${likeConds})
+             ORDER BY reviewed_at DESC NULLS LAST LIMIT 2`,
+            kws.map(k => `%${k}%`)
+          );
+          if (rows.rows.length === 0) return "";
+          const text = rows.rows.map((r: any) =>
+            `[전문가 지식 - 현장 검수 승인] 관련 질문: "${r.question_content}"\n${r.answer_text}`
+          ).join("\n\n");
+          return "\n\n[전문가 지식 (관리자 승인됨, 현장 경험 기반)]\n" + text;
+        } catch {
+          return "";
+        }
+      })();
+
+      // [2026-09] 질문 유형 분류(LOOKUP/JUDGMENT/CALCULATE) 단계 제거.
+      // 원래 목적은 "계산 질문이면 전용 계산 답변으로 보낸다" 하나뿐이었고 LOOKUP/JUDGMENT는
+      // 구분해도 이후 로직에서 전혀 다르게 처리되지 않았다(둘 다 answerRules로 동일 처리).
+      // 그런데 이 분류만을 위해 매 요청마다 Haiku API를 한 번 더 순차로 왕복했고, 그 뒤 답변
+      // 생성 Haiku 호출과 합쳐 fast 모드에서도 AI 왕복이 2회(총 8~9초)나 필요했다.
+      // 계산 질문 처리는 answerRules 안의 "계산/판정 질문 처리" 지시(아래 참고)로 이미 커버되므로
+      // 분류 호출 없이 답변 생성 1회 호출로 통합한다.
+      const [goodAnswerRefSection, articleRows, baseItemRows, keywordRows, memoSection, researchSection, expertSection] = await Promise.all([
+        ragTask, articleTask, baseItemTask, keywordTask, memoTask, researchTask, expertAnswerTask,
+      ]);
+
+      // ── 병렬 조회 결과를 고정된 순서(조문 원문 → 조문번호 직접매칭 연혁 → 키워드 매칭)로 합성 ──
+      // 조문 원문(inspection_base_items)을 가장 먼저 배치한다 — "무엇을 검사해야 하는지"가
+      // "무엇이 언제 바뀌었는지(연혁)"보다 우선순위 높은 정보이기 때문.
+      // 문서 라벨 헬퍼: standard_equipment_type/equipment_type 값을 실제 문서명으로 변환.
+      // requestEquipmentType으로 SQL을 이미 좁힌 경우 결과가 한 종류뿐이지만, 애매해서
+      // 필터를 안 건 경우 한 응답 안에 엘리베이터/에스컬레이터 항목이 섞여 있을 수 있으므로
+      // 항상 "행 자체의" 종류값을 기준으로 라벨링한다(하드코딩 금지 — 2026-09-29 사고 재발 방지).
+      const docLabelOf = (eqType: string | undefined) => eqType === "에스컬레이터" ? "별표24" : "별표22";
+
+      if (baseItemRows) {
+        // standard_equipment_type별로 먼저 나누고, 그 안에서 section_id별로 묶는다 — 같은
+        // 번호의 조문이 두 문서에 동시에 있어도 서로 다른 섹션으로 분리되어 올바른 문서명이 붙는다.
+        const byType: Record<string, any[]> = {};
+        for (const r of baseItemRows) {
+          const key = r.standard_equipment_type || "엘리베이터";
+          (byType[key] ||= []).push(r);
+        }
+        for (const [eqType, rows] of Object.entries(byType)) {
+          const grouped: Record<string, any[]> = {};
+          for (const r of rows) {
+            const sid = r.section_id;
+            if (!grouped[sid]) grouped[sid] = [];
+            grouped[sid].push(r);
+          }
+          const text = Object.entries(grouped).map(([sectionId, rs]) => {
+            const title = rs[0]?.section_title || sectionId;
+            const body = rs.map((r: any) => `  [${r.item_id}] ${r.text}`).join("\n");
+            return `${title}\n${body}`;
+          }).join("\n\n");
+          sections.push(`[${docLabelOf(eqType)} 조문 원문 — 해당 조문 및 하위 세부조문 전체]\n` + text);
+        }
+      }
+
+      if (articleRows) {
+        const byType: Record<string, any[]> = {};
+        for (const r of articleRows) {
+          const key = r.equipment_type || "엘리베이터";
+          (byType[key] ||= []).push(r);
+        }
+        for (const [eqType, rows] of Object.entries(byType)) {
+          const revText = rows.map((r: any) => {
+            const dateInfo = r.introduction_type === 'current'
+              ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
+              : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
+            return `[${r.item_id}] ${dateInfo}\n${r.description}${r.att_tag ? "\n" + r.att_tag : ""}`;
+          }).join("\n\n");
+          sections.push(`[${docLabelOf(eqType)} 조문 개정연혁 — 언제 어떻게 바뀌었는지]\n` + revText);
+        }
+
+        const grouped: Record<string, any[]> = {};
+        for (const r of articleRows) {
+          if (!grouped[r.item_id]) grouped[r.item_id] = [];
+          grouped[r.item_id].push({
+            type: r.introduction_type === 'current' ? 'current' : 'old',
+            effectiveDate: r.effective_date,
+            expiryDate: r.expiry_date,
+            description: r.description,
+          });
+        }
+        articleCards = Object.entries(grouped).map(([itemId, versions]) => ({ itemId, versions }));
+      }
+
+      if (keywordRows) {
+        const existingIds = new Set(articleCards.map((a: any) => a.itemId));
+        const newRows = keywordRows.filter((r: any) => !existingIds.has(r.item_id));
+        if (newRows.length > 0) {
+          const revText = newRows.map((r: any) => {
+            const dateInfo = r.introduction_type === 'current'
+              ? `현행 (${r.effective_date || '2022-03-02'} 시행)`
+              : `종전 (${r.effective_date || '이전'} ~ ${r.expiry_date || ''})`;
+            return `[${r.item_id}] ${dateInfo}\n${r.description}${r.att_tag ? "\n" + r.att_tag : ""}`;
+          }).join("\n\n");
+          sections.push("[키워드 매칭 조문 연혁]\n" + revText);
+
+          const kwGrouped: Record<string, any[]> = {};
+          for (const r of newRows) {
+            if (!kwGrouped[r.item_id]) kwGrouped[r.item_id] = [];
+            kwGrouped[r.item_id].push({
+              type: r.introduction_type === 'current' ? 'current' : 'old',
+              effectiveDate: r.effective_date,
+              expiryDate: r.expiry_date,
+              description: r.description,
+            });
+          }
+          articleCards.push(...Object.entries(kwGrouped).map(([itemId, versions]) => ({ itemId, versions })));
+        }
+      }
+
+      const contextText = (sections.length > 0 || elevatorInfoSection || goodAnswerRefSection)
+        ? "\n\n---\n" + sections.join("\n\n") + elevatorInfoSection + goodAnswerRefSection + "\n---"
+        : "";
+
+      // 균형추 여유거리 계산 카드 감지 — 안전망.
+      // 정상 경로에서는 client/src/pages/home.tsx의 sendMessage가 이 패턴을 프론트에서 먼저
+      // 가로채 AI 호출 자체를 생략하므로 보통 여기까지 오지 않는다. 그래도 음성입력 텍스트 변형이나
+      // 예상 못한 경로로 도달하는 경우를 대비해 서버에도 동일 조건을 유지한다.
+      const isCounterWeight = /균형추.*여유거리|여유거리.*균형추/i.test(userQuestion);
+      if (isCounterWeight) {
+        const hasVerb = /구해|계산|얼마|알려|나와/.test(userQuestion);
+        const replyText = hasVerb
+          ? "균형추 최대 여유거리를 계산해드릴게요. 아래 정보를 입력해주세요."
+          : "균형추 최대 여유거리는 측정값·완충기 행정·속도로 계산합니다. 아래 카드로 바로 계산해보세요.";
+        return res.json({
+          reply: replyText,
+          usedSources: [],
+          type: "CALCULATE",
+          calcCard: "COUNTER_WEIGHT",
+        });
+      }
+
+      // ════════════════════════════════════════════════════════════
+      // 3-Agent 파이프라인 (LOOKUP / JUDGMENT / CALCULATE 공통)
+      // [2026-09] 계산 질문도 이제 별도 분류·별도 호출 없이 이 파이프라인으로 통합 처리된다.
+      // answerRules 안의 "계산/판정 질문 처리" 지시가 공식 파악→변수 질문→계산까지 담당한다.
+      // 규칙1: 어플 내 등록된 데이터만 검색한다 (외부 인터넷 검색 없음)
+      // 규칙2: 에이전트1 초안 → 에이전트2 독립 재검증 (병렬 실행)
+      //        → 불일치 시에만 에이전트3 중재
+      // 규칙3: 에이전트 간 대화는 노출하지 않고 최종 결론만 반환한다
+      // 규칙4: mode="fast"(기본) / "precise" 에 따라 모델·씽킹 여부가 달라진다
+      // ════════════════════════════════════════════════════════════
+
+      const chatMode: "fast" | "precise" = mode === "precise" ? "precise" : "fast";
+      const pipelineStart = Date.now();
+      // thinking 블록이 섞여 나올 수 있으므로 text 블록을 안전하게 찾아 추출
+      const getText = (resp: any): string => {
+        const block = (resp.content || []).find((b: any) => b.type === "text");
+        return block ? String(block.text).trim() : "";
+      };
+
+      const answerRules = `## 자료 정확도 원칙 (최우선)
+아래 순서대로 자료를 찾아라. 상위 자료에서 답을 찾으면 하위 자료는 무시한다.
+
+1순위 [검사기준] — 별표22(엘리베이터)/별표24(에스컬레이터) 등 위 컨텍스트에 표시된 문서의 조문 (법적 근거, 가장 신뢰)
+2순위 [판정지침] — 승강기검사결과 판정지침 (공식 판정 기준)
+3순위 [기술자료] — 표준화 결정 (공식 적용 방법)
+4순위 [현장메모] — 비공식 현장 의견. 1~3순위에서 답을 찾은 경우 메모는 완전 무시.
+                   1~3순위에 자료가 전혀 없을 때만 참고하고 반드시 "(비공식 현장의견)" 표시.
+5순위 [참고자료 - 외부검색] — 관리자가 사전에 직접 검토·승인한 외부 자료(법령/KS표준/공식기관 문서
+                   요약). 1~4순위에 전혀 자료가 없을 때만 참고. 반드시 "(참고자료 - 외부검색,
+                   앱 자체 검사기준 아님)"이라고 명시하고, 승강기 검사기준인 것처럼 단정하지 않는다.
+
+★ 메모/외부검색 자료가 검사기준과 다르면 검사기준이 정답이다.
+
+## 그림·표 첨부 표시 규칙
+- 위 조문 연혁에 "[[첨부:숫자:숫자]] (그림|표) 이름" 형태의 줄이 있으면, 그 조문에 실제 그림·표가 있다는 뜻이다.
+- 질문에 답하는 데 그림이나 표가 직접 도움이 될 때만(예: 치수·도면·표의 수치를 설명할 때) 해당 설명 바로 뒤 새 줄에 그 표시를 한 글자도 바꾸지 말고 그대로 한 줄로 쓴다. 한 답변에 최대 3개.
+- 컨텍스트에 없는 표시를 새로 만들거나 숫자를 바꾸지 마라. 필요 없으면 쓰지 마라. 표시를 쓴 뒤 "그림을 보세요" 식의 중복 설명은 하지 않는다.
+★ 키워드가 비슷해도 질문의 맥락과 다른 메모·외부검색 자료는 무시한다.
+
+## 자료가 부족할 때 처리 순서 (중요 — 절대 바로 포기하지 말 것)
+1단계: 1~4순위 자료 전체에서 질문과 직접 일치하는 조문·기준을 찾는다.
+2단계: 직접 일치하는 조문이 없어도, 관련된 일반 원칙이나 위임·참조 조항
+       (예: "이 기준에서 다루지 아니하는 사항은 OOO 법령에 따른다" 같은 문구)이
+       자료 안에 있으면 그것을 근거로 최대한 답을 구성한다. 이 경우 어떤 자료를 근거로
+       추론했는지 명확히 밝힌다.
+3단계: 2단계로도 실마리를 전혀 찾지 못한 경우에만, "해당 기준 없음" 같은 성의 없는
+       한 줄 대신 다음 형식으로 답한다: "이 질문은 [이 앱이 다루는 자료 범위] 밖의
+       사항입니다. [자료에서 확인된 위임 법령·기관명이 있으면 그 이름]에서 확인이
+       필요합니다." 위임 법령·기관명을 모르면 "관련 법령·기관 확인이 필요합니다"로
+       마무리하고, 근거 없이 추측한 법령명을 지어내지 않는다.
+
+## 승강기번호 분석 (최우선 처리)
+[승강기 정보 - XXXXXXX] 가 컨텍스트에 있는 경우 반드시 다음을 수행한다:
+1. 설치일자(또는 최초설치일자)를 건축허가일 근사값으로 사용
+2. 2022년 3월 2일 이전 설치 → 종전 기준 적용 항목 존재 가능성 명시
+3. 설치 시기별로 검사 시 유의해야 할 주요 항목을 구체적으로 안내:
+   - 피트 정지장치 위치/개수 기준 변경 여부
+   - 승강장문 잠금장치 기준 변경 여부
+   - 카 상부틈새/균형추 여유거리 기준 변경 여부
+   - 비상통화장치 기준 변경 여부 등
+4. "검사 시 유의사항" 형태로 표현 (위험이라는 단어 대신)
+5. 설치일자가 없으면 "설치일자 확인 필요" 안내
+
+## 계산/판정 질문 처리 (최우선)
+질문이 수치 계산 또는 현장 판정을 요구하는 경우:
+1. 자료(검사기준/판정지침/기술자료/메모)에서 계산법과 필요한 변수를 먼저 파악한다
+2. 자료에 공식이 있으면 그 공식에서 필요한 변수만 사용자에게 질문한다
+   - 예: 메모에 "균형추 여유거리 = 카 상부틈새 - X" 공식이 있으면 X에 해당하는 측정값만 질문
+   - 공식과 무관한 변수는 절대 묻지 않는다
+3. 측정값을 받으면 자료의 공식에 대입하여 계산하고 적합/부적합 판정을 내린다
+4. 계산 과정과 결과를 명확히 보여준다
+
+## 답변 규칙
+- 결론을 첫 줄에 (판정/핵심 수치/날짜)
+- 조문번호는 [문서명] X.X.X 형식으로 명시 — 문서명은 항상 위 [1순위] 검사기준 섹션 헤더나 각 조문 옆 [ ] 안에 표시된 것(별표22 또는 별표24)을 그대로 쓴다. "별표22"로 고정하지 말 것 — 에스컬레이터/무빙워크 관련 조문은 별표24다.
+- 항목 2개 이상이면 반드시 마크다운 리스트 형식으로 각 항목을 별도 줄에 작성:
+  - 항목1
+  - 항목2
+- 단락 사이는 빈 줄로 구분
+- 인사·서론·마무리·공단문의 없음
+- 1~3순위 자료에 직접 일치가 없을 때는 위 "자료가 부족할 때 처리 순서"를 따른다 ("해당 기준 없음" 한 줄로 끝내지 말 것)
+- 표(|---|) 금지
+- 스스로 인터넷을 검색하거나 아는 척 추측하지 말 것 — 컨텍스트로 이미 제공된 자료(검사기준/
+  판정지침/기술자료/현장메모/승인된 참고자료) 안에서만 답한다
+- • 기호 사용 금지 — 반드시 마크다운 - 리스트 사용
+
+## 출처
+답변 마지막:
+📌 근거: [검사기준] 조문 | [판정지침] 항목 | [기술자료] 표준화명 | [참고자료 - 외부검색] 출처명
+메모/외부검색 자료는 1~3순위 자료 없을 때만 표시`;
+
+      let agent1: any = null, agent2: any = null, compare: any = null, agent3: any = null;
+      let reply = "";
+      let isStreaming = false;
+
+      if (chatMode === "fast") {
+        // ── 빠른 답변: 교차검증 없이 단일 에이전트 1회 호출 (속도 최우선) ──
+        // 예전엔 fast 모드도 rerank + 에이전트1/2 + 비교 + (불일치시)에이전트3, 최대 4번의
+        // Claude 왕복을 거쳐 20초+ 걸렸다. 정밀 답변 모드가 따로 있으니, 빠른 답변은
+        // 이름 그대로 검증 단계 없이 단일 호출로 바로 답한다.
+        // [2026-09] 스트리밍 적용 — 응답을 다 받을 때까지 기다리지 않고 텍스트 델타가
+        // 생성되는 즉시 SSE로 클라이언트에 흘려보내 체감 속도를 개선한다.
+        isStreaming = true;
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no"); // 프록시(Railway 등) 버퍼링 방지
+        (res as any).flushHeaders?.();
+
+        const stream = anthropic.messages.stream({
+          model: "claude-haiku-4-5-20251001",
+          // [2026-10] 1200 → 4000: 긴 답변이 중간에 끊기는 문제 해결(출력 상한만 높이며, 짧은 답은 그대로 짧다)
+          max_tokens: 4000,
+          system: `당신은 승강기 안전검사 현장 전문가다. 제공된 어플 내부 자료만 근거로 답한다.
+
+${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
+          messages: messages,
+        } as any);
+
+        stream.on("text", (delta: string) => {
+          res.write(`data: ${JSON.stringify({ type: "delta", text: delta })}\n\n`);
+        });
+
+        agent1 = await stream.finalMessage();
+        reply = getText(agent1);
+      } else {
+        // ── 정밀 답변: 에이전트1 초안 + 에이전트2 독립 재검증(병렬) → 불일치 시에만 에이전트3 중재 ──
+        const MODEL = { agent1: "claude-sonnet-4-6", agent2: "claude-sonnet-4-6", compare: "claude-sonnet-4-6", agent3: "claude-sonnet-4-6" };
+        // thinking 사용 시 사고 토큰도 max_tokens에 포함되므로 여유를 둔다
+        // [2026-10] 3000 → 8000: 사고(thinking) 토큰이 답변 몫을 잠식해 답변이 끊기는 문제 해결
+        const agentMaxTokens = 8000;
+        const thinkingParam = { thinking: { type: "adaptive" as const } };
+
+        [agent1, agent2] = await Promise.all([
+          anthropic.messages.create({
+            model: MODEL.agent1,
+            max_tokens: agentMaxTokens,
+            ...thinkingParam,
+            system: `당신은 승강기 안전검사 현장 전문가(에이전트1)다. 제공된 어플 내부 자료만 근거로 답한다.
+
+먼저 첫 줄에 "[핵심결론] 한 줄 요약"을 쓰고, 빈 줄 하나 띄운 뒤 아래 형식의 최종 답변을 작성해라.
+
+${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
+            messages: messages,
+          } as any),
+          // ── 에이전트2 — 독립 재검증 (에이전트1 답변은 보여주지 않음) ──
+          anthropic.messages.create({
+            model: MODEL.agent2,
+            max_tokens: 400,
+            system: `승강기 안전검사 전문 분석가(에이전트2)다. 제공된 자료만으로 이 질문의 결론을 처음부터 독립적으로 도출해라. 다른 사람의 답은 본 적이 없다.
+
+자료 신뢰도 순서: [검사기준] > [판정지침] > [기술자료] > [현장메모]
+검사기준/판정지침에서 답을 찾으면 메모는 무시한다.
+
+아래 JSON만 반환해라.
+{
+  "독립결론": "핵심 판정/수치를 한 줄로",
+  "근거조문": ["관련 조문번호 — 검사기준/판정지침 우선"],
+  "확신도": "high|medium|low",
+  "사용자료": "검사기준|판정지침|기술자료|메모"
+}
+다른 텍스트 없이 JSON만.${contextText}${memoSection}${researchSection}${expertSection}`,
+            messages: [{ role: "user", content: `질문: "${userQuestion}"` }],
+          }),
+        ]);
+        const agent1Text = getText(agent1);
+        const agent1Match = agent1Text.match(/^\[핵심결론\]\s*(.+)$/m);
+        const agent1Summary = agent1Match ? agent1Match[1].trim() : "";
+        const agent1Answer = agent1Text.replace(/^\[핵심결론\].*\n+/, "").trim();
+
+        let agent2Data: any = {};
+        try {
+          const raw2 = getText(agent2) || "{}";
+          agent2Data = JSON.parse(raw2.replace(/```json|```/g, "").trim());
+        } catch {}
+
+        // ── 일치 여부 판정 (경량 비교) ───────────────────────────
+        compare = await anthropic.messages.create({
+          model: MODEL.compare,
+          max_tokens: 200,
+          system: `두 결론이 실질적으로 같은 판정/수치를 말하는지 비교해라. 표현이 달라도 같은 판정이면 일치로 본다.
+아래 JSON만 반환해라.
+{ "일치여부": true|false, "불일치_사유": "구체적 차이점 또는 null" }
+다른 텍스트 없이 JSON만.`,
+          messages: [{
+            role: "user",
+            content: `결론A(에이전트1): "${agent1Summary}"\n결론B(에이전트2): "${agent2Data.독립결론 || ""}"`,
+          }],
+        });
+        let compareData: any = { 일치여부: true, 불일치_사유: null };
+        try {
+          const raw3 = getText(compare) || "{}";
+          compareData = JSON.parse(raw3.replace(/```json|```/g, "").trim());
+        } catch {}
+
+        reply = agent1Answer;
+
+        // ── 에이전트3 — 불일치 시에만 중재 ─────────────────────
+        if (compareData.일치여부 === false) {
+          agent3 = await anthropic.messages.create({
+            model: MODEL.agent3,
+            max_tokens: agentMaxTokens,
+            ...thinkingParam,
+            system: `당신은 승강기 안전검사 수석 전문가(에이전트3, 중재자)다.
+두 결론이 불일치했다. 제공된 어플 내부 자료를 다시 확인해 최종 판정을 확정하고, 아래 형식으로 최종 답변만 작성해라(중재 과정은 쓰지 마라).
+
+에이전트1 결론: "${agent1Summary}"
+에이전트2 결론: "${agent2Data.독립결론 || ""}"
+불일치 사유: "${compareData.불일치_사유 || ""}"
+
+${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
+            messages: messages,
+          } as any);
+          reply = getText(agent3) || agent1Answer;
+        }
+      }
+
+      // AI 사용량 DB 저장 (모든 사용자 누적 — 껐다 켜도 DB에 영구 보존)
+      // 모드(fast/precise)에 따라 실제 호출 모델이 달라지므로, 각 응답의 model 필드로
+      // 정확한 단가를 찾아 계산한다 (고정된 haiku/sonnet/opus 자리 가정 금지).
+      try {
+        const { db: uDb } = await import("./db");
+        const { aiUsage } = await import("@shared/schema");
+        // 1M 토큰당 가격(달러)
+        const PRICE: Record<string, { in: number; out: number }> = {
+          "claude-opus-4-8": { in: 5, out: 25 },
+          "claude-sonnet-4-6": { in: 3, out: 15 },
+          "claude-haiku-4-5-20251001": { in: 1, out: 5 },
+        };
+        const calls = [agent1, agent2, compare, agent3].filter(Boolean) as any[];
+        let inputTok = 0, outputTok = 0, cost = 0;
+        for (const c of calls) {
+          const price = PRICE[c.model] || PRICE["claude-sonnet-4-6"];
+          const inTok = c.usage?.input_tokens || 0;
+          const outTok = c.usage?.output_tokens || 0;
+          inputTok += inTok;
+          outputTok += outTok;
+          cost += (inTok * price.in + outTok * price.out) / 1_000_000;
+        }
+        const question = Array.isArray(messages) && messages.length > 0
+          ? String(messages[messages.length - 1]?.content || "").slice(0, 200)
+          : "";
+        await uDb.insert(aiUsage).values({
+          question,
+          inputTokens: inputTok,
+          outputTokens: outputTok,
+          costUsd: cost.toFixed(6),
+          employeeId: employeeId || null,
+          employeeName: employeeName || null,
+          answer: reply || null,
+        });
+      } catch (e) {
+        console.error("[usage 저장 오류]", e);
+      }
+
+      // ── 에이전트가 실제 사용한 자료 파싱 → 카드 연동용 ──────────
+      const usedSources: { type: string; title: string; ref: string }[] = [];
+      // 📌 근거: [검사기준] 조문 | [기술자료] 표준화명 | [메모] 제목 파싱
+      const sourceMatch = reply.match(/📌\s*근거[:\s]+(.+)$/m);
+      if (sourceMatch) {
+        const sourceStr = sourceMatch[1];
+        const parts = sourceStr.split(/\s*\|\s*/);
+        parts.forEach(part => {
+          const insp = part.match(/\[검사기준\]\s*(.+)/);
+          const tech = part.match(/\[기술자료\]\s*(.+)/);
+          const guide = part.match(/\[검사가이드\]\s*(.+)/);
+          const memo = part.match(/\[메모\]\s*(.+)/);
+          const judg = part.match(/\[판정지침\]\s*(.+)/);
+          if (insp) usedSources.push({ type: "inspection", title: insp[1].trim(), ref: insp[1].trim() });
+          if (tech)  usedSources.push({ type: "standard",   title: tech[1].trim(),  ref: tech[1].trim() });
+          if (guide) usedSources.push({ type: "guide",      title: guide[1].trim(), ref: guide[1].trim() });
+          if (memo)  usedSources.push({ type: "memo",       title: memo[1].trim(),  ref: memo[1].trim() });
+          if (judg)  usedSources.push({ type: "judgment",   title: judg[1].trim(),  ref: judg[1].trim() });
+        });
+      }
+
+      // AI 답변에서 조문번호 추출 → articleCards 보완
+      try {
+        const answerRefs = reply.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g) || [];
+        const questionRefs = userQuestion.match(/(?<![\d.])(?:1[0-7]|[1-9])\.\d+(?:\.\d+)*/g) || [];
+        const allRefs = [...new Set([...answerRefs, ...questionRefs])].slice(0, 5) as string[];
+        const existingIds = new Set(articleCards.map((a: any) => a.itemId));
+        const newRefs = allRefs.filter(r => !existingIds.has(r));
+        if (newRefs.length > 0) {
+          const { pool: pgPool2 } = await import("./db");
+          const placeholders2 = newRefs.map((_: any, i: number) => `$${i + 1}`).join(", ");
+          const revRows = await pgPool2.query(
+            `SELECT item_id, introduction_type, effective_date, expiry_date, description
+             FROM inspection_item_revisions
+             WHERE item_id IN (${placeholders2})
+             AND introduction_type IN ('current', 'old')
+             AND description IS NOT NULL AND TRIM(description) != ''
+             ORDER BY item_id, effective_date DESC NULLS FIRST`,
+            newRefs
+          );
+          if (revRows.rows && revRows.rows.length > 0) {
+            const grouped: Record<string, any[]> = {};
+            for (const r of revRows.rows as any[]) {
+              if (!grouped[r.item_id]) grouped[r.item_id] = [];
+              grouped[r.item_id].push({
+                type: r.introduction_type === 'current' ? 'current' : 'old',
+                effectiveDate: r.effective_date,
+                expiryDate: r.expiry_date,
+                description: r.description,
+              });
+            }
+            const newCards = Object.entries(grouped).map(([itemId, versions]) => ({ itemId, versions }));
+            articleCards = [...articleCards, ...newCards];
+          }
+        }
+      } catch (e) {}
+
+      // 승강기 정보 + 안전 포인트 응답에 포함
+      const safetyPoints = (req as any).safetyPoints || [];
+      const elevatorData = (req as any).elevatorData || null;
+      const isElevatorQuery = (req as any).isElevatorQuery || false;
+      const finalPayload = {
+        reply: isElevatorQuery ? "" : reply,
+        usedSources: isElevatorQuery ? [] : usedSources,
+        articleCards: isElevatorQuery ? [] : articleCards,
+        safetyPoints, elevatorData, isElevatorQuery,
+        mode: chatMode,
+        elapsedMs: Date.now() - pipelineStart,
+      };
+
+      if (isStreaming) {
+        // 스트리밍(fast) — 델타는 이미 전송됐으므로, 카드 연동에 필요한 메타데이터만
+        // 마지막 이벤트로 보내고 스트림을 닫는다.
+        res.write(`data: ${JSON.stringify({ type: "done", ...finalPayload })}\n\n`);
+        res.end();
+      } else {
+        res.json(finalPayload);
+      }
+
+      // [2026-09] "자료 범위 밖" 답변 감지 → 백그라운드 웹 검색 보강 (fire-and-forget).
+      // 사용자 응답은 이미 위에서 전송 완료됐으므로, 이 작업의 성패/속도는 사용자 체감
+      // 응답 시간에 전혀 영향을 주지 않는다. await 하지 않고 에러도 함수 내부에서 처리.
+      if (!isElevatorQuery && reply && isOutOfScopeAnswer(reply)) {
+        enrichOutOfScopeAnswer(userQuestion, reply);
+      }
+
+    } catch (error: any) {
+      console.error("Chat API error:", error?.message || error);
+      console.error("Chat API error status:", error?.status);
+      console.error("ANTHROPIC_API_KEY set:", !!process.env.ANTHROPIC_API_KEY);
+      const msg = error?.status === 401 ? "API 키 오류"
+        : error?.status === 429 ? "요청 한도 초과"
+        : error?.message || "AI 응답 생성 오류";
+      if (res.headersSent) {
+        // 스트리밍 도중 에러 — 이미 SSE 헤더가 나갔으므로 JSON 상태코드 응답 대신
+        // 에러 이벤트로 알리고 스트림을 닫는다.
+        try {
+          res.write(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`);
+          res.end();
+        } catch {}
+      } else {
+        res.status(500).json({ error: msg });
+      }
+    }
+  });
+
+  // ==================== Rerank (검색 후 관련성 재순위) ====================
+  app.post("/api/rerank", async (req, res) => {
+    try {
+      const { question, candidates, coreTerms, secondaryTerms } = req.body as {
+        question: string;
+        candidates: { id: string; title: string; content: string; type: string }[];
+        coreTerms?: string[];
+        secondaryTerms?: string[];
+      };
+      if (!question || !candidates?.length) return res.json({ ranked: [] });
+
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+      const primaryStr = coreTerms && coreTerms.length > 0
+        ? `주 키워드(반드시 포함): [${coreTerms.join(", ")}]`
+        : "";
+      const secondaryStr = secondaryTerms && secondaryTerms.length > 0
+        ? `보조 키워드(의도 파악용): [${secondaryTerms.join(", ")}]`
+        : "";
+
+      const candidateList = candidates.slice(0, 15).map((c, i) =>
+        `${i + 1}. [${c.type}] ${c.title}: ${c.content.slice(0, 150)}`
+      ).join("\n");
+
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 200,
+        system: `승강기 안전검사 전문가다. 후보 항목 중 질문과 직접 관련된 항목을 선별해. 규칙:
+1. ${primaryStr} — 주 키워드가 항목 제목 또는 내용에 직접 포함된 항목 우선
+2. ${secondaryStr} — 보조 키워드는 의도 파악에만 활용 (예: "적용"→날짜 포함 항목 선호)
+3. 주 키워드 없이 날짜·수치만 있는 항목은 제외
+4. 관련성 높은 순으로 최대 3개 번호만 JSON 배열로 반환. 예: [1,3] 다른 텍스트 없이 JSON만.`,
+        messages: [{ role: "user", content: `질문: "${question}"\n${primaryStr}\n${secondaryStr}\n\n후보:\n${candidateList}` }],
+      });
+
+      const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "[]";
+      const indices: number[] = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      const ranked = indices
+        .filter((i: number) => i >= 1 && i <= candidates.length)
+        .map((i: number) => candidates[i - 1]);
+
+      res.json({ ranked });
+    } catch (e) {
+      res.json({ ranked: [] });
+    }
+  });
+
+  // ==================== Query Rewriting (CORS 프록시) ====================
+  app.post("/api/query-rewrite", async (req, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) return res.json({ queries: [] });
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 100,
+        system: '승강기 안전검사 전문가다. 사용자 질문에서 별표22·표준화 검색에 쓸 핵심어를 최대 3개 추출해 JSON 배열만 반환해. 적용시기/언제부터 질문이면 반드시 "건축허가일" 또는 "적용" 포함. 검사방법·확인방법 위주 항목(가나다 세부항목)이 아닌 기준 조문 위주로. 예: ["자동구출운전","건축허가일","2017"] 다른 텍스트 없이 JSON만.',
+        messages: [{ role: "user", content: question }],
+      });
+      const raw = response.content[0].type === "text" ? response.content[0].text.trim() : "[]";
+      const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      res.json({ queries: Array.isArray(parsed) ? parsed : [] });
+    } catch (e) {
+      res.json({ queries: [] });
+    }
+  });
+
+  // ==================== AI 사용량 통계 ====================
+  app.get("/api/ai-usage/stats", async (req, res) => {
+    try {
+      const { db: usageDb } = await import("./db");
+      const { aiUsage } = await import("@shared/schema");
+      const { gte, desc: usageDesc } = await import("drizzle-orm");
+
+      // 다른 관리자 전용 GET들과 같은 느슨한 판정(클라이언트가 보내는 admin 플래그 +
+      // 노준호 계정 더블체크) — 쓰기가 아닌 읽기 전용 노출 범위 조절이라 비밀번호
+      // 검증까진 쓰지 않는다. 질문자 이름은 이 조건이 참일 때만 응답에 포함된다.
+      const { employeeId: reqEmployeeId, employeeName: reqEmployeeName, admin } = req.query as {
+        employeeId?: string; employeeName?: string; admin?: string;
+      };
+      const isAdmin = admin === "true" || isAdminIdentity(reqEmployeeId, reqEmployeeName);
+
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      // 집계에는 토큰/비용/날짜만 필요 — answer(본문)까지 끌어오면 질문이 쌓일수록
+      // 응답과 무관한 대용량 텍스트를 메모리에 올리게 되므로 집계용 컬럼만 선택한다.
+      const allRows = await usageDb.select({
+        inputTokens: aiUsage.inputTokens,
+        outputTokens: aiUsage.outputTokens,
+        costUsd: aiUsage.costUsd,
+        createdAt: aiUsage.createdAt,
+      }).from(aiUsage).where(gte(aiUsage.createdAt, monthStart));
+
+      const totalQuestions = allRows.length;
+      const totalInput = allRows.reduce((s, r) => s + r.inputTokens, 0);
+      const totalOutput = allRows.reduce((s, r) => s + r.outputTokens, 0);
+      const totalCost = allRows.reduce((s, r) => s + parseFloat(r.costUsd), 0);
+
+      // 최근 7일 일별
+      const daily: Record<string, { input: number; output: number; cost: number }> = {};
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        daily[d.toISOString().slice(0, 10)] = { input: 0, output: 0, cost: 0 };
+      }
+      allRows.forEach(r => {
+        const key = new Date(r.createdAt).toISOString().slice(0, 10);
+        if (daily[key]) {
+          daily[key].input += r.inputTokens;
+          daily[key].output += r.outputTokens;
+          daily[key].cost += parseFloat(r.costUsd);
+        }
+      });
+
+      // 최근 로그 — answer(답변 본문)는 목록 응답에 넣지 않는다. 눌렀을 때만
+      // /api/ai-usage/log/:id/answer로 따로 가져오는 지연 로딩 방식.
+      const recentLogsRaw = await usageDb.select({
+        id: aiUsage.id,
+        question: aiUsage.question,
+        inputTokens: aiUsage.inputTokens,
+        outputTokens: aiUsage.outputTokens,
+        costUsd: aiUsage.costUsd,
+        createdAt: aiUsage.createdAt,
+        employeeName: aiUsage.employeeName,
+        employeeId: aiUsage.employeeId,
+      }).from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(30);
+      const recentLogs = recentLogsRaw.map(r => isAdmin ? r : { ...r, employeeName: null, employeeId: null });
+
+      res.json({ totalQuestions, totalInput, totalOutput, totalCost: totalCost.toFixed(4), daily, recentLogs });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // 사용량 로그 답변 본문 지연 로딩 — 목록에는 안 들어있고 눌렀을 때만 가져온다.
+  app.get("/api/ai-usage/log/:id/answer", async (req, res) => {
+    try {
+      const { db: usageDb } = await import("./db");
+      const { aiUsage } = await import("@shared/schema");
+      const { eq: usageEq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "잘못된 id" });
+      const rows = await usageDb.select({ answer: aiUsage.answer }).from(aiUsage).where(usageEq(aiUsage.id, id)).limit(1);
+      if (rows.length === 0) return res.status(404).json({ error: "찾을 수 없습니다" });
+      res.json({ answer: rows[0].answer || "" });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ==================== 업데이트 내역 ====================
+  // 깃허브 최신 커밋을 가져와 AI로 이용자용 문구로 정리 후 캐싱. 새 커밋만 정리하므로
+  // 반복 실행해도 이미 처리된 커밋은 다시 AI를 부르지 않는다(비용 절감).
+  // 무거운 작업(깃허브 조회 + AI 호출)은 아래 refreshChangelogCache()가 백그라운드에서
+  // 주기적으로 미리 처리해두고, GET /api/changelog는 캐시 테이블만 읽어 즉시 응답한다.
+  let changelogRefreshing = false;
+  const refreshChangelogCache = async () => {
+    if (changelogRefreshing) return;
+    changelogRefreshing = true;
+    try {
+      const { db: clDb } = await import("./db");
+      const { changelogCache } = await import("@shared/schema");
+
+      const GITHUB_REPO = process.env.GITHUB_REPO || "junho9109/Elevator-Assistant";
+      const ghHeaders: Record<string, string> = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "elevator-assistant-app",
+      };
+      if (process.env.GITHUB_TOKEN) ghHeaders["Authorization"] = `Bearer ${process.env.GITHUB_TOKEN}`;
+
+      // 1) 깃허브 최근 커밋 목록 조회 (main 브랜치, 최신 30개)
+      let commits: any[] = [];
+      try {
+        const ghRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/commits?sha=main&per_page=30`, { headers: ghHeaders });
+        if (ghRes.ok) commits = await ghRes.json();
+      } catch {}
+      if (commits.length === 0) return;
+
+      // 2) 아직 캐시에 없는 커밋만 골라 AI로 문구 정리 후 저장
+      const existing = await clDb.select({ sha: changelogCache.sha }).from(changelogCache);
+      const existingShas = new Set(existing.map(r => r.sha));
+      const newCommits = commits.filter((c: any) => c.sha && !existingShas.has(c.sha));
+      if (newCommits.length === 0 || !process.env.ANTHROPIC_API_KEY) return;
+
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      for (const c of newCommits) {
+        const rawMsg = (c.commit?.message || "").split("\n")[0];
+        let displayText: string | null = null;
+        try {
+          const resp = await anthropic.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 150,
+            messages: [{
+              role: "user",
+              content: `다음은 승강기 정밀안전검사·검사기준 안내 앱의 git 커밋 메시지입니다.\n"${rawMsg}"\n\n이 앱을 쓰는 일반 이용자가 이해할 수 있는 자연스러운 한국어 한 문장으로 바꿔 주세요. "~했어요" 톤, 40자 내외, 개발 용어(디버그, 리팩터링, 컴포넌트 등) 사용 금지.\n다만 이용자가 화면이나 기능에서 전혀 체감할 수 없는 내부적인 변경(오타·문서·SQL 마이그레이션·빌드 설정·코드 정리 등)이라면 다른 말 없이 정확히 SKIP 이라고만 답하세요.`,
+            }],
+          });
+          const block = resp.content[0];
+          const text = block && block.type === "text" ? block.text.trim() : "";
+          if (text && !/^SKIP$/i.test(text) && !text.includes("SKIP")) displayText = text;
+        } catch {}
+
+        try {
+          await clDb.insert(changelogCache).values({
+            sha: c.sha,
+            commitDate: new Date(c.commit?.author?.date || c.commit?.committer?.date || Date.now()),
+            rawMessage: rawMsg,
+            displayText,
+          }).onConflictDoNothing();
+        } catch {}
+      }
+    } catch {} finally {
+      changelogRefreshing = false;
+    }
+  };
+
+  // 서버 시작 시 1회, 이후 10분마다 백그라운드로 최신 커밋을 미리 정리해둔다.
+  refreshChangelogCache();
+  setInterval(refreshChangelogCache, 10 * 60 * 1000);
+
+  app.get("/api/changelog", async (req, res) => {
+    try {
+      // 관리자는 전체(공개 여부 표시 포함), 일반 이용자는 관리자가 공개로 켠 항목만.
+      const isAdminReq = req.query.admin === "true";
+      const { db: clDb } = await import("./db");
+      const { changelogCache } = await import("@shared/schema");
+      const { desc: clDesc, isNotNull, and: clAnd, eq: clEq } = await import("drizzle-orm");
+
+      const cond = isAdminReq
+        ? isNotNull(changelogCache.displayText)
+        : clAnd(isNotNull(changelogCache.displayText), clEq(changelogCache.publicVisible, true));
+      const visible = await clDb.select().from(changelogCache)
+        .where(cond)
+        .orderBy(clDesc(changelogCache.commitDate))
+        .limit(30);
+
+      res.json(visible);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "업데이트 내역을 불러오지 못했습니다." });
+    }
+  });
+
+  // 관리자: 업데이트 내역 항목별 일반 이용자 공개/숨김 전환
+  app.put("/api/changelog/:id/visibility", async (req, res) => {
+    try {
+      if (req.query.admin !== "true") return res.status(403).json({ error: "관리자만 변경할 수 있습니다" });
+      const id = parseInt(req.params.id, 10);
+      const visible = req.body?.visible;
+      if (!Number.isFinite(id) || typeof visible !== "boolean") return res.status(400).json({ error: "잘못된 요청" });
+      const { db: clDb } = await import("./db");
+      const { changelogCache } = await import("@shared/schema");
+      const { eq: clEq } = await import("drizzle-orm");
+      const [row] = await clDb.update(changelogCache).set({ publicVisible: visible }).where(clEq(changelogCache.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "항목을 찾을 수 없습니다" });
+      res.json(row);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "변경 실패" });
+    }
+  });
+
+  // ==================== 채팅 ====================
+  const { db: chatDb } = await import("./db");
+  const { chatMessages: chatMsgsTable } = await import("@shared/schema");
+  const { asc: chatAsc, desc: chatDesc2, ilike: chatIlike, lt: chatLt, gt: chatGt2, and: chatAnd, or: chatOr } = await import("drizzle-orm");
+
+  // chat_messages 인덱스 생성 (최초 1회)
+  try {
+    const { pool: chatPool } = await import("./db");
+    await chatPool.query(`CREATE INDEX IF NOT EXISTS idx_chat_messages_id ON chat_messages(id DESC)`);
+    await chatPool.query(`CREATE INDEX IF NOT EXISTS idx_chat_messages_content ON chat_messages USING gin(to_tsvector('simple', content))`);
+  } catch {}
+
+  app.get("/api/chat-messages", async (req, res) => {
+    try {
+      const { search, limit = "50", before, after } = req.query as Record<string, string>;
+      let query = chatDb.select().from(chatMsgsTable).$dynamic();
+      const conditions = [];
+      if (search) {
+        // 검색어를 공백으로 분리해서 각 단어별 OR 검색
+        const decoded = decodeURIComponent(search);
+        const words = decoded.split(/\s+/).filter((w: string) => w.length >= 2);
+        if (words.length > 1) {
+          // 여러 단어: 각 단어를 OR로 검색 (단어 중 하나라도 포함)
+          const wordConds = words.map((w: string) => chatIlike(chatMsgsTable.content, `%${w}%`));
+          conditions.push(chatOr(...wordConds));
+        } else {
+          conditions.push(chatIlike(chatMsgsTable.content, `%${decoded}%`));
+        }
+      }
+      if (before) conditions.push(chatLt(chatMsgsTable.id, parseInt(before)));
+      if (after) conditions.push(chatGt2(chatMsgsTable.id, parseInt(after)));
+      if (conditions.length) query = query.where(chatAnd(...conditions));
+      // search 있을 때: desc(최신 우선) + 넉넉한 limit
+      // search 없을 때: asc(오래된 것 먼저)
+      const searchLimit = search ? Math.max(parseInt(limit), 100) : parseInt(limit);
+      const msgs = await query
+        .orderBy(search ? chatDesc2(chatMsgsTable.id) : chatAsc(chatMsgsTable.id))
+        .limit(searchLimit);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(msgs);
+    } catch (e) { res.status(500).json({ error: "Failed to fetch messages" }); }
+  });
+
+  app.post("/api/chat-messages", async (req, res) => {
+    try {
+      const { userName, content, replyToId, replyToUser, replyToContent, imageData, videoData, videoMime } = req.body;
+      if (!userName?.trim() || (!content?.trim() && !imageData && !videoData)) return res.status(400).json({ error: "필수 값 누락" });
+      const db = (await import("./db")).db;
+      const { chatMessages } = await import("@shared/schema");
+      const [msg] = await db.insert(chatMessages).values({
+        userName: userName.trim().slice(0, 50),
+        content: (content || "").trim().slice(0, 2000),
+        replyToId: replyToId || null,
+        replyToUser: replyToUser || null,
+        replyToContent: replyToContent?.slice(0, 100) || null,
+        imageData: imageData || null,
+        videoData: videoData || null,
+        videoMime: videoMime || null,
+      }).returning();
+      res.json(msg);
+
+      // FCM 푸시 알림 전송 (비동기 — 응답 후 실행)
+      setImmediate(async () => {
+        try {
+          if (!firebaseAdmin) return;
+          const { pool: pushPool } = await import("./db");
+          const tokenRows = await pushPool.query(`SELECT token FROM push_tokens`);
+          const tokens = tokenRows.rows.map((r: any) => r.token).filter(Boolean);
+          if (tokens.length === 0) return;
+          const msgContent = content?.trim().slice(0, 50) || (imageData ? "📷 사진" : videoData ? "🎥 영상" : "새 메시지");
+          await Promise.allSettled(
+            tokens.map((token: string) =>
+              firebaseAdmin.messaging().send({
+                token,
+                notification: {
+                  title: `💬 ${userName.trim()}`,
+                  body: msgContent,
+                },
+                android: { priority: "high", notification: { sound: "default", channelId: "chat", visibility: "public", notificationPriority: "PRIORITY_MAX" } },
+              })
+            )
+          );
+        } catch (e) {
+          console.error("[FCM] 푸시 전송 오류:", e);
+        }
+      });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to send message" });
+    }
+  });
+
+  // 메시지 soft delete
+  app.delete("/api/chat-messages/:id", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { chatMessages } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const [msg] = await db.update(chatMessages)
+        .set({ deletedAt: new Date(), content: "", imageData: null, imageThumbnail: null, videoData: null })
+        .where(eq(chatMessages.id, id))
+        .returning();
+      res.json(msg);
+    } catch (e) { res.status(500).json({ error: "Failed to delete" }); }
+  });
+
+  // 서버 시작 시 15일 이상 이미지 → 50px 썸네일로 교체
+  (async () => {
+    try {
+      const db = (await import("./db")).db;
+      const { chatMessages } = await import("@shared/schema");
+      const { lt, and, isNotNull, isNull } = await import("drizzle-orm");
+      const cutoff = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+      // imageData가 있고 imageThumbnail이 없고 15일 이상 된 메시지
+      const expired = await db.select({ id: chatMessages.id, imageData: chatMessages.imageData })
+        .from(chatMessages)
+        .where(and(lt(chatMessages.createdAt, cutoff), isNotNull(chatMessages.imageData), isNull(chatMessages.imageThumbnail)));
+      for (const row of expired) {
+        if (!row.imageData || row.imageData === "CACHED") continue;
+        // 50px 초소형 썸네일 생성 (서버에서는 base64 그대로 유지, 표시 크기만 제한)
+        // imageThumbnail = imageData 앞 2000자 (50px 수준 blur 효과용)
+        const thumb = row.imageData.slice(0, 2000);
+        await db.update(chatMessages).set({ imageThumbnail: thumb, imageData: null })
+          .where((await import("drizzle-orm")).eq(chatMessages.id, row.id));
+      }
+      if (expired.length > 0) console.log(`[이미지 만료] ${expired.length}개 처리 완료`);
+    } catch (e) { console.error("[이미지 만료 처리 오류]", e); }
+  })();
+
+  // ==================== 표준화 항목 이미지 ====================
+  const STD_PHOTO_DELETE_PW = "910919";
+
+  app.get("/api/std-photos/:itemKey", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemPhotos } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      const key = decodeURIComponent(req.params.itemKey);
+      const photos = await db.select({
+        id: stdItemPhotos.id,
+        displayOrder: stdItemPhotos.displayOrder,
+        mimeType: stdItemPhotos.mimeType,
+        createdAt: stdItemPhotos.createdAt,
+      }).from(stdItemPhotos).where(eq(stdItemPhotos.itemKey, key)).orderBy(asc(stdItemPhotos.displayOrder));
+      res.json(photos);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.get("/api/std-photos/:itemKey/:id/image", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [photo] = await db.select().from(stdItemPhotos).where(eq(stdItemPhotos.id, parseInt(req.params.id)));
+      if (!photo) return res.status(404).json({ error: "Not found" });
+      const b64 = photo.imageData.replace(/^data:image\/\w+;base64,/, '');
+      res.setHeader('Content-Type', photo.mimeType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(Buffer.from(b64, 'base64'));
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/std-photos/:itemKey", upload.single('image'), async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { stdItemPhotos } = await import("@shared/schema");
+      const { eq, count } = await import("drizzle-orm");
+      const key = decodeURIComponent(req.params.itemKey);
+      const [{ value: cnt }] = await db.select({ value: count() }).from(stdItemPhotos).where(eq(stdItemPhotos.itemKey, key));
+      if (Number(cnt) >= 10) return res.status(400).json({ error: "최대 10장" });
+      if (!req.file) return res.status(400).json({ error: "No image" });
+      const base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const [photo] = await db.insert(stdItemPhotos).values({
+        itemKey: key,
+        imageData: base64Data,
+        mimeType: req.file.mimetype,
+        displayOrder: Number(cnt),
+      }).returning({ id: stdItemPhotos.id, displayOrder: stdItemPhotos.displayOrder, mimeType: stdItemPhotos.mimeType, createdAt: stdItemPhotos.createdAt });
+      res.status(201).json(photo);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.delete("/api/std-photos/:id", async (req, res) => {
+    try {
+      const { password } = req.body;
+      if (password !== STD_PHOTO_DELETE_PW) return res.status(403).json({ error: "비밀번호 오류" });
+      const db = (await import("./db")).db;
+      const { stdItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(stdItemPhotos).where(eq(stdItemPhotos.id, parseInt(req.params.id)));
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  // ==================== 기술자료 이미지 (표준화 사진과 동일 패턴, 별도 데이터소스) ====================
+  const TECH_PHOTO_DELETE_PW = "910919";
+
+  app.get("/api/tech-photos/:itemKey", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      const key = decodeURIComponent(req.params.itemKey);
+      const photos = await db.select({
+        id: techMaterialPhotos.id,
+        displayOrder: techMaterialPhotos.displayOrder,
+        mimeType: techMaterialPhotos.mimeType,
+        createdAt: techMaterialPhotos.createdAt,
+      }).from(techMaterialPhotos).where(eq(techMaterialPhotos.itemKey, key)).orderBy(asc(techMaterialPhotos.displayOrder));
+      res.json(photos);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.get("/api/tech-photos/:itemKey/:id/image", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [photo] = await db.select().from(techMaterialPhotos).where(eq(techMaterialPhotos.id, parseInt(req.params.id)));
+      if (!photo) return res.status(404).json({ error: "Not found" });
+      const b64 = photo.imageData.replace(/^data:image\/\w+;base64,/, '');
+      res.setHeader('Content-Type', photo.mimeType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(Buffer.from(b64, 'base64'));
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/tech-photos/:itemKey", upload.single('image'), async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq, count } = await import("drizzle-orm");
+      const key = decodeURIComponent(req.params.itemKey);
+      const [{ value: cnt }] = await db.select({ value: count() }).from(techMaterialPhotos).where(eq(techMaterialPhotos.itemKey, key));
+      if (Number(cnt) >= 10) return res.status(400).json({ error: "최대 10장" });
+      if (!req.file) return res.status(400).json({ error: "No image" });
+      const base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const [photo] = await db.insert(techMaterialPhotos).values({
+        itemKey: key,
+        imageData: base64Data,
+        mimeType: req.file.mimetype,
+        displayOrder: Number(cnt),
+      }).returning({ id: techMaterialPhotos.id, displayOrder: techMaterialPhotos.displayOrder, mimeType: techMaterialPhotos.mimeType, createdAt: techMaterialPhotos.createdAt });
+      res.status(201).json(photo);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.delete("/api/tech-photos/:id", async (req, res) => {
+    try {
+      const { password } = req.body;
+      if (password !== TECH_PHOTO_DELETE_PW) return res.status(403).json({ error: "비밀번호 오류" });
+      const db = (await import("./db")).db;
+      const { techMaterialPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(techMaterialPhotos).where(eq(techMaterialPhotos.id, parseInt(req.params.id)));
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  // ==================== 검사기준(별표22) 조문 이미지 ====================
+  app.get("/api/inspection-photos/:itemId", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq, asc } = await import("drizzle-orm");
+      const itemId = decodeURIComponent(req.params.itemId);
+      const photos = await db.select({
+        id: inspectionItemPhotos.id,
+        displayOrder: inspectionItemPhotos.displayOrder,
+        mimeType: inspectionItemPhotos.mimeType,
+        createdAt: inspectionItemPhotos.createdAt,
+      }).from(inspectionItemPhotos).where(eq(inspectionItemPhotos.itemId, itemId)).orderBy(asc(inspectionItemPhotos.displayOrder));
+      res.json(photos);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.get("/api/inspection-photos/:itemId/:id/image", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [photo] = await db.select().from(inspectionItemPhotos).where(eq(inspectionItemPhotos.id, parseInt(req.params.id)));
+      if (!photo) return res.status(404).json({ error: "Not found" });
+      const b64 = photo.imageData.replace(/^data:image\/\w+;base64,/, '');
+      res.setHeader('Content-Type', photo.mimeType || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(Buffer.from(b64, 'base64'));
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.post("/api/inspection-photos/:itemId", upload.single('image'), async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq, count } = await import("drizzle-orm");
+      const itemId = decodeURIComponent(req.params.itemId);
+      const [{ value: cnt }] = await db.select({ value: count() }).from(inspectionItemPhotos).where(eq(inspectionItemPhotos.itemId, itemId));
+      if (Number(cnt) >= 10) return res.status(400).json({ error: "최대 10장" });
+      if (!req.file) return res.status(400).json({ error: "No image" });
+      const base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const [photo] = await db.insert(inspectionItemPhotos).values({
+        itemId,
+        imageData: base64Data,
+        mimeType: req.file.mimetype,
+        displayOrder: Number(cnt),
+      }).returning({ id: inspectionItemPhotos.id, displayOrder: inspectionItemPhotos.displayOrder, mimeType: inspectionItemPhotos.mimeType, createdAt: inspectionItemPhotos.createdAt });
+      res.status(201).json(photo);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  app.delete("/api/inspection-photos/:id", async (req, res) => {
+    try {
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(inspectionItemPhotos).where(eq(inspectionItemPhotos.id, parseInt(req.params.id)));
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  // ── 종전 기준 일괄 seed (서버 내부용) ──
+  app.post("/api/inspection-revisions/bulk-seed", async (req, res) => {
+    try {
+      const { secret, revisions } = req.body;
+      // 비밀값은 환경변수 SEED_SECRET으로만 받는다(미설정이면 이 엔드포인트는 항상 거부).
+      if (!process.env.SEED_SECRET || secret !== process.env.SEED_SECRET) return res.status(403).json({ error: "forbidden" });
+      const db2 = (await import("./db")).db;
+      const { inspectionItemRevisions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      let added = 0, skipped = 0;
+      for (const rev of revisions) {
+        const equipmentType = rev.equipmentType || "엘리베이터";
+        // 동일 itemId + equipmentType + expiryDate + description 앞 20자 중복 방지
+        const existing = await db2.select().from(inspectionItemRevisions)
+          .where(and(
+            eq(inspectionItemRevisions.itemId, rev.itemId),
+            eq(inspectionItemRevisions.equipmentType, equipmentType),
+            eq(inspectionItemRevisions.expiryDate, rev.expiryDate || "")
+          ));
+        const descKey = (rev.description || "").slice(0, 20);
+        const dup = existing.some(r => (r.description || "").startsWith(descKey));
+        if (dup) { skipped++; continue; }
+        await db2.insert(inspectionItemRevisions).values({
+          itemId: rev.itemId,
+          equipmentType,
+          effectiveDate: rev.effectiveDate || null,
+          expiryDate: rev.expiryDate || null,
+          introductionType: rev.introductionType || "revision",
+          description: rev.description || "",
+        });
+        added++;
+      }
+      res.json({ added, skipped });
+    } catch (e) { res.status(500).json({ error: String(e) }); }
+  });
+
+  // ── 전문가 지식 수집 ──
+  // 활성 질문 목록 — 앱 첫 접속 시 배너에서 랜덤으로 하나 골라 보여주는 데 사용
+  app.get("/api/expert-questions", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertQuestions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const activeOnly = req.query.active !== "false";
+      const rows = activeOnly
+        ? await db.select().from(expertQuestions).where(eq(expertQuestions.active, true))
+        : await db.select().from(expertQuestions);
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch expert questions");
+    }
+  });
+
+  // 관리자가 질문을 직접 등록 (기본은 AI 생성이지만 보조 수단으로 남겨둠)
+  app.post("/api/expert-questions", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertQuestions, insertExpertQuestionSchema } = await import("@shared/schema");
+      const validated = insertExpertQuestionSchema.parse(req.body);
+      if (!validated.presetAnswers || validated.presetAnswers.length !== 4) {
+        return res.status(400).json({ error: "예상 답변은 4개여야 합니다." });
+      }
+      const [row] = await db.insert(expertQuestions).values(validated).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid expert question data", detail: String(error) });
+    }
+  });
+
+  // 질문 활성/비활성 전환, 문구 수정
+  app.put("/api/expert-questions/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertQuestions } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { active, content, presetAnswers, category } = req.body as {
+        active?: boolean; content?: string; presetAnswers?: string[]; category?: string | null;
+      };
+      const patch: any = {};
+      if (active !== undefined) patch.active = active;
+      if (content !== undefined) patch.content = content;
+      if (presetAnswers !== undefined) patch.presetAnswers = presetAnswers;
+      if (category !== undefined) patch.category = category;
+      const [row] = await db.update(expertQuestions).set(patch).where(eq(expertQuestions.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Not found" });
+      res.json(row);
+    } catch (error) {
+      handleError(res, error, "Failed to update expert question");
+    }
+  });
+
+  // AI가 새 질문 + 예상 답변 4개를 생성 — 관리자가 수동으로 즉시 1개 추가할 때 쓰는 경로.
+  // 실제 로직은 generateOneExpertQuestion()을 공유하며, 30분 주기 자동 보충도 동일 함수를 사용한다.
+  app.post("/api/expert-questions/generate", async (req, res) => {
+    try {
+      const row = await generateOneExpertQuestion();
+      res.status(201).json(row);
+    } catch (error) {
+      res.status(500).json({ error: "질문 생성에 실패했습니다.", detail: String(error) });
+    }
+  });
+
+  // 제출된 답변 목록 — employeeId로 조회하면 "이미 첫 접속 질문에 응답(또는 건너뛰기)했는지" 확인용,
+  // status로 조회하면 관리자 검수 큐
+  app.get("/api/expert-answers", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertAnswers } = await import("@shared/schema");
+      const { eq, and, ne, desc } = await import("drizzle-orm");
+      const employeeId = req.query.employeeId as string | undefined;
+      const status = req.query.status as string | undefined;
+      const conditions = [] as any[];
+      if (employeeId) conditions.push(eq(expertAnswers.employeeId, employeeId));
+      if (status) {
+        conditions.push(eq(expertAnswers.status, status));
+        // [2026-09] 관리자 검수 큐(status 조회)에는 "건너뜀"을 노출하지 않는다 — 건너뜀은
+        // 검수할 내용이 없는 기록용 행이고 이제 제출 즉시 자동 반려 처리되므로, 대기/승인/
+        // 반려 어느 탭에서도 검수 대상 목록에 섞여 보이지 않게 한다(employeeId 조회는
+        // "이 사용자가 이미 건너뛴 질문인지" 판단에 skip 기록이 반드시 필요하므로 그대로 둔다).
+        conditions.push(ne(expertAnswers.answerType, "skip"));
+      }
+      const rows = conditions.length > 0
+        ? await db.select().from(expertAnswers).where(and(...conditions)).orderBy(desc(expertAnswers.createdAt))
+        : await db.select().from(expertAnswers).orderBy(desc(expertAnswers.createdAt));
+      res.json(rows);
+    } catch (error) {
+      handleError(res, error, "Failed to fetch expert answers");
+    }
+  });
+
+  app.post("/api/expert-answers", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertAnswers, insertExpertAnswerSchema } = await import("@shared/schema");
+      const validated = insertExpertAnswerSchema.parse(req.body);
+      // [2026-09] "건너뜀"은 검수할 내용 자체가 없는 기록용 행이므로, 기본값 '대기'로 남겨
+      // 관리자가 매번 승인/반려를 눌러야 하게 만들지 않고 즉시 '반려' 처리한다 — 지식 검수
+      // 화면에서 관리자가 처리해야 할 실질적인 답변(직접 입력/선택형)만 대기 큐에 남긴다.
+      const insertValues = validated.answerType === "skip"
+        ? { ...validated, status: "반려" as const }
+        : validated;
+      const [row] = await db.insert(expertAnswers).values(insertValues).returning();
+      res.status(201).json(row);
+
+      // [2026-09] 같은 질문이 전체 사용자 합산으로 건너뜀 EXPERT_QUESTION_SKIP_LIMIT(3)회
+      // 쌓이면 그 질문을 즉시 정리(삭제)한다. 기존에는 30분 주기 백그라운드 점검에서만
+      // 처리되어 최대 30분간 계속 같은 질문이 노출될 수 있었는데, 건너뛴 직후 바로
+      // 반영되도록 응답 전송 후(fire-and-forget) 점검을 즉시 한 번 실행한다.
+      if (validated.answerType === "skip") {
+        maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 건너뜀 즉시 점검 실패:", e));
+      }
+    } catch (error) {
+      res.status(400).json({ error: "Invalid expert answer data", detail: String(error) });
+    }
+  });
+
+  // 관리자 검수 — 승인/반려 전 답변 문구를 다듬고 연결 태그를 붙일 수 있음
+  app.put("/api/expert-answers/:id", async (req, res) => {
+    try {
+      const { db } = await import("./db");
+      const { expertAnswers } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const id = parseInt(req.params.id);
+      const { status, answerText, tags, reviewedById, reviewedByName } = req.body as {
+        status?: string; answerText?: string; tags?: string[]; reviewedById?: string; reviewedByName?: string;
+      };
+      const patch: any = { reviewedAt: new Date() };
+      if (status) patch.status = status;
+      if (answerText !== undefined) patch.answerText = answerText;
+      if (tags !== undefined) patch.tags = tags;
+      if (reviewedById) patch.reviewedById = reviewedById;
+      if (reviewedByName) patch.reviewedByName = reviewedByName;
+      const [row] = await db.update(expertAnswers).set(patch).where(eq(expertAnswers.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Not found" });
+      res.json(row);
+    } catch (error) {
+      handleError(res, error, "Failed to update expert answer");
+    }
+  });
+
+  // 전문가 질문 풀 자동 유지 관리 — 서버 기동 시 1회 즉시 점검 + 이후 30분마다 반복.
+  // 사용자가 배너를 열 때마다 AI를 호출하지 않고, 항상 미리 채워진 재고에서 바로 보여주기 위함.
+  maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 초기 점검 실패:", e));
+  setInterval(() => {
+    maintainExpertQuestionPool().catch(e => console.error("[전문가질문풀] 정기 점검 실패:", e));
+  }, 30 * 60 * 1000);
+
+  const httpServer = createServer(app);
+
+  return httpServer;
+}

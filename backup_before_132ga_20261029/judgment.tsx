@@ -1,0 +1,2961 @@
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Info, ChevronDown, ChevronRight, ChevronLeft, Check, Settings, Save, Pencil, Plus, Trash2, Image, MessageSquare, X, Upload, ZoomIn, ZoomOut, ArrowUp, ArrowDown, Wrench, ArrowRightLeft, Flag } from "lucide-react";
+import ViewerCloseButton from "@/components/ViewerCloseButton";
+import RevisionAttachments from "@/components/RevisionAttachments";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
+import { trackActivity } from "@/lib/activity";
+import { fetchJson } from "@/lib/queryClient";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { ZoomControl } from "@/components/ZoomControl";
+import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
+import { INSPECTION_DATA_MR, InspectionItem, InspectionSection } from "@/data/inspection-data-mr";
+// inspection-content.json → DB로 이전
+type ContentEntry = {
+  text?: string;
+  effectiveDate?: string;
+  introductionType?: string;
+  equipmentTypes?: string[];
+  customWarning?: string;
+  standardNote?: string;
+  revisions?: { effectiveDate: string | null; expiryDate: string | null; introductionType: string | null; description: string; source?: string[] }[];
+};
+import type { InspectionItemEdit, CustomInspectionItem } from "@shared/schema";
+
+// expiryDate(마지막 유효일, 예: '1997-08-17')를 받아 그 다음날('1997-08-18') 문자열을 반환.
+// 가장 오래된 연혁(effectiveDate가 없는 항목)의 "OOOO-MM-DD 이전 건축허가분" 라벨 계산용.
+function dayAfter(dateStr: string): string {
+  const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return dateStr;
+  const d = new Date(Date.UTC(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3])));
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// 검사가이드 본문에 조문번호가 문장으로 표기되지 않아 정규식 추출로는 못 잡는 예외 항목.
+// key: 검사항목 id, value: 강제로 표시할 참조 조문번호 목록.
+const EXTRA_REF_IDS: Record<string, string[]> = {
+  "1.3.2-가": ["6.5.7.2"],
+  // 균형추·평형추 상부틈새 — 본문에 조문번호가 없어 연결되지 않던 항목(표 1 끝단 위치 + 균형추/평형추 레일 연장 길이)
+  "1.3.2-나": ["6.5.6.1.1", "6.5.6.2", "6.5.6.3.2", "6.5.6.4.2"],
+  // "부속서 Ⅳ"로만 인용되어 정규식으로 조문번호를 못 잡는 예외 항목
+  "1.7.2-다": ["10.2.2.1.3"],
+  // "위의 가) 검사 후, 정상 운행에 지장이 없는지" — 본문에 조문번호가 없어 연혁이 연결되지 않던 항목
+  "1.7.1-다": ["10.2.1.4.3"],
+  // 권상도르래 언더컷·로프 높이차 — 본문에 조문번호가 없어 연혁이 연결되지 않던 항목(종전 기준 4.1.1(3) 포함)
+  "1.5.4-나": ["9.3.1"],
+  // "부속서 Ⅳ"로만 인용된 로프의 마모 및 파손상태 — 연혁은 item_id "부속서 Ⅳ"로 저장(연혁집 p.328~329)
+  "1.5.1.1-가": ["부속서 Ⅳ"],
+  // 틈새(어린이 손끼임) — 본문의 "7.6.2.2.1자)" 중 자) 하나만 보이도록 연혁을 "7.6.2.2.1 자)"로 분리(아래 REF_EXCLUDE_IDS와 짝)
+  "1.4.3-다": ["7.6.2.2.1 자)"],
+  "1.3.6-다": ["7.6.2.2.1 자)"],
+  // 로봇 탑승용 엘리베이터 안전성 평가서 — 본문에 조문번호가 없어 연혁이 연결되지 않던 항목(14.11 다)에 해당)
+  "1.4.5-다": ["14.11"],
+  // 본문에 조문번호가 없는 텍스트형 세부 항목 — 내용이 대응하는 안전기준 조문을 수동 연결
+  "1.5.1.1-나": ["9.1.3"],
+  "1.5.3-다": ["9.6.4"],
+  "1.9.2-가": ["14.6.5"],
+  "1.14-가": ["5.2", "5.3"],
+  // 누수 항목 — 연혁집(별표22 v1.0) 6.5.1.5(승강로) · 6.1.9.3(피트) · 6.6.1.2(기계류 공간)와 대응
+  "1.2.1.6-가": ["6.5.1.5", "6.1.9.3"],
+  "1.2.1.6-나": ["6.6.1.2"],
+  // 에스컬레이터 — 본문에 조문번호가 없는 텍스트형 항목 (item.id는 3.x 체계라 엘리베이터와 겹치지 않음)
+  "3.1.13-나": ["5.12.3.3"],
+  "3.5.1-가": ["5.8.3", "5.11.1.4"],
+  "3.5.1-나": ["5.8.3", "5.11.1.4"],
+  "3.5.1-다": ["5.8.3", "5.11.1.4"],
+  "3.5.1-라": ["5.8.3", "5.11.1.4"],
+  "3.5.2-가": ["5.11.1.4"],
+  "3.5.2-나": ["5.11.1.6"],
+  "3.7.10-가": ["5.12.2.7.7"],
+  "3.10.1-가": ["5.4.1.2.2", "5.4.1.2.3", "5.4.2.1.3"],
+  "3.11-가": ["5.1", "6.1"],
+};
+
+// 본문 정규식으로 자동 추출된 조문번호 중 연혁 연결에서 "제외"할 번호.
+// (본문이 상위 조문 전체를 인용하지만 실제로는 일부 항목만 해당할 때, 위 EXTRA_REF_IDS의 분리 조문으로 대체한다.)
+const REF_EXCLUDE_IDS: Record<string, string[]> = {
+  "1.4.3-다": ["7.6.2.2.1"],
+  "1.3.6-다": ["7.6.2.2.1"],
+};
+const excludeRefs = (itemId: string, refs: string[]): string[] => {
+  const ex = REF_EXCLUDE_IDS[itemId];
+  return ex ? refs.filter(r => !ex.includes(r)) : refs;
+};
+
+// Image Viewer State
+interface ImageViewerState {
+  isOpen: boolean;
+  images: string[];
+  currentIndex: number;
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
+// Image Viewer Component
+function ImageViewerComponent({ 
+  imageViewer, 
+  setImageViewer, 
+  closeImageViewer 
+}: { 
+  imageViewer: ImageViewerState;
+  setImageViewer: React.Dispatch<React.SetStateAction<ImageViewerState>>;
+  closeImageViewer: () => void;
+}) {
+  const lastTouchDistance = useRef<number | null>(null);
+  const lastZoom = useRef<number>(1);
+  const isPanning = useRef(false);
+  const lastPanPos = useRef({ x: 0, y: 0 });
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (e.touches.length === 2) {
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      lastTouchDistance.current = distance;
+      lastZoom.current = imageViewer.zoom;
+      isPanning.current = false;
+    } else if (e.touches.length === 1 && imageViewer.zoom > 1) {
+      isPanning.current = true;
+      lastPanPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (e.touches.length === 2 && lastTouchDistance.current !== null) {
+      const distance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const scale = distance / lastTouchDistance.current;
+      const newZoom = Math.min(5, Math.max(0.5, lastZoom.current * scale));
+      setImageViewer(prev => ({ ...prev, zoom: newZoom }));
+    } else if (e.touches.length === 1 && isPanning.current && imageViewer.zoom > 1) {
+      const deltaX = e.touches[0].clientX - lastPanPos.current.x;
+      const deltaY = e.touches[0].clientY - lastPanPos.current.y;
+      lastPanPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      setImageViewer(prev => ({
+        ...prev,
+        panX: prev.panX + deltaX,
+        panY: prev.panY + deltaY
+      }));
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    lastTouchDistance.current = null;
+    isPanning.current = false;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (imageViewer.zoom > 1) {
+      isPanning.current = true;
+      lastPanPos.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning.current && imageViewer.zoom > 1) {
+      const deltaX = e.clientX - lastPanPos.current.x;
+      const deltaY = e.clientY - lastPanPos.current.y;
+      lastPanPos.current = { x: e.clientX, y: e.clientY };
+      setImageViewer(prev => ({
+        ...prev,
+        panX: prev.panX + deltaX,
+        panY: prev.panY + deltaY
+      }));
+    }
+  };
+
+  const handleMouseUp = () => {
+    isPanning.current = false;
+  };
+
+  const goToPrev = () => {
+    setImageViewer(prev => ({ 
+      ...prev, 
+      currentIndex: prev.currentIndex > 0 ? prev.currentIndex - 1 : prev.images.length - 1,
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    }));
+  };
+
+  const goToNext = () => {
+    setImageViewer(prev => ({ 
+      ...prev, 
+      currentIndex: prev.currentIndex < prev.images.length - 1 ? prev.currentIndex + 1 : 0,
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    }));
+  };
+
+  return (
+    <div
+      id="image-viewer-portal"
+      data-no-page-pinch="true"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+        zIndex: 999999,
+        display: 'flex',
+        flexDirection: 'column',
+        touchAction: 'none',
+        // Radix Dialog(상세보기)가 열려 있으면 body에 pointer-events:none을 걸어, body에 직접 붙는 이 뷰어도
+        // 클릭이 먹히지 않고 뒤의 상세 창으로 통과한다 → 반드시 auto로 되돌려야 닫기 버튼이 뷰어 안에서 처리된다.
+        pointerEvents: 'auto',
+        cursor: imageViewer.zoom > 1 ? 'grab' : 'default',
+      }}
+      onClick={(e) => { e.stopPropagation(); }}
+      onPointerDown={(e) => { e.stopPropagation(); }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e); }}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
+      <ViewerCloseButton className="absolute top-4 right-4 z-[1000000]" onClose={closeImageViewer} />
+
+      {/* Image */}
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        overflow: 'hidden',
+        padding: 16
+      }}>
+        <img 
+          src={imageViewer.images[imageViewer.currentIndex]} 
+          alt="확대 이미지"
+          style={{ 
+            maxWidth: '100%', 
+            maxHeight: '100%', 
+            objectFit: 'contain',
+            transform: `scale(${imageViewer.zoom}) translate(${imageViewer.panX / imageViewer.zoom}px, ${imageViewer.panY / imageViewer.zoom}px)`,
+            willChange: 'transform',
+            pointerEvents: 'none',
+            userSelect: 'none'
+          }}
+          draggable={false}
+        />
+      </div>
+
+      {/* Navigation */}
+      {imageViewer.images.length > 1 && (
+        <>
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); goToPrev(); }}
+            style={{
+              position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+              width: 36, height: 36, borderRadius: '50%', backgroundColor: 'rgba(0,0,0,0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+              textDecoration: 'none', border: '1px solid rgba(255,255,255,0.3)'
+            }}
+          >
+            <ChevronLeft style={{ width: 24, height: 24 }} />
+          </a>
+          <a
+            href="#"
+            onClick={(e) => { e.preventDefault(); goToNext(); }}
+            style={{
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              width: 36, height: 36, borderRadius: '50%', backgroundColor: 'rgba(0,0,0,0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+              textDecoration: 'none', border: '1px solid rgba(255,255,255,0.3)'
+            }}
+          >
+            <ChevronRight style={{ width: 24, height: 24 }} />
+          </a>
+        </>
+      )}
+
+      {/* Info & Zoom Controls */}
+      <div style={{ 
+        position: 'absolute', 
+        bottom: 16, 
+        left: 0, 
+        right: 0, 
+        display: 'flex', 
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 12
+      }}>
+        <a
+          href="#"
+          onClick={(e) => { 
+            e.preventDefault(); 
+            e.stopPropagation();
+            setImageViewer(prev => {
+              const newZoom = Math.max(0.5, prev.zoom - 0.5);
+              return { ...prev, zoom: newZoom, panX: newZoom <= 1 ? 0 : prev.panX, panY: newZoom <= 1 ? 0 : prev.panY };
+            }); 
+          }}
+          style={{
+            width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none'
+          }}
+        >
+          <ZoomOut style={{ width: 22, height: 22 }} />
+        </a>
+        <span style={{ backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: '6px 16px', borderRadius: 9999, fontSize: 14 }}>
+          {imageViewer.currentIndex + 1} / {imageViewer.images.length} · {Math.round(imageViewer.zoom * 100)}%
+        </span>
+        <a
+          href="#"
+          onClick={(e) => { 
+            e.preventDefault(); 
+            e.stopPropagation();
+            setImageViewer(prev => ({ ...prev, zoom: Math.min(5, prev.zoom + 0.5) })); 
+          }}
+          style={{
+            width: 44, height: 44, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+            textDecoration: 'none'
+          }}
+        >
+          <ZoomIn style={{ width: 22, height: 22 }} />
+        </a>
+      </div>
+
+      {/* Pinch Hint */}
+      <div style={{ 
+        position: 'absolute', 
+        top: 16, 
+        left: 16, 
+        backgroundColor: 'rgba(0,0,0,0.6)', 
+        color: 'white', 
+        padding: '6px 12px', 
+        borderRadius: 8,
+        fontSize: 12
+      }}>
+        {imageViewer.zoom > 1 ? '드래그하여 이동' : '핀치/버튼으로 확대'}
+      </div>
+    </div>
+  );
+}
+
+// Photo List Component - shows photos one by one with vertical scroll
+function PhotoList({ 
+  photos, 
+  isAdminMode, 
+  onDeletePhoto,
+  onReplacePhoto,
+  onMoveUp,
+  onMoveDown,
+  onOpenViewer 
+}: { 
+  photos: any[];
+  isAdminMode: boolean;
+  onDeletePhoto: (photoId: number) => void;
+  onReplacePhoto: (photoId: number, file: File) => void;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
+  onOpenViewer: (index: number) => void;
+}) {
+  const replaceInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  if (photos.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      {photos.map((photo: any, index: number) => (
+        <div key={photo.id} className="relative group">
+          <img
+            src={photo.imageData}
+            alt={photo.fileName}
+            className="w-full h-auto max-h-80 object-contain rounded-lg border bg-muted cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => onOpenViewer(index)}
+          />
+          <div className="text-center text-xs text-muted-foreground mt-1">
+            {index + 1} / {photos.length}
+          </div>
+          {isAdminMode && (
+            <>
+              {/* Left side: reorder buttons */}
+              {photos.length > 1 && (
+                <div className="absolute top-2 left-2 flex flex-col gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMoveUp(index);
+                    }}
+                    disabled={index === 0}
+                    className="p-1.5 bg-gray-700 text-white rounded-full hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="위로 이동"
+                  >
+                    <ArrowUp className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMoveDown(index);
+                    }}
+                    disabled={index === photos.length - 1}
+                    className="p-1.5 bg-gray-700 text-white rounded-full hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="아래로 이동"
+                  >
+                    <ArrowDown className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              {/* Right side: edit/delete buttons */}
+              <div className="absolute top-2 right-2 flex gap-1">
+                <input
+                  ref={(el) => { replaceInputRefs.current[photo.id] = el; }}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      onReplacePhoto(photo.id, file);
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    replaceInputRefs.current[photo.id]?.click();
+                  }}
+                  className="p-1.5 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
+                  title="사진 변경"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!window.confirm("이 사진을 삭제할까요?")) return;
+                    onDeletePhoto(photo.id);
+                  }}
+                  className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                  title="삭제"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface RevisionEntry {
+  id?: number;
+  revisionDate: string;
+  description: string;
+}
+interface CustomItemEdit {
+  id: string;
+  text?: string;
+  permitEffectiveDate?: string;   // 건축허가일 이후 적용일 (= P, 현행 시행일)
+  firstIntroducedDate?: string;   // [v2] 최초 도입일 (= F, 해당없음 컷오프)
+  enforcementType?: string;       // [v3] 'general' | 'retroactive' | 'immediate' (기본 general)
+  standardEffectiveDate?: string; // 설치검사일(검사기준 적용일) 이후 적용일
+  standardDatesWithMemo?: {date: string; memo: string; label?: string}[]; // 날짜+메모
+  revisions?: RevisionEntry[];    // 개정 이력 (최대 10개)
+  customWarning?: string;
+  standardNote?: string;  // 검사기준 칸
+  equipmentTypes?: string[];  // 적용 승강기 종류
+  fixedResult?: ResultType;
+  // 하위호환
+  effectiveDate?: string;
+  expiryDate?: string;
+  introductionType?: "new" | "revision";
+}
+
+type ResultType = "적합" | "부적합" | "시정권고" | "해당없음" | "종전";
+
+type EquipmentType = "엘리베이터" | "에스컬레이터";
+type ElevatorSubType = "전기식(MR)" | "전기식(MRL)" | "유압식" | "경사형";
+type EscalatorSubType = "에스컬레이터";
+
+// 세부 종류 노출 목록 — 전기식(MRL)·유압식·경사형은 준비되는 대로 아래 배열에 다시 추가할 것
+// (내부 값 "전기식(MR)"은 데이터 태그("엘리베이터-전기식(MR)")와의 호환을 위해 그대로 유지,
+//  화면 표시 라벨만 SUBTYPE_LABELS에서 "전기식"으로 바꿔서 보여줌)
+const EQUIPMENT_SUBTYPES: Record<EquipmentType, string[]> = {
+  "엘리베이터": ["전기식(MR)"],
+  "에스컬레이터": ["에스컬레이터"],
+};
+
+// 세부 종류 표시용 라벨 (내부 값은 EQUIPMENT_SUBTYPES/데이터 태그와 동일하게 유지)
+// ※ 전기식/유압식 선택을 열기 전까지는 에스컬레이터처럼 "엘리베이터"로 표시(선택지 1개). 열 때 "전기식"/"유압식"으로 되돌릴 것.
+const SUBTYPE_LABELS: Record<string, string> = {
+  "전기식(MR)": "엘리베이터",
+};
+
+export default function JudgmentPage() {
+  const { toast } = useToast();
+  const zoomContentRef = useRef<HTMLDivElement>(null);
+  const [equipmentType, setEquipmentType] = useState<EquipmentType>("엘리베이터");
+  const [subType, setSubType] = useState<string>("전기식(MR)");
+  const [inspectionDate, setInspectionDate] = useState("");
+  const [permitDate, setPermitDate] = useState("");
+  const [completionDate, setCompletionDate] = useState("");
+  const [installType, setInstallType] = useState<"" | "전면교체" | "수시교체">("");
+  // [수시교체 부품별 기준일] 조문(항목) 단위로 "교체된 부품"을 표시 — 표시된 항목만 검사기준 적용일,
+  // 나머지 항목은 건축허가일을 기준으로 판정한다. 전면교체·미선택 시에는 사용하지 않음.
+  const [replacedItemIds, setReplacedItemIds] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem("judgmentReplacedItemIds");
+    if (!saved) return new Set();
+    try { return new Set(JSON.parse(saved)); } catch { return new Set(); }
+  });
+  const toggleReplacedItem = (itemId: string) => {
+    setReplacedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId); else next.add(itemId);
+      return next;
+    });
+  };
+  const [standardDate] = useState("2017-01-28");
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  // [v5] results: 다중 선택 지원 (ResultType[] 배열로)
+  const [results, setResults] = useState<Record<string, ResultType[]>>(() => {
+    const saved = localStorage.getItem("judgmentResults");
+    if (!saved) return {};
+    try {
+      const parsed = JSON.parse(saved);
+      // 기존 데이터 마이그레이션: 단일 값 → 배열
+      const migrated: Record<string, ResultType[]> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (Array.isArray(v)) {
+          migrated[k] = v as ResultType[];
+        } else if (typeof v === 'string') {
+          migrated[k] = [v as ResultType];
+        }
+      }
+      return migrated;
+    } catch {
+      return {};
+    }
+  });
+  
+  const [isAdminMode, setIsAdminMode] = useState(() => getGlobalAdminMode());
+  useEffect(() => {
+    const handler = (e: Event) => setIsAdminMode((e as CustomEvent<boolean>).detail);
+    window.addEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+    return () => window.removeEventListener(GLOBAL_ADMIN_MODE_EVENT, handler);
+  }, []);
+
+  const [customEdits, setCustomEdits] = useState<Record<string, CustomItemEdit>>({});
+  const [editingItem, setEditingItem] = useState<InspectionItem | null>(null);
+  const [isEditItemDialogOpen, setIsEditItemDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState<CustomItemEdit>({ id: "" });
+  const [revisionsCache, setRevisionsCache] = useState<Record<string, any[]>>({});
+  // 서버 응답은 { [equipmentType]: { [itemId]: count/range } } 형태로 승강기 종류별로 스코핑되어 있다.
+  // 조문번호가 종류마다 다른 안전기준 문서를 가리키므로(예: 엘리베이터 6.1과 에스컬레이터 6.1은 다른 조문)
+  // 반드시 현재 선택된 equipmentType으로 걸러서 사용해야 한다.
+  const [revisionCountsByType, setRevisionCountsByType] = useState<Record<string, Record<string, number>>>({});
+  const [previousRangesByType, setPreviousRangesByType] = useState<Record<string, Record<string, { minDate: string | null; maxExpiry: string; unknownStart?: boolean; unknownStartExpiry?: string }>>>({});
+  const [refRevisions, setRefRevisions] = useState<{refId: string; versions: any[]}[]>([]);
+  // 연혁 이동/삭제 (관리자 모드) — 잘못 매핑된 연혁을 다른 조문으로 옮기거나 지운다.
+  const [moveRevisionTarget, setMoveRevisionTarget] = useState<{ id: number; currentRefId: string } | null>(null);
+  const [moveRevisionNewId, setMoveRevisionNewId] = useState("");
+  const [detailRevisionOpen, setDetailRevisionOpen] = useState(true);
+  const [detailMediaOpen, setDetailMediaOpen] = useState(true);
+  const [detailRevSel, setDetailRevSel] = useState<Record<string, "before"|"after">>({});
+
+  const [customItems, setCustomItems] = useState<(InspectionItem & { sectionId?: string })[]>([]);
+  const [isAddItemDialogOpen, setIsAddItemDialogOpen] = useState(false);
+  const [addItemForm, setAddItemForm] = useState({
+    sectionId: "",
+    text: "",
+    effectiveDate: "",
+    introductionType: "" as "" | "new" | "revision",
+    permitEffectiveDate: "",
+    standardEffectiveDate: "",
+    standardDates: [] as string[],
+    revisions: [] as RevisionEntry[]
+  });
+
+  // Item detail dialog state (photos & comments)
+  const [detailItem, setDetailItem] = useState<InspectionItem | null>(null);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  // 상세보기 안에서 핀치 줌 시 배경 페이지가 아니라 상세보기 콘텐츠 자체가 확대되도록 하는 훅.
+  // resetDep(detailItem?.id)이 바뀌면(다른 항목 열람) 확대 상태를 초기화한다.
+  const detailZoom = usePinchZoomPan(isDetailDialogOpen ? detailItem?.id : "closed", { interactive: true });
+  // 상세보기가 열려 있는 동안에는 body의 네이티브 핀치 줌(뷰포트 확대)을 막아,
+  // 손가락 두 개로 문지를 때 배경 페이지가 함께 확대되는 현상을 차단한다.
+  // 다이얼로그가 닫히면 원상복구해 평소 페이지 탐색 시의 확대 기능은 그대로 유지한다.
+  useEffect(() => {
+    if (!isDetailDialogOpen) return;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.touchAction = "pan-y pan-x";
+    return () => {
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [isDetailDialogOpen]);
+  const [newComment, setNewComment] = useState({ author: "", content: "" });
+  const [revisions, setRevisions] = useState<{id?:number; effectiveDate:string; expiryDate:string; introductionType:string; description:string}[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
+  // 관리자 개정 편집용 (inspection_item_revisions 직접 편집)
+  const [editRevisions, setEditRevisions] = useState<{id?: number; effectiveDate: string; expiryDate: string; description: string; textBefore?: string; textAfter?: string}[]>([]);
+  const editRevisionsSnapshot = useRef<{id: number; effectiveDate: string; expiryDate: string; description: string; textBefore?: string; textAfter?: string}[]>([]);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+  const pendingScrollId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      const itemId = e.detail?.itemId;
+      if (!itemId) return;
+      setHighlightedItemId(itemId);
+      pendingScrollId.current = itemId;
+      // 해당 항목이 속한 섹션 모두 펼치기
+      setExpandedSections(prev => {
+        const newSet = new Set(prev);
+        // itemId가 "5.1.1" 형태면 "5", "5.1" 등 부모 섹션 모두 펼침
+        const parts = itemId.split(".");
+        for (let i = 1; i <= parts.length; i++) {
+          newSet.add(parts.slice(0, i).join("."));
+        }
+        // 전체 섹션도 펼치기
+        const allIds = collectAllSectionIds(INSPECTION_DATA_MR);
+        allIds.forEach(id => newSet.add(id));
+        return newSet;
+      });
+      // 섹션 펼친 후 렌더링 완료되면 스크롤
+      let retries = 0;
+      const scrollLoop = setInterval(() => {
+        const el = document.getElementById(`item-${itemId}`);
+        const page = document.getElementById("swipe-page-1");
+        if (el && page) {
+          const elTop = el.getBoundingClientRect().top;
+          const pageTop = page.getBoundingClientRect().top;
+          page.scrollTo({ top: page.scrollTop + elTop - pageTop - 100, behavior: "smooth" });
+          clearInterval(scrollLoop);
+        } else if (retries++ > 30) {
+          clearInterval(scrollLoop);
+        }
+      }, 100);
+      // 4초 후 하이라이트 제거
+      setTimeout(() => setHighlightedItemId(null), 4000);
+    };
+    window.addEventListener("highlightInspectionItem", handler);
+    return () => window.removeEventListener("highlightInspectionItem", handler);
+  }, []);
+
+  // AI검색에서 항목 상세보기 열기 — navigatePage 이벤트 + sessionStorage 연동
+  useEffect(() => {
+    const checkPending = () => {
+      const pendingId = sessionStorage.getItem("pendingInspectionDetail") || sessionStorage.getItem("pendingJudgmentItem");
+      if (!pendingId) return;
+      sessionStorage.removeItem("pendingInspectionDetail");
+      sessionStorage.removeItem("pendingJudgmentItem");
+      const findItem = (sections: any[]): any => {
+        for (const sec of sections) {
+          if (sec.items) {
+            const found = sec.items.find((it: any) => it.id === pendingId);
+            if (found) return found;
+          }
+          if (sec.subsections) {
+            const found = findItem(sec.subsections);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const item = findItem(INSPECTION_DATA_MR);
+      if (item) setTimeout(() => handleOpenDetail(item), 100);
+    };
+
+    // 마운트 시 + navigatePage 이벤트 발생 직후 체크
+    checkPending();
+    const navHandler = () => setTimeout(checkPending, 150);
+    window.addEventListener("navigatePage", navHandler);
+
+    const handler = (e: any) => {
+      const itemId = e.detail?.itemId;
+      if (!itemId) return;
+      // 모든 섹션에서 해당 항목 찾기
+      const findItem = (sections: any[]): any => {
+        for (const sec of sections) {
+          if (sec.items) {
+            const found = sec.items.find((it: any) => it.id === itemId);
+            if (found) return found;
+          }
+          if (sec.subsections) {
+            const found = findItem(sec.subsections);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const item = findItem(INSPECTION_DATA_MR);
+      if (item) {
+        handleOpenDetail(item);  // 항목별 개정 데이터(inspection_item_revisions)까지 정확히 로드
+      }
+    };
+    window.addEventListener("openInspectionDetail", handler);
+    return () => {
+      window.removeEventListener("navigatePage", navHandler);
+      window.removeEventListener("openInspectionDetail", handler);
+    };
+  }, []);
+  const detailScrollRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const dragStart = useRef({ y: 0, scrollTop: 0 });
+
+  // Image viewer state
+  const [imageViewer, setImageViewer] = useState<ImageViewerState>({
+    isOpen: false,
+    images: [],
+    currentIndex: 0,
+    zoom: 1,
+    panX: 0,
+    panY: 0
+  });
+
+  const openImageViewer = (images: string[], startIndex: number = 0) => {
+    setImageViewer({
+      isOpen: true,
+      images,
+      currentIndex: startIndex,
+      zoom: 1,
+      panX: 0,
+      panY: 0
+    });
+  };
+
+  // 사진 뷰어를 닫은 시각 — 닫기 클릭이 뒤의 상세 창에 "바깥 클릭"으로 전달돼 상세 창까지 닫히는 것을 막는 데 사용
+  const viewerClosedAtRef = useRef(0);
+  const closeImageViewer = () => {
+    viewerClosedAtRef.current = Date.now();
+    setImageViewer(prev => ({ ...prev, isOpen: false, panX: 0, panY: 0 }));
+  };
+  const keepDetailOpenWhileViewer = (e: { target: EventTarget | null; preventDefault: () => void; detail?: { originalEvent?: Event } }) => {
+    const t = (e.detail?.originalEvent?.target ?? e.target) as HTMLElement | null;
+    if (imageViewer.isOpen || Date.now() - viewerClosedAtRef.current < 600 || t?.closest?.("#image-viewer-portal")) {
+      e.preventDefault();
+    }
+  };
+
+  // Drag to scroll handlers
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!detailScrollRef.current) return;
+    isDragging.current = true;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    dragStart.current = {
+      y: clientY,
+      scrollTop: detailScrollRef.current.scrollTop
+    };
+  };
+
+  const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDragging.current || !detailScrollRef.current) return;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const delta = dragStart.current.y - clientY;
+    detailScrollRef.current.scrollTop = dragStart.current.scrollTop + delta;
+  };
+
+  const handleDragEnd = () => {
+    isDragging.current = false;
+  };
+
+  // Fetch photos for selected item
+  const { data: itemPhotos = [], isLoading: isPhotosLoading } = useQuery<any[]>({
+    queryKey: ["/api/judgment-items", detailItem?.id, "photos"],
+    queryFn: async () => {
+      if (!detailItem) return [];
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/photos`);
+      return res.json();
+    },
+    enabled: !!detailItem
+  });
+
+  // Fetch comments for selected item
+  const { data: itemComments = [] } = useQuery<any[]>({
+    queryKey: ["/api/judgment-items", detailItem?.id, "comments"],
+    queryFn: async () => {
+      if (!detailItem) return [];
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/comments`);
+      return res.json();
+    },
+    enabled: !!detailItem
+  });
+
+  // standardEquipmentType 없이 호출하면 서버가 조용히 "엘리베이터"로 처리해버려서, 에스컬레이터
+  // 선택 시에도 엘리베이터 조문 내용이 뒤섞여 나오는 문제가 있었다(2026-09-29 사고와 같은 계열의
+  // 버그 — itemId가 문서마다 독립 채번되어 겹칠 수 있음). 현재 선택된 승강기 종류로 명시 스코핑한다.
+  const baseItemsEquipmentType = equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터";
+  const { data: inspectionBaseItems = [] } = useQuery<any[]>({
+    queryKey: ["/api/inspection-base-items", baseItemsEquipmentType],
+    queryFn: () => fetchJson(`/api/inspection-base-items?standardEquipmentType=${encodeURIComponent(baseItemsEquipmentType)}`),
+    staleTime: 1000 * 60 * 10,
+  });
+  const contentMap = useMemo(() => {
+    const map: Record<string, ContentEntry> = {};
+    inspectionBaseItems.forEach((item: any) => {
+      let revisions: any[] = [];
+      try { revisions = item.standardDates ? JSON.parse(item.standardDates) : []; } catch {}
+      map[item.itemId] = {
+        text: item.text || "",
+        effectiveDate: item.effectiveDate || "",
+        revisions: revisions.map((r: any) => ({
+          effectiveDate: r.effectiveDate || r.date || "",
+          introductionType: r.introductionType || "old",
+          description: r.description || r.memo || "",
+          source: r.source || "",
+        })),
+      } as ContentEntry;
+    });
+    return map;
+  }, [inspectionBaseItems]);
+
+  // 연혁집 데이터 보유 항목 목록 로드 (승강기 종류별로 스코핑된 형태로 반환됨)
+  useEffect(() => {
+    fetch("/api/inspection-items/revision-counts")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setRevisionCountsByType(data))
+      .catch(() => {});
+    fetch("/api/inspection-items/previous-ranges")
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => setPreviousRangesByType(data))
+      .catch(() => {});
+  }, []);
+
+  // 현재 선택된 승강기 종류(equipmentType)로 스코핑된 flat 맵 — 기존 코드와의 호환을 위해 유지
+  const revisionCounts = useMemo(
+    () => revisionCountsByType[equipmentType] || {},
+    [revisionCountsByType, equipmentType]
+  );
+  const previousRanges = useMemo(
+    () => previousRangesByType[equipmentType] || {},
+    [previousRangesByType, equipmentType]
+  );
+
+  // DB에서 서버 편집값 fetch → 재접속 시 자동 최신화
+  const { data: serverEdits } = useQuery<any[]>({
+    queryKey: ["/api/inspection-edits"],
+    queryFn: () => fetchJson("/api/inspection-edits"),
+    staleTime: 0,
+  });
+
+  // DB serverEdits → inspection-content.json 순으로 customEdits 구성 (DB 우선)
+  useEffect(() => {
+    const map: Record<string, CustomItemEdit> = {};
+    for (const [id, c] of Object.entries(contentMap)) {
+      const entry = c as ContentEntry;
+      const revDates = (entry.revisions || [])
+        .map(r => r.effectiveDate || "")
+        .filter(Boolean)
+        .sort((a, b) => b.localeCompare(a));
+      const datesWithMemo = (entry.revisions || [])
+        .sort((a, b) => (b.effectiveDate || "").localeCompare(a.effectiveDate || ""))
+        .map(r => ({ date: r.effectiveDate || "", memo: r.description || "", label: "", source: (r as any).source }));
+      map[id] = {
+        id,
+        text: entry.text || undefined,
+        effectiveDate: entry.effectiveDate || undefined,
+        introductionType: entry.introductionType as "new" | "revision" | undefined,
+        customWarning: entry.customWarning || undefined,
+        standardNote: (entry as any).standardNote || undefined,
+        equipmentTypes: entry.equipmentTypes || [],
+        permitEffectiveDate: entry.effectiveDate || undefined,
+        enforcementType: 'general',
+        standardDates: revDates,
+        standardDatesWithMemo: datesWithMemo,
+      };
+    }
+    // DB 편집값으로 덮어쓰기 (재접속 시 항상 최신 DB값 반영)
+    if (serverEdits && serverEdits.length > 0) {
+      serverEdits.forEach((edit: any) => {
+        if (edit.itemId) {
+          // standardDates: JSON 파싱
+          const rawParsed: any[] = edit.standardDates
+            ? (() => { try { return JSON.parse(edit.standardDates); } catch { return []; } })()
+            : [];
+          // 저장된 형태가 {date, textBefore, textAfter, memo} 객체 배열인지 확인
+          const isObjectArray = rawParsed.length > 0 && typeof rawParsed[0] === "object" && rawParsed[0] !== null && "date" in rawParsed[0];
+          const parsedDates: string[] = isObjectArray ? rawParsed.map((r: any) => r.date) : rawParsed;
+          const contentEntry = (contentMap as any)[edit.itemId];
+          const contentRevisions: any[] = contentEntry?.revisions || [];
+          const datesWithMemo = parsedDates.map((date, i) => {
+            const saved   = isObjectArray ? rawParsed[i] : null;
+            const matched = contentRevisions.find((r: any) => r.effectiveDate === date);
+            return {
+              date,
+              textBefore: saved?.textBefore || "",
+              textAfter:  saved?.textAfter  || "",
+              memo:       saved?.memo || matched?.description || "",
+              label:      `개정 ${i + 1}`,
+              source:     matched?.source,
+            };
+          });
+          map[edit.itemId] = {
+            id: edit.itemId,
+            text: edit.text || undefined,
+            permitEffectiveDate: edit.permitEffectiveDate || undefined,
+            fixedResult: edit.fixedResult || undefined,
+            customWarning: edit.customWarning || undefined,
+            standardNote: edit.standardNote || undefined,
+            // standardDates가 빈 배열이면 빈 배열로 명시 (원본 JSON 폴백 방지)
+            standardDates: edit.standardDates !== null && edit.standardDates !== undefined ? parsedDates : undefined,
+            standardDatesWithMemo: edit.standardDates !== null && edit.standardDates !== undefined ? datesWithMemo : undefined,
+          };
+        }
+      });
+    }
+    setCustomEdits(map);
+    localStorage.removeItem("judgmentCustomEdits");
+  }, [serverEdits]);
+
+  // Fetch custom inspection items from server
+  const { data: serverCustomItems = [] } = useQuery<CustomInspectionItem[]>({
+    queryKey: ["/api/custom-items"],
+    queryFn: async () => {
+      const res = await fetch("/api/custom-items");
+      if (!res.ok) throw new Error("Failed to fetch custom items");
+      return res.json();
+    }
+  });
+
+  // 각 항목별 댓글 수 캐시
+  const [itemCommentCounts, setItemCommentCounts] = useState<Record<string, number>>({});
+
+  // 페이지 로드 시 전체 댓글 수 불러오기
+  useEffect(() => {
+    fetch("/api/judgment-items/comment-counts")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && typeof data === "object") {
+          setItemCommentCounts(data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+  const [editSectionExpanded, setEditSectionExpanded] = useState(false);
+
+  // [통합] baseItemMap — inspection-content.json 기반 (서버 fetch 없음)
+  const baseItemMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    for (const [id, c] of Object.entries(contentMap)) {
+      const entry = c as ContentEntry;
+      const revDates = (entry.revisions || [])
+        .map(r => r.effectiveDate)
+        .filter(Boolean)
+        .sort((a, b) => (b || "").localeCompare(a || ""));
+      map[id] = {
+        itemId: id,
+        text: entry.text,
+        permitEffectiveDate: entry.effectiveDate,
+        standardDates: JSON.stringify(revDates),
+        equipmentTypes: JSON.stringify(entry.equipmentTypes || []),
+      };
+    }
+    return map;
+  }, []);
+
+  // Sync custom items from server - use JSON stringified value as dependency to prevent infinite loops
+  const serverCustomItemsJson = JSON.stringify(serverCustomItems);
+  useEffect(() => {
+    const parsedItems: CustomInspectionItem[] = JSON.parse(serverCustomItemsJson);
+    const items = parsedItems.map(item => ({
+      id: item.itemId,
+      text: item.text,
+      result: null as "적합" | "부적합" | "시정권고" | "해당없음" | "종전" | null,
+      effectiveDate: item.effectiveDate || undefined,
+      introductionType: item.introductionType as "new" | "revision" | undefined,
+      sectionId: item.sectionId,
+    }));
+    setCustomItems(items);
+    localStorage.removeItem("judgmentCustomItems");
+  }, [serverCustomItemsJson]);
+
+  // Mutation to add custom item to server
+  const addCustomItem = useMutation({
+    mutationFn: async (item: { itemId: string; sectionId: string; text: string; effectiveDate?: string; introductionType?: string }) => {
+      const res = await fetch("/api/custom-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item)
+      });
+      if (!res.ok) throw new Error("Failed to add custom item");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-items"] });
+    }
+  });
+
+  // Mutation to delete custom item from server
+  const deleteCustomItem = useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await fetch(`/api/custom-items/${itemId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete custom item");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/custom-items"] });
+    }
+  });
+
+  // Mutation to save inspection item edit to server
+  const saveInspectionEdit = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await fetch(`/api/inspection-edits/${data.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error("저장 실패");
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/inspection-edits"] }),
+  });
+
+  const uploadPhoto = useMutation({
+    mutationFn: async (file: File) => {
+      if (!detailItem) throw new Error("No item selected");
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/photos`, {
+        method: "POST",
+        body: formData
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
+      toast({ title: "사진이 업로드되었습니다" });
+    },
+    onError: (err: any) => {
+      toast({ title: err.message || "사진 업로드 실패", variant: "destructive" });
+    }
+  });
+
+  const deletePhoto = useMutation({
+    mutationFn: async (photoId: number) => {
+      await fetch(`/api/judgment-photos/${photoId}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
+      toast({ title: "사진이 삭제되었습니다" });
+    }
+  });
+
+  const replacePhoto = useMutation({
+    mutationFn: async ({ photoId, file }: { photoId: number; file: File }) => {
+      if (!detailItem) throw new Error("No item selected");
+      await fetch(`/api/judgment-photos/${photoId}`, { method: "DELETE" });
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/photos`, {
+        method: "POST",
+        body: formData
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
+      toast({ title: "사진이 변경되었습니다" });
+    },
+    onError: (err: any) => {
+      toast({ title: err.message || "사진 변경 실패", variant: "destructive" });
+    }
+  });
+
+  const reorderPhotos = useMutation({
+    mutationFn: async (photoIds: number[]) => {
+      if (!detailItem) throw new Error("No item selected");
+      await fetch(`/api/judgment-items/${detailItem.id}/photos/reorder`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoIds })
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "photos"] });
+    }
+  });
+
+  const handleMovePhotoUp = (index: number) => {
+    if (index <= 0) return;
+    const newOrder = [...itemPhotos];
+    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+    reorderPhotos.mutate(newOrder.map((p: any) => p.id));
+  };
+
+  const handleMovePhotoDown = (index: number) => {
+    if (index >= itemPhotos.length - 1) return;
+    const newOrder = [...itemPhotos];
+    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+    reorderPhotos.mutate(newOrder.map((p: any) => p.id));
+  };
+
+  const createComment = useMutation({
+    mutationFn: async () => {
+      if (!detailItem) throw new Error("No item selected");
+      const res = await fetch(`/api/judgment-items/${detailItem.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newComment)
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "comments"] });
+      setNewComment({ author: "", content: "" });
+      toast({ title: "댓글이 등록되었습니다" });
+    }
+  });
+
+  const deleteComment = useMutation({
+    mutationFn: async (commentId: number) => {
+      await fetch(`/api/judgment-comments/${commentId}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/judgment-items", detailItem?.id, "comments"] });
+      toast({ title: "댓글이 삭제되었습니다" });
+    }
+  });
+
+  // 참조 조문 연혁 조회 — handleOpenDetail에서 최초 로드할 때와, 관리자가 연혁을
+  // 이동/삭제한 뒤 목록을 새로고침할 때 둘 다에서 쓰는 공용 로직으로 분리했다.
+  const loadRefRevisions = async (item: InspectionItem) => {
+    // 본문에서 안전기준 참조 조문번호 추출 (예: 6.3.3, 6.5.2.2.1)
+    // 엘리베이터 안전기준은 6~17장, 에스컬레이터 안전기준은 5~7장 체계를 쓰므로
+    // 현재 선택된 승강기 종류에 맞는 대분류 범위로 매칭한다 (번호 자체는 equipmentType으로
+    // DB에서도 분리 저장되므로, 여기서는 정규식이 놓치지 않도록 범위만 넓게 잡으면 된다).
+    const refNumRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
+    // 에스컬레이터는 "부속서 Ⅰ.2.1" 처럼 로마자 부속서 조문도 인용하므로 함께 잡는다 (연혁 item_id도 "Ⅰ.2.1" 형식).
+    const refExtra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
+    const refMatches = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${refNumRange})\\.\\d+(?:\\.\\d+)*${refExtra}`, "g")) || [];
+    // 본문에 번호가 안 적혀 있어 정규식으로 못 잡는 예외 항목은 수동으로 추가
+    const uniqueRefs = excludeRefs(item.id, [...new Set([...refMatches, ...(EXTRA_REF_IDS[item.id] || [])])]);
+    if (uniqueRefs.length > 0) {
+      const refResults = await Promise.all(
+        uniqueRefs.map(async (refId) => {
+          try {
+            const r = await fetch(`/api/inspection-revisions/${encodeURIComponent(refId)}?equipmentType=${encodeURIComponent(equipmentType)}`);
+            const data = r.ok ? await r.json() : [];
+            return { refId, data };
+          } catch { return { refId, data: [] as any[] }; }
+        })
+      );
+      // 대분류(refId)를 조회하면 서버가 "refId." 로 시작하는 소분류 하위 조문까지 함께 내려준다.
+      // 실제 item_id 기준으로 그룹핑해 각 조문을 기존과 동일한 형식의 별도 카드로 표시한다.
+      // 한 checklist 항목이 대분류와 그 하위 소분류를 동시에 인용하는 경우(예: "9.7"과 "9.7.1"이
+      // 같은 문장에 함께 있는 경우), "9.7" 조회의 하위 확장 결과와 "9.7.1" 자체 조회 결과가
+      // 겹쳐서 같은 이력 행이 두 번 들어올 수 있으므로, DB 행의 고유 id로 행 단위까지 중복 제거한다.
+      const grouped = new Map<string, any[]>();
+      const seenRowIds = new Set<number>();
+      const order: string[] = [];
+      for (const { data } of refResults) {
+        for (const rv of data) {
+          const actualId: string | undefined = rv.item_id || rv.itemId;
+          if (!actualId) continue;
+          // 본문이 비어 있고 첨부도 없는 행은 "화면에서만 숨김" 처리된 행(원문은 검색용 칸에 보관)이므로 표시하지 않는다.
+          if (!(rv.description || "").trim() && !rv.attachments) continue;
+          if (typeof rv.id === "number") {
+            if (seenRowIds.has(rv.id)) continue;
+            seenRowIds.add(rv.id);
+          }
+          if (!grouped.has(actualId)) { grouped.set(actualId, []); order.push(actualId); }
+          grouped.get(actualId)!.push({
+            id: rv.id,
+            effectiveDate: rv.effective_date || rv.effectiveDate || "",
+            expiryDate: rv.expiry_date || rv.expiryDate || "",
+            introductionType: rv.introduction_type || rv.introductionType || "old",
+            description: rv.description || "",
+            attachments: rv.attachments || null,
+          });
+        }
+      }
+      order.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      setRefRevisions(order.map(id => ({ refId: id, versions: grouped.get(id)! })));
+    } else {
+      setRefRevisions([]);
+    }
+  };
+
+  const handleOpenDetail = async (item: InspectionItem) => {
+    // 자료 조회 기록 — 검사가이드 항목 상세를 열 때마다 남긴다.
+    trackActivity("검사가이드", `${equipmentType} · ${item.id}${(item as any).title ? " " + (item as any).title : ""}`);
+    setDetailItem(item);
+    setIsDetailDialogOpen(true);
+    setRevisionsLoading(true);
+    setRefRevisions([]);
+    await loadRefRevisions(item);
+
+    // 1) JSON 기반 revision 데이터
+    const entry = contentMap[item.id] as ContentEntry | undefined;
+    const jsonRevData = (entry?.revisions || []).map(r => ({
+      id: undefined, item_id: item.id,
+      effective_date: r.effectiveDate, expiry_date: r.expiryDate,
+      introduction_type: r.introductionType, description: r.description,
+    }));
+
+    // 2) DB 연혁집 데이터 조회
+    try {
+      const dbRevRes = await fetch(`/api/inspection-revisions/${encodeURIComponent(item.id)}?equipmentType=${encodeURIComponent(equipmentType)}`);
+      const dbRevRaw = dbRevRes.ok ? await dbRevRes.json() : [];
+      // DB snake_case → camelCase 변환
+      const dbRevData = dbRevRaw.filter((r: any) => (r.description || "").trim() || r.attachments).map((r: any) => ({
+        id: r.id,
+        effectiveDate: r.effective_date || r.effectiveDate || "",
+        expiryDate: r.expiry_date || r.expiryDate || "",
+        introductionType: r.introduction_type || r.introductionType || "old",
+        description: r.description || "",
+      }));
+      // DB 데이터 우선, JSON은 DB에 없을 때 폴백
+      const merged = dbRevData.length > 0 ? dbRevData : jsonRevData;
+      setRevisions(merged);
+      setRevisionsCache(prev => ({...prev, [item.id]: merged}));
+    } catch {
+      setRevisions(jsonRevData);
+      setRevisionsCache(prev => ({...prev, [item.id]: jsonRevData}));
+    }
+    setRevisionsLoading(false);
+  };
+
+  // 연혁 "확인 요청" — 매핑이 이상해 보일 때 일반 이용자도 신고할 수 있다(비밀번호 불필요).
+  const flagRevision = useMutation({
+    mutationFn: async ({ id, note }: { id: number; note?: string }) => {
+      let employeeId: string | undefined, employeeName: string | undefined;
+      try {
+        const li = JSON.parse(localStorage.getItem("loginInfo") || "{}");
+        employeeId = li.empId; employeeName = li.name;
+      } catch {}
+      const r = await fetch(`/api/inspection-revisions/${id}/flag`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note, employeeId, employeeName }),
+      });
+      if (!r.ok) throw new Error();
+    },
+    onSuccess: () => toast({ title: "확인 요청을 접수했습니다. 관리자가 검토할게요." }),
+    onError: () => toast({ title: "접수에 실패했습니다.", variant: "destructive" }),
+  });
+
+  // 연혁 삭제 — 잘못 등록된 항목을 지운다. 서버가 비밀번호를 검증하므로 매번 물어본다.
+  const deleteRevision = useMutation({
+    mutationFn: async ({ id }: { id: number }) => {
+      const password = window.prompt("관리자 비밀번호를 입력하세요");
+      if (password === null) throw new Error("cancelled");
+      const r = await fetch(`/api/inspection-revisions/${id}`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || "삭제 실패");
+      }
+    },
+    onSuccess: () => { if (detailItem) loadRefRevisions(detailItem); },
+    onError: (e: any) => { if (e.message !== "cancelled") toast({ title: e.message || "삭제 실패", variant: "destructive" }); },
+  });
+
+  // 연혁 이동 — 다른 조문번호(itemId)로 재배정한다. PUT 바디에 새 itemId만 넣으면 된다.
+  const moveRevision = useMutation({
+    mutationFn: async ({ id, newItemId }: { id: number; newItemId: string }) => {
+      const password = window.prompt("관리자 비밀번호를 입력하세요");
+      if (password === null) throw new Error("cancelled");
+      const r = await fetch(`/api/inspection-revisions/${id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: newItemId, password }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || "이동 실패");
+      }
+    },
+    onSuccess: () => {
+      setMoveRevisionTarget(null);
+      setMoveRevisionNewId("");
+      if (detailItem) loadRefRevisions(detailItem);
+    },
+    onError: (e: any) => { if (e.message !== "cancelled") toast({ title: e.message || "이동 실패", variant: "destructive" }); },
+  });
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    if (itemPhotos.length >= 10) {
+      toast({ title: "최대 10장까지 업로드 가능합니다", variant: "destructive" });
+      return;
+    }
+    uploadPhoto.mutate(files[0]);
+    e.target.value = "";
+  };
+
+  // Note: customItems and customEdits are now stored on server, not localStorage
+
+  useEffect(() => {
+    localStorage.setItem("judgmentResults", JSON.stringify(results));
+  }, [results]);
+
+  useEffect(() => {
+    localStorage.setItem("judgmentReplacedItemIds", JSON.stringify(Array.from(replacedItemIds)));
+  }, [replacedItemIds]);
+
+  const handleSaveConfirm = () => {
+    const resultCount = Object.keys(results).length;
+    const editCount = Object.keys(customEdits).length;
+    toast({
+      title: "저장 상태 확인",
+      description: `현재 ${resultCount}개 항목의 판정 결과와 ${editCount}개 항목의 수정사항이 저장되었습니다.`,
+    });
+  };
+
+  const handleOpenEditItem = (item: InspectionItem) => {
+    if (!isAdminMode) return;
+    const existingEdit = customEdits[item.id];
+    setEditingItem(item);
+    const dates: string[] = (() => {
+      if ((existingEdit as any)?.standardDates?.length > 0) return (existingEdit as any).standardDates;
+      const dbItem = baseItemMap[item.id];
+      if (dbItem?.standardDates) {
+        try {
+          const parsed = JSON.parse(dbItem.standardDates);
+          if (parsed.length > 0) return parsed;
+        } catch {}
+      }
+      if (item.effectiveDate) return [item.effectiveDate];
+      return [];
+    })();
+    setEditForm({
+      id: item.id,
+      text: existingEdit?.text ?? item.text,
+      effectiveDate: existingEdit?.effectiveDate ?? item.effectiveDate ?? "",
+      expiryDate: existingEdit?.expiryDate ?? item.expiryDate ?? "",
+      introductionType: existingEdit?.introductionType ?? item.introductionType,
+      permitEffectiveDate: (existingEdit as any)?.permitEffectiveDate ?? baseItemMap[item.id]?.permitEffectiveDate ?? "",
+      standardEffectiveDate: (existingEdit as any)?.standardEffectiveDate ?? "",
+      standardDates: dates,
+      standardDatesWithMemo: (() => {
+        // 저장된 편집값에 memo가 있으면 그대로, 없으면 빈 memo로
+        const saved = (existingEdit as any)?.standardDatesWithMemo;
+        if (saved?.length > 0) return saved;
+        return dates.map(d => ({ date: d, memo: "" }));
+      })(),
+      revisions: [] as RevisionEntry[],
+      customWarning: existingEdit?.customWarning ?? "",
+      standardNote: (existingEdit as any)?.standardNote ?? "",
+      equipmentTypes: (existingEdit as any)?.equipmentTypes ?? [],
+      fixedResult: existingEdit?.fixedResult ?? (() => {
+        // [v5] results[item.id]는 이제 배열. 단일 fixedResult로 변환
+        const r = results[item.id];
+        if (Array.isArray(r)) return r[0];
+        return r as ResultType | undefined;
+      })(),
+    });
+    // 통합 다이얼로그: detailItem도 설정해서 사진/댓글도 같이 표시
+    setDetailItem(item);
+    setIsDetailDialogOpen(true);
+    // [통합] 개정 이력 편집용 — inspection-content.json 에서 직접 읽기
+    const cEntry = contentMap[item.id] as ContentEntry | undefined;
+    const editArr = (cEntry?.revisions || []).map(r => {
+      // description이 JSON이면 파싱해서 textBefore/textAfter 복원
+      let textBefore = "", textAfter = "", desc = r.description || "";
+      try {
+        const parsed = JSON.parse(desc);
+        if (parsed && typeof parsed === "object" && ("before" in parsed || "after" in parsed)) {
+          textBefore = parsed.before || "";
+          textAfter  = parsed.after  || "";
+          desc = "";
+        }
+      } catch {}
+      return { effectiveDate: r.effectiveDate || "", expiryDate: r.expiryDate || "", description: desc, textBefore, textAfter };
+    });
+    setEditRevisions(editArr);
+    editRevisionsSnapshot.current = [];
+  };
+
+  const handleSaveItemEdit = () => {
+    if (!editingItem) return;
+    // 개정 편집 내용을 standardDates/standardDatesWithMemo에도 동기화 (판정 getItemStatus·상세표시용)
+    const revForSync = [...editRevisions]
+      .filter(r => r.effectiveDate || r.description)
+      .sort((a, b) => (a.effectiveDate || "").localeCompare(b.effectiveDate || ""));
+    const syncedForm = {
+      ...editForm,
+      standardDates: revForSync.map(r => r.effectiveDate || ""),
+      standardDatesWithMemo: revForSync.map((r, i) => ({
+        date: r.effectiveDate || "",
+        memo: r.description || "",
+        textBefore: (r as any).textBefore || "",
+        textAfter:  (r as any).textAfter  || "",
+        label: `개정 ${i + 1}`,
+        source: (r as any).source,
+      })),
+    };
+    setCustomEdits(prev => ({
+      ...prev,
+      [editingItem.id]: syncedForm
+    }));
+    if (editForm.fixedResult) {
+      setResults(prev => ({
+        ...prev,
+        [editingItem.id]: [editForm.fixedResult!]  // [v5] 배열로
+      }));
+    }
+    
+    // Save to server for all users (admin only)
+    if (isAdminMode) {
+      saveInspectionEdit.mutate(syncedForm, {
+        onSuccess: () => {
+          toast({
+            title: "항목 수정 완료",
+            description: "검사 항목이 저장되었습니다. 모든 사용자에게 반영됩니다.",
+          });
+        },
+        onError: () => {
+          toast({
+            title: "저장 실패",
+            description: "서버 저장에 실패했습니다. 다시 시도해주세요.",
+            variant: "destructive",
+          });
+        }
+      });
+    } else {
+      toast({
+        title: "항목 수정 완료",
+        description: "검사 항목이 수정되었습니다.",
+      });
+    }
+    
+    setIsEditItemDialogOpen(false);
+    setEditingItem(null);
+  };
+
+  const handleAddItem = () => {
+    if (!addItemForm.sectionId || !addItemForm.text) {
+      toast({
+        title: "입력 오류",
+        description: "섹션과 검사 내용을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const newId = `custom-${Date.now()}`;
+    
+    // Save to server for all users (admin only)
+    addCustomItem.mutate({
+      itemId: newId,
+      sectionId: addItemForm.sectionId,
+      text: addItemForm.text,
+      effectiveDate: addItemForm.effectiveDate || undefined,
+      introductionType: addItemForm.introductionType || undefined,
+    }, {
+      onSuccess: () => {
+        toast({
+          title: "항목 추가 완료",
+          description: "새 검사 항목이 추가되었습니다. 모든 사용자에게 반영됩니다.",
+        });
+      },
+      onError: () => {
+        toast({
+          title: "추가 실패",
+          description: "항목 추가에 실패했습니다. 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    });
+    
+    setIsAddItemDialogOpen(false);
+    setAddItemForm({ sectionId: "", text: "", effectiveDate: "", introductionType: "", permitEffectiveDate: "", standardEffectiveDate: "", standardDates: [], revisions: [] });
+  };
+
+  const handleDeleteCustomItem = (itemId: string) => {
+    deleteCustomItem.mutate(itemId, {
+      onSuccess: () => {
+        setResults(prev => {
+          const newResults = { ...prev };
+          delete newResults[itemId];
+          return newResults;
+        });
+        toast({
+          title: "항목 삭제",
+          description: "검사 항목이 삭제되었습니다. 모든 사용자에게 반영됩니다.",
+        });
+      },
+      onError: () => {
+        toast({
+          title: "삭제 실패",
+          description: "항목 삭제에 실패했습니다. 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    });
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // [패치 5] getItemWithEdits - permit_effective_date 우선 사용
+  // ═══════════════════════════════════════════════════════════════════
+  const getItemWithEdits = (item: InspectionItem): InspectionItem => {
+    const edit = customEdits[item.id];
+    if (!edit) return item;
+    return {
+      ...item,
+      text: edit.text ?? item.text,
+      // permit_effective_date 우선 → effective_date → 기본값
+      effectiveDate: edit.permitEffectiveDate || edit.effectiveDate || item.effectiveDate,
+      expiryDate: edit.expiryDate || item.expiryDate,
+      introductionType: edit.introductionType ?? item.introductionType,
+    };
+  };
+
+  const handleEquipmentTypeChange = (type: EquipmentType) => {
+    setEquipmentType(type);
+    const subtypes = EQUIPMENT_SUBTYPES[type];
+    if (subtypes.length > 0) {
+      setSubType(subtypes[0]);
+    } else {
+      setSubType("");
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // [v4 변경 1] referenceDate - 항상 검사기준 적용일(D2) 기준
+  // ═══════════════════════════════════════════════════════════════════
+  // 사용자 룰 (확정):
+  //   D1 = D2 (신규/전면교체): T = D1 (= D2 = 같은 날짜)
+  //   D1 ≠ D2 (수시교체): T = D2 (검사기준 적용일 기준)
+  //   결론: 모든 경우 T = D2
+  // installType은 UI 정보 표시용으로 유지 (판정에는 사용 안 함)
+  const referenceDate = useMemo(() => {
+    if (inspectionDate) return new Date(inspectionDate);
+    if (permitDate) return new Date(permitDate);
+    return null;
+  }, [inspectionDate, permitDate]);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // [수시교체 부품별 기준일] 조문(항목) 단위 기준일 분기
+  // ═══════════════════════════════════════════════════════════════════
+  // 수시교체는 건축물이나 교체하지 않은 주요부품은 건축허가일이 기준이고,
+  // 실제로 교체된 부품(조문)만 검사기준 적용일이 기준이 된다.
+  //   - installType !== "수시교체" : 전 항목 공통 referenceDate 사용 (기존 로직)
+  //   - installType === "수시교체" : 교체 표시(replacedItemIds)된 항목 → 검사기준 적용일
+  //                                   표시 안 된 항목            → 건축허가일
+  const getReferenceDateForItem = useCallback((itemId: string): Date | null => {
+    if (installType === "수시교체") {
+      if (replacedItemIds.has(itemId)) {
+        return inspectionDate ? new Date(inspectionDate) : referenceDate;
+      }
+      return permitDate ? new Date(permitDate) : referenceDate;
+    }
+    return referenceDate;
+  }, [installType, replacedItemIds, inspectionDate, permitDate, referenceDate]);
+
+  // 기준일 체계 안내 텍스트
+  const referenceDateInfo = useMemo(() => {
+    if (!referenceDate && !completionDate) return null;
+    const items = [];
+    if (permitDate) items.push(`건축허가일: ${permitDate}`);
+    if (inspectionDate) items.push(`검사기준 적용일: ${inspectionDate}`);
+    if (completionDate) {
+      const comp = new Date(completionDate);
+      const cutoff = new Date("2012-03-14");
+      items.push(`완성검사일: ${completionDate}${comp <= cutoff ? " (종전기준 적용)" : ""}`);
+    }
+    return items;
+  }, [permitDate, inspectionDate, completionDate, referenceDate]);
+
+  // 현재 선택된 승강기 종류 필터키
+  const currentFilterKey = useMemo(() => {
+    if (subType) return `${equipmentType}-${subType}`;
+    return equipmentType;
+  }, [equipmentType, subType]);
+
+  // 선택 종류 → 정기검사기준 섹션번호 (별표2: 1.엘리베이터 / 2.경사형 / 3.에스컬레이터 / 4.덤웨이터 / 5.수직형휠체어 / 6.경사형휠체어)
+  const sectionPrefix = useMemo(() => {
+    if (equipmentType === "엘리베이터") return subType === "경사형" ? "2" : "1";
+    if (equipmentType === "에스컬레이터") return "3";
+    return "1";
+  }, [equipmentType, subType]);
+
+  // 현재 종류에 해당하는 최상위 섹션만 표시 (예: 경사형 선택 시 2.x만)
+  const visibleSections = useMemo(
+    () => INSPECTION_DATA_MR.filter(s => s.id.split(".")[0] === sectionPrefix),
+    [sectionPrefix]
+  );
+
+  // 항목이 현재 승강기 종류에 해당하는지 확인
+  const isItemApplicable = useCallback((itemId: string): boolean => {
+    const edit = customEdits[itemId];
+    const types: string[] = (edit as any)?.equipmentTypes || [];
+    if (types.length === 0) return true; // 미지정이면 모두 표시
+    return types.some(t => {
+      if (t === currentFilterKey) return true;
+      if (subType && t === subType) return true; // 바 태그(예: 에스컬레이터/무빙워크) 매칭
+      // 대분류만 체크 (예: "엘리베이터" 선택 시 "엘리베이터-전기식(MR)"도 포함)
+      if (t.startsWith(equipmentType + "-") && !subType) return true;
+      if (t === equipmentType && !subType) return true;
+      return false;
+    });
+  }, [customEdits, currentFilterKey, equipmentType, subType]);
+
+  // ═══════════════════════════════════════════════════════════════════
+  // [v4 변경 2] getItemStatus - 새 3단계 룰
+  // ═══════════════════════════════════════════════════════════════════
+  // P = effectiveDate (= 가장 오래된 날짜 = 최초 도입일)
+  // L = standard_dates 중 가장 최근 개정일 (현행 본문 시행일)
+  //
+  // retroactive (소급): 시점 무관 항상 "applicable"
+  // T < P            : "not-applicable" (조문 도입 전, 해당없음 고정)
+  // P ≤ T < L        : "previous" (옛 기준 시기, 종전 가능 안내)
+  // T ≥ L            : "applicable" (현행 시기, 직접 평가)
+  // [종전 원칙] 항목이 인용한 조문 번호(본문 인용 + 내용 일치로 수동 연결한 번호)에
+  // 종전 연혁이 "직접" 있고 기준일이 그 구간 안이면 종전. 승강기 종류별 조문 번호 체계를 따른다.
+  //  - 엘리베이터: 6~17장 / 에스컬레이터: 5~7장, Ⅰ.x  (연혁 뱃지와 동일 규칙)
+  //  - 시작일 없는 종전("이전 건축허가분")은 종전으로 보되 unknownStart=true
+  const matchPreviousByRefs = (item: InspectionItem, itemReferenceDate: Date): { status: "previous"; unknownStart: boolean } | null => {
+    const numRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
+    const extra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
+    const refMatches = (item.text || "").match(new RegExp(`(?<![\\d.])(?:${numRange})\\.\\d+(?:\\.\\d+)*${extra}`, "g")) || [];
+    const directRef = new RegExp(`^(?:${numRange})\\.`).test(item.id) ? [item.id] : [];
+    const allRefs = excludeRefs(item.id, [...new Set([...refMatches, ...directRef, ...(EXTRA_REF_IDS[item.id] || [])])]);
+    let unknownStartMatch = false;
+    for (const ref of allRefs) {
+      const range = (previousRanges as any)[ref];
+      if (!range) continue;
+      const maxExpiry = range.maxExpiry ? new Date(range.maxExpiry) : new Date("2022-03-01");
+      // 시작일 없는 종전("OOOO-MM-DD 이전 건축허가분"뿐): 만료일 이전이면 종전, 시작일은 확인 불가로 표시
+      if (!range.minDate) {
+        if (itemReferenceDate <= maxExpiry) unknownStartMatch = true;
+        continue;
+      }
+      const minDate = new Date(range.minDate);
+      if (itemReferenceDate >= minDate && itemReferenceDate <= maxExpiry) {
+        return { status: "previous", unknownStart: false };
+      }
+      // 시작일 있는 연혁 앞에 "이전 건축허가분"(시작일 없음)이 따로 있으면 그 만료일 이전도 종전(시작일 확인 불가)
+      if (range.unknownStartExpiry && itemReferenceDate <= new Date(range.unknownStartExpiry)) {
+        unknownStartMatch = true;
+      }
+    }
+    return unknownStartMatch ? { status: "previous", unknownStart: true } : null;
+  };
+
+  const getItemStatusDetail = (item: InspectionItem): { status: "applicable" | "previous" | "not-applicable"; unknownStart: boolean } => {
+    const itemReferenceDate = getReferenceDateForItem(item.id);
+    if (!itemReferenceDate) return { status: "applicable", unknownStart: false };
+
+    const edit = customEdits[item.id];
+
+    // [v3] retroactive 항목: 시점 무관 항상 검사 대상
+    const enforcementType = (edit as any)?.enforcementType;
+    if (enforcementType === 'retroactive') {
+      return { status: "applicable", unknownStart: false };
+    }
+
+    // expiryDate: 만료된 항목
+    if (item.expiryDate) {
+      const expiryDate = new Date(item.expiryDate);
+      if (itemReferenceDate > expiryDate) return { status: "not-applicable", unknownStart: false };
+    }
+
+    // [v4] P (가장 오래된 날짜) 비교
+    // 도입일(effectiveDate)이 없는 항목도 인용 조문의 종전 연혁이 있으면 종전으로 판정
+    if (!item.effectiveDate) return matchPreviousByRefs(item, itemReferenceDate) || { status: "applicable", unknownStart: false };
+    const P = new Date(item.effectiveDate);
+
+    if (itemReferenceDate < P) {
+      return { status: "not-applicable", unknownStart: false };  // 조문 도입 전
+    }
+
+    // [v4] 최근 개정일 L 계산 (standard_dates 중 가장 최근)
+    const standardDates: string[] = (edit as any)?.standardDates || [];
+    let L = P;  // 기본값 (개정 이력 없으면 P = L)
+    for (const dateStr of standardDates) {
+      const d = new Date(dateStr);
+      if (d > L) L = d;
+    }
+
+    // P ≤ T < L: 옛 기준 시기 (종전 가능)
+    if (itemReferenceDate < L) {
+      return { status: "previous", unknownStart: false };
+    }
+
+    // [v6] DB 연혁집 종전 데이터 기반 판정 — 인용 조문 번호에 직접 종전 연혁이 있을 때
+    const byRefs = matchPreviousByRefs(item, itemReferenceDate);
+    if (byRefs) return byRefs;
+
+    // T ≥ L: 현행 시기
+    return { status: "applicable", unknownStart: false };
+  };
+
+  const getItemStatus = (item: InspectionItem): "applicable" | "previous" | "not-applicable" => getItemStatusDetail(item).status;
+
+  // ═══════════════════════════════════════════════════════════════════
+  // [v5] getAutoResults - 안내된 옵션 모두 자동 선택 (배열 반환)
+  // ═══════════════════════════════════════════════════════════════════
+  // 사용자 룰: 상태별로 안내 옵션을 모두 자동 선택
+  //   not-applicable          → ["해당없음"]
+  //   previous                → ["종전","적합","부적합","시정권고","해당없음"]
+  //   applicable + retroactive → ["적합","부적합","시정권고","해당없음"]
+  //   applicable + 일반         → ["적합","부적합","시정권고"]
+  const getAutoResults = (item: InspectionItem): ResultType[] => {
+    const status = getItemStatus(item);
+    if (status === "not-applicable") return ["해당없음"];
+    if (status === "previous") return ["종전"];
+    return [];
+  };
+
+  // 종전 상태 여부 — 버튼 힌트용
+  const isPreviousItem = (item: InspectionItem): boolean => {
+    return getItemStatus(item) === "previous";
+  };
+  
+  // 하위 호환 (단일 결과 기대하는 곳에서 사용 - 첫 번째 자동 결과 반환)
+  const getAutoResult = (item: InspectionItem): ResultType | null => {
+    const auto = getAutoResults(item);
+    return auto.length === 1 ? auto[0] : null;
+  };
+
+  const collectAllItems = useCallback((sections: InspectionSection[]): InspectionItem[] => {
+    const items: InspectionItem[] = [];
+    const processSection = (section: InspectionSection) => {
+      if (section.items) {
+        items.push(...section.items);
+      }
+      if (section.subsections) {
+        section.subsections.forEach(processSection);
+      }
+    };
+    sections.forEach(processSection);
+    // 커스텀 항목도 추가
+    items.push(...customItems);
+    return items;
+  }, [customItems]);
+
+  const collectAllSectionIds = useCallback((sections: InspectionSection[]): string[] => {
+    const ids: string[] = [];
+    const processSection = (section: InspectionSection) => {
+      ids.push(section.id);
+      if (section.subsections) {
+        section.subsections.forEach(processSection);
+      }
+    };
+    sections.forEach(processSection);
+    return ids;
+  }, []);
+
+  const expandAll = () => {
+    const allIds = collectAllSectionIds(INSPECTION_DATA_MR);
+    setExpandedSections(new Set(allIds));
+  };
+
+  const collapseAll = () => {
+    setExpandedSections(new Set());
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // [v5.2] 검사기준 적용일 변경 감지 - results 자동 초기화 (토스트 제거)
+  // ═══════════════════════════════════════════════════════════════════
+  // 사용자가 검사기준 적용일을 변경하면 모든 검사 항목의 결과를 초기화하여
+  // 자동 안내된 옵션이 새 시점에 맞춰 표시되도록 함
+  const prevInspectionDateRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    // 첫 마운트: 초기값 기록만 하고 초기화 안 함 (localStorage 데이터 보존)
+    if (prevInspectionDateRef.current === null) {
+      prevInspectionDateRef.current = inspectionDate;
+      return;
+    }
+    
+    // 검사기준 적용일 변경 → 모든 검사 항목 결과 초기화
+    if (prevInspectionDateRef.current !== inspectionDate) {
+      prevInspectionDateRef.current = inspectionDate;
+      setResults({});  // 모든 항목 자동 안내된 옵션으로 재표시
+    }
+  }, [inspectionDate]);
+
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  };
+
+  // [v5.2] toggleResult: 다중 선택 + 첫 클릭 시 자동 선택을 기본값으로 복사
+  // 사용자가 처음 클릭하면 results에 autoResults를 먼저 복사한 후 그 옵션을 토글
+  // → 자동 선택된 다른 옵션들이 유지되면서 클릭한 옵션만 토글됨
+  const toggleResult = (itemId: string, result: ResultType, autoResults: ResultType[]) => {
+    setResults(prev => {
+      let current = prev[itemId];
+      
+      // 첫 클릭: results에 항목이 없으면 autoResults를 기본값으로 복사
+      if (current === undefined) {
+        current = [...autoResults];
+      }
+      
+      // 토글: 이미 선택되어 있으면 해제, 미선택이면 추가
+      const newArr = current.includes(result)
+        ? current.filter(r => r !== result)
+        : [...current, result];
+      return { ...prev, [itemId]: newArr };
+    });
+  };
+  
+  // 하위 호환을 위한 setResult (단일 선택 강제)
+  const setResult = (itemId: string, result: ResultType) => {
+    setResults(prev => ({ ...prev, [itemId]: [result] }));
+  };
+
+  // ═══════════════════════════════════════════════════════════════════
+  // [v5] renderResultButton - 다중 선택 UI
+  // ═══════════════════════════════════════════════════════════════════
+  // 사용자 룰: 안내된 옵션 모두 자동 선택, 검사원이 클릭으로 토글
+  // - 다중 선택 가능 (체크박스 동작)
+  // - 자동 선택 시 안내된 모든 옵션이 미리 선택됨
+  // - 검사원이 잘못된 옵션 클릭하여 해제 가능
+  // [추가] ISO 날짜 → 한글 표기 (예: 2019-03-28 → 2019년 3월 28일)
+  const formatKoreanDate = (iso?: string): string => {
+    if (!iso) return "";
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(iso);
+    return m ? `${+m[1]}년 ${+m[2]}월 ${+m[3]}일` : iso;
+  };
+
+  const renderResultButton = (itemId: string, resultType: ResultType, status: "applicable" | "previous" | "not-applicable", autoResults: ResultType[], unknownStart = false) => {
+    const userResults = results[itemId];
+    const hasUserChoice = userResults !== undefined;
+    const isSelected = hasUserChoice 
+      ? (userResults || []).includes(resultType)
+      : autoResults.includes(resultType);
+    const isAutoSelected = !hasUserChoice && autoResults.includes(resultType);
+    const isDisabled = (status === "not-applicable" && resultType !== "해당없음");
+    
+    // 헤더 열(w-9=36px)과 폭을 맞춰야 하므로 "시정권고"/"해당없음"(4글자)은 헤더처럼 2글자씩 줄바꿈
+    const baseClasses = "w-8 px-0.5 py-0.5 text-[10px] rounded border transition-all leading-[1.15] text-center";
+    const label = resultType === "시정권고" || resultType === "해당없음"
+      ? <>{resultType.slice(0, 2)}<br />{resultType.slice(2)}</>
+      : resultType;
+
+    if (isSelected) {
+      // 종전 시작일을 확인할 수 없는 종전(자동 선택)은 주황 점선으로 구분해 연혁 확인을 유도한다.
+      const unknownPrev = resultType === "종전" && unknownStart && isAutoSelected;
+      return (
+        <button
+          title={unknownPrev ? "종전 기준 시작일 확인 불가 (이전 건축허가분) — 연혁 확인" : undefined}
+          className={cn(baseClasses, unknownPrev
+            ? "bg-amber-100 text-amber-700 border-amber-500 border-dashed dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-600"
+            : "bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-600")}
+          onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
+          data-testid={`result-${itemId}-${resultType}`}
+        >
+          {label}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        className={cn(
+          baseClasses,
+          isDisabled
+            ? "bg-muted text-muted-foreground border-muted cursor-not-allowed opacity-50"
+            : "bg-background text-muted-foreground hover:bg-accent border-border"
+        )}
+        onClick={() => !isDisabled && toggleResult(itemId, resultType, autoResults)}
+        disabled={isDisabled}
+        data-testid={`result-${itemId}-${resultType}`}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  const renderItem = (originalItem: InspectionItem) => {
+    const item = getItemWithEdits(originalItem);
+    const statusDetail = getItemStatusDetail(item);
+    const status = statusDetail.status;
+    const prevUnknownStart = statusDetail.unknownStart;
+    const autoResults = getAutoResults(item);  // [v5] 다중 선택용 배열
+    const hasCustomEdit = !!(serverEdits && serverEdits.some((e: any) => e.itemId === item.id));
+    // 연혁 뱃지 — 승강기 종류별 안전기준 참조 조문이 있고(엘리베이터 6~17장, 에스컬레이터 5~7장)
+    // 연혁 데이터가 있을 때 표시. revisionCounts는 이미 현재 equipmentType으로 스코핑되어 있다.
+    const badgeNumRange = equipmentType === "에스컬레이터" ? "5|6|7" : "6|7|8|9|1[0-7]";
+    const badgeExtra = equipmentType === "에스컬레이터" ? "|Ⅰ\\.\\d+(?:\\.\\d+)*" : "";
+    const refRevisionExists = excludeRefs(item.id, [
+      ...((item.text || "").match(new RegExp(`(?<![\\d.])(?:${badgeNumRange})\\.\\d+(?:\\.\\d+)*${badgeExtra}`, "g")) || []),
+      ...(EXTRA_REF_IDS[item.id] || []),
+    ]).some(
+      (ref: string) => (revisionCounts[ref] && revisionCounts[ref] > 0) ||
+        // 대분류만 인용된 경우(예: "Ⅰ.4")에도 하위 조문 연혁이 있으면 표시 — 상세 화면이 하위 조문까지 보여주므로 일치시킨다.
+        Object.keys(revisionCounts).some((k) => k.startsWith(ref + "."))
+    ) || false;
+    const directRevision = new RegExp(`^(?:${badgeNumRange})\\.`).test(item.id) && !!(revisionCounts[item.id] && revisionCounts[item.id] > 0);
+    const hasRevisionData = directRevision || refRevisionExists;
+    
+    return (
+      <div 
+        key={item.id} 
+        className={cn(
+          "border-b border-border last:border-b-0",
+          false
+        )}
+      >
+        <div className="flex items-center gap-2 p-3">
+          <div className="flex items-center justify-center w-5 h-5 shrink-0">
+            {isAdminMode ? (
+              <button
+                onClick={() => handleOpenEditItem(item)}
+                className="p-1 hover:bg-accent rounded transition-colors"
+                data-testid={`edit-item-${item.id}`}
+              >
+                <Pencil className="w-4 h-4 text-primary" />
+              </button>
+            ) : (
+              <Check className="w-4 h-4 text-primary" />
+            )}
+          </div>
+          {installType === "수시교체" && (
+            <button
+              onClick={() => toggleReplacedItem(item.id)}
+              className={cn(
+                "p-1 rounded transition-colors shrink-0",
+                replacedItemIds.has(item.id) ? "bg-primary/15" : "hover:bg-accent"
+              )}
+              title={replacedItemIds.has(item.id) ? "교체된 부품으로 표시됨 (검사기준 적용일 기준) — 클릭 시 해제" : "이 항목이 교체된 부품이면 클릭하여 표시 (검사기준 적용일 기준)"}
+              data-testid={`replaced-toggle-${item.id}`}
+            >
+              <Wrench className={cn("w-3.5 h-3.5", replacedItemIds.has(item.id) ? "text-primary" : "text-muted-foreground")} />
+            </button>
+          )}
+          <button
+            onClick={() => handleOpenDetail(item)}
+            className="p-1 hover:bg-accent rounded transition-colors shrink-0"
+            title="사진/댓글 보기"
+            data-testid={`detail-item-${item.id}`}
+          >
+            <Image className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+          <div
+            className="flex-1 min-w-0 text-xs leading-relaxed cursor-pointer hover:text-primary"
+            onClick={() => handleOpenDetail(item)}
+          >
+            {item.text}
+            {hasRevisionData && (
+              <span className="ml-1.5 shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">연혁</span>
+            )}
+            {itemCommentCounts[item.id] > 0 && (
+              <span className="ml-1 text-xs font-medium text-orange-500">(댓글 {itemCommentCounts[item.id]})</span>
+            )}
+          </div>
+          {/* 판정 버튼 5개 — 위 헤더 행(적합/부적합/시정권고/해당없음/종전, 각 w-9)과 동일한 고정폭으로 맞춰
+              세로선이 헤더 칸과 일직선이 되도록 정렬. 텍스트 줄 수와 무관하게 버튼 열 위치가 항상 고정됨. */}
+          <div className="flex shrink-0">
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "적합", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "부적합", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "시정권고", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "해당없음", status, autoResults)}</div>
+            <div className="w-9 flex justify-center">{renderResultButton(item.id, "종전", status, autoResults, prevUnknownStart)}</div>
+          </div>
+          {isAdminMode && item.id.startsWith("custom-") && (
+            <button
+              onClick={() => handleDeleteCustomItem(item.id)}
+              className="p-1 hover:bg-red-100 rounded transition-colors ml-2 shrink-0"
+              data-testid={`delete-item-${item.id}`}
+              title="삭제"
+            >
+              <Trash2 className="w-4 h-4 text-red-500" />
+            </button>
+          )}
+        </div>
+        {/* ═══════════════════════════════════════════════════════════════
+            [v4 변경 4] 안내문구 — 4개 상태 통일된 형식
+            ═══════════════════════════════════════════════════════════════
+            모든 상태가 동일한 형식:
+              ※ [기준 시점 설명]
+                 [상황 설명]
+                 [가능한 옵션 안내]
+            
+            버튼은 모든 상태에서 유지, 안내문구만 동적                      */}
+        {customEdits[item.id]?.customWarning && (
+          <div className="px-4 pb-2 text-xs text-blue-600 ml-10 font-medium bg-blue-50 rounded mx-4 p-2 whitespace-pre-wrap">
+            ※ {customEdits[item.id].customWarning}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const getCustomItemsForSection = (sectionId: string) => {
+    return customItems.filter(item => (item as any).sectionId === sectionId);
+  };
+
+  // 섹션에 현재 선택 종류로 표시할 내용이 있는지 (재귀)
+  const sectionHasVisibleContent = (section: InspectionSection): boolean => {
+    if ((section.items || []).some(i => isItemApplicable(i.id))) return true;
+    if (getCustomItemsForSection(section.id).length > 0) return true;
+    return (section.subsections || []).some(sub => sectionHasVisibleContent(sub));
+  };
+
+  const renderSection = (section: InspectionSection, depth: number = 0) => {
+    const isExpanded = expandedSections.has(section.id);
+    const sectionCustomItems = getCustomItemsForSection(section.id);
+    const visibleItems = (section.items || []).filter(item => isItemApplicable(item.id));
+    const visibleSubs = (section.subsections || []).filter(sub => sectionHasVisibleContent(sub));
+    if (visibleItems.length === 0 && visibleSubs.length === 0 && sectionCustomItems.length === 0) return null; // 현재 종류로 표시할 항목 없으면 섹션 숨김
+    const hasContent = (section.items && section.items.length > 0) || 
+                       (section.subsections && section.subsections.length > 0) ||
+                       sectionCustomItems.length > 0;
+    
+    return (
+      <div key={section.id} className={cn("border-b border-border")}>
+        <button
+          className={cn(
+            "w-full flex items-center gap-2 p-3 text-left hover:bg-accent/50 transition-colors",
+            depth === 0 && "font-semibold text-primary",
+            depth === 1 && "pl-6 text-sm text-muted-foreground",
+            depth === 2 && "pl-10 text-sm text-blue-600"
+          )}
+          onClick={() => hasContent && toggleSection(section.id)}
+          data-testid={`section-${section.id}`}
+        >
+          {hasContent ? (
+            isExpanded ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />
+          ) : (
+            <div className="w-4 h-4 shrink-0" />
+          )}
+          <span>{section.title}</span>
+          {sectionCustomItems.length > 0 && (
+            <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+              +{sectionCustomItems.length}
+            </span>
+          )}
+        </button>
+        
+        {isExpanded && (
+          <div className={cn(depth > 0 && "bg-background")}>
+            {visibleSubs.map(sub => renderSection(sub, depth + 1))}
+            {visibleItems.map(item => renderItem(item))}
+            {sectionCustomItems.map(item => (
+              <div key={item.id} className="bg-blue-50 border-l-4 border-l-blue-500">
+                {renderItem(item)}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div ref={zoomContentRef} className="min-h-screen bg-background font-sans text-foreground">
+        <div className="bg-card border-b border-border overflow-hidden">
+          <div className="p-3 border-b border-border bg-muted/30">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
+                  E
+                </div>
+                <h1 className="text-lg font-bold tracking-tight">검사가이드</h1>
+              </div>
+            <div className="flex items-center gap-2">
+              {isAdminMode && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setIsAddItemDialogOpen(true)}
+                    className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                    data-testid="button-add-item"
+                    title="항목 추가"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleSaveConfirm}
+                    className="shrink-0 shadow-sm hover:shadow-md transition-all"
+                    data-testid="button-save-judgment"
+                    title="저장 확인"
+                  >
+                    <Save className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            승강기 종류와 날짜를 입력하면 검사기준 적용 여부를 자동으로 판정합니다.
+          </p>
+
+          {/* 승강기 종류 선택 */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">승강기 종류</Label>
+              <Select
+                value={equipmentType}
+                onValueChange={(value) => handleEquipmentTypeChange(value as EquipmentType)}
+              >
+                <SelectTrigger className="text-xs h-9" data-testid="select-equipment-type">
+                  <SelectValue placeholder="종류 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="엘리베이터">엘리베이터</SelectItem>
+                  <SelectItem value="에스컬레이터">에스컬레이터</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {EQUIPMENT_SUBTYPES[equipmentType]?.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">세부 종류</Label>
+                <Select value={subType} onValueChange={setSubType}>
+                  <SelectTrigger className="text-xs h-9" data-testid="select-sub-type">
+                    <SelectValue placeholder="세부 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EQUIPMENT_SUBTYPES[equipmentType].map((type) => (
+                      <SelectItem key={type} value={type}>{SUBTYPE_LABELS[type] || type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          {/* 날짜 입력 */}
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">건축허가일자</Label>
+              <Input
+                id="permitDate"
+                type="date"
+                value={permitDate}
+                onChange={(e) => { setPermitDate(e.target.value); setInstallType(""); }}
+                data-testid="input-permit-date"
+                className="text-xs h-9"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold">검사기준 적용일</Label>
+              <Input
+                id="inspectionDate"
+                type="date"
+                value={inspectionDate}
+                onChange={(e) => { setInspectionDate(e.target.value); setInstallType(""); }}
+                data-testid="input-inspection-date"
+                className="text-xs h-9"
+              />
+            </div>
+          </div>
+
+          {/* 건축허가일자보다 검사기준 적용일이 빠른 경우 — 성립할 수 없는 조합이므로 안내문만 표시 */}
+          {permitDate && inspectionDate && inspectionDate < permitDate && (
+            <div className="mb-2 p-2.5 bg-red-500/10 rounded-lg border border-red-500/30 text-xs space-y-1">
+              <p className="text-red-600 dark:text-red-400 font-semibold">⚠ 날짜를 다시 확인해주세요</p>
+              <p className="text-red-600 dark:text-red-400 leading-relaxed">
+                검사기준 적용일은 건축허가일자와 같거나 이후 날짜만 가능합니다. 검사기준 적용일이 건축허가일자보다 빠를 수 없습니다.
+              </p>
+            </div>
+          )}
+
+          {/* 건축허가일과 검사기준적용일이 다를 때 교체 유형 선택 (검사기준 적용일이 건축허가일 이후인 경우에만) */}
+          {permitDate && inspectionDate && permitDate !== inspectionDate && inspectionDate > permitDate && (
+            <div className="mb-2 space-y-1">
+              <Label className="text-xs font-semibold">교체 구분</Label>
+              <Select value={installType} onValueChange={(v) => setInstallType(v as "전면교체" | "수시교체")}>
+                <SelectTrigger className="text-xs h-9">
+                  <SelectValue placeholder="교체 유형을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="전면교체">전면교체 (승강기 전체 교체)</SelectItem>
+                  <SelectItem value="수시교체">수시교체 (부품 일부 교체·개조)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">건축허가일과 검사기준 적용일이 다른 경우 선택하세요</p>
+            </div>
+          )}
+
+          {/* 기준일 안내 + 판정 기준 */}
+          {(permitDate || inspectionDate) && (
+            <div className="space-y-2 mb-2">
+              <div className="p-2.5 bg-blue-500/10 rounded-lg border border-blue-500/20 text-xs space-y-0.5">
+                {permitDate && <p className="text-foreground">건축허가일: <strong>{permitDate}</strong></p>}
+                {inspectionDate && <p className="text-foreground">검사기준 적용일: <strong>{inspectionDate}</strong></p>}
+                {installType && <p className="text-primary font-medium">교체 구분: {installType}</p>}
+                <p className="text-xs text-blue-500 mt-1">
+                  {installType === "수시교체"
+                    ? "아래 항목 목록에서 🔧 아이콘으로 실제 교체된 부품(조문)을 표시하세요. 표시한 항목은 검사기준 적용일, 표시하지 않은 항목은 건축허가일을 기준으로 판정됩니다."
+                    : permitDate && inspectionDate && permitDate !== inspectionDate
+                      ? `${permitDate > inspectionDate ? permitDate : inspectionDate} 기준으로 판정됩니다.`
+                      : "입력된 날짜 기준으로 검사항목 적용 여부가 판정됩니다."}
+                </p>
+              </div>
+              <div className="border border-border rounded-xl overflow-hidden text-xs">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/30">
+                  <span className="font-semibold text-[11px]">📋 판정 기준</span>
+                  <span className="text-[9px] text-muted-foreground">{permitDate} 기준</span>
+                </div>
+                {[
+                  { badge: "적합", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400", desc: "현행 검사기준에 적합한 경우" },
+                  { badge: "종전", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400", desc: "건축허가일 또는 검사기준 적용일에 해당하는 종전 검사기준에 적합한 경우" },
+                  { badge: "부적합", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400", desc: "현행 및 종전 검사기준 모두에 적합하지 않은 경우" },
+                  { badge: "시정권고", color: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400", desc: "현행 검사기준에는 없으나 안전상 위험이 우려되어 개선이 필요한 경우" },
+                  { badge: "해당없음", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", desc: "해당 설비가 없거나 적용 제외 대상인 경우" },
+                ].map((r, i) => (
+                  <div key={i} className="flex items-start gap-2.5 px-3 py-2 border-b border-border last:border-b-0">
+                    <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5", r.color)}>{r.badge}</span>
+                    <span className="text-[10px] text-muted-foreground leading-relaxed">{r.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-hidden">
+          <div className="flex items-center justify-end gap-1.5 p-1.5 bg-card border-b border-border">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={expandAll}
+              data-testid="button-expand-all"
+            >
+              전체 펼치기
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={collapseAll}
+              data-testid="button-collapse-all"
+            >
+              전체 접기
+            </Button>
+          </div>
+          <div className="bg-muted/50 border-b border-border">
+            <div className="flex items-center">
+              <div className="flex-1 p-3 font-semibold text-center border-r border-border">검사기준</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center border-r border-border">적합</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center border-r border-border">부적합</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center border-r border-border">시정<br/>권고</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center border-r border-border">해당<br/>없음</div>
+              <div className="w-9 p-2 text-xs font-semibold text-center">종전</div>
+            </div>
+          </div>
+          
+          <div className="max-h-[600px] overflow-y-auto">
+
+            {visibleSections.map(section => renderSection(section))}
+          </div>
+        </div>
+      </div>
+
+      {/* Edit Item Dialog */}
+
+
+      {/* 항목 추가 다이얼로그 */}
+      <Dialog open={isAddItemDialogOpen} onOpenChange={setIsAddItemDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>검사 항목 추가</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="add-item-section">추가할 섹션 *</Label>
+              <Select
+                value={addItemForm.sectionId}
+                onValueChange={(value) => setAddItemForm(prev => ({ ...prev, sectionId: value }))}
+              >
+                <SelectTrigger id="add-item-section" data-testid="select-add-item-section">
+                  <SelectValue placeholder="섹션 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {collectAllSectionIds(INSPECTION_DATA_MR).map((sectionId) => (
+                    <SelectItem key={sectionId} value={sectionId}>{sectionId}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-item-text">검사 내용 *</Label>
+              <Textarea
+                id="add-item-text"
+                value={addItemForm.text}
+                onChange={(e) => setAddItemForm(prev => ({ ...prev, text: e.target.value }))}
+                placeholder="검사 항목 내용을 입력하세요"
+                rows={3}
+                data-testid="input-add-item-text"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-item-effective-date">적용일 (선택)</Label>
+              <Input
+                id="add-item-effective-date"
+                type="date"
+                value={addItemForm.effectiveDate}
+                onChange={(e) => setAddItemForm(prev => ({ ...prev, effectiveDate: e.target.value }))}
+                data-testid="input-add-item-effective-date"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="add-item-intro-type">도입유형 (선택)</Label>
+              <Select
+                value={addItemForm.introductionType}
+                onValueChange={(value) => setAddItemForm(prev => ({ 
+                  ...prev, 
+                  introductionType: value as "" | "new" | "revision" 
+                }))}
+              >
+                <SelectTrigger id="add-item-intro-type" data-testid="select-add-item-intro-type">
+                  <SelectValue placeholder="선택 안함" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">신규</SelectItem>
+                  <SelectItem value="revision">개정</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddItemDialogOpen(false)}>취소</Button>
+            <Button onClick={handleAddItem} data-testid="button-confirm-add-item">추가</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 항목 상세보기 다이얼로그 (사진/댓글) */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={(open) => {
+          setIsDetailDialogOpen(open);
+          if (!open) setEditSectionExpanded(false);
+        }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onOpenAutoFocus={e => e.preventDefault()}
+          onPointerDownOutside={keepDetailOpenWhileViewer as any}
+          onInteractOutside={keepDetailOpenWhileViewer as any}
+          onFocusOutside={keepDetailOpenWhileViewer as any}>
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="text-base">
+              항목 상세보기
+            </DialogTitle>
+          </DialogHeader>
+          {detailItem && (
+            <div
+              className="flex-1 overflow-y-auto flex flex-col"
+              // 확대(zoom>1) 상태에서는 touch-action:none으로 브라우저의 네이티브 세로 스크롤 제스처
+              // 선점을 완전히 차단해, 아래 onTouchMove의 JS pan 로직이 상하좌우 모두 가로챌 수 있게 한다.
+              // (touch-action이 'auto'로 남아있으면 브라우저가 세로 이동만 자체 스크롤로 처리해버려서
+              // 가로로는 전혀 안 움직이고 세로만 움직이는 것처럼 보이는 현상이 발생했다.)
+              // 확대하지 않은 평소 상태(zoom===1)에는 pan-y를 유지해 일반 스크롤은 그대로 동작시킨다.
+              style={{ touchAction: detailZoom.zoom > 1 ? "none" : "pan-y", cursor: detailZoom.cursor }}
+              onTouchStart={detailZoom.containerHandlers.onTouchStart}
+              onTouchMove={detailZoom.containerHandlers.onTouchMove}
+              onTouchEnd={detailZoom.containerHandlers.onTouchEnd}
+              onMouseDown={detailZoom.containerHandlers.onMouseDown}
+              onMouseMove={detailZoom.containerHandlers.onMouseMove}
+              onMouseUp={detailZoom.containerHandlers.onMouseUp}
+              onMouseLeave={detailZoom.containerHandlers.onMouseLeave}
+            >
+              {/* 핀치 줌 시 이 wrapper만 확대되고 배경 페이지는 영향받지 않음(위 usePinchZoomPan 참고) */}
+              <div style={detailZoom.contentStyle} className="flex flex-col">
+              {/* 관리자 편집 섹션 */}
+              {isAdminMode && editingItem?.id === detailItem.id && (
+                <div className="border border-primary/30 rounded-xl bg-primary/5 mb-4">
+                  <div className="px-4 pb-1 pt-3">
+                    <h3 className="font-semibold text-sm text-primary">✏️ 항목 수정</h3>
+                  </div>
+                  {true && <div className="px-4 pb-4 space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">검사 내용</label>
+                    <Textarea
+                      value={editForm.text || ""}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, text: e.target.value }))}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">검사기준</label>
+                    <Textarea
+                      value={(editForm as any).standardNote || ""}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, standardNote: e.target.value } as any))}
+                      placeholder="예: 엘리베이터 안전기준 14.5.5"
+                      rows={2}
+                    />
+
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">건축허가일자 이후 적용</label>
+                    <Input
+                      type="date"
+                      value={editForm.permitEffectiveDate || ""}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, permitEffectiveDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-muted-foreground">검사기준 적용일 (개정)</label>
+                      <Button type="button" variant="outline" size="sm"
+                        onClick={() => setEditRevisions(prev => [...prev, { effectiveDate: "", expiryDate: "", description: "" }])}
+                        disabled={editRevisions.length >= 20}
+                      >+ 개정 추가</Button>
+                    </div>
+                    {editRevisions.map((rev, idx) => (
+                      <div key={rev.id ?? `new-${idx}`} className="border border-amber-400/40 rounded-lg p-3 bg-amber-500/5 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-amber-600">개정 {idx + 1}</span>
+                          <Button type="button" variant="ghost" size="sm"
+                            onClick={() => setEditRevisions(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-destructive px-2 ml-auto"
+                          >✕</Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <label className="text-xs text-muted-foreground">시행일</label>
+                            <Input type="date" value={rev.effectiveDate}
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, effectiveDate: e.target.value } : r))} />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-xs text-muted-foreground">만료일</label>
+                            <Input type="date" value={rev.expiryDate}
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, expiryDate: e.target.value } : r))} />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <div>
+                            <label className="text-[10px] text-muted-foreground font-medium">이전 본문 (이 날짜 이전에 적용되던 기준)</label>
+                            <Textarea value={(rev as any).textBefore || ""} rows={2}
+                              placeholder="이 개정일 이전에 적용되던 기준 본문"
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, textBefore: e.target.value } : r))}
+                              className="text-xs mt-1" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground font-medium">이후 본문 (이 날짜 이후에 적용되는 기준)</label>
+                            <Textarea value={(rev as any).textAfter || ""} rows={2}
+                              placeholder="이 개정일 이후에 적용되는 기준 본문"
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, textAfter: e.target.value } : r))}
+                              className="text-xs mt-1" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground">개정 내용 메모 (선택)</label>
+                            <Textarea value={rev.description} rows={1}
+                              placeholder="변경 요약 메모 (선택사항)"
+                              onChange={(e) => setEditRevisions(prev => prev.map((r, i) => i === idx ? { ...r, description: e.target.value } : r))}
+                              className="text-xs mt-1" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">판정 결과 고정</label>
+                    <div className="flex gap-2 flex-wrap">
+                      {(["적합","부적합","시정권고","해당없음","종전"] as ResultType[]).map(r => (
+                        <Button key={r} type="button" size="sm"
+                          variant={editForm.fixedResult === r ? "default" : "outline"}
+                          onClick={() => setEditForm(prev => ({ ...prev, fixedResult: prev.fixedResult === r ? undefined : r }))}
+                        >{r}</Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-muted-foreground">안내문구</label>
+                    <Textarea
+                      value={editForm.customWarning || ""}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, customWarning: e.target.value }))}
+                      placeholder="이 항목에 표시할 특별 안내문구"
+                      rows={2}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    {customEdits[editForm.id] && (
+                      <Button variant="destructive" size="sm" onClick={() => {
+                        setCustomEdits(prev => { const n = {...prev}; delete n[editForm.id]; return n; });
+                        toast({ title: "수정 초기화", description: "원본 데이터로 복원되었습니다." });
+                      }}>초기화</Button>
+                    )}
+                    <Button size="sm" onClick={handleSaveItemEdit}>저장</Button>
+                  </div>
+                  </div>}
+                </div>
+              )}
+              <div className="p-3 bg-muted rounded-lg text-sm mb-4">
+                <p className="leading-relaxed">{detailItem.text}</p>
+              </div>
+              
+              <div 
+                ref={detailScrollRef}
+                className="flex-1 overflow-y-auto cursor-grab active:cursor-grabbing select-none"
+                onMouseDown={handleDragStart}
+                onMouseMove={handleDragMove}
+                onMouseUp={handleDragEnd}
+                onMouseLeave={handleDragEnd}
+                onTouchStart={handleDragStart}
+                onTouchMove={handleDragMove}
+                onTouchEnd={handleDragEnd}
+              >
+                <div className="space-y-6 pr-4">
+                  {/* 참조 조문 연혁 섹션 */}
+                  {refRevisions.length > 0 && (
+                    <div className="border border-slate-400 rounded-xl p-3 bg-slate-50 mb-4">
+                      <p className="text-[13px] font-bold text-slate-900 mb-2">📎 참조 조문 연혁 ({refRevisions.length}개 조문)</p>
+                      <div className="space-y-3">
+                        {refRevisions.map(({ refId, versions }) => {
+                          // "추가 종전 기준"(introductionType === 'additional')은 시간순 계보와 무관한
+                          // 보충 참고 조문이므로 본 연혁과 분리해 맨 뒤에 별도로 표시한다.
+                          const mainVersions = versions.filter((v: any) => v.introductionType !== 'additional');
+                          const additionalVersions = versions.filter((v: any) => v.introductionType === 'additional');
+                          const renderVersionRow = (v: any, i: number, arr: any[]) => {
+                            const isCurrent = v.introductionType === 'current';
+                            // referenceDate 기준 적용 버전 판정
+                            const vFrom = v.effectiveDate ? new Date(v.effectiveDate) : null;
+                            const vTo   = v.expiryDate   ? new Date(v.expiryDate)   : null;
+                            const isApplied = referenceDate
+                              ? (!vFrom || referenceDate >= vFrom) && (!vTo || referenceDate <= vTo)
+                              : isCurrent;
+                            return (
+                              <div key={i} className="flex gap-2">
+                                <div className="flex flex-col items-center w-3 flex-shrink-0 mt-1">
+                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isApplied ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                                  {i < arr.length - 1 && <div className="w-px bg-gray-200 flex-1 mt-1 mb-1" />}
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                    <p className={`text-[11px] font-bold ${isApplied ? 'text-blue-700' : 'text-slate-500'}`}>
+                                      {isCurrent
+                                        ? `현행 · ${v.effectiveDate || '2022-03-02'} 시행`
+                                        : v.effectiveDate
+                                          ? `${v.effectiveDate} 이후 건축허가분`
+                                          : v.expiryDate
+                                            ? `${dayAfter(v.expiryDate)} 이전 건축허가분`
+                                            : '종전'}
+                                    </p>
+                                    {isApplied && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-700 text-white">
+                                        📍 적용 중
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className={`text-[11.5px] leading-relaxed whitespace-pre-wrap px-2 py-1.5 rounded-lg ${isApplied ? 'bg-blue-50 text-slate-900 border border-blue-300' : 'bg-white text-slate-700 border border-slate-300'}`}>
+                                    {v.description || ""}
+                                  </p>
+                                  {v.source && (
+                                    <p className="text-[10.5px] text-slate-600 mt-0.5 px-1">출처: {v.source}</p>
+                                  )}
+                                  <RevisionAttachments attachments={v.attachments} onOpenImage={openImageViewer} />
+                                </div>
+                                {typeof v.id === "number" && (
+                                  <div className="flex flex-col gap-1 shrink-0 pt-0.5">
+                                    {isAdminMode && (
+                                      <>
+                                        <button
+                                          aria-label="다른 조문으로 이동"
+                                          onClick={() => { setMoveRevisionNewId(refId); setMoveRevisionTarget({ id: v.id, currentRefId: refId }); }}
+                                          className="w-6 h-6 flex items-center justify-center rounded-md border border-border hover:bg-secondary"
+                                        ><ArrowRightLeft size={11} /></button>
+                                        <button
+                                          aria-label="삭제"
+                                          onClick={() => { if (window.confirm("이 연혁 항목을 삭제할까요?")) deleteRevision.mutate({ id: v.id }); }}
+                                          className="w-6 h-6 flex items-center justify-center rounded-md border border-red-200 text-red-500 hover:bg-red-50"
+                                        ><Trash2 size={11} /></button>
+                                      </>
+                                    )}
+                                    {/* 확인 요청 — 모든 이용자에게 노출. 매핑이 이상해 보이면 현장에서 바로 신고할 수 있게 한다. */}
+                                    <button
+                                      aria-label="이 연혁 내용이 이상해요 — 확인 요청"
+                                      title="이 연혁 내용이 이상해요 — 확인 요청"
+                                      onClick={() => {
+                                        const note = window.prompt("어떤 점이 이상한가요? 실수로 접수되지 않도록 내용을 입력해야 신고할 수 있습니다.");
+                                        if (note === null) return;
+                                        if (!note.trim()) {
+                                          window.alert("신고 사유를 입력해야 접수됩니다.");
+                                          return;
+                                        }
+                                        flagRevision.mutate({ id: v.id, note: note.trim() });
+                                      }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md border border-indigo-200 text-indigo-600 hover:bg-indigo-50 dark:border-indigo-700 dark:text-indigo-300 dark:hover:bg-indigo-900/30"
+                                    ><Flag size={11} /></button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          };
+                          return (
+                            <div key={refId}>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="text-[11.5px] font-bold text-slate-800">[별표22] {refId}</span>
+                                {referenceDate && (
+                                  <span className="text-[11px] text-slate-600">
+                                    ({installType === "수시교체" && detailItem
+                                      ? (replacedItemIds.has(detailItem.id) ? inspectionDate : permitDate)
+                                      : (permitDate || inspectionDate)} 기준)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="space-y-1.5">
+                                {mainVersions.map((v: any, i: number) => renderVersionRow(v, i, mainVersions))}
+                              </div>
+                              {additionalVersions.length > 0 && (
+                                <div className="mt-2 pt-2 border-t border-dashed border-slate-300">
+                                  <p className="text-[10px] font-bold text-slate-500 mb-1.5">➕ 추가 종전 기준</p>
+                                  <div className="space-y-1.5">
+                                    {additionalVersions.map((v: any, i: number) => renderVersionRow(v, i, additionalVersions))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {moveRevisionTarget && createPortal(
+                    <div className="fixed inset-0 z-[60] bg-black/40 flex items-end" onClick={() => setMoveRevisionTarget(null)}>
+                      <div className="bg-card w-full rounded-t-2xl p-5 flex flex-col gap-3" onClick={ev => ev.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <ArrowRightLeft size={15} className="text-amber-500" />
+                          <span className="text-sm font-medium flex-1">연혁을 다른 조문으로 이동 [{moveRevisionTarget.currentRefId}]</span>
+                          <button onClick={() => setMoveRevisionTarget(null)} className="w-7 h-7 flex items-center justify-center border border-border rounded-lg"><X size={13} /></button>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-muted-foreground">새 조문 번호</label>
+                          <input
+                            className="w-full border border-border rounded-xl px-3 py-2 text-xs bg-secondary"
+                            value={moveRevisionNewId}
+                            onChange={e => setMoveRevisionNewId(e.target.value)}
+                            placeholder="예: 5.12.2.7.7"
+                            list="move-revision-ids"
+                          />
+                          <datalist id="move-revision-ids">
+                            {collectAllSectionIds(INSPECTION_DATA_MR).map(sid => <option key={sid} value={sid} />)}
+                          </datalist>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => setMoveRevisionTarget(null)} className="flex-1 py-2 text-sm border border-border rounded-xl">취소</button>
+                          <button
+                            onClick={() => moveRevisionNewId.trim() && moveRevision.mutate({ id: moveRevisionTarget.id, newItemId: moveRevisionNewId.trim() })}
+                            disabled={moveRevision.isPending || !moveRevisionNewId.trim()}
+                            className="flex-1 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-xl disabled:opacity-50"
+                          >{moveRevision.isPending ? "이동 중..." : "이동"}</button>
+                        </div>
+                      </div>
+                    </div>,
+                    document.body
+                  )}
+
+                  {/* 검사기준 적용일 (개정) 섹션 — 별도 컴포넌트로 분리 (esbuild JSX 파서 이슈 회피) */}
+                  <RevisionDateSection
+                    itemId={detailItem.id}
+                    customEdits={customEdits}
+                    baseItemMap={baseItemMap}
+                    referenceDate={detailItem ? getReferenceDateForItem(detailItem.id) : referenceDate}
+                    detailRevSel={detailRevSel}
+                    setDetailRevSel={setDetailRevSel}
+                    isAdminMode={isAdminMode}
+                  />
+                  {false && (() => { return ( // placeholder to preserve JSX structure
+                    <div className="border border-border rounded-xl p-4 bg-muted/20">
+                      {false && (
+                        <div className="mb-3">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">🏗 건축허가일 이후 적용</p>
+                          <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 font-medium">placeholder</p>
+                        </div>
+                      )}
+                        <p className="text-xs">placeholder</p>
+                      </div>
+                    );
+                  })()}
+              {/* 사진/댓글 B방식 */}
+                  <div className="mb-2">
+                  <div className="p-0">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-medium flex items-center gap-2">
+                        <Image className="w-4 h-4" />
+                        등록된 사진 ({itemPhotos.length}/10)
+                      </h3>
+                      {isAdminMode && itemPhotos.length < 10 && (
+                        <>
+                          <input
+                            ref={photoInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handlePhotoUpload}
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => photoInputRef.current?.click()}
+                            data-testid="button-upload-photo"
+                          >
+                            <Upload className="w-4 h-4 mr-1" />
+                            사진 추가
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    {isPhotosLoading ? (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        <div className="animate-pulse">사진을 불러오는 중입니다...</div>
+                      </div>
+                    ) : itemPhotos.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        등록된 사진이 없습니다
+                        {isAdminMode && <p className="text-xs mt-1">관리자 모드에서 사진을 추가할 수 있습니다</p>}
+                      </div>
+                    ) : (
+                      <PhotoList 
+                        photos={itemPhotos}
+                        isAdminMode={isAdminMode}
+                        onDeletePhoto={(photoId) => deletePhoto.mutate(photoId)}
+                        onReplacePhoto={(photoId, file) => replacePhoto.mutate({ photoId, file })}
+                        onMoveUp={handleMovePhotoUp}
+                        onMoveDown={handleMovePhotoDown}
+                        onOpenViewer={(index) => {
+                          const allImages = itemPhotos.map((p: any) => p.imageData);
+                          openImageViewer(allImages, index);
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  {/* 댓글 섹션 */}
+                  <div>
+                    <h3 className="font-medium flex items-center gap-2 mb-3">
+                      <MessageSquare className="w-4 h-4" />
+                      댓글 ({itemComments.length})
+                    </h3>
+                    
+                    {/* 댓글 작성 폼 - 누구나 입력 가능 */}
+                    <div className="space-y-2 mb-4 p-3 bg-muted rounded-lg">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="작성자"
+                          value={newComment.author}
+                          onChange={(e) => setNewComment(prev => ({ ...prev, author: e.target.value }))}
+                          className="w-24 bg-card"
+                          data-testid="input-comment-author"
+                        />
+                        <Input
+                          placeholder="댓글 내용"
+                          value={newComment.content}
+                          onChange={(e) => setNewComment(prev => ({ ...prev, content: e.target.value }))}
+                          className="flex-1 bg-card"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && newComment.author && newComment.content) {
+                              createComment.mutate();
+                            }
+                          }}
+                          data-testid="input-comment-content"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => createComment.mutate()}
+                          disabled={!newComment.author || !newComment.content}
+                          data-testid="button-submit-comment"
+                        >
+                          등록
+                        </Button>
+                      </div>
+                    </div>
+
+                    {itemComments.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground text-sm">
+                        등록된 댓글이 없습니다
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {itemComments.map((comment: any) => (
+                          <div key={comment.id} className="p-3 bg-card border rounded-lg">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium text-sm">{comment.author}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(comment.createdAt).toLocaleDateString("ko-KR")}
+                                </span>
+                                {isAdminMode && (
+                                  <button
+                                    onClick={() => deleteComment.mutate(comment.id)}
+                                    className="p-1 hover:bg-red-100 rounded transition-colors"
+                                    title="삭제"
+                                  >
+                                    <Trash2 className="w-3 h-3 text-red-500" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-700">{comment.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+                  </div>
+                  </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>닫기</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      </div>
+
+
+      {/* Image Viewer Portal */}
+      {imageViewer.isOpen && createPortal(
+        <ImageViewerComponent
+          imageViewer={imageViewer}
+          setImageViewer={setImageViewer}
+          closeImageViewer={closeImageViewer}
+        />,
+        document.body
+      )}
+    </>
+  );
+}
+
+// ── 개정 날짜 섹션 컴포넌트 (esbuild JSX 파서 이슈 회피를 위해 분리) ──
+function RevisionDateSection({ itemId, customEdits, baseItemMap, referenceDate, detailRevSel, setDetailRevSel, isAdminMode }: {
+  itemId: string;
+  customEdits: Record<string, any>;
+  baseItemMap: Record<string, any>;
+  referenceDate: Date | null;
+  detailRevSel: Record<string, "before"|"after">;
+  setDetailRevSel: React.Dispatch<React.SetStateAction<Record<string, "before"|"after">>>;
+  isAdminMode: boolean;
+}) {
+  const itemEdit = customEdits[itemId];
+  const dbItem = baseItemMap[itemId];
+
+  // 1순위: customEdits, 2순위: baseItemMap (JSON 원본)
+  const standardDates: string[] = (itemEdit as any)?.standardDates
+    || (() => { try { const p = JSON.parse(dbItem?.standardDates||'[]'); return Array.isArray(p) ? p.map((r:any) => r.date||r).filter(Boolean) : []; } catch { return []; } })();
+
+  const datesWithMemo: {date: string; memo: string; label?: string}[] =
+    (itemEdit as any)?.standardDatesWithMemo
+    || standardDates.map((d, i) => {
+      // baseItemMap에서 해당 날짜의 description 매핑
+      let memo = '';
+      try {
+        const parsed = JSON.parse(dbItem?.standardDates||'[]');
+        const match = parsed.find((r:any) => (r.date||r) === d);
+        memo = match?.text || match?.description || '';
+      } catch {}
+      return { date: d, memo, label: `개정 ${i+1}` };
+    });
+
+  const enforce: string = (itemEdit as any)?.enforcementType || (dbItem as any)?.enforcementType || '';
+
+  if (datesWithMemo.length === 0) return null;
+
+  const fmt = (date: string) => {
+    if (!date) return '시행일 미입력';
+    const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[1]}년 ${parseInt(m[2])}월 ${parseInt(m[3])}일` : date;
+  };
+
+  // 적용 기준 인덱스 (referenceDate 기준)
+  const sorted = [...datesWithMemo].sort((a, b) => (b.date||'').localeCompare(a.date||''));
+  let applicableIdx = -1;
+  if (referenceDate) {
+    let bestDate = '';
+    sorted.forEach((r, i) => {
+      if (r.date && new Date(r.date) <= referenceDate && r.date > bestDate) {
+        applicableIdx = i; bestDate = r.date;
+      }
+    });
+  }
+
+  return (
+    <div className="border border-border rounded-xl p-4 bg-muted/20 space-y-3">
+      {/* 개정 목록 이전/이후 토글 */}
+      {sorted.length > 0 && (
+        <div>
+          <h3 className="font-medium text-sm mb-2">📅 검사기준 적용일 (개정)</h3>
+          <div className="space-y-2">
+            {sorted.map((r, idx) => {
+              const key = `${itemId}-${idx}`;
+              const sel = detailRevSel[key] ?? 'after';
+              const isAfter = sel === 'after';
+              const isApplicable = idx === applicableIdx;
+              const dateLabel = enforce === 'retroactive'
+                ? `${fmt(r.date)} 이후 소급 적용`
+                : `${fmt(r.date)} 이후 건축허가분부터 적용`;
+              return (
+                <div key={key} className={`border rounded-lg p-3 ${isApplicable ? 'border-amber-400/50 bg-amber-500/5' : 'border-border bg-card'}`}>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    {isApplicable && (
+                      <span className="text-xs font-semibold text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full shrink-0">적용 기준</span>
+                    )}
+                    <span className="text-xs font-medium text-muted-foreground flex-1">{dateLabel}</span>
+                    {isAdminMode && (
+                      <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
+                        <button
+                          onClick={() => setDetailRevSel(prev => ({ ...prev, [key]: 'before' }))}
+                          className={`text-[10px] px-2 py-1 transition-colors ${!isAfter ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        >이전</button>
+                        <button
+                          onClick={() => setDetailRevSel(prev => ({ ...prev, [key]: 'after' }))}
+                          className={`text-[10px] px-2 py-1 transition-colors ${isAfter ? 'bg-primary text-primary-foreground font-medium' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        >이후</button>
+                      </div>
+                    )}
+                  </div>
+                  <div className={`text-[10px] px-2 py-1 rounded mb-2 ${isAfter ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-gray-50 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400'}`}>
+                    {isAfter ? `${fmt(r.date)} 이후 기준 적용` : `${fmt(r.date)} 이전 기준 적용 (개정 전 본문)`}
+                  </div>
+                  {/* 이전/이후 본문 표시 */}
+                  {(() => {
+                    const body = isAfter
+                      ? ((r as any).textAfter || r.memo || "")
+                      : ((r as any).textBefore || "");
+                    if (!body.trim()) return isAfter ? null : (
+                      <p className="text-xs text-muted-foreground italic">이전 본문이 입력되지 않았습니다.</p>
+                    );
+                    return <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{body}</p>;
+                  })()}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,22 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>1.4.5-다 연혁 연결 예시</title><style>
+body{font-family:'Malgun Gothic',sans-serif;background:#f1f3f6;margin:0;padding:20px;color:#222;font-size:12px}h1{font-size:18px;color:#1e3a5f;margin:0 0 4px}p.s{color:#667;margin:0 0 14px}
+.row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}.col{width:470px}h2{font-size:13px;color:#1e3a5f;margin:0 0 6px}.dlg{background:#fff;border-radius:14px;padding:12px;box-shadow:0 2px 12px #0003}
+.it{border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px;line-height:1.6;margin-bottom:6px}.it.t{border-color:#1d4ed8;background:#eff6ff}.bd{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#7c3aed;color:#fff;margin-left:6px}
+.no{font-size:10px;color:#94a3b8;margin-left:6px}.p{background:#f8fafc;border:1px solid #94a3b8;border-radius:12px;padding:10px;margin-top:8px}.id{font-size:11.5px;font-weight:700;color:#1e293b;margin-bottom:4px}
+.cur{font-size:11px;font-weight:700;color:#1d4ed8;margin-top:8px}.ap2{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#1d4ed8;color:#fff;margin-left:6px}
+.tx{line-height:1.6;padding:6px 9px;border-radius:8px;margin:3px 0;font-size:11px;white-space:pre-wrap;background:#eff6ff;border:1px solid #93c5fd}
+.note{font-size:11.5px;color:#444;margin-top:14px;line-height:1.8;background:#fff;border:1px solid #e1e5eb;border-radius:10px;padding:10px 14px;max-width:1000px}
+</style></head><body><h1>[1.4.5] 1.4.5-다 연혁 연결 (예시)</h1><p class="s">로봇이 KS B 7317에 따라 공인기관에서 발급한 안전성 평가서를 구비하였는지 확인한다.</p><div class="row">
+<div class="col"><h2>① 현재</h2><div class="dlg">
+<div class="it">가) … 14.11나)에 따라 표시되었는지 확인한다. <span class="bd">연혁</span></div>
+<div class="it">나) … 14.11에 따라 설치되었는지 확인한다. <span class="bd">연혁</span></div>
+<div class="it t">다) 로봇이 KS B 7317에 따라 공인기관에서 발급한 안전성 평가서를 구비하였는지 확인한다.<span class="no">← 연혁 없음 (본문에 조문 번호가 없음)</span></div></div></div>
+<div class="col"><h2>② 연결 후 (14.11 연혁 표시)</h2><div class="dlg">
+<div class="it t">다) 로봇이 KS B 7317에 따라 공인기관에서 발급한 안전성 평가서를 구비하였는지 확인한다. <span class="bd">연혁</span></div>
+<div class="p"><div class="id">[별표22] 14.11</div><div class="cur">현행 · 2022-03-02 시행<span class="ap2">📍 적용 중</span></div><div class="tx">14.11 로봇 탑승용 엘리베이터 무선통신장치
+가) 로봇은 한국산업표준 KS B 7317에 적합해야 하며, 관련된 공인기관의 안전성 평가를 받아야 한다.
+나) 카 내부에는 다음과 같은 표시가 있어야 한다.
+1) 내용: 로봇 탑승용 엘리베이터
+2) 높이: 15 mm 이상
+다) 로봇 탑승용 엘리베이터 무선통신장치는 부속서ⅩⅣ에 따라 안전성이 입증되어야 한다.</div></div></div></div></div>
+<div class="note"><b>정리</b><br>· 연결: 코드의 예외 목록에 한 줄 추가(<code>"1.4.5-다": ["14.11"]</code>). DB 변경은 없습니다. 14.11 연혁(현행 1건)은 이미 DB에 있고, 가)·나) 항목에도 같은 내용이 표시되고 있습니다.<br>· 이 조문은 2022-03-02에 신설되어 종전 기준이 없습니다. 그래서 현행 1건만 보입니다.<br>· 말씀하신 문구 끝의 "&lt;2022년 3월 2일 이후 건축허가분부터 적용&gt;"은 연혁집의 신설 표기이고, 앱에서는 "현행 · 2022-03-02 시행"으로 보입니다.<br>· 연혁집에 "부속서 ⅩⅣ"의 본문이 따로 있는지는 확인하지 못했습니다. 14.11 다)에서 인용만 되어 있습니다.</div></body></html>

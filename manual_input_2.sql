@@ -35,7 +35,8 @@ INSERT INTO inspection_item_revisions (item_id, effective_date, expiry_date, int
 DELETE FROM inspection_item_revisions WHERE item_id = '6.1.7' AND introduction_type != 'revision';
 INSERT INTO inspection_item_revisions (item_id, effective_date, expiry_date, introduction_type, description) VALUES ('6.1.7', '2022-03-02', NULL, 'current', '6.1.7 설비의 취급(양중용 지지대 및 고리) 무거운 설비를 편리한 위치에서 양중할 수 있는 금속 지지대 또는 고리가 기계실·기계류 공간 또는 승강로의 천장에 1개 이상 설치되어야 하며, 허용 하중이 표시되어야 한다.');
 INSERT INTO inspection_item_revisions (item_id, effective_date, expiry_date, introduction_type, description) VALUES ('6.1.7', '2013-09-15', '2022-03-01', 'old', '6.3.8 양중용 금속 지지대 또는 고리는 무거운 설비를 편리한 위치에서 양중할 수 있도록 기계실 내의 천장 또는 보의 알맞은 위치에 1개 이상 있어야 한다. 6.4.10 금속 지지대 또는 고리가 구동기 공간의 알맞은 위치에 1개 이상 있어야 한다.');
-INSERT INTO inspection_item_revisions (item_id, effective_date, expiry_date, introduction_type, description) VALUES ('6.1.7', '1997-08-18', '2013-09-14', 'old', '3.1.5(5) 기계실 천장에는 기기를 양정하기 위한 고리 등을 설치하여야 한다.');
+INSERT INTO inspection_item_revisions (item_id, effective_date, expiry_date, introduction_type, description) VALUES ('6.1.7', '1997-08-18', '2013-09-14', 'old', '[3.1.5(5) 유압식 제외]
+3.1.5(5) 기계실 천장에는 기기를 양정하기 위한 고리 등을 설치하여야 한다.');
 
 -- 6.1.8.1
 DELETE FROM inspection_item_revisions WHERE item_id = '6.1.8.1' AND introduction_type != 'revision';

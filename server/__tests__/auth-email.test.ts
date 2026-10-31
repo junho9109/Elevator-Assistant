@@ -181,6 +181,17 @@ describe("이메일 인증 가입/로그인", () => {
     expect(v.body.org).toBe(other);
   });
 
+  it("관리자 전용 API: 토큰이 없으면 401, 일반 계정은 403", async () => {
+    const none = await request(app).get("/api/admin/users");
+    expect(none.status).toBe(401);
+    const login = await request(app).post("/api/auth/login").send({ empId: EMP1, password: PW });
+    const token = login.body.token;
+    const list = await request(app).get("/api/admin/users").set("Authorization", `Bearer ${token}`);
+    expect(list.status).toBe(403);
+    const block = await request(app).post("/api/admin/users/1/block").set("Authorization", `Bearer ${token}`).send({ reason: "x" });
+    expect(block.status).toBe(403);
+  });
+
   it("로그인에 5번 실패하면 잠기고 맞는 비밀번호도 429", async () => {
     for (let i = 0; i < 5; i++) {
       await request(app).post("/api/auth/login").send({ empId: EMP1, password: "wrong-password" });

@@ -1,0 +1,48 @@
+<!doctype html><meta charset=utf-8><title>자료 요청하기 버튼 예시</title>
+<style>
+body{font-family:'Malgun Gothic',sans-serif;background:#f1f5f9;margin:0;padding:16px;color:#222}
+h2{margin:4px 0 12px}.row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.ph{width:300px;background:#fff;border:1px solid #cbd5e1;border-radius:16px;padding:12px;font-size:12px;box-shadow:0 2px 8px #0001}
+.ph h4{margin:0 0 8px;font-size:12px;color:#475569}
+.q{background:#1e3a5f;color:#fff;border-radius:12px;padding:8px 10px;margin:0 0 8px auto;width:fit-content;max-width:85%}
+.a{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px;line-height:1.55;margin-bottom:8px}
+.tag{display:inline-block;font-size:10px;font-weight:bold;border-radius:10px;padding:1px 7px;margin-right:4px}
+.t-std{background:#dbeafe;color:#1d4ed8}.t-cf{background:#fee2e2;color:#b91c1c}.t-no{background:#fef3c7;color:#92400e}
+.req{background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:10px;margin-bottom:8px}
+.req b{color:#92400e}.btnreq{display:block;width:100%;background:#f59e0b;color:#fff;border:0;border-radius:10px;padding:9px;font-weight:bold;font-size:12px;margin-top:6px}
+.fb{background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:8px}.fb p{margin:0 0 6px;color:#4338ca;font-weight:bold;font-size:11px}
+.fbb{display:flex;gap:8px}.fbb span{flex:1;text-align:center;color:#fff;border-radius:10px;padding:8px;font-weight:bold}
+.chip{display:inline-block;border:1px solid #cbd5e1;border-radius:14px;padding:3px 9px;margin:2px;font-size:11px}.on{background:#fef3c7;border-color:#f59e0b;color:#92400e;font-weight:bold}
+.sheet{background:#fff;border-radius:14px 14px 0 0;border:1px solid #cbd5e1;padding:10px}
+.toast{background:#166534;color:#fff;border-radius:10px;padding:9px;text-align:center;font-weight:bold}
+table{border-collapse:collapse;font-size:12px;background:#fff;margin:12px 0}td,th{border:1px solid #cbd5e1;padding:6px 9px;vertical-align:top}th{background:#e2e8f0}
+.admin td{font-size:11px;padding:4px 6px}.n{background:#fee2e2;color:#b91c1c;border-radius:8px;padding:0 6px;font-weight:bold}
+.mark{outline:3px dashed #f59e0b;outline-offset:3px}
+</style>
+<h2>① 요청하기 버튼 — 아쉬워요와의 차이, 위치, 배치 (예시)</h2>
+<table><tr><th></th><th>👎 아쉬워요</th><th>📩 자료 요청하기 (신규)</th></tr>
+<tr><td>의미</td><td>답변이 틀렸거나 마음에 안 듦(평가)</td><td>앱에 자료가 없어서 답할 수 없음(자료 보충 요청)</td></tr>
+<tr><td>언제 보임</td><td>모든 답변 아래 항상</td><td>AI가 "해당 자료 없음"으로 답했을 때만</td></tr>
+<tr><td>누르면</td><td>이유 선택창 → 제출</td><td>질문 자동 첨부 → 필요한 자료 종류만 고르고 1탭 제출(메모 선택)</td></tr>
+<tr><td>결과</td><td>유사 질문에서 이 답변을 참고하지 않도록 학습</td><td>관리자 "자료 요청함"에 쌓임. 같은 질문은 N명으로 묶여 많이 요청된 순으로 표시</td></tr>
+<tr><td>위치</td><td>답변 맨 아래 파란 박스</td><td>답변 바로 아래, 피드백 박스 <b>위</b>에 노란 박스(눈에 띄게 분리)</td></tr></table>
+<div class=row>
+<div class=ph><h4>A. 자료가 있는 답변 (표준화 병기)</h4><div class=q>비접촉식 문닫힘안전장치 미작동 판정?</div>
+<div class=a><b>[검사기준/판정지침]</b><br>비접촉식 단독 미작동 → 불합격<br><span class="tag t-std">표준화 적용</span>16년 제3차: 기계식+광감지식 동시 설치 시 광감지식 불량 → 시정권고<br><span class="tag t-cf">충돌 — 확인 필요</span>판정지침과 표준화 결론이 다릅니다. 설치일(검사기준 적용일)에 따라 적용 대상이 달라질 수 있습니다.</div>
+<div class=fb><p>✨ 답변이 도움이 되었나요?</p><div class=fbb><span style="background:#3b82f6">👍 좋아요</span><span style="background:#6b7280">👎 아쉬워요</span></div></div></div>
+<div class=ph><h4>B. 자료 없음 답변 (요청 버튼 노출)</h4><div class=q>11월1일부터 적용되는 브레이크 시스템 기준 알려줘</div>
+<div class=a><span class="tag t-no">자료 없음</span>앱에 이 내용의 검사기준·표준화가 등록되어 있지 않습니다. 확인되지 않은 내용은 안내드리지 않습니다.</div>
+<div class="req mark"><b>📩 이 자료가 필요하신가요?</b><br><span style="color:#78716c">관리자에게 등록을 요청할 수 있어요.</span><button class=btnreq>자료 등록 요청하기</button></div>
+<div class=fb><p>✨ 답변이 도움이 되었나요?</p><div class=fbb><span style="background:#3b82f6">👍 좋아요</span><span style="background:#6b7280">👎 아쉬워요</span></div></div></div>
+<div class=ph><h4>C. 요청하기 누른 뒤 (하단 시트)</h4><div style="height:110px;background:#f1f5f9;border-radius:10px;margin-bottom:6px;display:flex;align-items:center;justify-content:center;color:#94a3b8">(답변 화면)</div>
+<div class=sheet><b>자료 등록 요청</b><div style="margin:6px 0;color:#475569">질문: 11월1일부터 적용되는 브레이크 시스템 기준 알려줘 <i>(자동 첨부)</i></div>
+<div>필요한 자료 <span class="chip on">표준화</span><span class="chip">검사기준</span><span class="chip">판정지침</span><span class="chip">기타</span></div>
+<div style="border:1px solid #cbd5e1;border-radius:8px;padding:6px;margin:6px 0;color:#94a3b8">메모(선택)</div><button class=btnreq style="background:#1e3a5f">요청 보내기</button></div>
+<div class=toast style="margin-top:8px">✔ 요청이 접수되었습니다</div></div>
+<div class=ph style="width:340px"><h4>D. 관리자 화면 — 자료 요청함 (설정 안, 피드백 현황 옆)</h4>
+<table class=admin style="width:100%"><tr><th>질문</th><th>요청</th><th>자료</th><th>상태</th></tr>
+<tr><td>11월1일 브레이크 시스템 기준</td><td><span class=n>3명</span></td><td>표준화</td><td>대기</td></tr>
+<tr><td>승강장 방화셔터 표준화</td><td><span class=n>2명</span></td><td>표준화</td><td>대기</td></tr>
+<tr><td>피트 사다리 협의 내용</td><td>1명</td><td>기타</td><td>등록완료</td></tr></table>
+<div style="color:#64748b">· 많이 요청된 순 정렬 · 등록 후 "등록완료"로 변경 · 요청자 목록은 관리자만 열람</div></div>
+</div>

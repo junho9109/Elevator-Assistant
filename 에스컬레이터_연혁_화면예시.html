@@ -1,0 +1,54 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{margin:0;background:#f3f4f6;font-family:"Malgun Gothic",sans-serif;display:flex;justify-content:center}
+.phone{width:390px;background:#fff;min-height:100vh;box-shadow:0 0 20px #0002}
+.top{padding:12px 14px;border-bottom:1px solid #e5e7eb;font-weight:700;font-size:15px}
+.dates{padding:10px 14px;background:#f9fafb;border-bottom:1px solid #e5e7eb;font-size:12px}
+.dates input{padding:4px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+.box{margin:12px;border:1px solid #fde68a;border-radius:12px;padding:12px;background:#fffbeb}
+.box h4{margin:0 0 8px;font-size:12px;color:#111}
+.ref{font-size:10px;font-weight:700;color:#111;margin-bottom:6px}.ref span{font-weight:400;color:#d97706;margin-left:6px;font-size:9px}
+.row{display:flex;gap:8px}.rail{width:12px;display:flex;flex-direction:column;align-items:center;margin-top:4px}
+.dot{width:8px;height:8px;border-radius:50%;background:#d1d5db}.dot.on{background:#3b82f6}.line{width:1px;background:#e5e7eb;flex:1;margin:4px 0}
+.body{flex:1;margin-bottom:6px}
+.lb{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
+.lb p{margin:0;font-size:9px;font-weight:700;color:#9ca3af}.lb p.on{color:#2563eb}
+.badge{font-size:8px;font-weight:700;padding:1px 6px;border-radius:9px;background:#fef3c7;color:#b45309;border:1px solid #fde68a}
+.chip{font-size:8px;padding:1px 6px;border-radius:9px}.ok{background:#dcfce7;color:#166534}.no{background:#fee2e2;color:#991b1b}.wn{background:#fff3cd;color:#7a5b00}
+.tx{margin:0;font-size:10px;line-height:1.6;white-space:pre-wrap;padding:6px 8px;border-radius:8px;background:#fff;border:1px solid #f3f4f6;color:#4b5563}
+.tx.on{background:#eff6ff;border-color:#dbeafe;color:#1e3a8a}
+.res{margin:0 12px 12px;padding:8px 10px;border-radius:8px;font-size:12px;background:#eef2ff}
+.tabs{display:flex;gap:6px;padding:8px 12px;flex-wrap:wrap}.tabs button{font-size:12px;padding:3px 9px;border:1px solid #cbd5e1;border-radius:12px;background:#fff}.tabs button.on{background:#1F3864;color:#fff}
+.mem{font-size:11px;color:#6b7280;padding:0 14px 8px}
+</style>
+<div class=phone>
+<div class=top>검사가이드 · 에스컬레이터 · 조문 연혁 (예시 화면)</div>
+<div class=dates>건축허가일 <input type=date id=pd value="2010-05-01"> <span style="color:#6b7280">검사기준 적용일은 오늘 기준</span></div>
+<div class=tabs id=tabs></div>
+<div class=mem>※ 날짜를 바꾸면 '적용 중' 위치가 바뀝니다. 실제 앱과 같은 표시만 사용했습니다.</div>
+<div id=view></div></div>
+<script>
+const DATA=[{"id": "5.2.2.1", "versions": [{"type": "current", "eff": "2022-03-02", "exp": null, "desc": "5.2.2.1 에스컬레이터의 경사도 α는 30°를 초과하지 않아야 한다. 다만, 층고(h13)가 6 m\n 이하이고, 공칭속도가 0.5 ㎧ 이하인 경우에는 경사도를 35 °까지 증가시킬 수 있다.(그\n 림 5의 α 참조)\n  비고 경사도 α는 현장 설치여건 등을 감안하여 최대 1 °까지 초과될 수 있다.", "chip": "", "note": "이전 기준 블록과 거의 동일(97%) - 개정 여부 확인"}, {"type": "old", "eff": "2013-09-15", "exp": "2022-03-01", "desc": "5.2.2.1 에스컬레이터의 경사도 α는 30°를 초과하지 않아야 한다. 다만, 높이(h13)가 6 m 이하이고 공칭속도가 0.5 ㎧ 이하인\n     경우에는 경사도를 35°까지 증가시킬 수 있다.(그림 2의 α참조)\n비고 경사도 α는 현장 설치여건 등을 감안하여 최대 1°까지 초과될 수 있다.", "chip": "", "note": ""}, {"type": "old", "eff": "2007-09-10", "exp": "2013-09-14", "desc": "3.3.1(2) 에스컬레이터의 경사도는 30°이하로 하여야 하고, 수평보행기의 경사도는 12°이하로 하여야 한다. 다만, 에스컬레이터의\n     층고가 6m 이하일 때에는 35°이하로 할 수 있으며, 수평보행기의 디딤면이 고무제품 등 미끄러지기 어려운 구조일 경\n     우에는 경사도를 15°이하로 할 수 있다. <u>다만, 승강기 구조상 현장 확인이 불가한 경우 설계서나 공인기관의 시험성</u>\n     <u>적서로 확인할 수 있다.</u>", "chip": "미시행", "note": ""}, {"type": "old", "eff": null, "exp": "2007-09-09", "desc": "3.3.1(2) 에스컬레이터의 경사도는 30°이하로 하여야 하고, 수평보행기의 경사도는 12°이하로 하여야 한다. 다만, 에스컬레이터의\n     층고가 6m 이하일 때에는 35°이하로 할 수 있으며, 수평보행기의 디딤면이 고무제품 등 미끄러지기 어려운 구조일 경\n     우에는 경사도를 15°이하로 할 수 있다.", "chip": "", "note": ""}]}, {"id": "5.3.2.1", "versions": [{"type": "current", "eff": "2013-09-15", "exp": null, "desc": "5.3.2.1 일반사항\n 에스컬레이터 및 무빙워크의 공칭 폭 은 0.58 m 이상 1.1 m 이하이어야 한다.\n 경사도가 6 °이하인 무빙워크의 폭은 1.65 m까지 허용된다.", "chip": "", "note": "태그와 이전 기준 블록 공존"}, {"type": "old", "eff": "1999-09-03", "exp": "2013-09-14", "desc": "3.3.1(5) <u>디딤판의 치수는 다음의 기준에 적합하여야 한다.</u>\n ① 에스컬레이터 디딤판 디딤면의 주행방향 길이는 400㎜ 이상, 폭은 560㎜ 이상, 1,020㎜ 이하이어야 하며, 디딤판과\n     디딤판과의 높이차는 215㎜ 이하이어야 한다. 다만, 에스컬레이터의 경사각이 30°를 초과하는 경우 디딤판과 디딤판과의\n     높이차는 240㎜ 이하로 할 수 있다.\n ② 수평보행기 디딤판(팰릿)의 디딤면의 주행방향 길이는 제한하지 않으며, 디딤면의 폭은 560㎜ 이상, 1,020㎜ 이하이어야\n     한다. 다만, 경사각이 6° 이하인 수평보행기의 경우에는 광폭형을 설치할 수 있다.", "chip": "미시행", "note": ""}, {"type": "old", "eff": "1999-01-14", "exp": "1999-09-02", "desc": "3.3.1(5)\n ① 에스컬레이터 디딤판 디딤면의 주행방향 길이는 400㎜ 이상, 폭은 560㎜ 이상, 1,020㎜ 이하이어야 하며, 디딤판과\n     디딤판과의 높이차는 215㎜ 이하이어야 한다. 다만, 에스컬레이터의 경사각이 30°를 초과하는 경우 디딤판과 디딤판과의\n     높이차는 240㎜ 이하로 할 수 있다.\n ② 수평보행기 디딤판(팰릿)의 디딤면의 주행방향 길이는 제한하지 않으며, 디딤면의 폭은 560㎜ 이상, 1,020㎜ 이하이어야\n     한다. 다만, 경사각이 6° 이하인 수평보행기의 경우에는 광폭형을 설치할 수 있다.", "chip": "미시행", "note": ""}]}, {"id": "5.4.1.2.2", "versions": [{"type": "current", "eff": "2013-09-15", "exp": null, "desc": "5.4.1.2.2 에스컬레이터의 공칭속도는 다음과 같아야 한다.\n 가) 경사도 α가 30 °이하인 에스컬레이터는 0.75 ㎧ 이하이어야 한다.\n 나) 경사도 α가 30 °를 초과하고 35 °이하인 에스컬레이터는 0.5 ㎧ 이하이어야 한다.", "chip": "", "note": "태그와 이전 기준 블록 공존"}, {"type": "old", "eff": "1999-09-03", "exp": null, "desc": "3.3.1(4) 에스컬레이터 및 수평보행기의 디딤판의 속도는 다음의 각호의 기준에 적합하여야 한다. 다만, 현장에서 속도 측정 시\n         기준속도의 5% 이하초과는 허용할 수 있다.\n - 에스컬레이터 디딤판의 속도는 30m/min 이하로 하여야 한다. <u>다만, 에스컬레이터의 경사도가 30° 이하이고, 층고가 6m 이하이며,</u>\n    수평주행구간 <u>디딤판의 수가 3개 이상인 경우에는 40m/min 이하로 할 수 있으며, </u>수평보행기 디딤판의 속도는 경사도가 8°\n    이하의 것은 50m/min 이하, 경사도가 8°를 초과하는 것은 40m/min 이하로 하여야 한다.", "chip": "", "note": ""}, {"type": "old", "eff": null, "exp": "2013-09-14", "desc": "3.3.1(4) 에스컬레이터 및 수평보행기의 디딤판의 속도는 다음의 각호의 기준에 적합하여야 한다. 다만, 현장에서 속도 측정 시\n         기준속도의 5% 이하초과는 허용할 수 있다.\n ① 에스컬레이터 디딤판의 속도는 30m/min 이하로 하여야 한다. 다만, 에스컬레이터의 경사도가 30° 이하이고 층고가 6m\n     이하이며 수평주행구간 디딤판의 수가 3개 이상인 경우에는 40m/min 이하로 할 수 있다.", "chip": "", "note": ""}, {"type": "old", "eff": null, "exp": "1999-09-02", "desc": "3.3.1(4) 에스컬레이터 및 수평보행기의 디딤판의 속도는 다음의 각호의 기준에 적합하여야 한다. 다만, 현장에서 속도 측정 시\n         기준속도의 5% 이하초과는 허용할 수 있다.\n - 에스컬레이터 디딤판의 속도는 30m/min 이하로 하여야 하고, 수평보행기 디딤판의 속도는 경사도가 8°이하의 것은 50m/min 이하,\n  경사도가 8°를 초과하는 것은 40m/min 이하로 하여야 한다.", "chip": "", "note": ""}]}, {"id": "5.3.7", "versions": [{"type": "current", "eff": "2019-03-28", "exp": null, "desc": "5.3.7 디딤판은 별표 20에 따라 안전성이 입증되어야 한다.", "chip": "", "note": ""}]}];
+let cur=0;
+const day=(d)=>{const t=new Date(d);t.setDate(t.getDate()+1);return t.toISOString().slice(0,10)};
+function applied(v,ref){const f=v.eff?new Date(v.eff):null,t=v.exp?new Date(v.exp):null;return (!f||ref>=f)&&(!t||ref<=t)}
+function render(){
+ const ref=new Date(document.getElementById('pd').value||'2010-05-01');
+ const d=DATA[cur];const vs=d.versions;
+ let hit=vs.filter(v=>applied(v,ref));
+ // 현행 vs 종전 판정 안내
+ let msg;
+ if(!hit.length) msg='해당 없음 — 이 건축허가일에 적용되는 기준이 연혁에 없습니다.';
+ else if(hit[0].type=='current') msg='현행 기준 적용 → 적합 / 부적합 / 시정권고';
+ else msg='종전 기준 적용 → 종전 ('+(hit[0].eff?hit[0].eff+' 이후':day(hit[0].exp)+' 이전')+' 건축허가분)';
+ document.getElementById('view').innerHTML='<div class=box><h4>📎 참조 조문 연혁 (1개 조문)</h4><div class=ref>[별표24] '+d.id+'<span>('+document.getElementById('pd').value+' 기준)</span></div>'+
+ vs.map((v,i)=>{const on=hit.includes(v);
+  const label=v.type=='current'?'현행 · '+v.eff+' 시행':v.eff?v.eff+' 이후 건축허가분':v.exp?day(v.exp)+' 이전 건축허가분':'종전';
+  const rng='';const _unused=v.type=='old'?'<span style="font-size:9px;color:#9ca3af">('+(v.eff||'?')+' ~ '+(v.exp||'?')+')</span>':'';
+  const chip='';const _c=v.chip=='시행됨'?'<span class="chip ok">시행됨</span>':v.chip=='미시행'?'<span class="chip no">미시행</span>':'';
+  const note='';const _n=v.note?'<span class="chip wn">'+v.note+'</span>':'';
+  return '<div class=row><div class=rail><div class="dot '+(on?'on':'')+'"></div>'+(i<vs.length-1?'<div class=line></div>':'')+'</div><div class=body><div class=lb><p class="'+(on?'on':'')+'">'+label+'</p>'+rng+(on?'<span class=badge>📍 적용 중</span>':'')+chip+note+'</div><p class="tx '+(on?'on':'')+'">'+v.desc+'</p></div></div>';}).join('')+'</div><div class=res><b>자동 판정</b><br>'+msg+'</div>';
+ document.getElementById('tabs').innerHTML=DATA.map((x,i)=>'<button class="'+(i==cur?'on':'')+'" onclick="cur='+i+';render()">'+x.id+'</button>').join('');
+}
+document.getElementById('pd').onchange=render;render();
+</script></html>

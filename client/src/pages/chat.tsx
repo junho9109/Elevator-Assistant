@@ -1,5 +1,6 @@
 import { useState, useEffect as _ue, useEffect, useRef, useCallback } from "react";
 import { Search, X, Send, CornerUpLeft, ImagePlus, Video, ZoomIn, ZoomOut } from "lucide-react";
+import ViewerCloseButton from "@/components/ViewerCloseButton";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 
 interface ChatMsg {
@@ -582,7 +583,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         <div
           data-no-page-pinch="true"
           className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center"
-          onClick={() => setExpandedImg(null)}
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); setExpandedImg(null); }}
         >
           <div
             className="flex items-center justify-center max-w-[90vw] max-h-[80vh] overflow-hidden"
@@ -598,12 +600,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               style={expandedImgZoom.imgStyle}
             />
           </div>
-          <button
-            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/20 flex items-center justify-center"
-            onClick={() => setExpandedImg(null)}
-          >
-            <X size={18} className="text-white" />
-          </button>
+          <ViewerCloseButton className="absolute top-4 right-4" onClose={() => setExpandedImg(null)} />
           <div className="absolute bottom-6 flex items-center gap-3" onClick={e => e.stopPropagation()}>
             <button onClick={expandedImgZoom.zoomOut} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white">
               <ZoomOut size={18} />

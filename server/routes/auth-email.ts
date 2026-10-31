@@ -22,6 +22,7 @@ import type { Express } from "express";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { isAdminIdentity } from "../admin-identity";
 import { isDuplicateName, isValidEmployeeId } from "../../client/src/lib/teams";
 
 const CODE_TTL_MIN = 10;
@@ -390,6 +391,9 @@ export function registerAuthEmailRoutes(app: Express) {
         recordFail(lockKey);
         return res.status(401).json({ error: "사번 또는 비밀번호가 올바르지 않습니다." });
       }
+      if (u.is_blocked) {
+        return res.status(403).json({ error: "사용이 제한된 계정입니다. 관리자에게 문의하세요.", blocked: true });
+      }
       if (orgInput && orgInput !== u.org) {
         return res.status(403).json({ error: "선택한 소속이 가입 시 등록한 소속과 다릅니다." });
       }
@@ -466,6 +470,7 @@ export function registerAuthEmailRoutes(app: Express) {
       const rows = await pool.query(`SELECT * FROM app_users WHERE email = $1`, [decoded.email]);
       const u = rows.rows[0];
       if (!u) return res.status(401).json({ error: "계정을 찾을 수 없습니다." });
+      if (u.is_blocked) return res.status(403).json({ error: "사용이 제한된 계정입니다. 관리자에게 문의하세요.", blocked: true });
       const lockKey = `emp:${u.emp_id || u.email}`;
       if (isLocked(lockKey)) {
         return res.status(429).json({ error: `시도가 너무 많습니다. ${LOGIN_LOCK_MIN}분 후 다시 시도하세요.` });
@@ -497,6 +502,140 @@ export function registerAuthEmailRoutes(app: Express) {
     }
   });
 
+  // ── 관리자 전용: 사용자 관리(목록 · 소속 변경 · 접속 차단/해제 · 변경 기록) ──
+  // 토큰의 사번·이름이 관리자(노준호)인 경우에만 허용한다(클라이언트가 보내는 admin 플래그는 믿지 않음).
+  async function requireAdmin(req: any, res: any): Promise<any | null> {
+    await ensureAuthTables();
+    const auth = req.headers.authorization;
+    if (!auth) { res.status(401).json({ error: "다시 로그인해 주세요." }); return null; }
+    let decoded: any;
+    try { decoded = jwt.verify(auth.replace("Bearer ", ""), jwtSecret()); } catch { res.status(401).json({ error: "다시 로그인해 주세요." }); return null; }
+    if (!decoded?.email || !isAdminIdentity(decoded.empId, decoded.name)) {
+      res.status(403).json({ error: "관리자만 사용할 수 있습니다." });
+      return null;
+    }
+    return decoded;
+  }
+  const isProtectedAdmin = (u: any) => isAdminIdentity(u.emp_id || "", u.name);
+  async function logChange(pool: any, u: any, kind: string, from: string | null, to: string | null, by: any) {
+    try {
+      await pool.query(
+        `INSERT INTO account_changes (emp_id, name, kind, from_value, to_value, by_emp_id, by_name) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [u.emp_id || "", u.name, kind, from, to, by.empId || "", by.name || ""]
+      );
+    } catch (e) {
+      console.warn("[account_changes] 기록 저장 실패(표 없음?):", (e as any)?.message);
+    }
+  }
+  const blockedColumnsMissing = (e: any) => /is_blocked|blocked_reason/.test(String(e?.message || ""));
+
+  app.get("/api/admin/users", async (req, res) => {
+    try {
+      const admin = await requireAdmin(req, res); if (!admin) return;
+      const { pool } = await import("../db");
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const params: any[] = [];
+      let where = "";
+      if (q) { params.push(`%${q}%`); where = `WHERE name ILIKE $1 OR emp_id ILIKE $1 OR org ILIKE $1`; }
+      const rows = await pool.query(`SELECT * FROM app_users ${where} ORDER BY org, name LIMIT 500`, params);
+      res.json(rows.rows.map((u: any) => ({
+        id: u.id, name: u.name, empId: u.emp_id || "", org: u.org, email: u.email,
+        blocked: !!u.is_blocked, blockedReason: u.blocked_reason || "",
+        lastLoginAt: u.last_login_at, isAdmin: isProtectedAdmin(u),
+      })));
+    } catch (e) {
+      console.error("[admin/users]", e);
+      res.status(500).json({ error: "서버 오류" });
+    }
+  });
+
+  app.post("/api/admin/users/:id/org", async (req, res) => {
+    try {
+      const admin = await requireAdmin(req, res); if (!admin) return;
+      const id = parseInt(req.params.id, 10);
+      const newOrg = typeof req.body?.org === "string" ? req.body.org.trim() : "";
+      if (!id || !newOrg) return res.status(400).json({ error: "대상과 소속을 선택해 주세요." });
+      const { pool } = await import("../db");
+      const rows = await pool.query(`SELECT * FROM app_users WHERE id = $1`, [id]);
+      const u = rows.rows[0];
+      if (!u) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+      if (u.org === newOrg) return res.status(400).json({ error: "현재 소속과 같습니다." });
+      const orgRow = await pool.query(`SELECT 1 FROM organizations WHERE name = $1`, [newOrg]);
+      if (orgRow.rows.length === 0) return res.status(400).json({ error: "존재하지 않는 소속입니다." });
+      await pool.query(`UPDATE app_users SET org = $1 WHERE id = $2`, [newOrg, id]);
+      await logChange(pool, u, "org_change", u.org, newOrg, admin);
+      res.json({ ok: true, org: newOrg, previousOrg: u.org });
+    } catch (e) {
+      console.error("[admin/users/org]", e);
+      res.status(500).json({ error: "서버 오류" });
+    }
+  });
+
+  app.post("/api/admin/users/:id/block", async (req, res) => {
+    try {
+      const admin = await requireAdmin(req, res); if (!admin) return;
+      const id = parseInt(req.params.id, 10);
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 200) : "";
+      const { pool } = await import("../db");
+      const rows = await pool.query(`SELECT * FROM app_users WHERE id = $1`, [id]);
+      const u = rows.rows[0];
+      if (!u) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+      if (isProtectedAdmin(u)) return res.status(400).json({ error: "관리자 계정은 차단할 수 없습니다." });
+      try {
+        await pool.query(`UPDATE app_users SET is_blocked = TRUE, blocked_reason = $1 WHERE id = $2`, [reason || null, id]);
+      } catch (e) {
+        if (blockedColumnsMissing(e)) return res.status(500).json({ error: "DB에 차단 칸이 없습니다. add_user_block_columns.sql을 먼저 실행해 주세요." });
+        throw e;
+      }
+      await logChange(pool, u, "block", null, reason || null, admin);
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[admin/users/block]", e);
+      res.status(500).json({ error: "서버 오류" });
+    }
+  });
+
+  app.post("/api/admin/users/:id/unblock", async (req, res) => {
+    try {
+      const admin = await requireAdmin(req, res); if (!admin) return;
+      const id = parseInt(req.params.id, 10);
+      const { pool } = await import("../db");
+      const rows = await pool.query(`SELECT * FROM app_users WHERE id = $1`, [id]);
+      const u = rows.rows[0];
+      if (!u) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+      try {
+        await pool.query(`UPDATE app_users SET is_blocked = FALSE, blocked_reason = NULL WHERE id = $1`, [id]);
+      } catch (e) {
+        if (blockedColumnsMissing(e)) return res.status(500).json({ error: "DB에 차단 칸이 없습니다. add_user_block_columns.sql을 먼저 실행해 주세요." });
+        throw e;
+      }
+      await logChange(pool, u, "unblock", null, null, admin);
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[admin/users/unblock]", e);
+      res.status(500).json({ error: "서버 오류" });
+    }
+  });
+
+  app.get("/api/admin/account-changes", async (req, res) => {
+    try {
+      const admin = await requireAdmin(req, res); if (!admin) return;
+      const { pool } = await import("../db");
+      try {
+        const rows = await pool.query(`SELECT * FROM account_changes ORDER BY created_at DESC LIMIT 50`);
+        res.json(rows.rows.map((r: any) => ({
+          id: r.id, empId: r.emp_id, name: r.name, kind: r.kind, from: r.from_value, to: r.to_value,
+          byEmpId: r.by_emp_id, byName: r.by_name, createdAt: r.created_at,
+        })));
+      } catch {
+        res.json([]); // 기록 표가 아직 없으면 빈 목록
+      }
+    } catch (e) {
+      console.error("[admin/account-changes]", e);
+      res.status(500).json({ error: "서버 오류" });
+    }
+  });
+
   app.get("/api/auth/verify", async (req, res) => {
     try {
       await ensureAuthTables();
@@ -509,6 +648,7 @@ export function registerAuthEmailRoutes(app: Express) {
       const rows = await pool.query(`SELECT * FROM app_users WHERE email = $1`, [decoded.email]);
       const u = rows.rows[0];
       if (!u) return res.status(401).json({ error: "계정을 찾을 수 없습니다." });
+      if (u.is_blocked) return res.status(403).json({ error: "사용이 제한된 계정입니다. 관리자에게 문의하세요.", blocked: true });
       res.json({ email: u.email, org: u.org, name: u.name, empId: u.emp_id || "", role: roleOf(u) });
     } catch (e) {
       res.status(401).json({ error: "토큰 만료 또는 유효하지 않음" });

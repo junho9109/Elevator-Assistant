@@ -105,6 +105,22 @@ function App() {
     setGlobalAdminMode(false);
   };
 
+  // 접속 차단 반영 — 로그인된 동안에도 5분마다·앱으로 돌아올 때 계정 상태를 확인해,
+  // 차단된 계정이면 로그아웃시킨다(차단 안내는 다음 로그인 화면에서 표시).
+  useEffect(() => {
+    if (!authToken) return;
+    const check = () => {
+      fetch("/api/auth/verify", { headers: { Authorization: `Bearer ${authToken}` } })
+        .then(r => { if (r.status === 403) handleLogout(); })
+        .catch(() => {});
+    };
+    const timer = setInterval(check, 5 * 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authToken]);
+
   // 본인 소속 변경 후: 화면의 소속과 새 토큰(새 소속이 담김)을 바로 반영한다.
   const handleOrgChanged = (org: string, token: string) => {
     const saved = JSON.parse(localStorage.getItem("loginInfo") || "{}");

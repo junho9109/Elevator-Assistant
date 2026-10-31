@@ -1,0 +1,62 @@
+<!doctype html><meta charset=utf-8><title>AI 답변 비교 (현재 vs 개선 후 예상)</title>
+<style>body{font-family:'Malgun Gothic',sans-serif;max-width:1000px;margin:14px auto;padding:0 12px;color:#222;font-size:13px;line-height:1.55}
+h2{margin:6px 0}.warn{background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:8px 10px;margin:8px 0}
+.card{border:1px solid #cbd5e1;border-radius:12px;padding:12px;margin:14px 0;background:#fff}
+.q{font-weight:bold;font-size:14px;margin-bottom:8px}.q small{color:#64748b;font-weight:normal}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:10px}.b{border-radius:8px;padding:9px;border:1px solid #e2e8f0}
+.cur{background:#fef2f2}.new{background:#f0fdf4}.b h4{margin:0 0 5px;font-size:12px}
+.cur h4{color:#b91c1c}.new h4{color:#166534}.why{margin-top:8px;background:#eff6ff;border-radius:8px;padding:7px 9px;font-size:12px}
+.tag{display:inline-block;font-size:10px;font-weight:bold;border-radius:9px;padding:1px 7px;margin-right:3px}
+.s{background:#dbeafe;color:#1d4ed8}.c{background:#fee2e2;color:#b91c1c}.n{background:#fef3c7;color:#92400e}
+ul{margin:4px 0 4px 16px;padding:0}</style>
+<h2>다른 질문에 대한 답변 비교 — 현재(실제 로그) vs 개선 후(예상)</h2>
+<div class=warn><b>읽는 법:</b> 왼쪽은 실제 이용자에게 나간 답변의 요약입니다. 오른쪽은 <b>실측이 아니라 예상</b>입니다. 앱에 이미 등록된 조문·표준화 내용을 근거로, "표준화 병기 + 가지 검색 + 설치일에 맞는 종전/현행 선택"이 적용되면 이렇게 나와야 한다는 목표 형태입니다. 실제 결과는 스위치를 켠 비교 시험에서 확인합니다. 근거가 확인되지 않은 부분은 쓰지 않았습니다.</div>
+
+<div class=card><div class=q>① "2016년도 설치 현장에서 문닫힘안전장치 센서가 안 되면 판정은?" <small>(손일권·김상은 질문 유형)</small></div>
+<div class=g><div class="b cur"><h4>현재 (#274, #278 유형)</h4>
+<ul><li>판정지침·외부검색 근거로 "불합격" 또는 "조건부"를 단정</li><li>긴 질문에서는 "2016년 3차 표준화 없음, 문의하세요"로 답하기도 함(#278)</li><li>2016년 설치가 종전/현행 중 어느 쪽인지 언급 없음</li></ul></div>
+<div class="b new"><h4>개선 후 (예상)</h4>
+<ul><li><b>시점:</b> 2016년 설치면 2019.3.28 이전 건축허가분 종전기준 적용 대상일 가능성이 큼 → 건축허가일 확인 요청 + 종전/현행 구분 표시</li>
+<li><span class="tag s">표준화 적용</span>16년 제3차: 기계식+광감지식 동시 설치(장애인용) 시 기계식 불량→조건부합격, 광감지식 불량→시정권고</li>
+<li><span class="tag s">표준화 적용</span>23년 제2차: 접촉식·비접촉식 일부 미작동 판정</li>
+<li><span class="tag c">충돌 — 확인 필요</span>판정지침(비접촉식 미작동=불합격 계열)과 16년 3차(시정권고)가 다름 → 둘 다 표시, 승객용/장애인용 구분 확인 요청</li></ul></div></div>
+<div class=why>달라지는 이유: 표준화를 항상 병기하고, "문닫힘안전장치/센서/판정/2016년"을 관점별로 따로 찾아 2016년 3차가 빠지지 않게 함</div></div>
+
+<div class=card><div class=q>② "2014년 10월 검사기준, MR, 피트 인터폰 외부연결·설치 의무" <small>(손일권, 14번 반복 질문)</small></div>
+<div class=g><div class="b cur"><h4>현재 (#314)</h4>
+<ul><li>"별표1에서 찾을 수 없음"</li><li>현행 별표22 1.2.1.5-가, 16.3.4(2019.3.28 이후 건축허가분)만 인용</li><li>2014년 설치 현장에 적용되는 종전 기준 안내 없음 → 사용자가 질문을 14번 바꿈</li></ul></div>
+<div class="b new"><h4>개선 후 (예상)</h4>
+<ul><li><b>시점:</b> 2014.10 → 2013.9.15~2019.3.28 이전 건축허가분 종전기준(구 별표19) 적용 대상. 현행 16.3.4는 해당 없음</li>
+<li>종전 근거: 승강로 내 "작업하는 사람이 갇히는 위험이 있는 장소"에는 비상통화장치가 있어야 함(구 5.10 내용)</li>
+<li><span class="tag s">표준화 적용</span>"엘리베이터 비상통화장치 관련 기준 적용 시기(24년 제4차 추가)"를 병기</li>
+<li>피트 인터폰의 외부 연결 방식 자체는 자료에 구체 기준이 없으면 "자료 없음 → 등록 요청" 안내</li></ul></div></div>
+<div class=why>달라지는 이유: 설치일을 건축허가일로 보고 종전/현행을 코드로 판정, 비상통화장치 표준화를 시점 관점으로 따로 검색</div></div>
+
+<div class=card><div class=q>③ "피트 사다리 기준" <small>(3회 반복, 답변 길이 480~6,250토큰으로 들쭉날쭉)</small></div>
+<div class=g><div class="b cur"><h4>현재 (#293~295)</h4>
+<ul><li>같은 질문에 답변마다 구성이 다름(짧게 한 줄, 길게 여러 조문)</li><li>표준화(16년 제1차 피트 사다리 항목들) 언급 여부가 매번 다름</li></ul></div>
+<div class="b new"><h4>개선 후 (예상)</h4>
+<ul><li><b>결론:</b> 피트 깊이 2.5m 초과 → 피트 출입문, 2.5m 이하 → 출입문 또는 승강장문에서 쉽게 접근 가능한 승강로 내 사다리(6.2.4, 사다리는 부속서 Ⅶ)</li>
+<li>사다리가 펼쳐진 위치에서 움직이는 부품과 충돌 위험이 있으면 보관 위치 아닐 때 운행 방지 전기안전장치(15.2)</li>
+<li>보관 시 피난공간 유지</li>
+<li><span class="tag s">표준화 적용</span>16년 제1차 "피트 사다리 봉 모양 및 마감 처리", "피트 깊이 2.5m 초과 시 피트 출입문 설치"</li>
+<li>설치 시점(2015.5.13 전/후)에 따른 종전 구분 표시</li></ul></div></div>
+<div class=why>달라지는 이유: 조문 + 관련 표준화 2건을 항상 같은 구성으로 병기(첫 답변 편차 감소 → 재질문 감소)</div></div>
+
+<div class=card><div class=q>④ "11월1일부터 적용되는 브레이크 시스템 및 자동구출운전장치" <small>(이형근, 2회 질문)</small></div>
+<div class=g><div class="b cur"><h4>현재 (#291~292, #316)</h4>
+<ul><li>"자료에 11월 1일 개정 내용 없음"(등록 전이라 당연)</li><li>있는 자료(브레이크 2세트, 13.2.3.6)만 안내</li></ul></div>
+<div class="b new"><h4>개선 후 (예상) — 표준화 등록 + 전달량 확대 후</h4>
+<ul><li><span class="tag s">표준화 적용</span>2026.11.01 적용 — 브레이크 시스템 성능확인: 1안 안전성평가서 / 2안 자체시험성적서(필수 5항목) / 3안 현장시험</li>
+<li>조건부합격 기간 부여 방법(정밀 2개월+2개월 등), 기어리스는 KTL 안전인증 갈음</li>
+<li>정전시 자동구출운전: 소방구조/피난 60초 이내 전환 ①~④, 종전 '18년 7차 삭제 내용</li>
+<li>표·그림(조건부합격 기간표, 시험 절차도) 함께 표시</li></ul></div></div>
+<div class=why>달라지는 이유: 현재는 등록 자체가 없음. 등록 후에도 전달량이 600자에서 막히면 이 내용 대부분이 전달되지 않음 → 전달량 확대 필요</div></div>
+
+<div class=card><div class=q>⑤ "승강장 방화셔터 관련 알려줘 → 기준말고 표준화나 협의 없나" <small>(손일권, 2연속)</small></div>
+<div class=g><div class="b cur"><h4>현재 (#287, #289)</h4>
+<ul><li>에스컬레이터/무빙워크 방화셔터 연동 정지 기준(2m 이내)을 안내(엘리베이터 질문인데 에스컬레이터 기준)</li><li>후속 질문에서는 "표준화 없음, 관련 부서에 문의"</li></ul></div>
+<div class="b new"><h4>개선 후 (예상)</h4>
+<ul><li>"질문이 엘리베이터인지 에스컬레이터인지 구분이 어렵습니다" 하고, 에스컬레이터 기준임을 앞에 명시</li><li>엘리베이터 방화셔터 자료가 없으면 <span class="tag n">자료 없음</span> + 아쉬워요의 "자료가 없어요" 안내</li><li>후속 "표준화나 협의는?"은 앞 질문 주제(방화셔터)와 합쳐 검색, 없으면 없다고 근거와 함께 답</li></ul></div></div>
+<div class=why>달라지는 이유: 설비 종류를 답변 첫머리에 명시, 후속 질문을 앞 질문과 합쳐 검색</div></div>
+<div class=warn>정리: ①②③은 "표준화 병기 + 시점별 종전/현행 + 관점별 검색"의 효과를, ④는 "등록 + 전달량 확대"의 효과를, ⑤는 "자료 없음 표시 + 맥락 합치기"의 효과를 보여 줍니다. 실측 비교는 관리자 스위치를 켜는 시험 단계에서 같은 질문으로 진행합니다.</div>

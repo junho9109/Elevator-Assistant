@@ -4,6 +4,7 @@ apply plugin: 'com.google.gms.google-services'
 android {
     namespace "com.junho.elevatorassistant"
     compileSdk rootProject.ext.compileSdkVersion
+    buildToolsVersion "36.1.0"
     defaultConfig {
         applicationId "com.junho.elevatorassistant"
         minSdkVersion rootProject.ext.minSdkVersion

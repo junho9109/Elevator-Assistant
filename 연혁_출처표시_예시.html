@@ -1,0 +1,66 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>연혁 출처 표시 - 예시 (간략형)</title>
+<style>
+body{font-family:'Malgun Gothic',sans-serif;background:#f1f3f6;margin:0;padding:20px;color:#222}
+h1{font-size:18px;color:#1e3a5f;margin:0 0 4px}p.s{font-size:12px;color:#667;margin:0 0 14px}
+h2{font-size:13px;color:#1e3a5f;margin:14px 0 8px}
+.row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}.col{width:400px}
+.tag{display:inline-block;font-size:11px;font-weight:bold;padding:2px 8px;border-radius:10px;margin-bottom:6px;background:#e5e7eb;color:#444}.tag.a{background:#1e3a5f;color:#fff}
+.panel{background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:12px;font-size:12px}
+.pt{font-size:12px;font-weight:600;color:#1e1b4b;margin-bottom:8px}
+.id{font-size:10px;font-weight:bold;color:#312e81;margin-right:6px}.base{font-size:9.5px;color:#4338ca}
+.row2{display:flex;align-items:center;gap:6px;margin:8px 0 4px;font-size:11px}
+.badge{font-size:8.5px;font-weight:bold;padding:2px 7px;border-radius:10px;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
+.txt{font-size:10px;line-height:1.6;padding:6px 8px;border-radius:8px;margin-bottom:4px;background:#fff;color:#4b5563;border:1px solid #e5e7eb}
+.src{font-size:9.5px;color:#4338ca;margin:0 2px 4px}
+.hl{outline:2px solid #e11;outline-offset:2px;border-radius:4px}
+.box{background:#fff;border:1px solid #e1e5eb;border-radius:10px;padding:10px 14px;font-size:11.5px;line-height:1.7;max-width:860px;margin-top:10px}
+table{border-collapse:collapse;font-size:11px;margin-top:6px}td,th{border:1px solid #ddd;padding:4px 8px;vertical-align:top}th{background:#eef2f7}
+</style></head><body>
+<h1>연혁 출처 표시 - 예시 (간략형)</h1>
+<p class="s">각 연혁 밑에 출처가 한 줄, 짧게 붙습니다. 빨강 테두리 = 새로 생기는 부분. 출처가 없는 연혁은 지금과 똑같이 보입니다.</p>
+
+<h2>① 화면</h2>
+<div class="row">
+<div class="col"><span class="tag">변경 전</span>
+ <div class="panel">
+  <div class="pt">📎 참조 조문 연혁 (1개 조문)</div>
+  <div class="row2"><span class="id">3.1.3(7)</span><span class="base">(1995-03-01 기준)</span></div>
+  <div class="row2"><b style="font-size:10px">1992-07-01 이후 건축허가분</b><span class="badge">📍 적용 중</span></div>
+  <div class="txt">(승강로 관련 종전 기준 본문)</div>
+  <div class="row2"><b style="font-size:10px">1992-07-01 이전 건축허가분</b></div>
+  <div class="txt">(승강로 관련 종전 기준 본문)</div>
+ </div></div>
+<div class="col"><span class="tag a">변경 후 (간략 출처)</span>
+ <div class="panel">
+  <div class="pt">📎 참조 조문 연혁 (1개 조문)</div>
+  <div class="row2"><span class="id">3.1.3(7)</span><span class="base">(1995-03-01 기준)</span></div>
+  <div class="row2"><b style="font-size:10px">1992-07-01 이후 건축허가분</b><span class="badge">📍 적용 중</span></div>
+  <div class="txt">(승강로 관련 종전 기준 본문)</div>
+  <div class="src hl">출처: 고시 제98-75호 부칙 / 연혁집 p.51</div>
+  <div class="row2"><b style="font-size:10px">1992-07-01 이전 건축허가분</b></div>
+  <div class="txt">(승강로 관련 종전 기준 본문)</div>
+  <div class="src hl">출처: 연혁집 p.51</div>
+ </div></div>
+</div>
+
+<h2>② 표기 규칙 (안)</h2>
+<div class="box">
+<table>
+<tr><th>원래 출처</th><th>화면 표기</th></tr>
+<tr><td>국립기술품질원고시 제98-75호(1998.5.9.) 부칙 제2조 ① · 제정 공업진흥청고시 제92-357호('92.7.1.)</td><td><b>고시 제98-75호 부칙</b></td></tr>
+<tr><td>공업진흥청고시 제93-280호('93.8.3.)</td><td><b>고시 제93-280호</b></td></tr>
+<tr><td>연혁집 별표22 51쪽</td><td><b>연혁집 p.51</b></td></tr>
+<tr><td>고시와 연혁집 둘 다 있음</td><td><b>고시 제98-75호 부칙 / 연혁집 p.51</b> (고시가 앞)</td></tr>
+</table>
+· 기관명·개정일·조항 세부 내용은 화면에서 빼고, <b>고시 번호(+부칙) 또는 연혁집 쪽수</b>만 보여줍니다.<br>
+· 우선순위: 고시 → 연혁집 순서로 표시합니다.
+</div>
+
+<h2>③ 저장 방식 (A안)</h2>
+<div class="box">
+연혁 표에 <code>source</code> 칸 1개 추가(빈 값 허용). 칸에는 화면에 보일 짧은 문구만 넣습니다(예: <code>고시 제98-75호 부칙 / 연혁집 p.51</code>).<br>
+자세한 원문 출처(기관명·개정일·드라이브 파일명)는 DB에 넣지 않고 <code>연혁_출처_1992-07-01.md</code> 같은 기록 파일로 따로 보관합니다.<br>
+SQL은 구현 때 백업 후 실행하실 수 있게 드립니다(칸 추가 1줄 + 출처 UPDATE).
+</div>
+</body></html>
