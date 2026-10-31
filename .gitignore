@@ -27,3 +27,19 @@ server/tmp-restore-override.json
 /server/temp-migration-data/
 /.local/
 /android/.idea/
+
+# 작업 산출물(예시 HTML·SQL·백업) — 앱 배포와 무관
+/backup_before_*/
+/*.html
+/*.sql
+/*.csv
+/*.xlsx
+/*.md
+/*.jpeg
+/*.sh
+/jp_export.json
+/standard_1997_194.json
+/std_merge_tools/
+/satisfaction-data/
+/fix_judgment_text*.py
+/migrate_equip_type.mjs
