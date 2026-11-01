@@ -44,3 +44,4 @@ server/tmp-restore-override.json
 /fix_judgment_text*.py
 /migrate_equip_type.mjs
 /backup_original_*/
+/work_2009-67/

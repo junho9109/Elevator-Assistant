@@ -16,9 +16,26 @@ function flatten(item: any): string {
   return t;
 }
 
+// 긴 조문(수천 자)은 앞부분 1200자만 자르면 질문과 무관한 부분이 전달될 수 있어,
+// 질문어가 가장 많이 나오는 곳(동률이면 먼저 나오는 곳) 주변 1200자를 잘라 보낸다.
+function windowAround(full: string, terms: string[], max = 1200): string {
+  if (full.length <= max) return full;
+  let bestPos = -1, bestCnt = 0;
+  for (const t of terms) {
+    const pat = Array.from(t).map(ch => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+    const all = Array.from(full.matchAll(new RegExp(pat, "gi")));
+    if (all.length > bestCnt || (all.length === bestCnt && all.length > 0 && all[0].index! < bestPos)) {
+      bestCnt = all.length; bestPos = all[0].index!;
+    }
+  }
+  if (bestPos < 0) return full.slice(0, max);
+  const start = Math.max(0, bestPos - 200);
+  return (start > 0 ? "…" : "") + full.slice(start, start + max);
+}
+
 export async function searchEraDocs(year: number | null | undefined, terms: string[]): Promise<EraCtxItem[]> {
   try {
-    if (!year || year < 1980 || year > 2008) return [];
+    if (!year || year < 1980 || year > 2013) return [];
     const useTerms = Array.from(new Set(terms.map(t => nz(t)).filter(t => t.length >= 2 && !STOP.has(t))));
     if (useTerms.length === 0) return [];
     const docs: any[] = [];
@@ -26,13 +43,15 @@ export async function searchEraDocs(year: number | null | undefined, terms: stri
       const m: any = await load();
       const d = m.default || m;
       const ey = Number(String(d?.meta?.effectiveDate || "").slice(0, 4));
-      if (d?.items && ey && ey <= 2008) docs.push({ meta: d.meta, items: d.items, ey });
+      if (d?.items && ey && ey <= 2013) docs.push({ meta: d.meta, items: d.items, ey });
     }
     if (docs.length === 0) return [];
     docs.sort((a, b) => a.ey - b.ey);
     const le = docs.filter(d => d.ey <= year);
     const doc = le.length > 0 ? le[le.length - 1] : docs[0];
     const scored: { id: string; item: any; score: number }[] = [];
+    // 첨부4·5(기계실 없는 엘리베이터 전용 기준)는 질문에 '기계실 없는'이 들어 있을 때만 본문과 동등하게 취급
+    const mrlAsked = useTerms.some(t => t.includes("기계실없는") || t.includes("기계실이없") || t.includes("mrl"));
     for (const [id, item] of Object.entries<any>(doc.items)) {
       const full = nz(flatten(item));
       const title = nz(item.title || "");
@@ -42,6 +61,8 @@ export async function searchEraDocs(year: number | null | undefined, terms: stri
         const cnt = full.split(t).length - 1;
         score += Math.min(cnt, 3);
       }
+      const isAppendix = id.startsWith("첨부");
+      if (isAppendix && !mrlAsked) score = Math.floor(score * 0.4);
       if (score > 0) scored.push({ id, item, score });
     }
     scored.sort((a, b) => b.score - a.score);
@@ -49,8 +70,8 @@ export async function searchEraDocs(year: number | null | undefined, terms: stri
       docTitle: doc.meta.title,
       effectiveDate: doc.meta.effectiveDate,
       ref: id,
-      title: item.title || id,
-      content: flatten(item).slice(0, 1200),
+      title: (id.startsWith("첨부") ? "[기계실 없는 엘리베이터 전용 기준] " : "") + (item.title || id),
+      content: windowAround(flatten(item), useTerms),
     }));
   } catch {
     return [];
