@@ -1,5 +1,6 @@
 import React from "react";
 import { searchEraDocs } from "@/lib/eraSearch";
+import { resolveMrMrl, type MrKind, type MrResult } from "@/lib/mrClassify";
 import { matchGlossary, glossaryQueries, glossaryHintNote, setLearnedGlossary, findBranchPrompt } from "@/lib/fieldGlossary";
 import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
@@ -214,6 +215,25 @@ function buildEraNote(year: number | null | undefined): string {
   else if (year <= 2021) era = "2019.3.28 이후~2022.3.2 이전 건축허가분 구간일 수 있음(현행/종전 경계 확인 필요)";
   else era = "2022.3.2 이후 건축허가분 현행 기준 가능성이 큼";
   return `\n\n[시점 참고(자동 계산)] 질문에 설치/적용 연도 ${year}년이 있습니다. ${era}. 건축허가일(또는 검사기준 적용일)이 확인되지 않았다면 사용자에게 확인을 요청하고, 종전/현행을 구분해서 답하세요.`;
+}
+
+// MR(기계실 있음)/MRL(기계실 없음) 구분 메모 — AI 질문 끝에 붙인다.
+// 가정한 경우 답변 첫 줄에 기준을 밝히게 해 틀렸을 때 사용자가 바로잡을 수 있게 한다.
+function buildMrNote(mr: (MrResult & { carried?: boolean }) | null): string {
+  if (!mr) return "";
+  if (mr.kind === "MRL") {
+    return `\n\n[승강기 형식 참고] 이 승강기는 기계실 없는 엘리베이터(MRL)입니다. 기계실 기준이 아니라 MRL(승강로 내 구동기·제어반 공간) 기준을 우선해 답하세요. 종전 기준 참고 자료에 '기계실 없는 엘리베이터 전용 기준'(첨부4·5, 2005.12.1 이후 건축허가분 적용)이 있으면 그것을 사용하세요.${mr.conflict ? " 질문에 '기계실'이 나오지만 MRL에는 별도 기계실이 없으므로, 답변 첫 줄에 'MRL에는 별도 기계실이 없어 승강로 내 구동기·제어반 공간 기준으로 안내합니다'라고 밝히고 맞는지 확인을 요청하세요." : ""}`;
+  }
+  if (mr.kind === "MR" && mr.assumed) {
+    return `\n\n[승강기 형식 참고] 질문에 '기계실'이 있어 기계실이 있는 엘리베이터(MR)로 가정했습니다. 답변 첫 줄에 "※ 기계실이 있는 엘리베이터(MR) 기준입니다. 기계실 없는 엘리베이터(MRL)라면 말씀해 주세요."라고 그대로 쓰고, MRL 전용 기준(첨부4·5)은 사용하지 마세요.`;
+  }
+  if (mr.kind === "MR") {
+    return `\n\n[승강기 형식 참고] 이 승강기는 기계실이 있는 엘리베이터(MR)입니다. MRL 전용 기준(첨부4·5)은 사용하지 마세요.`;
+  }
+  if (mr.ask) {
+    return `\n\n[승강기 형식 참고] MR(기계실 있음)인지 MRL(기계실 없음)인지 확인되지 않았고 이 주제는 형식에 따라 기준이 다릅니다. MR 기준과 MRL 기준을 구분해서 답하고, 어느 쪽인지 알려 달라고 안내하세요.`;
+  }
+  return "";
 }
 
 function splitKeywords(question: string): { primary: string[]; secondary: string[] } {
@@ -2849,6 +2869,27 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       }
     }
 
+    // MR(기계실 있음)/MRL(기계실 없음) 판별 — 같은 대화에서 정해진 형식은 30분간 이어받는다.
+    // 기계실을 단정하지 못하는 질문은 되묻고(아래 mrStep), 기계실 언급만으로 MR로 가정한 경우는 답변 첫 줄에 기준을 밝힌다.
+    const mrInfo = (() => {
+      if (!facetOn || equipmentType === "에스컬레이터") return null;
+      try {
+        const W0 = window as any;
+        const prev: MrKind | null = Date.now() - (W0.__mrTs || 0) < 30 * 60 * 1000 ? (W0.__mrKind as MrKind) : null;
+        const info = resolveMrMrl(text, prev);
+        // 가정(assumed)한 MR은 약한 추정이라 다음 질문으로 이어받지 않는다.
+        if (info.kind !== "UNKNOWN" && !info.assumed) { W0.__mrKind = info.kind; W0.__mrTs = Date.now(); }
+        // 자동 가정한 경우만 기록해 오판 사례를 모은다(되묻기 선택은 선택 버튼에서 따로 기록).
+        if (info.assumed && !skipClarify && !modeOverride) {
+          fetch("/api/clarify-choice", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ poolId: 0, question: text, optionLabel: "자동 가정: MR(기계실 있음)", optionRef: "mr:auto:MR", employeeId: empIdentity?.empId || undefined }),
+          }).catch(() => {});
+        }
+        return info;
+      } catch { return null; }
+    })();
+
     // [관리자 테스트] 단계별 되묻기 — 큰 틀(자료 종류) → 설비 → 위치 → (판정 질문이면) 검사 종류 → 설치연도 순서로,
     // 필요한 것만 한 번씩 묻는다. 처음부터 조문 제목을 보여주지 않는다. 마지막 선택에서 한 번만 답변을 만든다.
     if (facetOn && !skipClarify && !modeOverride) {
@@ -2894,6 +2935,20 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
             };
           }
 
+          // 2.5) 기계실 유무(MR/MRL) — 단서가 없고 형식에 따라 기준이 달라지는 주제일 때만(위치를 묻기 전에 정한다)
+          let mrStep: ClarifyStep | null = null;
+          if (mrInfo?.ask && eqNow === "엘리베이터" && !(equipmentType === "ambiguous" && gHits.length === 0) && !within("__mrAskedTs", 10 * 60 * 1000)) {
+            const sfx = mrInfo.lowConfidence ? ":low" : "";
+            mrStep = {
+              content: "기계실이 있는 엘리베이터인가요? 기계실 유무에 따라 기준이 달라요.",
+              skipLabel: "잘 모르겠어요 — 둘 다 구분해서 답변 받기",
+              options: [
+                { label: "기계실 있음 (MR · 일반 엘리베이터)", ref: "mr:mr" + sfx, ask: "기계실 있는 엘리베이터(MR)" },
+                { label: "기계실 없음 (MRL · 구동기가 승강로 안에 있음)", ref: "mr:mrl" + sfx, ask: "기계실 없는 엘리베이터(MRL)" },
+              ],
+            };
+          }
+
           // 3) 위치 — 사전의 갈림길(인터폰 등)이 있으면 그것, 없으면 위치가 중요한 주제(조명 등)일 때 큰 위치부터
           let locStep: ClarifyStep | null = null;
           const loc = findBranchPrompt(text, gHits);
@@ -2904,7 +2959,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
             const locTopic = /조명|조도|비상등|스위치|콘센트|환기|통풍|온도|출입문|출입|바닥|소음|표지|경고|표시|배수|누수|방화|접근|사다리|난간|청소/.test(text);
             if (!hasLocWord && locTopic && !within("__locTs", 5 * 60 * 1000)) {
               const mk = (arr: [string, string][]): ClarifyOpt[] => arr.map(([label, ask]) => ({ label, ref: "loc:" + label, ask }));
-              const eleOpts = mk([["기계실·기계류 공간", "기계실 기계류 공간"], ["승강로", "승강로"], ["피트", "피트"], ["카 상부", "카 상부"], ["카 내", "카 내"], ["승강장·출입문", "승강장 출입문"]]);
+              const eleOpts = mk([mrInfo?.kind === "MRL" ? ["승강로 내 구동기·제어반 공간", "승강로 구동기 제어반 공간"] : ["기계실·기계류 공간", "기계실 기계류 공간"], ["승강로", "승강로"], ["피트", "피트"], ["카 상부", "카 상부"], ["카 내", "카 내"], ["승강장·출입문", "승강장 출입문"]]);
               const escOpts = mk([["상·하부 승강장(기계실 포함)", "상·하부 승강장 기계실"], ["트러스 내부", "트러스 내부"], ["핸드레일·난간", "핸드레일 난간"], ["스텝·콤(승객 탑승부)", "스텝 콤"]]);
               locStep = { content: "어느 위치에 대한 내용인가요?", skipLabel: "잘 모르겠어요 — 위치별로 구분해서 답변 받기", options: eleOpts, optionsByEq: { 엘리베이터: eleOpts, 에스컬레이터: escOpts } };
             }
@@ -2937,8 +2992,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
             ],
           } : null;
 
-          const steps = [srcStep, eqStep, locStep, kindStep, yearStep].filter((x): x is ClarifyStep => !!x);
+          const steps = [srcStep, eqStep, mrStep, locStep, kindStep, yearStep].filter((x): x is ClarifyStep => !!x);
           if (steps.length > 0) {
+            if (mrStep) W.__mrAskedTs = Date.now();
             if (yearStep) W.__askedYearTs = Date.now();
             if (kindStep) W.__askedKindTs = Date.now();
             if (locStep) W.__locTs = Date.now();
@@ -3008,7 +3064,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         .slice(-8)
         .filter(m => (m.role === "user" || m.role === "assistant") && !m.clarify)
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
-      historyMsgs.push({ role: "user", content: text + (facetOn ? buildEraNote(facetData?.year) + glossaryHintNote(glossaryHits) : "") });
+      historyMsgs.push({ role: "user", content: text + (facetOn ? buildEraNote(facetData?.year) + glossaryHintNote(glossaryHits) + buildMrNote(mrInfo) : "") });
 
       // ── 우선순위별 컨텍스트 구성 ──
 
@@ -3241,7 +3297,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       let eraCtx: { docTitle: string; effectiveDate: string; ref: string; title: string; content: string }[] = [];
       if (facetOn) {
         try {
-          eraCtx = await searchEraDocs(Number(facetData?.year), [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2)]);
+          // MRL로 정해진 대화면 질문에 '기계실 없는'이 없어도 MRL 전용 기준(첨부4·5)을 정상 순위로 검색한다.
+          eraCtx = await searchEraDocs(Number(facetData?.year), [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2), ...(mrInfo?.kind === "MRL" ? ["기계실없는"] : [])]);
         } catch {}
       }
       const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx, ...(eraCtx.length > 0 ? { eraCtx } : {}) };
@@ -5269,7 +5326,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                           onClick={() => {
                             const c = msg.clarify!;
                             // 선택 기록(관리자 패널 선택 분포용) — 실패해도 답변 흐름에는 영향 없음
-                            if (c.poolId > 0) fetch("/api/clarify-choice", {
+                            if (c.poolId > 0 || o.ref.startsWith("mr:")) fetch("/api/clarify-choice", {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
                               body: JSON.stringify({ poolId: c.poolId, question: c.question, optionLabel: o.label, optionRef: o.ref, employeeId: empIdentity?.empId || undefined }),
@@ -5280,7 +5337,18 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                             if (o.eq) (window as any).__eqTs = Date.now();
                             if (c.queue && c.queue.length > 0) {
                               // 큰 틀 → 설비 → 위치 → 검사 종류 → 설치연도 중 더 물을 것이 남았으면 이어서 묻는다(새 답변 호출 없이 말풍선만 추가).
-                              const [nx, ...restQ] = c.queue;
+                              const [nx0, ...restQ0] = c.queue;
+                              // MRL을 고른 경우 남은 위치 단계의 '기계실·기계류 공간'을 '승강로 내 구동기·제어반 공간'으로 바꾼다.
+                              const swapRoom = (opts: ClarifyOpt[]) => o.ref.startsWith("mr:mrl")
+                                ? opts.map(x => x.label === "기계실·기계류 공간" ? { label: "승강로 내 구동기·제어반 공간", ref: "loc:승강로 내 구동기·제어반 공간", ask: "승강로 구동기 제어반 공간" } : x)
+                                : opts;
+                              const fixStep = (s: ClarifyStep): ClarifyStep => ({
+                                ...s,
+                                options: swapRoom(s.options),
+                                ...(s.optionsByEq ? { optionsByEq: Object.fromEntries(Object.entries(s.optionsByEq).map(([k, v]) => [k, swapRoom(v as ClarifyOpt[])])) as any } : {}),
+                              });
+                              const nx = fixStep(nx0);
+                              const restQ = restQ0.map(fixStep);
                               const nxOpts = nx.optionsByEq ? nx.optionsByEq[newEq] : nx.options;
                               setMessages(prev => [...prev, {
                                 role: "assistant", content: nx.content, time: formatTime(),
