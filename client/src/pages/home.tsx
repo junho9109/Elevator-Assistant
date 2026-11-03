@@ -1,6 +1,8 @@
 import React from "react";
 import { searchEraDocs } from "@/lib/eraSearch";
 import { resolveMrMrl, type MrKind, type MrResult } from "@/lib/mrClassify";
+import { detectEquipmentType, shouldAskEquipment, type EquipmentDetection } from "@/lib/equipmentDetect";
+import { yearDiverges, kindDiverges, locDiverges, MAX_CLARIFY_STEPS } from "@/lib/clarifyNeed";
 import { matchGlossary, glossaryQueries, glossaryHintNote, setLearnedGlossary, findBranchPrompt } from "@/lib/fieldGlossary";
 import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
@@ -505,25 +507,7 @@ function SearchCatAccordion({ cat, onSelect }: { cat: CatGroup; onSelect: (r: Se
 // 질문 텍스트에 각 설비에서만 쓰이는 고유 용어가 있는지로 1차 판별한다.
 // 둘 다 감지되거나 둘 다 감지되지 않으면(공통 용어만 있거나 설비명이 아예 없으면)
 // "ambiguous"로 판단해 화면에서 사용자에게 직접 선택하도록 한다.
-const ESCALATOR_ONLY_TERMS = [
-  "에스컬레이터", "무빙워크", "스텝", "디딤판", "콤", "팔레트", "트레드",
-  "핸드레일", "손잡이", "스커트", "뉴얼", "데크", "트러스", "인레트",
-  "테이크아웃", "빗살", "구동체인",
-];
-const ELEVATOR_ONLY_TERMS = [
-  "엘리베이터", "카상부", "카 상부", "권상기", "완충기", "가이드레일", "조속기",
-  "카문", "카 문", "승강장문", "균형추", "피트", "승강로", "로프",
-  "권동", "비상정지장치", "카도어", "완충장치",
-];
-type EquipmentDetection = "엘리베이터" | "에스컬레이터" | "ambiguous";
-function detectEquipmentType(text: string): EquipmentDetection {
-  const t = text.toLowerCase();
-  const hasEsc = ESCALATOR_ONLY_TERMS.some(term => t.includes(term.toLowerCase()));
-  const hasEle = ELEVATOR_ONLY_TERMS.some(term => t.includes(term.toLowerCase()));
-  if (hasEsc && !hasEle) return "에스컬레이터";
-  if (hasEle && !hasEsc) return "엘리베이터";
-  return "ambiguous";
-}
+// (판별 로직은 "@/lib/equipmentDetect"로 분리 — 테스트 가능하도록)
 
 // 키워드로 표준화+검사기준 검색
 function searchAllData(keyword: string, standards: any[], stdOverrides?: any[], liveInspectionContent?: Record<string, { text?: string; effectiveDate?: string; revisions?: any[] }>): SearchResult[] {
@@ -2745,7 +2729,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     const looksLikeStandardsQuestion = /검사\s*기준|안전\s*기준|별표\s*22|별표\s*24|기준\s*몇|조문|규정/.test(text);
     // [2026-10-30] 착공신고필증·적용일 입력 같은 전산/서류 절차 질문은 설비(엘리베이터/에스컬레이터)와 무관하므로 설비를 되묻지 않는다.
     const isProceduralQuestion = /착공\s*신고|적용일|전산|입력|접수|신청서|서류|업무\s*시스템|건축\s*허가일|공사\s*계약/.test(text);
-    if (!forcedEquipmentType && equipmentType === "ambiguous" && looksLikeStandardsQuestion && !isProceduralQuestion) {
+    if (!forcedEquipmentType && shouldAskEquipment(text, equipmentType) && looksLikeStandardsQuestion && !isProceduralQuestion) {
       setMessages(prev => [...prev, {
         role: "assistant",
         content: "엘리베이터와 에스컬레이터 중 어느 쪽 검사기준을 찾으시나요?",
@@ -2995,7 +2979,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
 
           // 1) 큰 틀 — 검사기준 / 표준화 / 판정지침 중 후보가 비슷한 비중으로 여럿일 때만
           let srcStep: ClarifyStep | null = null;
-          if (!explicitType && !within("__srcTs", 10 * 60 * 1000)) {
+          // 자료 종류 되묻기는 기본 꺼짐(답변이 어차피 세 자료를 종합) — localStorage clarifySrcStep=on 일 때만
+          let srcOn = false; try { srcOn = localStorage.getItem("clarifySrcStep") === "on"; } catch {}
+          if (srcOn && !explicitType && !within("__srcTs", 10 * 60 * 1000)) {
             const sorted = [...results].sort((a, b) => (b.score || 0) - (a.score || 0));
             const top = (t: string) => sorted.find(r => r.type === t && (r.score || 0) >= 150);
             const insp = top("inspection"), std = top("standard"), jud = top("judgment");
@@ -3015,7 +3001,9 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           // 2) 설비 — 질문에 설비 단서가 전혀 없을 때(사전에 걸린 현장 용어는 엘리베이터로 본다)
           if (equipmentType !== "ambiguous") W.__eqTs = Date.now();
           let eqStep: ClarifyStep | null = null;
-          if (!forcedEquipmentType && equipmentType === "ambiguous" && gHits.length === 0 && !within("__eqTs", 30 * 60 * 1000)) {
+          // 고유 용어가 없고 양쪽 공통 개념일 때만 묻는다(자동구출운전·문닫힘안전장치 등은 묻지 않음)
+          const eqUnknown = shouldAskEquipment(text, equipmentType) && gHits.length === 0;
+          if (!forcedEquipmentType && eqUnknown && !within("__eqTs", 30 * 60 * 1000)) {
             eqStep = {
               content: "어떤 승강기인가요?",
               skipLabel: "잘 모르겠어요 — 엘리베이터로 찾기",
@@ -3028,7 +3016,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
 
           // 2.5) 기계실 유무(MR/MRL) — 단서가 없고 형식에 따라 기준이 달라지는 주제일 때만(위치를 묻기 전에 정한다)
           let mrStep: ClarifyStep | null = null;
-          if (mrInfo?.ask && eqNow === "엘리베이터" && !(equipmentType === "ambiguous" && gHits.length === 0) && !within("__mrAskedTs", 10 * 60 * 1000)) {
+          if (mrInfo?.ask && eqNow === "엘리베이터" && !eqUnknown && !within("__mrAskedTs", 10 * 60 * 1000)) {
             const sfx = mrInfo.lowConfidence ? ":low" : "";
             mrStep = {
               content: "기계실이 있는 엘리베이터인가요? 기계실 유무에 따라 기준이 달라요.",
@@ -3048,7 +3036,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           } else {
             const hasLocWord = /기계실|기계류|풀리실|승강로|피트|카\s*(상부|내|안|위|바닥|문)|승강장|출입문|조작반|트러스|핸드레일|난간|스텝|콤|인레트|옥외/.test(text);
             const locTopic = /조명|조도|비상등|스위치|콘센트|환기|통풍|온도|출입문|출입|바닥|소음|표지|경고|표시|배수|누수|방화|접근|사다리|난간|청소/.test(text);
-            if (!hasLocWord && locTopic && !within("__locTs", 5 * 60 * 1000)) {
+            if (!hasLocWord && locTopic && !within("__locTs", 5 * 60 * 1000) && locDiverges(results)) {
               const mk = (arr: [string, string][]): ClarifyOpt[] => arr.map(([label, ask]) => ({ label, ref: "loc:" + label, ask }));
               const eleOpts = mk([mrInfo?.kind === "MRL" ? ["승강로 내 구동기·제어반 공간", "승강로 구동기 제어반 공간"] : ["기계실·기계류 공간", "기계실 기계류 공간"], ["승강로", "승강로"], ["피트", "피트"], ["카 상부", "카 상부"], ["카 내", "카 내"], ["승강장·출입문", "승강장 출입문"]]);
               const escOpts = mk([["상·하부 승강장(기계실 포함)", "상·하부 승강장 기계실"], ["트러스 내부", "트러스 내부"], ["핸드레일·난간", "핸드레일 난간"], ["스텝·콤(승객 탑승부)", "스텝 콤"]]);
@@ -3062,7 +3050,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           if (hasYear) W.__yearTs = Date.now();
           const hasKind = /완성\s*검사|설치\s*검사|정기\s*검사|수시\s*검사|정밀\s*안전|정밀\s*검사|정밀(?!\s*도)|완성|정기|수시/.test(text);
           if (hasKind) W.__kindTs = Date.now();
-          const kindStep: ClarifyStep | null = judgeAsk && !hasKind && !within("__kindTs", 30 * 60 * 1000) && !within("__askedKindTs", 10 * 60 * 1000) ? {
+          const kindStep: ClarifyStep | null = judgeAsk && !hasKind && kindDiverges(results) &&!within("__kindTs", 30 * 60 * 1000) && !within("__askedKindTs", 10 * 60 * 1000) ? {
             content: "어떤 검사에서 나온 내용인가요? 검사 종류에 따라 판정이 달라요.",
             skipLabel: "모르겠어요 — 검사 종류별로 구분해서 답변 받기",
             options: [
@@ -3072,7 +3060,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
               { label: "정밀안전검사", ref: "kind:precision", ask: "정밀안전검사" },
             ],
           } : null;
-          const yearStep: ClarifyStep | null = judgeAsk && !hasYear && !within("__yearTs", 30 * 60 * 1000) && !within("__askedYearTs", 10 * 60 * 1000) ? {
+          const yearStep: ClarifyStep | null = judgeAsk && !hasYear && yearDiverges(results) &&!within("__yearTs", 30 * 60 * 1000) && !within("__askedYearTs", 10 * 60 * 1000) ? {
             content: "설치연도(또는 건축허가 시점)에 따라 기준이 달라져요. 언제쯤 설치된 승강기인가요?",
             skipLabel: "모르겠어요 — 시점별로 구분해서 답변 받기",
             options: [
@@ -3083,12 +3071,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
             ],
           } : null;
 
-          const steps = [srcStep, eqStep, mrStep, locStep, kindStep, yearStep].filter((x): x is ClarifyStep => !!x);
+          // 위치·연도·검사종류는 검색 결과가 실제로 갈릴 때만 후보가 된다(clarifyNeed). 후보 중 우선순위
+          // (설비 > 기계실 > 설치연도 > 검사종류 > 위치 > 자료)대로 최대 MAX_CLARIFY_STEPS개만 묻고, 나머지는 답변 안에서 구분해 안내한다.
+          const steps = [eqStep, mrStep, yearStep, kindStep, locStep, srcStep].filter((x): x is ClarifyStep => !!x).slice(0, MAX_CLARIFY_STEPS);
           if (steps.length > 0) {
-            if (mrStep) W.__mrAskedTs = Date.now();
-            if (yearStep) W.__askedYearTs = Date.now();
-            if (kindStep) W.__askedKindTs = Date.now();
-            if (locStep) W.__locTs = Date.now();
+            if (steps.includes(mrStep as any)) W.__mrAskedTs = Date.now();
+            if (steps.includes(yearStep as any)) W.__askedYearTs = Date.now();
+            if (steps.includes(kindStep as any)) W.__askedKindTs = Date.now();
+            if (steps.includes(locStep as any)) W.__locTs = Date.now();
             const [first, ...rest] = steps;
             setMessages(prev => [...prev, {
               role: "assistant",
