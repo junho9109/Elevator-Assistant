@@ -165,7 +165,10 @@ function baseItemsToMap(rows: any[], equipmentType: string = "엘리베이터"):
 // client/src/data/generations/ 폴더에 {연도}-{고시번호}.json 형식의 파일을 넣으면
 // 별도 코드 수정 없이 "문서" 드롭다운에 별표22/판정지침과 나란히 하나씩 추가된다.
 // 각 파일 형식: { meta: { id, title, effectiveDate, source, note }, items: { [key]: { title, text } } }
-type GenerationMeta = { id: string; title: string; effectiveDate: string; source?: string; note?: string; originalFile?: { label: string; href: string } };
+// 원본 첨부: originalFiles(여러 개)가 있으면 그것을, 없으면 originalFile(1개)을 쓴다.
+type OriginalFile = { label: string; href: string };
+type GenerationMeta = { id: string; title: string; effectiveDate: string; source?: string; note?: string; originalFile?: OriginalFile; originalFiles?: OriginalFile[] };
+const originalFilesOf = (m: GenerationMeta): OriginalFile[] => (m.originalFiles && m.originalFiles.length > 0 ? m.originalFiles : m.originalFile ? [m.originalFile] : []);
 type GenerationDoc = { meta: GenerationMeta; items: Record<string, Entry> };
 
 const generationModules = import.meta.glob("@/data/generations/*.json", { eager: true }) as Record<string, { default?: GenerationDoc } & GenerationDoc>;
@@ -592,13 +595,18 @@ function GenerationDetail({ id, gen, onClose, isAdminMode, onAddRevision }: {
           </div>
         ))}
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {gen.meta.title} · {gen.meta.source || gen.meta.effectiveDate}</p>
-        {gen.meta.originalFile && (
-          <a
-            {...originalFileLinkProps(gen.meta.originalFile.href)}
-            className="inline-flex items-center gap-1 text-xs text-blue-600 underline"
-          >
-            📄 {gen.meta.originalFile.label} 열기
-          </a>
+        {originalFilesOf(gen.meta).length > 0 && (
+          <div className="flex flex-col gap-1">
+            {originalFilesOf(gen.meta).map((f) => (
+              <a
+                key={f.href}
+                {...originalFileLinkProps(f.href)}
+                className="inline-flex items-center gap-1 text-xs text-blue-600 underline"
+              >
+                📄 {f.label} 열기
+              </a>
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -914,13 +922,18 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                     ? "판정지침"
                     : `${activeGeneration ? activeGeneration.meta.title : (isDbDoc(selectedDoc) ? DOCUMENTS.find(d => d.id === selectedDoc)?.label || "현행" : "현행")} · ${activeTotalCount}개 조문`}
                 </p>
-                {activeGeneration?.meta.originalFile && (
-                  <a
-                    {...originalFileLinkProps(activeGeneration.meta.originalFile.href)}
-                    className="text-[11px] text-blue-600 underline"
-                  >
-                    📄 {activeGeneration.meta.originalFile.label} 열기
-                  </a>
+                {activeGeneration && originalFilesOf(activeGeneration.meta).length > 0 && (
+                  <div className="flex flex-col">
+                    {originalFilesOf(activeGeneration.meta).map((f) => (
+                      <a
+                        key={f.href}
+                        {...originalFileLinkProps(f.href)}
+                        className="text-[11px] text-blue-600 underline"
+                      >
+                        📄 {f.label} 열기
+                      </a>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

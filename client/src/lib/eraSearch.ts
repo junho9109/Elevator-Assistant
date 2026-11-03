@@ -2,7 +2,7 @@
 // 질문 관련 조문을 찾아 "종전 참고"로 AI에 전달한다. 새 고시 파일을 폴더에 추가하면 자동 반영된다(연도 상한 없음).
 // 설치 당시 기준과 정확히 같다는 보장은 없으므로 질문 연도와의 차이(gapYears)를 함께 표시한다. 번들 크기를 위해 필요할 때만 불러온다(lazy).
 // 조문 연혁 DB(시점별 버전)와는 별개로 함께 쓰인다.
-import { pickEraDoc, type EraDoc } from "./eraPick";
+import { pickEraDocs, type EraDoc } from "./eraPick";
 
 const genModules = import.meta.glob("@/data/generations/*.json") as Record<string, () => Promise<any>>;
 
@@ -48,33 +48,39 @@ export async function searchEraDocs(year: number | null | undefined, terms: stri
       const ey = Number(String(d?.meta?.effectiveDate || "").slice(0, 4));
       if (d?.items && ey) docs.push({ meta: d.meta, items: d.items, ey });
     }
-    const doc = pickEraDoc(docs, year, equipment);
-    if (!doc) return [];
-    const gapYears = Math.abs(year - doc.ey);
-    const scored: { id: string; item: any; score: number }[] = [];
+    const picked = pickEraDocs(docs, year, equipment);
+    if (picked.length === 0) return [];
     // 첨부4·5(기계실 없는 엘리베이터 전용 기준)는 질문에 '기계실 없는'이 들어 있을 때만 본문과 동등하게 취급
     const mrlAsked = useTerms.some(t => t.includes("기계실없는") || t.includes("기계실이없") || t.includes("mrl"));
-    for (const [id, item] of Object.entries<any>(doc.items)) {
-      const full = nz(flatten(item));
-      const title = nz(item.title || "");
-      let score = 0;
-      for (const t of useTerms) {
-        if (title.includes(t)) score += 3;
-        const cnt = full.split(t).length - 1;
-        score += Math.min(cnt, 3);
+    // 같은 시행일에 전기식·유압식 문서가 함께 있으면(meta.family) 질문에 '유압'이 있는지에 따라 가중
+    const hydraulicAsked = useTerms.some(t => t.includes("유압"));
+    const scored: { id: string; item: any; score: number; doc: EraDoc }[] = [];
+    for (const doc of picked) {
+      const family = doc.meta?.family as string | undefined;
+      const familyWeight = family === "유압식" ? (hydraulicAsked ? 1 : 0.6) : family === "전기식" ? (hydraulicAsked ? 0.4 : 1) : 1;
+      for (const [id, item] of Object.entries<any>(doc.items)) {
+        const full = nz(flatten(item));
+        const title = nz(item.title || "");
+        let score = 0;
+        for (const t of useTerms) {
+          if (title.includes(t)) score += 3;
+          const cnt = full.split(t).length - 1;
+          score += Math.min(cnt, 3);
+        }
+        const isAppendix = id.startsWith("첨부");
+        if (isAppendix && !mrlAsked) score = Math.floor(score * 0.4);
+        score *= familyWeight;
+        if (score > 0) scored.push({ id, item, score, doc });
       }
-      const isAppendix = id.startsWith("첨부");
-      if (isAppendix && !mrlAsked) score = Math.floor(score * 0.4);
-      if (score > 0) scored.push({ id, item, score });
     }
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, 3).map(({ id, item }) => ({
+    return scored.slice(0, 3).map(({ id, item, doc }) => ({
       docTitle: doc.meta.title,
       effectiveDate: doc.meta.effectiveDate,
       ref: id,
       title: (id.startsWith("첨부") ? "[기계실 없는 엘리베이터 전용 기준] " : "") + (item.title || id),
       content: windowAround(flatten(item), useTerms),
-      gapYears,
+      gapYears: Math.abs(year - doc.ey),
     }));
   } catch {
     return [];
