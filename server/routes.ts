@@ -2675,7 +2675,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           chatCtx?: { priority: string; content: string; note: string }[];
           memoCtx?: { title: string; content: string }[];
           precisionCtx?: { situation: string; judgment: string; basis: string; source: string }[];
-          eraCtx?: { docTitle: string; effectiveDate: string; ref: string; title: string; content: string }[];
+          eraCtx?: { docTitle: string; effectiveDate: string; ref: string; title: string; content: string; gapYears?: number }[];
+          closureCtx?: { ref: string; title: string; content: string }[];
         };
       };
 
@@ -2840,9 +2841,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sections.push("[2순위] 판정지침\n" +
             context.verdictCtx.map(c => `■ ${c.title}\n${c.content}`).join("\n\n"));
         }
+        if (context.closureCtx?.length) {
+          sections.push("[폐지·휴지·검사연기 업무 안내 — 공식 서식·인정기준 자료]\n" +
+            context.closureCtx.map(c => `■ ${c.ref}. ${c.title}\n${c.content}`).join("\n\n") +
+            "\n\n※ 이 안내 자료에 적힌 내용만 답하세요. 항목 10('이 자료에 없는 사항')에 해당하거나 자료에 없는 내용(예: 폐지 후 재사용 절차, 휴지 해제 시 검사, 연기 기간·신청 기한)은 추측하지 말고 '자료에 없어 확인이 필요합니다'라고 밝히세요." +
+            "\n※ 폐지 후 같은 건축물에 신규 설치하는 질문은 [3순위] 표준화의 '교체 설치검사' 항목을 근거로 답하되, 그 항목은 '교체 설치검사'에 관한 결정이며 폐지 후 신규 설치에 그대로 적용된다는 명시 규정은 자료에 없다는 점, 종전 기준은 '건축물의 구조변경 없이 현행 기준 적용이 불가한 사항'에 한해 증빙서류(도면·사유서·검토서 등)를 내야 적용할 수 있다는 점, 속도·카 크기·용량 등 설계사양이 바뀌면 현행 기준을 따라야 한다는 점을 각 근거(표준화 제목·회차)와 함께 밝히세요.");
+        }
         if (context.eraCtx?.length) {
           sections.push("[종전 참고] 설치연도가 오래된 질문을 위해 앱에 있는 가장 가까운 시기의 옛 고시에서 찾은 조문 (설치 당시 기준과 같다는 보장 없음)\n" +
-            context.eraCtx.map(c => `■ ${c.docTitle} (${c.effectiveDate} 시행) ${c.ref} ${c.title}\n${c.content}`).join("\n\n"));
+            context.eraCtx.map(c => {
+              const gap = typeof c.gapYears === "number" && c.gapYears > 0 ? ` — 질문 연도와 ${c.gapYears}년 차이, 그 사이 개정 내용은 반영되지 않았을 수 있음` : "";
+              return `■ ${c.docTitle} (${c.effectiveDate} 시행${gap}) ${c.ref} ${c.title}\n${c.content}`;
+            }).join("\n\n"));
         }
         if (context.techCtx?.length) {
           sections.push("[3순위] 표준화\n" +

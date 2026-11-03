@@ -3,6 +3,8 @@ import { searchEraDocs } from "@/lib/eraSearch";
 import { resolveMrMrl, type MrKind, type MrResult } from "@/lib/mrClassify";
 import { detectEquipmentType, shouldAskEquipment, type EquipmentDetection } from "@/lib/equipmentDetect";
 import { yearDiverges, kindDiverges, locDiverges, MAX_CLARIFY_STEPS } from "@/lib/clarifyNeed";
+import { isClosureQuestion, isReinstallAfterClosure, pickClosureEvidence, mergeClosureEvidence } from "@/lib/closureGuide";
+import { loadClosureCtx } from "@/lib/closureGuideLoader";
 import { matchGlossary, glossaryQueries, glossaryHintNote, setLearnedGlossary, findBranchPrompt } from "@/lib/fieldGlossary";
 import { createPortal } from "react-dom";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
@@ -3270,7 +3272,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       const askMethod = /방법|시험|측정|점검|확인|입력|절차|어떻게|순서|판정|합격|불합격|조건부|지적|서류/.test(text);
       const methodTitle = /검사\s*방법|측정\s*방법|시험\s*방법|점검\s*방법|측정\s*요령|시험\s*요령|전산\s*입력|입력\s*방법/;
       const techResultsF = (facetOn && !askMethod) ? techResultsU.filter(r => !methodTitle.test(r.title)) : techResultsU;
-      const techCtx = techResultsF.slice(0, facetOn ? 8 : 3).map((r, ti) => {
+      const techCtxBase = techResultsF.slice(0, facetOn ? 8 : 3).map((r, ti) => {
         const std = STD_ITEMS.find(s => s.title === r.title);
         const ov = stdOverrides?.find((o: any) => o.title === r.title);
         const title = ov?.overrideTitle || std?.title || ov?.title || r.title;
@@ -3294,6 +3296,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       }).filter(c => c.basis || c.conclusion)
         .filter((c, i, arr) => !facetOn || arr.findIndex(x => x.title === c.title && x.source === c.source) === i)
         .slice(0, facetOn ? 5 : 3);
+      // 폐지 후 같은 건축물에 신규 설치하는 질문 — '교체 설치검사' 표준화(종전기준 적용 조건·증속 등 변경 불가 사항)를 근거로 강제 포함
+      const closureAsked = isClosureQuestion(text);
+      const closureEvidence = isReinstallAfterClosure(text) ? pickClosureEvidence(allStdItems) : [];
+      const techCtx = closureEvidence.length > 0 ? mergeClosureEvidence(techCtxBase, closureEvidence) : techCtxBase;
+      // 폐지·휴지·검사연기 업무 절차 문서(공식 서식·인정기준) — 질문에 해당 단어가 있을 때만 전달
+      const closureCtx = closureAsked ? await loadClosureCtx() : [];
 
       // 2.6) 기술자료 — 표준화(std_item_overrides)와 완전히 별도의 데이터소스(technical_materials).
       // 표준화처럼 검사기준 조문 교차참조는 없으므로, 질문 키워드와 제목/본문/카테고리를
@@ -3381,10 +3389,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       if (facetOn) {
         try {
           // MRL로 정해진 대화면 질문에 '기계실 없는'이 없어도 MRL 전용 기준(첨부4·5)을 정상 순위로 검색한다.
-          eraCtx = await searchEraDocs(Number(facetData?.year), [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2), ...(mrInfo?.kind === "MRL" ? ["기계실없는"] : [])]);
+          eraCtx = await searchEraDocs(Number(facetData?.year), [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2), ...(mrInfo?.kind === "MRL" ? ["기계실없는"] : [])], equipmentType === "ambiguous" ? null : equipmentType);
         } catch {}
       }
-      const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx, ...(eraCtx.length > 0 ? { eraCtx } : {}) };
+      const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx, ...(eraCtx.length > 0 ? { eraCtx } : {}), ...(closureCtx.length > 0 ? { closureCtx } : {}) };
       // [관리자 테스트] 비교용 — AI에게 전달되는 자료 목록을 window에 남긴다(관리자 스위치와 무관하게 제목만, 화면 표시 없음).
       try {
         (window as any).__lastCtx = {
