@@ -1355,6 +1355,97 @@ function GlossaryAdminPanel({ empId, empName }: { empId: string; empName: string
   );
 }
 
+// [정정 카드] 아쉬워요 의견 → AI 초안 → 관리자 승인 → 같은 취지의 질문 답변에 반영. 관리자 전용.
+function CorrectionAdminPanel({ empId, empName }: { empId: string; empName: string }) {
+  const [open, setOpen] = React.useState(false);
+  const [tab, setTab] = React.useState<"draft" | "approved" | "rejected">("draft");
+  const [cards, setCards] = React.useState<any[]>([]);
+  const [counts, setCounts] = React.useState<Record<string, number>>({});
+  const [edits, setEdits] = React.useState<Record<number, { correction?: string; basis?: string; conditions?: string }>>({});
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  const id = `employeeId=${encodeURIComponent(empId)}&employeeName=${encodeURIComponent(empName)}`;
+  const load = React.useCallback(async () => {
+    try {
+      const r = await fetch(`/api/ai-corrections?status=${tab}&${id}`);
+      if (r.ok) { const d = await r.json(); setCards(d.cards || []); setCounts(d.counts || {}); }
+    } catch {}
+  }, [tab, id]);
+  React.useEffect(() => { if (open) load(); }, [open, load]);
+  const act = async (cardId: number, action: string) => {
+    setBusy(true);
+    try {
+      const e = edits[cardId] || {};
+      await fetch(`/api/ai-corrections/${cardId}/update`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: empId, employeeName: empName, action, ...e }),
+      });
+      setEdits(prev => { const n = { ...prev }; delete n[cardId]; return n; });
+      await load();
+    } catch {}
+    setBusy(false);
+  };
+  const backfill = async () => {
+    setBusy(true); setMsg("기존 아쉬워요 의견을 정리하는 중…");
+    try {
+      const r = await fetch("/api/ai-corrections/backfill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: empId, employeeName: empName }) });
+      const d = await r.json();
+      setMsg(r.ok ? `의견 ${d.scanned}건 확인 → 초안 ${d.created}건 생성` : (d.error || "실패"));
+      setTab("draft"); await load();
+    } catch { setMsg("실패했습니다"); }
+    setBusy(false);
+  };
+  const tabs: [typeof tab, string][] = [["draft", "검토 대기"], ["approved", "적용중"], ["rejected", "거부"]];
+  return (
+    <div className="px-3 py-2 border-b border-border">
+      <button onClick={() => setOpen(!open)} className="text-[11px] font-semibold text-blue-700 dark:text-blue-400">
+        📝 정정 카드 (아쉬워요 의견 학습) {counts.draft ? `· 대기 ${counts.draft}` : ""} {open ? "▲" : "▼"}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          <p className="text-[10px] text-muted-foreground leading-relaxed">아쉬워요에 정답 의견이 달리면 AI가 정정 카드 초안을 만듭니다. 승인한 카드만 같은 취지의 질문(유사도 0.82 이상)에서 답변 근거보다 먼저 반영됩니다. 이용자 의견에 없는 내용은 초안에 넣지 않으므로, 근거를 꼭 확인하고 승인해 주세요.</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {tabs.map(([val, label]) => (
+              <button key={val} onClick={() => setTab(val)} className={`text-[11px] font-medium px-2.5 py-1 rounded-lg ${tab === val ? "bg-blue-600 text-white" : "border border-border text-muted-foreground"}`}>
+                {label} {counts[val] || 0}
+              </button>
+            ))}
+            <button disabled={busy} onClick={backfill} className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-border text-blue-700">기존 의견에서 초안 가져오기</button>
+          </div>
+          {msg && <p className="text-[10px] text-muted-foreground">{msg}</p>}
+          {cards.length === 0 && <p className="text-[11px] text-muted-foreground py-2">해당하는 카드가 없습니다</p>}
+          {cards.map((c) => {
+            const e = edits[c.id] || {};
+            const set = (k: "correction" | "basis" | "conditions", v: string) => setEdits(prev => ({ ...prev, [c.id]: { ...prev[c.id], [k]: v } }));
+            return (
+              <div key={c.id} className="rounded-lg bg-muted/40 px-2.5 py-2 space-y-1">
+                <div className="text-[12px] font-medium">Q. {c.question}</div>
+                <div className="text-[10px] text-muted-foreground">이용자 의견: {c.user_comment}</div>
+                <textarea value={e.correction ?? c.correction} onChange={(ev) => set("correction", ev.target.value)} rows={3}
+                  className="w-full text-[11px] rounded border border-border bg-background px-1.5 py-1" />
+                <input value={e.basis ?? (c.basis || "")} onChange={(ev) => set("basis", ev.target.value)} placeholder="근거"
+                  className="w-full text-[11px] rounded border border-border bg-background px-1.5 py-1" />
+                <input value={e.conditions ?? (c.conditions || "")} onChange={(ev) => set("conditions", ev.target.value)} placeholder="적용 조건(설비·시기·MR/MRL 등)"
+                  className="w-full text-[11px] rounded border border-border bg-background px-1.5 py-1" />
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-muted-foreground">{c.status === "approved" ? `반영 ${c.hit_count || 0}회` : ""}</span>
+                  <span className="flex gap-2 text-[11px]">
+                    {c.status !== "approved" && <button disabled={busy} onClick={() => act(c.id, "approve")} className="text-green-700 font-semibold">승인</button>}
+                    {c.status === "approved" && <button disabled={busy} onClick={() => act(c.id, "edit")} className="text-blue-700">수정 저장</button>}
+                    {c.status === "draft" && <button disabled={busy} onClick={() => act(c.id, "reject")} className="text-amber-700">거부</button>}
+                    {c.status !== "draft" && <button disabled={busy} onClick={() => act(c.id, "revert")} className="text-amber-700">검토 대기로</button>}
+                    <button disabled={busy} onClick={() => { if (window.confirm("삭제할까요?")) act(c.id, "delete"); }} className="text-red-600">삭제</button>
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FeedbackModal({ rating, onSubmit, onSkip, onClose }: { rating: 1 | -1; onSubmit: (sections: string[], reasons: string[], comment: string) => void; onSkip: () => void; onClose: () => void }) {
   const [sections, setSections] = React.useState<string[]>([]);
   const [reasons, setReasons] = React.useState<string[]>([]);
@@ -4899,6 +4990,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
               </button>
             )}
           </div>
+          <CorrectionAdminPanel empId={empIdentity.empId} empName={empIdentity.empName} />
           <GlossaryAdminPanel empId={empIdentity.empId} empName={empIdentity.empName} />
           <div className="px-3 py-2 border-b border-border">
             <p className="text-[10px] text-muted-foreground leading-relaxed mb-2">

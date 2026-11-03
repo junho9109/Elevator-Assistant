@@ -12,6 +12,8 @@ import { storage } from "./storage";
 import { insertCategorySchema, insertStandardSchemaExt, insertHotspotSchema, insertMemoSchema, insertPhotoAnnotationSchema, insertStandardCommentSchema, insertJudgmentPhotoSchema, insertJudgmentCommentSchema, insertInspectionItemEditSchema, insertCustomInspectionItemSchema, insertPpeItemSchema, insertNearMissSchema, insertJudgmentResultSchema } from "@shared/schema";
 import { registerAiFeedbackRoutes } from "./routes/ai-feedback";
 import { registerFieldGlossaryRoutes } from "./routes/field-glossary";
+import { registerAiCorrectionRoutes, findCorrectionSection, stripClientNotes } from "./routes/ai-corrections";
+import { getEmbedding as getCorrectionEmbedding } from "./embedding";
 import { registerResearchCandidateRoutes, isOutOfScopeAnswer, enrichOutOfScopeAnswer } from "./routes/research-candidates";
 import { registerUserStatsRoutes } from "./routes/user-stats";
 import { registerActivityLogRoutes } from "./routes/activity-log";
@@ -385,6 +387,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // (/api/ai-similar-answers, /api/ai-feedback, /api/ai-feedback/export,
   //  /api/ai-feedback/clusters, /api/ai-feedback/clusters/:id/exclude)
   registerAiFeedbackRoutes(app);
+  // [2026-11] 정정 카드 루프 — 아쉬워요 의견 → 초안 → 관리자 승인 → 유사 질문 답변에 반영
+  registerAiCorrectionRoutes(app);
 
   // [2026-09] "자료 범위 밖" 답변 → 웹 검색 보강 → 관리자 승인 파이프라인 API
   // (/api/ai-research-candidates, /api/ai-research-candidates/:id/approve, /reject)
@@ -3223,9 +3227,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 생성 Haiku 호출과 합쳐 fast 모드에서도 AI 왕복이 2회(총 8~9초)나 필요했다.
       // 계산 질문 처리는 answerRules 안의 "계산/판정 질문 처리" 지시(아래 참고)로 이미 커버되므로
       // 분류 호출 없이 답변 생성 1회 호출로 통합한다.
-      const [goodAnswerRefSection, articleRows, baseItemRows, keywordRows, memoSection, researchSection, expertSection] = await Promise.all([
-        ragTask, articleTask, baseItemTask, keywordTask, memoTask, researchTask, expertAnswerTask,
+      // [2026-11] 승인된 정정 카드 중 같은 취지의 질문이면 정정 내용을 붙인다(임베딩 유사도). 실패하면 빈 문자열.
+      const correctionTask = (async (): Promise<string> => {
+        try {
+          return await findCorrectionSection(await getCorrectionEmbedding(stripClientNotes(userQuestion)));
+        } catch {
+          return "";
+        }
+      })();
+      const [goodAnswerRefSection, articleRows, baseItemRows, keywordRows, memoSection, researchSection, expertSectionBase, correctionSection] = await Promise.all([
+        ragTask, articleTask, baseItemTask, keywordTask, memoTask, researchTask, expertAnswerTask, correctionTask,
       ]);
+      // 정정 지식은 가장 신뢰도 높은 보강 자료로 외부검색·전문가 지식보다 앞에 둔다.
+      const expertSection = correctionSection + expertSectionBase;
 
       // ── 병렬 조회 결과를 고정된 순서(조문 원문 → 조문번호 직접매칭 연혁 → 키워드 매칭)로 합성 ──
       // 조문 원문(inspection_base_items)을 가장 먼저 배치한다 — "무엇을 검사해야 하는지"가

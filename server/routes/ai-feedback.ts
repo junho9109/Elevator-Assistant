@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { ADMIN_EMP_IDS, ADMIN_NAME } from "../admin-identity";
 import { ensurePushTokenColumn } from "../ensure-push-column";
+import { createCorrectionDraft } from "./ai-corrections";
 
 // ── Firebase Admin SDK 초기화 (부정 피드백 누적 시 관리자 FCM 알림용) ──
 // routes.ts의 기존 초기화(2210줄 근처)와 동일한 패턴 — admin.apps.length로 중복
@@ -173,10 +174,17 @@ export function registerAiFeedbackRoutes(app: Express) {
       // 1) 피드백 로그 저장 (섹션/이유/기타의견 포함)
       // [2026-09] 사용자별 좋아요/아쉬워요 통계용으로 employee_id/name/team도 함께 저장.
       // 로그인 안 한 사용자는 NULL로 남는다(기존 흐름을 막지 않기 위해 강제하지 않음).
-      await pool.query(
-        `INSERT INTO ai_feedback (question, answer, rating, sections, reasons, comment, employee_id, employee_name, team) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      const fbInsert = await pool.query(
+        `INSERT INTO ai_feedback (question, answer, rating, sections, reasons, comment, employee_id, employee_name, team) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
         [question, answer, rating, sections || [], reasons || [], comment || null, employeeId || null, employeeName || null, team || null]
       );
+
+      // 1-1) 아쉬워요 + 이용자 의견이 있으면 "정정 카드" 초안을 백그라운드로 만든다(관리자 승인 전에는 답변에 쓰이지 않음).
+      //      실패해도 피드백 저장 흐름에는 영향이 없다.
+      if (rating === -1 && typeof comment === "string" && comment.trim()) {
+        createCorrectionDraft({ feedbackId: fbInsert.rows[0]?.id, question, answer, reasons, comment })
+          .catch((e) => console.error("[정정 카드] 초안 생성 실패:", e?.message));
+      }
 
       // 2) answer_pool 업데이트 — 질문 임베딩 유사도로 클러스터링해서 누적 (공유 헬퍼 사용)
       const { poolId: fbPoolId, thumbsUp, thumbsDown, newStatus, statusChangedToExcluded } = await applyFeedbackToPool(pool, question, answer, rating);
