@@ -23,6 +23,27 @@ const mod = await import("../routes/ai-corrections");
 
 beforeEach(() => { queries.length = 0; nextRows = []; llmOutput = ""; });
 
+describe("parseDraftJson — 응답 형태가 흐트러져도 읽는다", () => {
+  const ok = '{"usable":true,"correction":"스텝 속도 허용오차는 공칭속도의 ±5%이다.","basis":"이용자 제보(미검증)","conditions":"에스컬레이터"}';
+  it("정상 JSON", () => expect(mod.parseDraftJson(ok)?.usable).toBe(true));
+  it("코드펜스·앞뒤 설명이 붙어도", () => {
+    expect(mod.parseDraftJson("정리했습니다.\n```json\n" + ok + "\n```\n이상입니다")?.correction).toContain("±5%");
+  });
+  it("문자열 안에 줄바꿈이 있어도", () => {
+    expect(mod.parseDraftJson('{"usable":true,"correction":"첫 줄\n둘째 줄 내용입니다 충분히","basis":"b","conditions":""}')?.correction).toContain("둘째 줄");
+  });
+  it("잘려서 따옴표·괄호가 닫히지 않아도 correction을 건진다", () => {
+    const p = mod.parseDraftJson('{"usable":true,"correction":"전면 활동공간은 2023년 제1차 표준화를 참조한다","basis":"2023년 제1차 표준화');
+    expect(p?.usable).toBe(true);
+    expect(p?.correction).toContain("2023년 제1차 표준화");
+  });
+  it("usable:false는 false로", () => expect(mod.parseDraftJson('{"usable": false, "correction": ""')?.usable).toBe(false));
+  it("JSON이 전혀 아니면 null", () => {
+    expect(mod.parseDraftJson("")).toBeNull();
+    expect(mod.parseDraftJson("죄송합니다. 정리할 수 없습니다.")).toBeNull();
+  });
+});
+
 describe("stripClientNotes", () => {
   it("클라이언트가 붙인 자동 메모를 떼고 이용자 질문만 남긴다", () => {
     const q = "2014년 설치인데 피트 인터폰 없으면 지적이야?\n\n[시점 참고(자동 계산)] 질문에 설치/적용 연도 2014년이 있습니다.\n\n[승강기 형식 참고] MR";

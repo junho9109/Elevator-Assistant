@@ -63,6 +63,30 @@ export interface DraftInput {
   comment: string;
 }
 
+// AI가 돌려준 초안 JSON을 읽는다. 코드펜스·앞뒤 설명·문자열 안 줄바꿈·잘린 응답까지 견디게 하고,
+// 그래도 못 읽으면 null.
+export function parseDraftJson(raw: string): { usable: boolean; correction?: string; basis?: string; conditions?: string } | null {
+  const body = (raw || "").replace(/```json|```/g, "").trim();
+  if (!body) return null;
+  const m = body.match(/\{[\s\S]*\}/);
+  const cand = m ? m[0] : body;
+  const tryParse = (s: string) => { try { const v = JSON.parse(s); return v && typeof v === "object" ? v : null; } catch { return null; } };
+  const direct = tryParse(cand) || tryParse(cand.replace(/[\r\n\t]+/g, " "));
+  if (direct) return direct;
+  // 필드별로 건져내기(따옴표가 닫히지 않은 잘린 응답 포함)
+  const usableM = body.match(/"usable"\s*:\s*(true|false)/i);
+  if (!usableM) return null;
+  const usable = usableM[1].toLowerCase() === "true";
+  if (!usable) return { usable: false };
+  const field = (name: string) => {
+    const fm = body.match(new RegExp(`"${name}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`));
+    return fm ? fm[1].replace(/\\n/g, " ").replace(/\\"/g, '"').trim() : "";
+  };
+  const correction = field("correction");
+  if (!correction) return null;
+  return { usable: true, correction, basis: field("basis"), conditions: field("conditions") };
+}
+
 // 피드백 한 건으로 정정 카드 초안을 만든다. 만들 수 없거나 만들 필요가 없으면 null.
 export async function createCorrectionDraft(input: DraftInput): Promise<number | null> {
   return (await draftCorrection(input)).id;
@@ -82,7 +106,7 @@ export async function draftCorrection(input: DraftInput): Promise<{ id: number |
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const r = await anthropic.messages.create({
     model: "claude-haiku-5-5",
-    max_tokens: 700,
+    max_tokens: 1500,
     system: DRAFT_SYSTEM,
     messages: [{
       role: "user",
@@ -92,12 +116,11 @@ export async function draftCorrection(input: DraftInput): Promise<{ id: number |
   // 첫 블록이 text가 아닐 수 있으므로(thinking 등) text 블록을 찾아 쓴다.
   const textBlock: any = (r.content as any[]).find((b: any) => b?.type === "text");
   const raw: string = textBlock?.text || "";
-  let parsed: any;
-  try {
-    const body = raw.replace(/```json|```/g, "").trim();
-    const m = body.match(/\{[\s\S]*\}/);
-    parsed = JSON.parse(m ? m[0] : body);
-  } catch { return { id: null, reason: "AI 응답을 해석하지 못함" }; }
+  const parsed = parseDraftJson(raw);
+  if (!parsed) {
+    const snip = raw.replace(/\s+/g, " ").slice(0, 80);
+    return { id: null, reason: `AI 응답을 해석하지 못함 [${(r as any).stop_reason || "?"}] ${snip}` };
+  }
   if (!parsed?.usable) return { id: null, reason: "정정할 사실이 없는 의견으로 판단" };
   const correction = clean(parsed.correction, 800);
   if (correction.length < 10) return { id: null, reason: "정정 내용이 비어 있음" };
