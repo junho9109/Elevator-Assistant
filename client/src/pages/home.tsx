@@ -1374,7 +1374,9 @@ function CorrectionAdminPanel({ empId, empName }: { empId: string; empName: stri
     try {
       const r = await fetch("/api/ai-corrections/backfill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeId: empId, employeeName: empName }) });
       const d = await r.json();
-      setMsg(r.ok ? `의견 ${d.scanned}건 확인 → 초안 ${d.created}건 생성` : (d.error || "실패"));
+      const why = Array.isArray(d.skipped) && d.skipped.length > 0
+        ? ` (제외 ${d.skipped.length}건: ${Array.from(new Set(d.skipped.map((s: any) => s.reason))).slice(0, 3).join(" / ")})` : "";
+      setMsg(r.ok ? `의견 ${d.scanned}건 확인 → 초안 ${d.created}건 생성${why}` : (d.error || "실패"));
       setTab("draft"); await load();
     } catch { setMsg("실패했습니다"); }
     setBusy(false);

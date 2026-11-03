@@ -65,14 +65,19 @@ export interface DraftInput {
 
 // 피드백 한 건으로 정정 카드 초안을 만든다. 만들 수 없거나 만들 필요가 없으면 null.
 export async function createCorrectionDraft(input: DraftInput): Promise<number | null> {
+  return (await draftCorrection(input)).id;
+}
+
+// 위와 같되 못 만든 이유(reason)를 함께 돌려준다 — 가져오기 화면에서 "왜 0건인지" 보이게 한다.
+export async function draftCorrection(input: DraftInput): Promise<{ id: number | null; reason: string }> {
   const comment = clean(input.comment, 1500);
-  if (comment.length < MIN_COMMENT_LEN) return null;
+  if (comment.length < MIN_COMMENT_LEN) return { id: null, reason: "의견이 너무 짧음" };
   input = { ...input, question: stripClientNotes(input.question) };
-  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!process.env.ANTHROPIC_API_KEY) return { id: null, reason: "ANTHROPIC_API_KEY 없음" };
   await ensureTable();
   if (input.feedbackId) {
     const dup = await pool.query(`SELECT 1 FROM ai_corrections WHERE feedback_id = $1`, [input.feedbackId]);
-    if (dup.rowCount) return null;
+    if (dup.rowCount) return { id: null, reason: "이미 초안 있음" };
   }
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const r = await anthropic.messages.create({
@@ -84,12 +89,18 @@ export async function createCorrectionDraft(input: DraftInput): Promise<number |
       content: `질문: ${clean(input.question, 600)}\n\n기존 답변(요약): ${clean(input.answer, 1200)}\n\n이용자가 고른 이유: ${(input.reasons || []).join(", ") || "(없음)"}\n이용자 의견: ${comment}`,
     }],
   });
-  const raw = r.content[0]?.type === "text" ? r.content[0].text : "";
+  // 첫 블록이 text가 아닐 수 있으므로(thinking 등) text 블록을 찾아 쓴다.
+  const textBlock: any = (r.content as any[]).find((b: any) => b?.type === "text");
+  const raw: string = textBlock?.text || "";
   let parsed: any;
-  try { parsed = JSON.parse(raw.replace(/```json|```/g, "").trim()); } catch { return null; }
-  if (!parsed?.usable) return null;
+  try {
+    const body = raw.replace(/```json|```/g, "").trim();
+    const m = body.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(m ? m[0] : body);
+  } catch { return { id: null, reason: "AI 응답을 해석하지 못함" }; }
+  if (!parsed?.usable) return { id: null, reason: "정정할 사실이 없는 의견으로 판단" };
   const correction = clean(parsed.correction, 800);
-  if (correction.length < 10) return null;
+  if (correction.length < 10) return { id: null, reason: "정정 내용이 비어 있음" };
   const emb = await getEmbedding(clean(input.question, 600));
   const vec = emb ? `[${emb.join(",")}]` : null;
   const ins = await pool.query(
@@ -98,7 +109,8 @@ export async function createCorrectionDraft(input: DraftInput): Promise<number |
      ON CONFLICT DO NOTHING RETURNING id`,
     [clean(input.question, 600), clean(input.answer, 4000), input.feedbackId || null, comment, correction, clean(parsed.basis, 300) || "이용자 제보(미검증)", clean(parsed.conditions, 200), vec],
   );
-  return ins.rows[0]?.id ?? null;
+  const newId = ins.rows[0]?.id ?? null;
+  return { id: newId, reason: newId ? "" : "저장 안 됨(중복)" };
 }
 
 // 승인된 정정 카드 중 현재 질문과 같은 취지인 것을 찾아 프롬프트 문단으로 만든다. 없으면 "".
@@ -203,15 +215,18 @@ export function registerAiCorrectionRoutes(app: Express) {
         [MIN_COMMENT_LEN],
       );
       let created = 0;
+      const skipped: { id: number; reason: string }[] = [];
       for (const f of rows.rows) {
         try {
-          const id = await createCorrectionDraft({ feedbackId: f.id, question: f.question, answer: f.answer, reasons: f.reasons, comment: f.comment });
-          if (id) created++;
+          const d = await draftCorrection({ feedbackId: f.id, question: f.question, answer: f.answer, reasons: f.reasons, comment: f.comment });
+          if (d.id) created++; else skipped.push({ id: f.id, reason: d.reason });
         } catch (e) {
-          console.error("[정정 카드] 초안 생성 실패:", (e as any)?.message);
+          const msg = String((e as any)?.message || e).slice(0, 120);
+          console.error("[정정 카드] 초안 생성 실패:", msg);
+          skipped.push({ id: f.id, reason: "오류: " + msg });
         }
       }
-      res.json({ ok: true, scanned: rows.rows.length, created });
+      res.json({ ok: true, scanned: rows.rows.length, created, skipped });
     } catch {
       res.status(500).json({ error: "가져오기 실패" });
     }
