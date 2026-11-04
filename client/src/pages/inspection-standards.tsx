@@ -995,9 +995,14 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                     ? "판정지침"
                     : `${activeGeneration ? activeGeneration.meta.title : (isDbDoc(selectedDoc) ? DOCUMENTS.find(d => d.id === selectedDoc)?.label || "현행" : "현행")} · ${activeTotalCount}개 조문`}
                 </p>
-                {activeGeneration && originalFilesOf(activeGeneration.meta).length > 0 && (
+                {(() => {
+                  // 다른 고시와 같은 위치(제목 아래)에 원본 PDF 링크 — 별표22·24(DB 문서)는 별표 PDF + 고시 제2022-18호
+                  const files = activeGeneration
+                    ? originalFilesOf(activeGeneration.meta)
+                    : (isDbDoc(selectedDoc) ? (ORIGINAL_FILES[dbDocEquipmentType] || []) : []);
+                  return files.length > 0 && (
                   <div className="flex flex-col">
-                    {originalFilesOf(activeGeneration.meta).map((f) => (
+                    {files.map((f) => (
                       <a
                         key={f.href}
                         {...originalFileLinkProps(f.href)}
@@ -1007,7 +1012,8 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
                       </a>
                     ))}
                   </div>
-                )}
+                  );
+                })()}
               </div>
             </div>
             <div className="flex items-center gap-2">
