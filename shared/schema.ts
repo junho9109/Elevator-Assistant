@@ -508,6 +508,8 @@ export const techMaterialPhotos = pgTable("tech_material_photos", {
 export const inspectionItemPhotos = pgTable("inspection_item_photos", {
   id: serial("id").primaryKey(),
   itemId: varchar("item_id", { length: 50 }).notNull(),
+  // 조문번호(itemId)는 문서마다 독립 채번이라 엘리베이터 8.2와 에스컬레이터 8.2가 겹친다 → 문서 종류로 구분
+  standardEquipmentType: varchar("standard_equipment_type", { length: 30 }).notNull().default("엘리베이터"),
   imageData: text("image_data").notNull(),
   mimeType: varchar("mime_type", { length: 50 }).default("image/jpeg"),
   displayOrder: integer("display_order").default(0),

@@ -116,6 +116,9 @@ async function ensureChatTable() {
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_question_log_employee_id ON ai_question_log (employee_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_question_log_created_at ON ai_question_log (created_at DESC)`);
 
+    // 검사기준 조문 사진: 문서 종류(엘리베이터/에스컬레이터)별로 구분 — 기존 행은 모두 '엘리베이터'로 시작(멱등)
+    await pool.query(`ALTER TABLE inspection_item_photos ADD COLUMN IF NOT EXISTS standard_equipment_type VARCHAR(30) NOT NULL DEFAULT '엘리베이터'`);
+
     // 업데이트 내역: 항목별 일반 이용자 공개 여부(기본 비공개 = 관리자에게만 보임)
     await pool.query(`ALTER TABLE changelog_cache ADD COLUMN IF NOT EXISTS public_visible BOOLEAN NOT NULL DEFAULT FALSE`);
 

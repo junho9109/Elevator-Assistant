@@ -441,23 +441,24 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
   const photoQc = useQueryClient();
 
   const { data: photos = [] } = useQuery<InspPhoto[]>({
-    queryKey: ["/api/inspection-photos", id],
-    queryFn: async () => fetchJson(`/api/inspection-photos/${encodeURIComponent(id)}`),
+    queryKey: ["/api/inspection-photos", equipmentType, id],
+    queryFn: async () => fetchJson(`/api/inspection-photos/${encodeURIComponent(id)}?standardEquipmentType=${encodeURIComponent(equipmentType)}`),
   });
 
   const uploadPhoto = useMutation({
     mutationFn: async (file: File) => {
       const fd = new FormData();
+      fd.append("standardEquipmentType", equipmentType);
       fd.append("image", file);
-      const r = await fetch(`/api/inspection-photos/${encodeURIComponent(id)}`, { method: "POST", body: fd });
+      const r = await fetch(`/api/inspection-photos/${encodeURIComponent(id)}?standardEquipmentType=${encodeURIComponent(equipmentType)}`, { method: "POST", body: fd });
       if (!r.ok) throw new Error("업로드 실패");
       return r.json();
     },
-    onSuccess: () => photoQc.invalidateQueries({ queryKey: ["/api/inspection-photos", id] }),
+    onSuccess: () => photoQc.invalidateQueries({ queryKey: ["/api/inspection-photos", equipmentType, id] }),
   });
   const deletePhoto = useMutation({
     mutationFn: async (photoId: number) => { await fetch(`/api/inspection-photos/${photoId}`, { method: "DELETE" }); },
-    onSuccess: () => photoQc.invalidateQueries({ queryKey: ["/api/inspection-photos", id] }),
+    onSuccess: () => photoQc.invalidateQueries({ queryKey: ["/api/inspection-photos", equipmentType, id] }),
   });
   const handlePhotoSelect = (fl: FileList | null) => {
     if (!fl) return;

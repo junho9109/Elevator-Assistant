@@ -4393,14 +4393,15 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
     try {
       const db = (await import("./db")).db;
       const { inspectionItemPhotos } = await import("@shared/schema");
-      const { eq, asc } = await import("drizzle-orm");
+      const { eq, asc, and } = await import("drizzle-orm");
       const itemId = decodeURIComponent(req.params.itemId);
+      const eqType = ((req.query.standardEquipmentType as string) || "엘리베이터").trim();
       const photos = await db.select({
         id: inspectionItemPhotos.id,
         displayOrder: inspectionItemPhotos.displayOrder,
         mimeType: inspectionItemPhotos.mimeType,
         createdAt: inspectionItemPhotos.createdAt,
-      }).from(inspectionItemPhotos).where(eq(inspectionItemPhotos.itemId, itemId)).orderBy(asc(inspectionItemPhotos.displayOrder));
+      }).from(inspectionItemPhotos).where(and(eq(inspectionItemPhotos.itemId, itemId), eq(inspectionItemPhotos.standardEquipmentType, eqType))).orderBy(asc(inspectionItemPhotos.displayOrder));
       res.json(photos);
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });
@@ -4423,19 +4424,37 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
     try {
       const db = (await import("./db")).db;
       const { inspectionItemPhotos } = await import("@shared/schema");
-      const { eq, count } = await import("drizzle-orm");
+      const { eq, count, and } = await import("drizzle-orm");
       const itemId = decodeURIComponent(req.params.itemId);
-      const [{ value: cnt }] = await db.select({ value: count() }).from(inspectionItemPhotos).where(eq(inspectionItemPhotos.itemId, itemId));
+      // 문서 종류 필수 — 번호만으로는 엘리베이터/에스컬레이터를 구분할 수 없다(8.2 등이 겹침)
+      const eqType = String((req.body && req.body.standardEquipmentType) || req.query.standardEquipmentType || "").trim();
+      if (!eqType) return res.status(400).json({ error: "standardEquipmentType(대상 문서 종류)을 지정해주세요." });
+      const [{ value: cnt }] = await db.select({ value: count() }).from(inspectionItemPhotos).where(and(eq(inspectionItemPhotos.itemId, itemId), eq(inspectionItemPhotos.standardEquipmentType, eqType)));
       if (Number(cnt) >= 10) return res.status(400).json({ error: "최대 10장" });
       if (!req.file) return res.status(400).json({ error: "No image" });
       const base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
       const [photo] = await db.insert(inspectionItemPhotos).values({
         itemId,
+        standardEquipmentType: eqType,
         imageData: base64Data,
         mimeType: req.file.mimetype,
         displayOrder: Number(cnt),
       }).returning({ id: inspectionItemPhotos.id, displayOrder: inspectionItemPhotos.displayOrder, mimeType: inspectionItemPhotos.mimeType, createdAt: inspectionItemPhotos.createdAt });
       res.status(201).json(photo);
+    } catch (e) { res.status(500).json({ error: "Failed" }); }
+  });
+
+  // 이미 올라간 사진의 문서 종류를 바로잡는다(엘리베이터↔에스컬레이터)
+  app.put("/api/inspection-photos/:id/equipment-type", async (req, res) => {
+    try {
+      const eqType = String((req.body && req.body.standardEquipmentType) || "").trim();
+      if (!["엘리베이터", "에스컬레이터"].includes(eqType)) return res.status(400).json({ error: "standardEquipmentType은 엘리베이터 또는 에스컬레이터" });
+      const db = (await import("./db")).db;
+      const { inspectionItemPhotos } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db.update(inspectionItemPhotos).set({ standardEquipmentType: eqType }).where(eq(inspectionItemPhotos.id, parseInt(req.params.id))).returning({ id: inspectionItemPhotos.id });
+      if (!rows.length) return res.status(404).json({ error: "Not found" });
+      res.json({ ok: true, id: rows[0].id, standardEquipmentType: eqType });
     } catch (e) { res.status(500).json({ error: "Failed" }); }
   });
 
