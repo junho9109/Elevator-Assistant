@@ -77,6 +77,10 @@ describe("별표22·24 원본 표·그림·수식 첨부", () => {
       for (const f of v.figures) expect(fs.existsSync(pub(f.src)), `${eq} ${f.src}`).toBe(true);
     }
   });
+  it("제목 없는 표지·기호·분리 그림도 본문에 붙는다(6.4.x, 8.2.3.2, 14.1.2.1, 8.7.4)", () => {
+    for (const id of ["6.4.1", "6.4.2", "6.4.3", "8.2.3.2", "14.1.2.1"]) expect(getAttachments("엘리베이터", id).figures.length, id).toBe(1);
+    expect(getAttachments("엘리베이터", "8.7.4").figures.length).toBe(3);
+  });
   it("원본 PDF 링크 파일이 있다(별표 + 고시 제2022-18호)", () => {
     for (const eq of ["엘리베이터", "에스컬레이터"]) {
       expect(ORIGINAL_FILES[eq].length).toBe(2);
