@@ -2603,6 +2603,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 관리자가 직접 추가한 조문만 화면에서 내린다(isActive=false, 행은 남겨 복구 가능).
+  // 원본 기준 조문(isAdminAdded 아님)은 이 경로로 내릴 수 없다.
+  app.delete("/api/inspection-base-items/:itemId", async (req, res) => {
+    try {
+      const eqType = ((req.query.standardEquipmentType as string) || "").trim();
+      if (!eqType) return res.status(400).json({ error: "standardEquipmentType(대상 문서 종류)을 지정해주세요." });
+      const item = await storage.getInspectionBaseItem(req.params.itemId, eqType);
+      if (!item) return res.status(404).json({ error: "Not found" });
+      if (!(item.isAdminAdded === true || (item.isAdminAdded as any) === "true")) {
+        return res.status(403).json({ error: "관리자가 추가한 조문만 내릴 수 있습니다." });
+      }
+      await storage.updateInspectionBaseItem(req.params.itemId, { isActive: "false" }, eqType);
+      res.json({ ok: true, itemId: req.params.itemId });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to deactivate inspection base item" });
+    }
+  });
+
   // 관리자 화면에서 조문을 직접 수정 — DB 행 자체를 갱신 (별도 override 테이블 사용 안 함)
   // adopt: true — 화면에 안 보이던(별표22_유효항목.json 미등재) 기존 행을 "덮어쓰기"로 등록할 때,
   //               isAdminAdded/isActive를 true로 같이 세팅해서 즉시 화면에 노출시킨다.
