@@ -1,6 +1,7 @@
 import React from "react";
 import { searchEraDocs } from "@/lib/eraSearch";
 import { attachmentContext, annexOverlay, annexText } from "@/lib/standardAttachments";
+import { carAreaNote } from "@/lib/carArea";
 import { resolveMrMrl, type MrKind, type MrResult } from "@/lib/mrClassify";
 import { detectEquipmentType, shouldAskEquipment, type EquipmentDetection } from "@/lib/equipmentDetect";
 import { yearDiverges, kindDiverges, locDiverges, MAX_CLARIFY_STEPS } from "@/lib/clarifyNeed";
@@ -3288,6 +3289,14 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           })() + dateInfo,
         };
       }).filter(c => c.content);
+      // 카 면적(정격하중·정원·유효바닥면적) 질문 — 표 5·6·7을 항상 넣고, 숫자가 있으면 코드로 계산한 값을 같이 준다(엘리베이터 문서 한정).
+      if (equipmentType !== "에스컬레이터") {
+        const carNote = carAreaNote(text);
+        if (carNote) {
+          const tblCtx = ["8.2.1.1", "8.2.2.2", "8.2.3.1"].map(id => attachmentContext("엘리베이터", id, 1800)).filter(Boolean).join("\n\n");
+          inspCtx.unshift({ priority: "검사기준", title: "카 유효면적 — 정격하중·정원별 표(표 5·6·7)", ref: "8.2.1.1", docLabel, content: carNote + (tblCtx ? "\n" + tblCtx : "") } as any);
+        }
+      }
 
       // 2) 기술자료(표준화) — 최대 1개 (Rerank 후 최상위만), 항목당 500자
       // + 검사기준 조문번호로 표준화 교차검색 (ref 역참조)
