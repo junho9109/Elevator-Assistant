@@ -3389,7 +3389,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       if (facetOn) {
         try {
           // MRL로 정해진 대화면 질문에 '기계실 없는'이 없어도 MRL 전용 기준(첨부4·5)을 정상 순위로 검색한다.
-          eraCtx = await searchEraDocs(Number(facetData?.year), [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2), ...(mrInfo?.kind === "MRL" ? ["기계실없는"] : [])], equipmentType === "ambiguous" ? null : equipmentType);
+          eraCtx = await searchEraDocs(Number(facetData?.year), [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2), ...(mrInfo?.kind === "MRL" ? ["기계실없는"] : [])], equipmentType === "ambiguous" ? null : equipmentType, { mode: effMode, question: text });
         } catch {}
       }
       const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx, ...(eraCtx.length > 0 ? { eraCtx } : {}), ...(closureCtx.length > 0 ? { closureCtx } : {}) };
