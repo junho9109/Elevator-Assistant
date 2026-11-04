@@ -3291,7 +3291,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       }).filter(c => c.content);
       // 카 면적(정격하중·정원·유효바닥면적) 질문 — 표 5·6·7을 항상 넣고, 숫자가 있으면 코드로 계산한 값을 같이 준다(엘리베이터 문서 한정).
       if (equipmentType !== "에스컬레이터") {
-        const carNote = carAreaNote(text);
+        const carNote = carAreaNote(text, Number(facetData?.year) || null);
         if (carNote) {
           const tblCtx = ["8.2.1.1", "8.2.2.2", "8.2.3.1"].map(id => attachmentContext("엘리베이터", id, 1800)).filter(Boolean).join("\n\n");
           inspCtx.unshift({ priority: "검사기준", title: "카 유효면적 — 정격하중·정원별 표(표 5·6·7)", ref: "8.2.1.1", docLabel, content: carNote + (tblCtx ? "\n" + tblCtx : "") } as any);
