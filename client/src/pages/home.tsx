@@ -1,5 +1,6 @@
 import React from "react";
 import { searchEraDocs } from "@/lib/eraSearch";
+import { attachmentContext, annexOverlay } from "@/lib/standardAttachments";
 import { resolveMrMrl, type MrKind, type MrResult } from "@/lib/mrClassify";
 import { detectEquipmentType, shouldAskEquipment, type EquipmentDetection } from "@/lib/equipmentDetect";
 import { yearDiverges, kindDiverges, locDiverges, MAX_CLARIFY_STEPS } from "@/lib/clarifyNeed";
@@ -1911,6 +1912,13 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     queryFn: () => fetchJson("/api/inspection-edits"),
     staleTime: 1000 * 60 * 10,
   });
+  // 엘리베이터 부속서 중 DB에 없는 것(Ⅰ·Ⅺ~ⅩⅣ 등)은 원본 PDF 원문을 AI 자료로 보충한다(DB에 있으면 DB가 우선).
+  const withAnnexOverlay = (content: Record<string, any>, equipment: string) => {
+    for (const [name, a] of Object.entries(annexOverlay(equipment))) {
+      if (!content[name]) content[name] = { text: a.text, effectiveDate: undefined, customWarning: undefined, standardNote: undefined, revisions: [] };
+    }
+    return content;
+  };
   const buildInspectionContent = (items: any[], editMap: Record<string, any>) => Object.fromEntries(
     (items || []).map((item: any) => {
       const edit = editMap[item.itemId];
@@ -1933,10 +1941,10 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
     const editMap: Record<string, any> = Object.fromEntries(
       (inspectionItemEdits || []).map((e: any) => [e.itemId, e])
     );
-    return buildInspectionContent(inspectionBaseItems, editMap);
+    return withAnnexOverlay(buildInspectionContent(inspectionBaseItems, editMap), "엘리베이터");
   }, [inspectionBaseItems, inspectionItemEdits]);
   const INSPECTION_CONTENT_ESCALATOR = useMemo(() => {
-    return buildInspectionContent(inspectionBaseItemsEscalator, {});
+    return withAnnexOverlay(buildInspectionContent(inspectionBaseItemsEscalator, {}), "에스컬레이터");
   }, [inspectionBaseItemsEscalator]);
 
   const { data: stdOverrides, refetch: refetchStdOverrides } = useQuery<any[]>({
@@ -3250,7 +3258,11 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           title: r.title,
           ref: r.query || "",
           docLabel,
-          content: r.content.slice(0, 900) + dateInfo,
+          // 원본 PDF에서 읽어 둔 표(글자)·그림 제목·수식 판독문 — 본문 900자 제한과 별개로 붙인다(예: 표 5·6·7 카 유효면적).
+          content: r.content.slice(0, 900) + (() => {
+            const att = attachmentContext(equipmentType === "에스컬레이터" ? "에스컬레이터" : "엘리베이터", r.query || "");
+            return att ? "\n" + att : "";
+          })() + dateInfo,
         };
       }).filter(c => c.content);
 

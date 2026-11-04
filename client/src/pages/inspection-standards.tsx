@@ -11,6 +11,7 @@ import VALID_BYULPYO22_IDS from "@/data/별표22_유효항목.json";
 import { usePinchZoomPan } from "@/hooks/use-pinch-zoom";
 import { getGlobalAdminMode, GLOBAL_ADMIN_MODE_EVENT } from "@/lib/super-admin";
 import { fetchJson } from "@/lib/queryClient";
+import { getAttachments, annexOverlay, ORIGINAL_FILES } from "@/lib/standardAttachments";
 
 // 원문 표(칸 병합 포함)·그림(출처 표기 포함) — 세대별 고시 JSON에서만 선택적으로 쓴다.
 type EntryTableCell = { t: string; rs?: number; cs?: number };
@@ -158,7 +159,59 @@ function baseItemsToMap(rows: any[], equipmentType: string = "엘리베이터"):
       source: DOC_SOURCE_LABEL[equipmentType] || DOC_SOURCE_LABEL.엘리베이터,
     };
   });
+  // 부속서 원문(원본 PDF) — DB에 없거나 화면 목록(VALID_IDS)에서 빠져 있던 부속서를 추가로 보여준다.
+  // DB에 이미 보이는 항목이 있으면 그대로 두고, 없는 것만 채운다.
+  Object.entries(annexOverlay(equipmentType)).forEach(([name, a]) => {
+    if (map[name]) return;
+    map[name] = {
+      text: a.text,
+      title: a.text.split("\n").slice(0, 2).join(" ").trim() || name,
+      source: `${DOC_SOURCE_LABEL[equipmentType] || DOC_SOURCE_LABEL.엘리베이터} · 원본 PDF ${a.pages[0]}~${a.pages[1]}쪽`,
+    };
+  });
   return map;
+}
+
+// 조문에 붙은 원본 표·그림·수식 이미지(원본 PDF에서 잘라 붙임). 눌러서 크게 볼 수 있다.
+function AttachmentBlocks({ equipmentType, id }: { equipmentType: string; id: string }) {
+  const att = getAttachments(equipmentType, id);
+  if (att.tables.length + att.figures.length + att.eqs.length === 0) return null;
+  const openProps = (href: string) => originalFileLinkProps(href);
+  const imgs = (srcs: string[], alt: string) => srcs.map((s) => (
+    <a key={s} {...openProps(s)} className="block">
+      <img src={s} alt={alt} loading="lazy" className="mx-auto max-w-full rounded-lg border border-border bg-white" />
+    </a>
+  ));
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-medium text-muted-foreground">원본 표·그림 (원본 PDF 쪽 이미지 · 누르면 크게 보임)</p>
+      {att.tables.map((t, i) => (
+        <div key={`t${i}`} className="space-y-1">
+          <p className="text-xs font-semibold text-center">{t.caption}</p>
+          {imgs(t.src, t.caption)}
+          {!t.primary && <p className="text-[10px] text-muted-foreground text-center">원본 {t.page}쪽에 수록된 표입니다.</p>}
+        </div>
+      ))}
+      {att.figures.map((f, i) => (
+        <div key={`f${i}`} className="space-y-1">
+          <p className="text-xs font-semibold text-center">{f.caption}</p>
+          {imgs(f.src, f.caption)}
+          {!f.primary && <p className="text-[10px] text-muted-foreground text-center">원본 {f.page}쪽에 수록된 그림입니다.</p>}
+        </div>
+      ))}
+      {att.eqs.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold">수식·기호가 들어간 원문 (글자 정보에서 빠진 부분을 원본 이미지로 보충)</p>
+          {att.eqs.map((e, i) => (
+            <div key={`e${i}`} className="space-y-0.5">
+              {imgs([e.src], "수식")}
+              <p className="text-[10px] text-muted-foreground text-right">원본 {e.page}쪽</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── 연도별(세대별) 개정 문서 자동 로드 ──────────────────────────────────
@@ -417,6 +470,7 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
               : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>;
           })()}
         </div>
+        <AttachmentBlocks equipmentType={equipmentType} id={id} />
         {(photos.length > 0 || isAdminMode) && (
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -507,6 +561,15 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
           document.body
         )}
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {displaySource}</p>
+        {(ORIGINAL_FILES[equipmentType] || []).length > 0 && (
+          <div className="flex flex-col gap-1">
+            {ORIGINAL_FILES[equipmentType].map((f) => (
+              <a key={f.href} {...originalFileLinkProps(f.href)} className="inline-flex items-center gap-1 text-xs text-blue-600 underline">
+                📄 {f.label} 열기
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
