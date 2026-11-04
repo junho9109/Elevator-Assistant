@@ -195,7 +195,29 @@ const SYNONYMS: Record<string, string[]> = {
   "오버밸런스": ["균형량", "ob율", "ob"],
   // 파이널리미트스위치
   "파이널리미트스위치": ["최종제한스위치", "final limit"],
+  // 카 면적 — 현장 용어 "유효바닥면적"은 별표22 8.2.1(표 5·6·7)에서 "카 유효 면적"으로 적혀 있다
+  "유효바닥면적": ["카유효면적", "유효면적", "최대유효면적", "카면적"],
+  "유효면적": ["유효바닥면적", "카유효면적", "최대유효면적"],
+  "카면적": ["유효면적", "카유효면적", "유효바닥면적"],
 };
+
+// 질문 핵심어에 유사어를 "추가"한다(질문어가 사전의 단어를 포함할 때만). 원문이 다른 표현("유효바닥면적" ↔ "유효 면적")을 쓰는
+// 조문을 하드 필터·종전 고시 검색에서 놓치지 않기 위한 것 — 기존 핵심어는 그대로 두고 뒤에 덧붙인다.
+function addSynonymTerms(terms: string[]): string[] {
+  const out = new Set<string>(terms);
+  for (const t of terms) {
+    const base = t.toLowerCase().replace(/\s+/g, "");
+    if (base.length < 3) continue;
+    for (const [key, syns] of Object.entries(SYNONYMS)) {
+      const keyNorm = key.toLowerCase().replace(/\s+/g, "");
+      if (base.includes(keyNorm) || syns.some(x => base.includes(x.toLowerCase().replace(/\s+/g, "")))) {
+        out.add(keyNorm);
+        syns.forEach(x => out.add(x.toLowerCase().replace(/\s+/g, "")));
+      }
+    }
+  }
+  return Array.from(out);
+}
 
 // 키워드 확장 (유사어 포함한 검색어 목록 반환)
 // ⑦ 질문에서 핵심 명사 추출 (조사·부사 제거)
@@ -3164,7 +3186,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
       // ② 주/보조 키워드 분리 + 핵심 개념 하드 필터
       const { primary: primaryTerms0, secondary: secondaryTerms } = splitKeywords(text);
       const glossaryTerms: string[] = facetOn ? glossaryQueries(glossaryHits) : [];
-      const primaryTerms = facetOn && (facetTerms.length > 0 || glossaryTerms.length > 0) ? Array.from(new Set([...primaryTerms0, ...facetTerms, ...glossaryTerms])) : primaryTerms0;
+      const primaryTermsBase = facetOn && (facetTerms.length > 0 || glossaryTerms.length > 0) ? Array.from(new Set([...primaryTerms0, ...facetTerms, ...glossaryTerms])) : primaryTerms0;
+      const primaryTerms = addSynonymTerms(primaryTermsBase);
       const coreTerms = primaryTerms; // Rerank용 핵심어
 
       const hardFiltered = primaryTerms.length > 0
