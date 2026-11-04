@@ -4,12 +4,26 @@
 //  - annex[부속서 이름] = { text, pages } (엘리베이터 부속서 Ⅰ~ⅩⅣ 원문. DB에는 일부만 있고 화면에는 숨겨져 있었다)
 import b22 from "../data/standard-attachments/byulpyo22.json";
 import b24 from "../data/standard-attachments/byulpyo24.json";
+import a22 from "../data/standard-attachments/annex22.json";
+import a24 from "../data/standard-attachments/annex24.json";
 
 export type AttTable = { caption: string; src: string[]; text: string; page: number; primary: boolean };
 export type AttFigure = { caption: string; src: string[]; page: number; primary: boolean };
 export type AttEq = { src: string; text?: string | null; page: number };
 export type ItemAttachments = { tables: AttTable[]; figures: AttFigure[]; eqs: AttEq[] };
-type AttachDoc = { items: Record<string, ItemAttachments>; annex: Record<string, { text: string; pages: number[] }> };
+type AttachDoc = { items: Record<string, ItemAttachments> };
+// 부속서 항목 — 조문 단위로 나눈 원문 + 표(병합 셀 포함) + 그림·수식 이미지
+export type AnnexCell = { t: string; rs?: number; cs?: number };
+export type AnnexEntry = {
+  title: string; text: string; page: number;
+  tables: { caption?: string | null; rows: AnnexCell[][]; page?: number }[];
+  figures: { caption: string; src: string; eq?: boolean }[];
+};
+type AnnexDoc = { order: string[]; items: Record<string, AnnexEntry> };
+const ANNEX: Record<string, AnnexDoc> = {
+  엘리베이터: a22 as unknown as AnnexDoc,
+  에스컬레이터: a24 as unknown as AnnexDoc,
+};
 
 const DOCS: Record<string, AttachDoc> = {
   엘리베이터: b22 as unknown as AttachDoc,
@@ -39,9 +53,21 @@ export function hasAttachments(equipmentType: string, itemId: string): boolean {
   return a.tables.length + a.figures.length + a.eqs.length > 0;
 }
 
-// 엘리베이터 부속서 원문 — 화면에 보이는 목록(VALID_IDS)에 없던 부속서를 추가로 보여주기 위한 것
-export function annexOverlay(equipmentType: string): Record<string, { text: string; pages: number[] }> {
-  return DOCS[equipmentType]?.annex || {};
+// 부속서 원문(원본 PDF 기준, 조문 단위) — DB의 부속서 항목을 대신해 화면·AI에 쓴다
+export function annexOverlay(equipmentType: string): Record<string, AnnexEntry> {
+  return ANNEX[equipmentType]?.items || {};
+}
+
+// 부속서 항목 하나의 AI용 글자: 본문 + 표(행 단위 " | ") + 그림 제목
+export function annexText(e: AnnexEntry): string {
+  const parts = [e.text];
+  for (const t of e.tables) {
+    const rows = t.rows.map(r => r.map(c => (c.t || "").replace(/\n/g, " ")).join(" | ")).join("\n");
+    parts.push(`[${t.caption || "표"}]\n${rows}`);
+  }
+  const caps = e.figures.filter(f => !f.eq).map(f => f.caption);
+  if (caps.length) parts.push(`(그림: ${[...new Set(caps)].join(", ")})`);
+  return parts.join("\n");
 }
 
 // AI에게 줄 첨부 설명: 표는 원문 글자 그대로, 그림은 제목만, 수식은 원문 이미지에서 판독한 글자.

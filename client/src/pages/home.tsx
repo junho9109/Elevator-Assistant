@@ -1,6 +1,6 @@
 import React from "react";
 import { searchEraDocs } from "@/lib/eraSearch";
-import { attachmentContext, annexOverlay } from "@/lib/standardAttachments";
+import { attachmentContext, annexOverlay, annexText } from "@/lib/standardAttachments";
 import { resolveMrMrl, type MrKind, type MrResult } from "@/lib/mrClassify";
 import { detectEquipmentType, shouldAskEquipment, type EquipmentDetection } from "@/lib/equipmentDetect";
 import { yearDiverges, kindDiverges, locDiverges, MAX_CLARIFY_STEPS } from "@/lib/clarifyNeed";
@@ -1915,7 +1915,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
   // 엘리베이터 부속서 중 DB에 없는 것(Ⅰ·Ⅺ~ⅩⅣ 등)은 원본 PDF 원문을 AI 자료로 보충한다(DB에 있으면 DB가 우선).
   const withAnnexOverlay = (content: Record<string, any>, equipment: string) => {
     for (const [name, a] of Object.entries(annexOverlay(equipment))) {
-      if (!content[name]) content[name] = { text: a.text, effectiveDate: undefined, customWarning: undefined, standardNote: undefined, revisions: [] };
+      content[name] = { text: annexText(a), effectiveDate: undefined, customWarning: undefined, standardNote: undefined, revisions: [] };
     }
     return content;
   };

@@ -159,17 +159,55 @@ function baseItemsToMap(rows: any[], equipmentType: string = "엘리베이터"):
       source: DOC_SOURCE_LABEL[equipmentType] || DOC_SOURCE_LABEL.엘리베이터,
     };
   });
-  // 부속서 원문(원본 PDF) — DB에 없거나 화면 목록(VALID_IDS)에서 빠져 있던 부속서를 추가로 보여준다.
-  // DB에 이미 보이는 항목이 있으면 그대로 두고, 없는 것만 채운다.
+  // 부속서 원문(원본 PDF 기준, 조문 단위) — DB의 부속서 항목(일부만 있거나 표·수식이 깨진 것)을 대신한다.
   Object.entries(annexOverlay(equipmentType)).forEach(([name, a]) => {
-    if (map[name]) return;
     map[name] = {
       text: a.text,
-      title: a.text.split("\n").slice(0, 2).join(" ").trim() || name,
-      source: `${DOC_SOURCE_LABEL[equipmentType] || DOC_SOURCE_LABEL.엘리베이터} · 원본 PDF ${a.pages[0]}~${a.pages[1]}쪽`,
+      title: a.title,
+      source: `${DOC_SOURCE_LABEL[equipmentType] || DOC_SOURCE_LABEL.엘리베이터} · 원본 PDF ${a.page}쪽`,
+      tables: a.tables.map(t => ({ caption: t.caption, rows: t.rows })),
+      figures: a.figures.map(f => ({ caption: f.caption, src: f.src })),
     };
   });
   return map;
+}
+
+// 표(병합 셀 포함)·그림 — 세대별 문서와 부속서가 같이 쓴다
+function EntryExtras({ e }: { e: Entry }) {
+  return (
+    <>
+    {e.tables?.map((tb, ti) => (
+      <div key={ti} className="overflow-x-auto">
+        {tb.caption && <p className="text-xs font-semibold text-center mb-1">{tb.caption}</p>}
+        <table className="w-full border-collapse text-[11px]">
+          <tbody>
+            {tb.rows.map((r, ri) => (
+              <tr key={ri}>
+                {r.map((c, ci) => (
+                  <td
+                    key={ci}
+                    rowSpan={c.rs}
+                    colSpan={c.cs}
+                    className={`border border-border px-1.5 py-1 align-middle whitespace-pre-wrap leading-relaxed ${ri === 0 ? "bg-muted/60 text-center font-medium" : ""}`}
+                  >
+                    {c.t}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ))}
+    {e.figures?.map((f, fi) => (
+      <div key={fi} className="space-y-1">
+        {f.caption && <p className="text-xs font-semibold text-center">{f.caption}</p>}
+        <img src={f.src} alt={f.caption || "그림"} className="mx-auto max-w-full rounded-lg border border-border bg-white" />
+        {f.source && <p className="text-[10px] text-muted-foreground text-center">출처: {f.source}</p>}
+      </div>
+    ))}
+    </>
+  );
 }
 
 // 조문에 붙은 원본 표·그림·수식 이미지(원본 PDF에서 잘라 붙임). 눌러서 크게 볼 수 있다.
@@ -470,6 +508,7 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
               : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>;
           })()}
         </div>
+        <EntryExtras e={e} />
         <AttachmentBlocks equipmentType={equipmentType} id={id} />
         {(photos.length > 0 || isAdminMode) && (
           <div>
@@ -627,36 +666,7 @@ function GenerationDetail({ id, gen, onClose, isAdminMode, onAddRevision }: {
               : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>;
           })()}
         </div>
-        {e.tables?.map((tb, ti) => (
-          <div key={ti} className="overflow-x-auto">
-            {tb.caption && <p className="text-xs font-semibold text-center mb-1">{tb.caption}</p>}
-            <table className="w-full border-collapse text-[11px]">
-              <tbody>
-                {tb.rows.map((r, ri) => (
-                  <tr key={ri}>
-                    {r.map((c, ci) => (
-                      <td
-                        key={ci}
-                        rowSpan={c.rs}
-                        colSpan={c.cs}
-                        className={`border border-border px-1.5 py-1 align-middle whitespace-pre-wrap leading-relaxed ${ri === 0 ? "bg-muted/60 text-center font-medium" : ""}`}
-                      >
-                        {c.t}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-        {e.figures?.map((f, fi) => (
-          <div key={fi} className="space-y-1">
-            {f.caption && <p className="text-xs font-semibold text-center">{f.caption}</p>}
-            <img src={f.src} alt={f.caption || "그림"} className="mx-auto max-w-full rounded-lg border border-border bg-white" />
-            {f.source && <p className="text-[10px] text-muted-foreground text-center">출처: {f.source}</p>}
-          </div>
-        ))}
+        <EntryExtras e={e} />
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {gen.meta.title} · {gen.meta.source || gen.meta.effectiveDate}</p>
         {originalFilesOf(gen.meta).length > 0 && (
           <div className="flex flex-col gap-1">
