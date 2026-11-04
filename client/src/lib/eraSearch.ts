@@ -46,6 +46,14 @@ function windowAround(full: string, terms: string[], max = 1200): string {
   return (start > 0 ? "…" : "") + full.slice(start, start + max);
 }
 
+// 종전 고시 조문에 그림이 있으면 "[[그림:g/고시id/조문키/번호]]" 줄을 붙인다(답변에 그 그림을 띄울 수 있게). 최대 4개.
+function eraFigureTags(docId: string | undefined, ref: string, item: any): string {
+  const figs: any[] = item?.figures || [];
+  if (!docId || figs.length === 0) return "";
+  const lines = figs.slice(0, 4).map((f, i) => `[[그림:g/${docId}/${ref}/${i}]] (그림) ${f.caption || "그림"}`);
+  return "\n" + lines.join("\n");
+}
+
 export async function searchEraDocs(year: number | null | undefined, terms: string[], equipment?: string | null, opts: EraSearchOpts = {}): Promise<EraCtxItem[]> {
   try {
     if (!year || year < 1980 || year > 2100) return [];
@@ -78,7 +86,7 @@ export async function searchEraDocs(year: number | null | undefined, terms: stri
       effectiveDate: entry.doc.meta.effectiveDate,
       ref: entry.id,
       title: (entry.id.startsWith("첨부") ? "[기계실 없는 엘리베이터 전용 기준] " : "") + (entry.item.title || entry.id),
-      content: windowAround(flattenItem(entry.item), useTerms),
+      content: windowAround(flattenItem(entry.item), useTerms) + eraFigureTags(entry.doc.meta?.id, entry.id, entry.item),
       gapYears: Math.abs(year - entry.doc.ey),
     }));
   } catch {

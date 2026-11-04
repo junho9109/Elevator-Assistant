@@ -59,7 +59,7 @@ export function annexOverlay(equipmentType: string): Record<string, AnnexEntry> 
 }
 
 // 부속서 항목 하나의 AI용 글자: 본문 + 표(행 단위 " | ") + 그림 제목
-export function annexText(e: AnnexEntry): string {
+export function annexText(e: AnnexEntry, annexId?: string, equipmentType?: string): string {
   const parts = [e.text];
   for (const t of e.tables) {
     const rows = t.rows.map(r => r.map(c => (c.t || "").replace(/\n/g, " ")).join(" | ")).join("\n");
@@ -67,7 +67,43 @@ export function annexText(e: AnnexEntry): string {
   }
   const caps = e.figures.filter(f => !f.eq).map(f => f.caption);
   if (caps.length) parts.push(`(그림: ${[...new Set(caps)].join(", ")})`);
+  if (annexId && equipmentType) parts.push(...annexFigureTagLines(equipmentType, annexId));
   return parts.join("\n");
+}
+
+// ── 답변에 그림을 직접 띄우기 ──────────────────────────────────────────────
+// AI에게 "[[그림:키]] (그림) 제목" 줄을 컨텍스트로 주면, AI가 필요할 때 그 표시를 답변에 그대로 쓰고 화면이 실제 이미지로 바꿔 그린다.
+// 키: s22|s24 / 조문번호 / f{n}(그림)·t{n}(표 이미지)   ·   a22|a24 / 부속서 번호 / f{n}   ·   g / 고시id / 조문키 / {n}(종전 고시 그림)
+export type StaticFig = { caption: string; srcs: string[] };
+const DOC_CODE: Record<string, string> = { 엘리베이터: "22", 에스컬레이터: "24" };
+
+export function figureTagLines(equipmentType: string, itemId: string, max = 4): string[] {
+  const code = DOC_CODE[equipmentType]; const a = getAttachments(equipmentType, itemId);
+  if (!code) return [];
+  const out: string[] = [];
+  a.figures.forEach((f, i) => out.push(`[[그림:s${code}/${itemId}/f${i}]] (그림) ${f.caption}`));
+  a.tables.forEach((t, i) => { if (t.src?.length) out.push(`[[그림:s${code}/${itemId}/t${i}]] (표 이미지) ${t.caption}`); });
+  return out.slice(0, max);
+}
+export function annexFigureTagLines(equipmentType: string, annexId: string, max = 4): string[] {
+  const code = DOC_CODE[equipmentType]; const e = ANNEX[equipmentType]?.items?.[annexId];
+  if (!code || !e) return [];
+  const out: string[] = [];
+  e.figures.forEach((f, i) => { if (!f.eq) out.push(`[[그림:a${code}/${annexId}/f${i}]] (그림) ${f.caption}`); });
+  return out.slice(0, max);
+}
+/** 정적 그림 키 → 이미지(별표22·24 조문·부속서). 종전 고시 그림(g/…)은 figureRef.ts에서 따로 읽는다. */
+export function resolveStaticFigure(key: string): StaticFig | null {
+  const m = key.match(/^([sa])(22|24)\/(.+)\/([ft])(\d+)$/);
+  if (!m) return null;
+  const eq = m[2] === "22" ? "엘리베이터" : "에스컬레이터"; const n = Number(m[5]);
+  if (m[1] === "s") {
+    const a = getAttachments(eq, m[3]);
+    if (m[4] === "f") { const f = a.figures[n]; return f ? { caption: f.caption, srcs: f.src } : null; }
+    const t = a.tables[n]; return t ? { caption: t.caption, srcs: t.src } : null;
+  }
+  const f = ANNEX[eq]?.items?.[m[3]]?.figures?.[n];
+  return m[4] === "f" && f ? { caption: f.caption, srcs: [f.src] } : null;
 }
 
 // AI에게 줄 첨부 설명: 표는 원문 글자 그대로, 그림은 제목만, 수식은 원문 이미지에서 판독한 글자.
@@ -82,5 +118,8 @@ export function attachmentContext(equipmentType: string, itemId: string, maxChar
   const eqs = a.eqs.filter(e => e.text).map(e => e.text as string);
   if (eqs.length > 0) parts.push(`[원문 수식·기호 포함 문장(원본 쪽 이미지에서 판독)]\n${eqs.join("\n")}`);
   const joined = parts.join("\n\n");
-  return joined.length > maxChars ? joined.slice(0, maxChars) + "…" : joined;
+  const body = joined.length > maxChars ? joined.slice(0, maxChars) + "…" : joined;
+  // 그림 표시 줄은 본문이 잘려도 남도록 따로 붙인다
+  const tags = figureTagLines(equipmentType, itemId);
+  return tags.length ? body + "\n" + tags.join("\n") : body;
 }

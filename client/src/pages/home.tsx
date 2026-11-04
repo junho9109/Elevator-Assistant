@@ -34,7 +34,7 @@ import type { Standard, Hotspot, TechnicalMaterial } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import ReactMarkdown, { type Components } from "react-markdown";
-import AiAttachment, { splitAttachmentMarkers } from "@/components/AiAttachment";
+import AiAttachment, { AiFigure, splitAttachmentMarkers } from "@/components/AiAttachment";
 import MyInfoDialog from "@/components/my-info-dialog";
 import UserAdminDialog from "@/components/user-admin-dialog";
 
@@ -1938,7 +1938,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
   // 엘리베이터 부속서 중 DB에 없는 것(Ⅰ·Ⅺ~ⅩⅣ 등)은 원본 PDF 원문을 AI 자료로 보충한다(DB에 있으면 DB가 우선).
   const withAnnexOverlay = (content: Record<string, any>, equipment: string) => {
     for (const [name, a] of Object.entries(annexOverlay(equipment))) {
-      content[name] = { text: annexText(a), effectiveDate: undefined, customWarning: undefined, standardNote: undefined, revisions: [] };
+      content[name] = { text: annexText(a, name, equipment), effectiveDate: undefined, customWarning: undefined, standardNote: undefined, revisions: [] };
     }
     return content;
   };
@@ -4865,6 +4865,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                                 {splitAttachmentMarkers(answerText || "").map((part, pi) =>
                                   part.type === "att" ? (
                                     <AiAttachment key={pi} id={part.id} idx={part.idx} />
+                                  ) : part.type === "fig" ? (
+                                    <AiFigure key={pi} figKey={part.key} />
                                   ) : (
                                     <ReactMarkdown key={pi} components={AI_MD_COMPONENTS}>
                                       {part.text}
@@ -5431,6 +5433,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
                         {splitAttachmentMarkers(msg.content).map((part, pi) =>
                           part.type === "att" ? (
                             <AiAttachment key={pi} id={part.id} idx={part.idx} />
+                          ) : part.type === "fig" ? (
+                            <AiFigure key={pi} figKey={part.key} />
                           ) : (
                             <ReactMarkdown key={pi} components={AI_MD_COMPONENTS}>
                               {part.text}
