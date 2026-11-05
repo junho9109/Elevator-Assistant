@@ -34,7 +34,7 @@ import type { Standard, Hotspot, TechnicalMaterial } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { photoNote } from "@/lib/photoNotes";
+import { photoNote, withPhotoNote } from "@/lib/photoNotes";
 import AiAttachment, { AiFigure, splitAttachmentMarkers } from "@/components/AiAttachment";
 import MyInfoDialog from "@/components/my-info-dialog";
 import UserAdminDialog from "@/components/user-admin-dialog";
@@ -223,7 +223,7 @@ function addSynonymTerms(terms: string[]): string[] {
 
 // 키워드 확장 (유사어 포함한 검색어 목록 반환)
 // ⑦ 질문에서 핵심 명사 추출 (조사·부사 제거)
-function extractKeyTerms(question: string): string[] {
+export function extractKeyTerms(question: string): string[] {
   const stopWords = ['이야','이에요','뭐야','뭔가요','어때','어떻게','언제','얼마','몇','부터','까지','이상','이하','미만','초과','있어','없어','해야','안돼','돼','인가요','인지','하는','경우','때','위한','대한','관련','기준','확인','검사','해줘','알려줘','설명','무엇','어디','왜','어느','가요','나요','인가','요'];
   const norm = question.replace(/[?？!！.,。]/g, ' ').trim();
   // 2글자 이상 명사 추출 (조사 제거)
@@ -296,7 +296,7 @@ function splitKeywords(question: string): { primary: string[]; secondary: string
 
 // ⑥ 질문 의도 분류
 type QueryIntent = 'timing' | 'criteria' | 'comparison' | 'judgment' | 'general';
-function detectIntent(question: string): QueryIntent {
+export function detectIntent(question: string): QueryIntent {
   const q = question;
   if (/언제부터|적용시기|몇년|건축허가|이후|부터\s*적용/.test(q)) return 'timing';
   if (/차이|비교|vs|versus|다른점|같은점/.test(q)) return 'comparison';
@@ -305,7 +305,7 @@ function detectIntent(question: string): QueryIntent {
   return 'general';
 }
 
-function expandKeywords(kw: string): string[] {
+export function expandKeywords(kw: string): string[] {
   const base = kw.toLowerCase().replace(/\s+/g, '');
   const expanded = new Set<string>([base, kw.toLowerCase()]);
 
@@ -345,7 +345,7 @@ function ngramSimilarity(a: string, b: string): number {
 }
 
 // ② 제목/본문 위치별 점수 차별화 + ③ 임계값 + ④ 챕터 근접도
-function scoreMatch(
+export function scoreMatch(
   text: string,
   keywords: string[],
   originalKw: string,
@@ -576,7 +576,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[], 
       title: s.title,
       content: s.body ? s.body.slice(0, 100) + (s.body.length > 100 ? "..." : "") : "",
       query: s.title
-    }, s.title || "", `${s.body || ""}`);
+    }, s.title || "", withPhotoNote(`${s.body || ""}`, s.title));
   });
 
   // 표준화 검색 — DB(stdOverrides)가 충분하면 DB 전용, 아니면 JSON+DB 병합
@@ -593,7 +593,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[], 
         title: ov.title,
         content: conclusion ? conclusion.slice(0, 300) + (conclusion.length > 300 ? "..." : "") : basis.slice(0, 300),
         query: ov.title
-      }, title, `${ref} ${basis} ${conclusion}`);
+      }, title, withPhotoNote(`${ref} ${basis} ${conclusion}`, ov.title));
     });
   } else {
     // DB SEED 전 — JSON + DB 오버라이드 병합
@@ -608,7 +608,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[], 
         title: s.title,
         content: conclusion ? conclusion.slice(0, 300) + (conclusion.length > 300 ? "..." : "") : basis.slice(0, 300),
         query: s.title
-      }, title, `${ref} ${basis} ${conclusion}`);
+      }, title, withPhotoNote(`${ref} ${basis} ${conclusion}`, s.title));
     });
     // DB 전용 신규 항목
     const stdTitles = new Set(STD_ITEMS.map(s => s.title));
@@ -622,7 +622,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[], 
         title: ov.title,
         content: conclusion ? conclusion.slice(0, 300) + (conclusion.length > 300 ? "..." : "") : basis.slice(0, 300),
         query: ov.title
-      }, title, `${ref} ${basis} ${conclusion}`);
+      }, title, withPhotoNote(`${ref} ${basis} ${conclusion}`, ov.title));
     });
   }
 
@@ -636,7 +636,7 @@ function searchAllData(keyword: string, standards: any[], stdOverrides?: any[], 
           title: ov.title,
           content: ov.conclusion ? ov.conclusion.slice(0, 300) : (ov.basis || "").slice(0, 300),
           query: ov.title
-        }, ov.overrideTitle || ov.title, `${ov.ref || ""} ${ov.basis || ""} ${ov.conclusion || ""}`);
+        }, ov.overrideTitle || ov.title, withPhotoNote(`${ov.ref || ""} ${ov.basis || ""} ${ov.conclusion || ""}`, ov.title));
       }
     });
   }
