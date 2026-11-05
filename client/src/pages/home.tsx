@@ -1002,14 +1002,14 @@ function TechPhotoSection({ itemKey }: { itemKey: string }) {
   };
 
   const handleDelete = async () => {
-    if (pw !== "910919") { setPwErr(true); return; }
     if (deleteTarget === null) return;
     try {
-      await fetch(`/api/tech-photos/${deleteTarget}`, {
+      const dr = await fetch(`/api/tech-photos/${deleteTarget}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: pw }),
       });
+      if (!dr.ok) { setPwErr(true); return; }
       setDeleteTarget(null);
       setPw(""); setPwErr(false);
       await loadPhotos();
@@ -1187,14 +1187,14 @@ function StdPhotoSection({ itemKey }: { itemKey: string }) {
   };
 
   const handleDelete = async () => {
-    if (pw !== "910919") { setPwErr(true); return; }
     if (deleteTarget === null) return;
     try {
-      await fetch(`/api/std-photos/${deleteTarget}`, {
+      const dr = await fetch(`/api/std-photos/${deleteTarget}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: pw }),
       });
+      if (!dr.ok) { setPwErr(true); return; }
       setDeleteTarget(null);
       setPw(""); setPwErr(false);
       await loadPhotos();
@@ -5650,6 +5650,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
               </div>
             )}
             <div ref={messagesEndRef} />
+          </div>
+
+          {/* 항상 보이는 이용 안내 — 내부자료 유출 금지 + 개인정보 입력 금지(예시 포함) */}
+          <div className="px-4 pt-2 pb-1.5 bg-amber-50 dark:bg-amber-900/10 border-t border-amber-200 dark:border-amber-800 text-[11px] leading-snug text-amber-900 dark:text-amber-200 shrink-0" data-testid="chat-usage-notice">
+            <p className="font-semibold">내부자료이므로 외부에 유출하지 마세요. 정확한 내용은 해당 부서에 안내받으세요.</p>
+            <p className="mt-0.5">개인정보는 입력하지 마세요. <span className="opacity-80">예) 이름·전화번호·주민번호, 건물주·관리자 연락처, 호기 번호가 포함된 정확한 주소</span></p>
           </div>
 
           {/* 입력창 */}

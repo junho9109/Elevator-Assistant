@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "crypto";
 import type { Express } from "express";
 import { isAdminIdentity } from "./admin-identity";
 import { createServer, type Server } from "http";
@@ -4260,7 +4261,13 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
   })();
 
   // ==================== 표준화 항목 이미지 ====================
-  const STD_PHOTO_DELETE_PW = "910919";
+  // 사진 삭제 비밀번호는 소스코드에 두지 않고 서버 환경변수로만 받는다(PHOTO_DELETE_PASSWORD, 없으면 기존 ADMIN_PASSWORD).
+  const photoDeleteAllowed = (given: unknown): boolean => {
+    const real = process.env.PHOTO_DELETE_PASSWORD || process.env.ADMIN_PASSWORD || "";
+    if (!real || typeof given !== "string") return false;
+    const a = Buffer.from(given), b = Buffer.from(real);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
 
   app.get("/api/std-photos/:itemKey", async (req, res) => {
     try {
@@ -4314,8 +4321,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
 
   app.delete("/api/std-photos/:id", async (req, res) => {
     try {
-      const { password } = req.body;
-      if (password !== STD_PHOTO_DELETE_PW) return res.status(403).json({ error: "비밀번호 오류" });
+      const { password } = req.body || {};
+      if (!photoDeleteAllowed(password)) return res.status(403).json({ error: "비밀번호 오류" });
       const db = (await import("./db")).db;
       const { stdItemPhotos } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -4325,7 +4332,6 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
   });
 
   // ==================== 기술자료 이미지 (표준화 사진과 동일 패턴, 별도 데이터소스) ====================
-  const TECH_PHOTO_DELETE_PW = "910919";
 
   app.get("/api/tech-photos/:itemKey", async (req, res) => {
     try {
@@ -4379,8 +4385,8 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
 
   app.delete("/api/tech-photos/:id", async (req, res) => {
     try {
-      const { password } = req.body;
-      if (password !== TECH_PHOTO_DELETE_PW) return res.status(403).json({ error: "비밀번호 오류" });
+      const { password } = req.body || {};
+      if (!photoDeleteAllowed(password)) return res.status(403).json({ error: "비밀번호 오류" });
       const db = (await import("./db")).db;
       const { techMaterialPhotos } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -4461,6 +4467,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
 
   app.delete("/api/inspection-photos/:id", async (req, res) => {
     try {
+      if (!photoDeleteAllowed((req.body || {}).password)) return res.status(403).json({ error: "비밀번호 오류" });
       const db = (await import("./db")).db;
       const { inspectionItemPhotos } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");

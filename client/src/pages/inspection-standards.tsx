@@ -457,7 +457,17 @@ function Detail({ id, map, yearStd, onClose, isAdminMode, onEdit, equipmentType 
     onSuccess: () => photoQc.invalidateQueries({ queryKey: ["/api/inspection-photos", equipmentType, id] }),
   });
   const deletePhoto = useMutation({
-    mutationFn: async (photoId: number) => { await fetch(`/api/inspection-photos/${photoId}`, { method: "DELETE" }); },
+    mutationFn: async (photoId: number) => {
+      const password = window.prompt("사진 삭제 비밀번호를 입력하세요");
+      if (password === null) throw new Error("cancel");
+      const r = await fetch(`/api/inspection-photos/${photoId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (!r.ok) throw new Error(r.status === 403 ? "비밀번호가 맞지 않습니다." : "삭제하지 못했습니다.");
+    },
+    onError: (err: any) => { if (err?.message !== "cancel") window.alert(err?.message || "삭제하지 못했습니다."); },
     onSuccess: () => photoQc.invalidateQueries({ queryKey: ["/api/inspection-photos", equipmentType, id] }),
   });
   const handlePhotoSelect = (fl: FileList | null) => {
