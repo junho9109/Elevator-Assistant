@@ -24,13 +24,13 @@ const latestGroup = (pool: EraDoc[], year: number): EraDoc[] => {
 };
 
 // 질문 연도에 가까운 고시를 고른다(연도 상한 없음 — generations 폴더에 있는 모든 연도의 고시가 대상).
-// · 업무 절차 문서(meta.kind === "procedure")는 제외한다.
+// · 업무 절차 문서(meta.kind === "procedure")와 현행 운영규정(meta.kind === "regulation", regulationSearch.ts가 따로 검색)은 제외한다.
 // · 특정 설비 전용 문서(meta.equipment)는 질문의 설비와 같을 때만 쓴다(설비를 모르면 설비별로 각각 고른다).
 // · 질문 연도 이전(<=) 문서 중 가장 최근 시행일을 고르고, 같은 시행일 문서(예: 전기식·유압식)는 모두 돌려준다. 없으면 가장 오래된 문서.
 export function pickEraDocs(docs: EraDoc[], year: number, equipment?: string | null): EraDoc[] {
   if (!year || year < 1980 || year > 2100) return [];
   const usable = docs
-    .filter(d => d.meta?.kind !== "procedure")
+    .filter(d => d.meta?.kind !== "procedure" && d.meta?.kind !== "regulation")
     .sort((a, b) => String(a.meta.effectiveDate).localeCompare(String(b.meta.effectiveDate)));
   if (usable.length === 0) return [];
   const equipments = equipment

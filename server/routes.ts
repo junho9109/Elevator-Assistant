@@ -2696,6 +2696,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           precisionCtx?: { situation: string; judgment: string; basis: string; source: string }[];
           eraCtx?: { docTitle: string; effectiveDate: string; ref: string; title: string; content: string; gapYears?: number }[];
           closureCtx?: { ref: string; title: string; content: string }[];
+          regCtx?: { docTitle: string; effectiveDate: string; ref: string; title: string; content: string }[];
         };
       };
 
@@ -2865,6 +2866,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             context.closureCtx.map(c => `■ ${c.ref}. ${c.title}\n${c.content}`).join("\n\n") +
             "\n\n※ 이 안내 자료에 적힌 내용만 답하세요. 항목 10('이 자료에 없는 사항')에 해당하거나 자료에 없는 내용(예: 폐지 후 재사용 절차, 휴지 해제 시 검사, 연기 기간·신청 기한)은 추측하지 말고 '자료에 없어 확인이 필요합니다'라고 밝히세요." +
             "\n※ 폐지 후 같은 건축물에 신규 설치하는 질문은 [3순위] 표준화의 '교체 설치검사' 항목을 근거로 답하되, 그 항목은 '교체 설치검사'에 관한 결정이며 폐지 후 신규 설치에 그대로 적용된다는 명시 규정은 자료에 없다는 점, 종전 기준은 '건축물의 구조변경 없이 현행 기준 적용이 불가한 사항'에 한해 증빙서류(도면·사유서·검토서 등)를 내야 적용할 수 있다는 점, 속도·카 크기·용량 등 설계사양이 바뀌면 현행 기준을 따라야 한다는 점을 각 근거(표준화 제목·회차)와 함께 밝히세요.");
+        }
+        if (context.regCtx?.length) {
+          sections.push("[운영규정 원문] 행정안전부 고시 운영규정(승강기 안전운행 및 관리에 관한 운영규정 / 승강기 설치검사 및 안전검사에 관한 운영규정)에서 질문과 관련해 찾은 항목\n" +
+            context.regCtx.map(c => `■ ${c.docTitle} (${c.effectiveDate} 시행) ${c.ref} ${c.title}\n${c.content}`).join("\n\n") +
+            "\n\n※ 이 항목에 적힌 내용만 근거로 답하세요. 질문과 직접 관련이 없는 항목은 쓰지 마세요. 답변에는 고시 이름과 항목 번호(예: 별표 3 1.1.1.1, 제13조)를 함께 밝히세요. " +
+            "이 규정의 검사성적서·점검표 항목은 '무엇을 확인하는지'를 정한 것이고, 합격·불합격 판정의 구체 수치는 항목이 가리키는 안전기준에 있으므로 이 항목만으로 수치를 단정하지 마세요.");
         }
         if (context.eraCtx?.length) {
           sections.push("[종전 참고] 설치연도가 오래된 질문을 위해 앱에 있는 가장 가까운 시기의 옛 고시에서 찾은 조문 (설치 당시 기준과 같다는 보장 없음)\n" +

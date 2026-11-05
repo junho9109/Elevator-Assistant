@@ -1,5 +1,6 @@
 import React from "react";
 import { searchEraDocs } from "@/lib/eraSearch";
+import { searchRegulations } from "@/lib/regulationSearch";
 import { attachmentContext, annexOverlay, annexText } from "@/lib/standardAttachments";
 import { carAreaNote } from "@/lib/carArea";
 import { resolveMrMrl, type MrKind, type MrResult } from "@/lib/mrClassify";
@@ -3438,7 +3439,12 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           eraCtx = await searchEraDocs(Number(facetData?.year), [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2), ...(mrInfo?.kind === "MRL" ? ["기계실없는"] : [])], equipmentType === "ambiguous" ? null : equipmentType, { mode: effMode, question: text });
         } catch {}
       }
-      const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx, ...(eraCtx.length > 0 ? { eraCtx } : {}), ...(closureCtx.length > 0 ? { closureCtx } : {}) };
+      // 운영규정(안전운행 및 관리 / 설치검사 및 안전검사) 원문 — 질문에 그 규정의 고유 용어가 있을 때만 검색해 전달
+      let regCtx: { docTitle: string; effectiveDate: string; ref: string; title: string; content: string }[] = [];
+      try {
+        regCtx = await searchRegulations(text, [...primaryTerms, ...secondaryTerms.filter(t => t.length >= 2)], { mode: effMode });
+      } catch {}
+      const context = { inspCtx, techCtx, techMaterialCtx, verdictCtx, chatCtx, precisionCtx, ...(eraCtx.length > 0 ? { eraCtx } : {}), ...(closureCtx.length > 0 ? { closureCtx } : {}), ...(regCtx.length > 0 ? { regCtx } : {}) };
       // [관리자 테스트] 비교용 — AI에게 전달되는 자료 목록을 window에 남긴다(관리자 스위치와 무관하게 제목만, 화면 표시 없음).
       try {
         (window as any).__lastCtx = {
