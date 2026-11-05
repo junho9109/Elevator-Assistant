@@ -34,6 +34,7 @@ import type { Standard, Hotspot, TechnicalMaterial } from "@shared/schema";
 import { INSPECTION_DATA_MR } from "@/data/inspection-data-mr";
 import JUDGMENT_DATA from "@/data/판정지침_parsed.json";
 import ReactMarkdown, { type Components } from "react-markdown";
+import { photoNote } from "@/lib/photoNotes";
 import AiAttachment, { AiFigure, splitAttachmentMarkers } from "@/components/AiAttachment";
 import MyInfoDialog from "@/components/my-info-dialog";
 import UserAdminDialog from "@/components/user-admin-dialog";
@@ -3329,7 +3330,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
           title,
           ref,
           basis,
-          conclusion: conclusionRaw.length > 10 ? conclusionRaw.slice(0, facetOn && ti < 2 ? 3000 : 600) : "",
+          conclusion: (conclusionRaw.length > 10 ? conclusionRaw.slice(0, facetOn && ti < 2 ? 3000 : 600) : "")
+            + (photoNote(r.title, title) ? "\n" + photoNote(r.title, title) : ""),
           source: ov?.source || std?.source || "",
           // 건축허가일/검사기준적용일/검사일 — std_item_overrides에만 있는 필드(레거시 STD_ITEMS엔 없음)
           permitDate: (ov as any)?.permitDate || "",
@@ -3361,7 +3363,7 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
         priority: "기술자료",
         title: item.title,
         category: item.category || "",
-        content: item.body.slice(0, 600),
+        content: item.body.slice(0, 600) + (photoNote(item.title) ? "\n" + photoNote(item.title) : ""),
         source: item.source || "",
       })).filter(c => c.content);
 
