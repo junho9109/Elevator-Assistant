@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import type { Express } from "express";
-import { isAdminIdentity } from "./admin-identity";
+import { isAdminIdentity, ADMIN_NAME, ADMIN_EMP_IDS } from "./admin-identity";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import Anthropic from "@anthropic-ai/sdk";
@@ -3930,7 +3930,7 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
     try {
       const { db: usageDb } = await import("./db");
       const { aiUsage } = await import("@shared/schema");
-      const { gte, desc: usageDesc } = await import("drizzle-orm");
+      const { gte, desc: usageDesc, and, or, isNull, ne, notInArray } = await import("drizzle-orm");
 
       // 다른 관리자 전용 GET들과 같은 느슨한 판정(클라이언트가 보내는 admin 플래그 +
       // 노준호 계정 더블체크) — 쓰기가 아닌 읽기 전용 노출 범위 조절이라 비밀번호
@@ -3982,7 +3982,13 @@ ${answerRules}${contextText}${memoSection}${researchSection}${expertSection}`,
         createdAt: aiUsage.createdAt,
         employeeName: aiUsage.employeeName,
         employeeId: aiUsage.employeeId,
-      }).from(aiUsage).orderBy(usageDesc(aiUsage.id)).limit(100);
+      }).from(aiUsage)
+        // 관리자(노준호) 본인의 질문은 목록에서 뺀다 — 다른 이용자 질문을 찾아볼 때 섞이지 않도록. (위 합계·일별 집계는 비용 정확성을 위해 그대로 포함)
+        .where(and(
+          or(isNull(aiUsage.employeeName), ne(aiUsage.employeeName, ADMIN_NAME)),
+          or(isNull(aiUsage.employeeId), notInArray(aiUsage.employeeId, ADMIN_EMP_IDS)),
+        ))
+        .orderBy(usageDesc(aiUsage.id)).limit(100);
       const recentLogs = recentLogsRaw.map(r => isAdmin ? r : { ...r, employeeName: null, employeeId: null });
 
       res.json({ totalQuestions, totalInput, totalOutput, totalCost: totalCost.toFixed(4), daily, recentLogs });

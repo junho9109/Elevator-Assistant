@@ -61,6 +61,22 @@ describe("사용량 로그 상세화", () => {
     expect(mine.employeeName).toBeFalsy();
   });
 
+  it("관리자(노준호) 본인의 질문은 recentLogs에서 빠진다", async () => {
+    const ADMIN_Q = "__TEST_AI_USAGE_LOG__ 관리자 질문";
+    const ins = await db.insert(aiUsage).values({
+      question: ADMIN_Q, inputTokens: 1, outputTokens: 1, costUsd: "0.000001",
+      employeeId: "20160730", employeeName: "노준호", answer: "x",
+    }).returning();
+    try {
+      const res = await request(app).get("/api/ai-usage/stats?admin=true");
+      expect(res.status).toBe(200);
+      expect(res.body.recentLogs.find((l: any) => l.id === ins[0].id)).toBeFalsy();
+      expect(res.body.recentLogs.find((l: any) => l.id === insertedId)).toBeTruthy(); // 다른 이용자 질문은 그대로
+    } finally {
+      await pool.query(`DELETE FROM ai_usage WHERE question = $1`, [ADMIN_Q]);
+    }
+  });
+
   it("admin=true면 recentLogs에 employeeName이 담긴다", async () => {
     const res = await request(app).get("/api/ai-usage/stats?admin=true");
     expect(res.status).toBe(200);
