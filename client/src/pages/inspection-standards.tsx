@@ -17,7 +17,7 @@ import { getAttachments, annexOverlay, ORIGINAL_FILES } from "@/lib/standardAtta
 type EntryTableCell = { t: string; rs?: number; cs?: number };
 type EntryTable = { caption?: string | null; rows: EntryTableCell[][] };
 type EntryFigure = { caption?: string; src: string; source?: string };
-type Entry = { text?: string; title?: string; source?: string; tables?: EntryTable[]; figures?: EntryFigure[] };
+type Entry = { hideText?: boolean; text?: string; title?: string; source?: string; tables?: EntryTable[]; figures?: EntryFigure[] };
 
 // ── 현행(별표22) 데이터 — DB(inspection_base_items)가 단일 진실 소스 ──────
 // 정적 JSON을 빌드에 번들링하지 않고, 화면 진입 시 API로 조회한다.
@@ -374,7 +374,7 @@ function ItemBtn({ id, map, isActive, onClick }: { id: string; map: Record<strin
         isActive ? "bg-primary/10 text-primary" : "hover:bg-secondary text-foreground"
       }`}
     >
-      <span className="font-mono text-[10px] text-muted-foreground shrink-0 min-w-[36px]">{id}</span>
+      <span className="font-mono text-[10px] text-muted-foreground shrink-0 min-w-[36px]">{id.replace(/_\d+$/, "")}</span>
       <span className="text-xs leading-relaxed truncate flex-1 min-w-0">{shortLabel(label)}</span>
     </button>
   );
@@ -650,7 +650,7 @@ function GenerationDetail({ id, gen, onClose, isAdminMode, onAddRevision }: {
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-start gap-2 px-4 py-3 border-b border-border shrink-0">
         <div className="flex-1 min-w-0">
-          <span className="font-mono text-[10px] text-muted-foreground">[{id}]</span>
+          <span className="font-mono text-[10px] text-muted-foreground">[{id.replace(/_\d+$/, "")}]</span>
           <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">종전 · {gen.meta.effectiveDate}</span>
           <p className="text-sm font-medium mt-0.5 leading-snug line-clamp-2 min-h-[2.375rem]">{firstLine}</p>
         </div>
@@ -668,15 +668,18 @@ function GenerationDetail({ id, gen, onClose, isAdminMode, onAddRevision }: {
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div>
-          <p className="text-xs font-medium text-muted-foreground mb-2">조문 내용</p>
-          {(() => {
-            const parsedTable = tryParsePipeTable(body || displayText);
-            return parsedTable
-              ? <PipeTableView parsed={parsedTable} />
-              : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>;
-          })()}
-        </div>
+        {/* hideText: 원본 쪽 이미지가 대신 보이는 항목 — 글은 검색용으로만 두고 화면에서는 가린다 */}
+        {!(e.hideText && (e.figures?.length ?? 0) > 0) && (
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">조문 내용</p>
+            {(() => {
+              const parsedTable = tryParsePipeTable(body || displayText);
+              return parsedTable
+                ? <PipeTableView parsed={parsedTable} />
+                : <p className="text-xs leading-relaxed whitespace-pre-wrap bg-muted/40 border border-border rounded-xl p-3">{body || displayText}</p>;
+            })()}
+          </div>
+        )}
         <EntryExtras e={e} />
         <p className="text-xs text-muted-foreground border-t border-border pt-3 leading-relaxed">📌 {gen.meta.title} · {gen.meta.source || gen.meta.effectiveDate}</p>
         {originalFilesOf(gen.meta).length > 0 && (

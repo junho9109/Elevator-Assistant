@@ -40,6 +40,15 @@ describe("운영규정 JSON 구조", () => {
     // PDF에서 번호만 남고 누락되었던 항목(쪽 경계에 걸친 칸) 복구 확인
     for (const n of ["1.1.2.1", "2.1.1.4", "2.1.3.4", "2.2.5", "5.4.2.3", "5.7.10", "6.1.4"]) expect(OP.items[`별표3.${n}`], n).toBeTruthy();
   });
+  it("설치검사: 별표 1·2 항목마다 원본 쪽 이미지가 붙고 글은 화면에서 가려진다", () => {
+    const leaf = IN.items["별표1.1.2.1"] as any;
+    expect(leaf.hideText).toBe(true);
+    expect(leaf.figures.length).toBeGreaterThan(0);
+    const hidden = Object.entries(IN.items).filter(([k, v]: any) => /^별표[12]\./.test(k) && v.hideText);
+    expect(hidden.length).toBeGreaterThan(1000);
+    // 중복 번호는 화면에 원문 번호로 보이는 제목을 유지
+    expect((IN.items["별표1.6.12_2"] as any).title).toMatch(/^6\.12 /);
+  });
   it("설치검사: 별표 1·2가 6개 종류 모두 있다", () => {
     for (const root_ of ["별표1", "별표2"]) for (let g = 1; g <= 6; g++) expect(IN.items[`${root_}.${g}`], `${root_}.${g}`).toBeTruthy();
   });
