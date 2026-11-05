@@ -5654,8 +5654,8 @@ export default function Home({ defaultTab = "chat", role = "user", onLogout, aut
 
           {/* 항상 보이는 이용 안내 — 내부자료 유출 금지 + 개인정보 입력 금지(예시 포함) */}
           <div className="px-4 pt-2 pb-1.5 border-t shrink-0 text-[11px] leading-snug" style={{ backgroundColor: "#FFF7E0", borderColor: "#F2D48A", color: "#6B4A00" }} data-testid="chat-usage-notice">
-            <p className="font-semibold">본 자료는 내부자료이오니 외부로 유출되지 않도록 유의해 주시기 바랍니다. 정확한 내용은 해당 부서에 문의하여 안내받으시기 바랍니다.</p>
-            <p className="mt-0.5">개인정보는 입력하지 않도록 유의해 주시기 바랍니다. <span>(예: 성명·전화번호·주민등록번호, 건물주·관리자 연락처, 호기 번호가 포함된 상세 주소)</span></p>
+            <p className="font-semibold">이 앱의 내용은 내부 업무용 자료로, 외부에 유출되지 않도록 유의해 주시기 바라며, 정확한 내용은 담당 부서에 한 번 더 확인해 주시기 바랍니다.</p>
+            <p className="mt-0.5">질문하실 때는 이름·연락처·주민등록번호 같은 개인정보는 빼고 입력해 주세요.</p>
           </div>
 
           {/* 입력창 */}
