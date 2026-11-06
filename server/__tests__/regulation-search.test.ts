@@ -65,6 +65,22 @@ describe("운영규정 JSON 구조", () => {
     expect(visible.sort()).toEqual(["별표3.1", "별표3.2", "별표3.3", "별표3.4", "별표3.5", "별표3.6", "별표3.7", "별표3.8"]);
     for (const k of ["별표1", "별표2", "별표5", "별표7"]) expect((OP.items[k] as any).figures.length, k).toBe(0);
   });
+  it("별지(서식·계약서)는 이미지 없이 표·글로 들어 있고, 표는 칸 병합이 올바르다", () => {
+    for (const k of ["별지1", "별지2", "별지3"]) {
+      expect((IN.items[k] as any).tables.length, "설치검사 " + k).toBe(1);
+      expect((IN.items[k] as any).figures.length).toBe(0);
+      expect((OP.items[k] as any).tables.length, "안전운행 " + k).toBe(1);
+    }
+    for (const [k, v] of Object.entries(OP.items) as [string, any][]) {
+      if (k.startsWith("별지")) expect(v.figures.length, k).toBe(0);
+      for (const tb of v.tables || []) for (const row of tb.rows) expect(row.length).toBeGreaterThan(0);
+    }
+    expect((OP.items["별지4.제1조"] as any).tables[0].rows.length).toBe(20);
+    expect((OP.items["별지6.별첨"] as any).title).toContain("표준하도급동의서");
+    // 쪽 이미지는 사진·도안인 별표 4·6에만 남는다
+    const withFig = Object.entries(OP.items).filter(([, v]: any) => v.figures?.length).map(([k]) => k);
+    expect(withFig.sort()).toEqual(["별표4", "별표6"]);
+  });
   it("설치검사: 별표 1·2가 6개 종류 모두 있다", () => {
     for (const root_ of ["별표1", "별표2"]) for (let g = 1; g <= 6; g++) expect(IN.items[`${root_}.${g}`], `${root_}.${g}`).toBeTruthy();
   });
