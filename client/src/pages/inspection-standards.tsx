@@ -17,7 +17,7 @@ import { getAttachments, annexOverlay, ORIGINAL_FILES } from "@/lib/standardAtta
 type EntryTableCell = { t: string; rs?: number; cs?: number };
 type EntryTable = { caption?: string | null; rows: EntryTableCell[][] };
 type EntryFigure = { caption?: string; src: string; source?: string };
-type Entry = { hideText?: boolean; text?: string; title?: string; source?: string; tables?: EntryTable[]; figures?: EntryFigure[] };
+type Entry = { hidden?: boolean; noIndex?: boolean; hideText?: boolean; text?: string; title?: string; source?: string; tables?: EntryTable[]; figures?: EntryFigure[] };
 
 // ── 현행(별표22) 데이터 — DB(inspection_base_items)가 단일 진실 소스 ──────
 // 정적 JSON을 빌드에 번들링하지 않고, 화면 진입 시 API로 조회한다.
@@ -325,6 +325,7 @@ interface Section {
 function buildChildren(prefix: string, keys: string[], map: Record<string, Entry>): Section[] {
   const directKeys = keys.filter(k => {
     if (!k.startsWith(prefix + ".")) return false;
+    if (map[k]?.hidden) return false; // hidden: 묶음 항목 표 안에 들어간 세부 번호 — 목록에는 안 보이고 검색에만 쓴다
     const rest = k.slice(prefix.length + 1);
     return rest.length > 0 && !rest.includes(".");
   });
@@ -927,7 +928,7 @@ export default function InspectionStandardsPage({ isActive }: { isActive?: boole
   );
   const activeMap = activeGeneration ? activeGeneration.items : dataMap;
   const activeTree = useMemo(() => buildTreeFromMap(activeMap), [activeMap]);
-  const activeTotalCount = Object.keys(activeMap).length;
+  const activeTotalCount = Object.values(activeMap).filter((v: any) => !v?.hidden).length;
 
   // 검색 — 현행 + 로드된 모든 세대(연도) 문서를 로컬에서 통합 검색
   useEffect(() => {

@@ -63,13 +63,21 @@ function indexOf(doc: RegDoc): EraEntry[] {
   return idx;
 }
 
+function groupLabel(doc: RegDoc, id: string): string {
+  const p = id.split(".");
+  const annex = doc.items[p[0]]?.title?.match(/^\[(별표 \d+)\]/)?.[1] || p[0];
+  const grp = doc.items[`${p[0]}.${p[1]}`]?.title;
+  return grp ? `[${annex} · ${grp}] ` : `[${annex}] `;
+}
+
 /** 순수 함수(테스트용): 고른 규정 문서들에서 질문 관련 항목을 순위대로 돌려준다. */
 export function rankRegulationDocs(docs: RegDoc[], terms: string[], opts: RegSearchOpts = {}): RegCtxItem[] {
   const useTerms = cleanEraTerms(terms);
   if (useTerms.length === 0 || docs.length === 0) return [];
   type Row = EraEntry & { doc: RegDoc };
   const rows: Row[] = [];
-  for (const doc of docs) for (const e of indexOf(doc)) rows.push({ ...e, doc });
+  // 묶음 항목(noIndex: 종류별 표 전체)은 너무 길어 순위를 흐리므로 색인에서 뺀다 — 세부 번호 항목(hidden)이 대신 검색된다.
+  for (const doc of docs) for (const e of indexOf(doc)) if (!e.item?.noIndex) rows.push({ ...e, doc });
   const q = nz(opts.question || "");
   const annexOf: [RegExp, string][] = [[/정기검사/, "별표2"], [/설치검사/, "별표1"], [/수시검사/, "별표3"], [/정밀안전검사|정밀검사/, "별표4"]];
   const boosted = annexOf.filter(([re]) => re.test(q)).map(([, k]) => k);
@@ -82,7 +90,8 @@ export function rankRegulationDocs(docs: RegDoc[], terms: string[], opts: RegSea
     docTitle: entry.doc.meta.title,
     effectiveDate: entry.doc.meta.effectiveDate,
     ref: entry.id,
-    title: entry.item.title || entry.id,
+    // 세부 번호 항목은 화면 목록에 없으므로, 어느 별표·종류의 항목인지 제목 앞에 붙여 알려 준다.
+    title: (entry.item.hidden ? groupLabel(entry.doc, entry.id) : "") + (entry.item.title || entry.id),
     content: windowAround(flattenItem(entry.item), useTerms) + figureTags(entry.doc.meta?.id, entry.id, entry.item),
   }));
 }

@@ -40,14 +40,30 @@ describe("운영규정 JSON 구조", () => {
     // PDF에서 번호만 남고 누락되었던 항목(쪽 경계에 걸친 칸) 복구 확인
     for (const n of ["1.1.2.1", "2.1.1.4", "2.1.3.4", "2.2.5", "5.4.2.3", "5.7.10", "6.1.4"]) expect(OP.items[`별표3.${n}`], n).toBeTruthy();
   });
-  it("설치검사: 별표 1·2 항목마다 원본 쪽 이미지가 붙고 글은 화면에서 가려진다", () => {
-    const leaf = IN.items["별표1.1.2.1"] as any;
-    expect(leaf.hideText).toBe(true);
-    expect(leaf.figures.length).toBeGreaterThan(0);
-    const hidden = Object.entries(IN.items).filter(([k, v]: any) => /^별표[12]\./.test(k) && v.hideText);
-    expect(hidden.length).toBeGreaterThan(1000);
-    // 중복 번호는 화면에 원문 번호로 보이는 제목을 유지
+  it("설치검사: 별표 1·2는 종류별 6개 묶음 항목(표)으로 보이고, 번호별 세부 항목은 목록에서 숨겨진다", () => {
+    for (const r of ["별표1", "별표2"]) for (let g = 1; g <= 6; g++) {
+      const grp = IN.items[`${r}.${g}`] as any;
+      expect(grp.tables.length, `${r}.${g}`).toBe(1);
+      expect(grp.tables[0].rows.length).toBeGreaterThan(50);
+      expect(grp.figures.length).toBe(0); // 표 아래 원본 이미지는 중복이라 두지 않는다
+    }
+    const visible = Object.entries(IN.items).filter(([k, v]: any) => /^별표[12]\./.test(k) && !v.hidden);
+    expect(visible.length).toBe(12);
+    const leaf = IN.items["별표1.2.4.4.1"] as any;
+    expect(leaf.hidden).toBe(true);
+    // 판정란(□ 예 / □ 해당없음)이 표에 있다
+    const cells = (IN.items["별표1.2"] as any).tables[0].rows.flat().map((c: any) => c.t);
+    expect(cells).toContain("□ 해당없음  □ 예");
     expect((IN.items["별표1.6.12_2"] as any).title).toMatch(/^6\.12 /);
+  });
+  it("안전운행: 별표 3은 종류별 6개 묶음 표이고 점검항목 세부 번호는 숨겨진다", () => {
+    for (let g = 1; g <= 6; g++) {
+      const grp = OP.items[`별표3.${g}`] as any;
+      expect(grp.tables[0].rows.length, `별표3.${g}`).toBeGreaterThan(30);
+    }
+    const visible = Object.entries(OP.items).filter(([k, v]: any) => /^별표3\./.test(k) && !v.hidden).map(([k]) => k);
+    expect(visible.sort()).toEqual(["별표3.1", "별표3.2", "별표3.3", "별표3.4", "별표3.5", "별표3.6", "별표3.7", "별표3.8"]);
+    for (const k of ["별표1", "별표2", "별표5", "별표7"]) expect((OP.items[k] as any).figures.length, k).toBe(0);
   });
   it("설치검사: 별표 1·2가 6개 종류 모두 있다", () => {
     for (const root_ of ["별표1", "별표2"]) for (let g = 1; g <= 6; g++) expect(IN.items[`${root_}.${g}`], `${root_}.${g}`).toBeTruthy();
